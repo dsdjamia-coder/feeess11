@@ -1,0 +1,1475 @@
+import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { doc, onSnapshot, collection, getDoc, getDocs, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { db, auth } from '../../config/firebase-config.js';
+import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
+import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, normalizePhone, registerServiceWorker, renderVersionInfo, sanitizePhone, sanitizeUrl } from '../shared/app-common.js';
+
+        hardenExternalLinks();
+
+        // Hamburger Menu Logic with 'X' Animation
+        const mobileToggle = document.getElementById('mobile-menu-btn');
+        const navMenu = document.querySelector('.nav-menu');
+        const setMobileMenuState = (isOpen) => {
+            navMenu.classList.toggle('active', isOpen);
+            mobileToggle.classList.toggle('active-toggle', isOpen);
+            mobileToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        };
+
+        mobileToggle.addEventListener('click', (e) => { 
+            e.stopPropagation(); 
+            setMobileMenuState(!navMenu.classList.contains('active'));
+        });
+
+        document.addEventListener('click', (e) => { 
+            if (!navMenu.contains(e.target) && !mobileToggle.contains(e.target)) { 
+                setMobileMenuState(false);
+            } 
+        });
+
+        document.querySelectorAll('.nav-link').forEach(link => { 
+            link.addEventListener('click', () => { 
+                setMobileMenuState(false);
+            }); 
+        });
+
+        const loginMessageEl = document.getElementById('login-msg');
+        const showLoginMessage = (message) => {
+            if (!loginMessageEl) return;
+            if (!message) {
+                loginMessageEl.textContent = '';
+                loginMessageEl.style.display = 'none';
+                return;
+            }
+            loginMessageEl.textContent = message;
+            loginMessageEl.style.display = 'block';
+        };
+
+        const renderSavedAccounts = () => {
+            const list = document.getElementById('saved-student-list');
+            const accounts = window.AppSession?.getRememberedAccounts?.() || window.AppSession?.getStudentAccounts?.() || [];
+            if (!list) return;
+
+            if (!accounts.length) {
+                list.innerHTML = '<p class="text-sm text-gray-500 py-3 text-center">No saved accounts found on this device.</p>';
+                return;
+            }
+
+            list.innerHTML = accounts.map((account) => {
+                const isStudent = account.role === 'student' || (!account.role && account.studentId);
+                const isStaff = account.role === 'staff';
+                const isAdmin = account.role === 'admin';
+
+                let roleBadgeHtml = '';
+                let metaText = '';
+                let avatarIcon = 'fa-user-graduate';
+                let avatarBg = 'bg-blue-100 text-blue-700';
+
+                if (isStudent) {
+                    roleBadgeHtml = '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">Student</span>';
+                    metaText = `Class ${escapeHtml(account.class || '--')} • Adm: ${escapeHtml(account.adm || '--')}`;
+                    avatarIcon = 'fa-user-graduate';
+                    avatarBg = 'bg-blue-100 text-blue-700';
+                } else if (isStaff) {
+                    roleBadgeHtml = `<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">${escapeHtml(account.roleTitle || 'Staff')}</span>`;
+                    metaText = escapeHtml(account.email || 'Staff Portal Access');
+                    avatarIcon = 'fa-chalkboard-user';
+                    avatarBg = 'bg-emerald-100 text-emerald-700';
+                } else if (isAdmin) {
+                    roleBadgeHtml = '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">Super Admin</span>';
+                    metaText = 'Full Institutional Administration';
+                    avatarIcon = 'fa-user-shield';
+                    avatarBg = 'bg-purple-100 text-purple-700';
+                }
+
+                return `
+                <div class="rounded-2xl border border-slate-200 bg-white hover:border-emerald-400 hover:shadow-xs p-3 flex items-center justify-between gap-3 transition cursor-pointer text-left saved-account-card group" data-id="${escapeHtml(account.id || account.studentId || '')}">
+                    <div class="flex items-center gap-3 min-w-0 flex-1">
+                        <div class="w-10 h-10 rounded-xl ${avatarBg} flex items-center justify-center shrink-0 text-base shadow-2xs">
+                            <i class="fas ${avatarIcon}"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-extrabold text-slate-800 text-sm truncate group-hover:text-emerald-700 transition-colors">${escapeHtml(account.name || 'Account')}</span>
+                                ${roleBadgeHtml}
+                            </div>
+                            <div class="text-xs text-slate-500 font-medium mt-0.5 truncate">
+                                ${metaText}
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition cursor-pointer shadow-2xs saved-account-remove" data-id="${escapeHtml(account.id || account.studentId || '')}" title="Remove this account" aria-label="Remove">
+                        <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
+                </div>
+                `;
+            }).join('');
+        };
+        const renderSavedStudents = renderSavedAccounts;
+
+        let globalInstitutionConfig = {};
+        const openSavedStudentModal = () => {
+            renderSavedAccounts();
+            document.getElementById('saved-student-modal').style.display = 'flex';
+        };
+        const openStudentLoginModal = () => {
+            if (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false) {
+                showToast("Student Portal is currently disabled by institution administration.", "error");
+                showLoginMessage("Student Portal is currently disabled by institution administration.");
+                return;
+            }
+            document.getElementById('login-modal').style.display = 'flex'; 
+            setMobileMenuState(false);
+            resetUniversalLoginForm();
+            const sessionNotice = window.AppSession?.consumeFlash?.();
+            if (sessionNotice) showLoginMessage(sessionNotice);
+        };
+        window.openLogin = () => {
+            if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                window.location.href = 'official.html';
+                return;
+            }
+            const accounts = window.AppSession?.getRememberedAccounts?.() || window.AppSession?.getStudentAccounts?.() || [];
+            const forceAdd = new URLSearchParams(window.location.search).get('addStudent') === '1' || new URLSearchParams(window.location.search).get('login') === 'new';
+            if (!forceAdd && (accounts.length > 0 || window.AppSession?.hasStudentSession?.())) {
+                openSavedStudentModal();
+                return;
+            }
+            openStudentLoginModal();
+        };
+
+        const setAccordionState = (accordionId = '', open = false) => {
+            const content = document.getElementById(accordionId);
+            if (!content) return;
+            content.classList.toggle('hidden', !open);
+            const icon = document.querySelector(`[data-accordion-icon="${accordionId}"]`);
+            icon?.classList.toggle('fa-chevron-down', !open);
+            icon?.classList.toggle('fa-chevron-up', open);
+        };
+        window.togglePublicAccordion = (accordionId = '') => {
+            const content = document.getElementById(accordionId);
+            if (!content) return;
+            setAccordionState(accordionId, content.classList.contains('hidden'));
+        };
+        const expandAccordionForTarget = (targetId = '') => {
+            if (targetId === 'management-container') setAccordionState('management-accordion', true);
+            const target = document.getElementById(targetId);
+            const accordionContent = target?.querySelector?.('[data-accordion-content]');
+            if (accordionContent?.id) setAccordionState(accordionContent.id, true);
+        };
+        window.smoothScrollTo = (e, targetId) => {
+            e.preventDefault();
+            expandAccordionForTarget(targetId);
+            const target = document.getElementById(targetId);
+            if(target) window.scrollTo({ top: target.getBoundingClientRect().top + window.pageYOffset - 90, behavior: "smooth" });
+        };
+        
+        let galleryUrls = [];
+        let currentGalleryIndex = -1;
+        let galleryTouchStartX = 0;
+
+        const closePersonModal = () => {
+            const modal = document.getElementById('person-modal');
+            if (modal) modal.style.display = 'none';
+        };
+
+        window.openPersonModal = (name, role, phone, img, address) => {
+            document.getElementById('modal-name').textContent = name;
+            document.getElementById('modal-role').textContent = role;
+            const modalPhone = document.getElementById('modal-phone');
+            const whatsappBtn = document.getElementById('modal-whatsapp-btn');
+            modalPhone.textContent = '';
+            if (phone) {
+                const normalizedPhone = sanitizePhone(phone);
+                const phoneLink = document.createElement('a');
+                phoneLink.href = `tel:${normalizedPhone}`;
+                phoneLink.style.color = 'inherit';
+                phoneLink.textContent = phone;
+                modalPhone.appendChild(phoneLink);
+                if (whatsappBtn && normalizedPhone) {
+                    whatsappBtn.href = `https://wa.me/${encodeURIComponent(normalizedPhone)}?text=${encodeURIComponent('Assalamu Alaikum')}`;
+                    whatsappBtn.style.display = 'inline-flex';
+                } else if (whatsappBtn) {
+                    whatsappBtn.style.display = 'none';
+                }
+            } else {
+                modalPhone.textContent = 'Not Available';
+                if (whatsappBtn) whatsappBtn.style.display = 'none';
+            }
+            document.getElementById('modal-address').textContent = address || 'Not Available';
+            document.getElementById('modal-img').src = (img && img.startsWith('data:')) ? img : (sanitizeUrl(img) || 'https://via.placeholder.com/150?text=User');
+            document.getElementById('person-modal').style.display = 'flex';
+        };
+
+        document.getElementById('person-modal')?.addEventListener('click', (event) => {
+            if (event.target === event.currentTarget) closePersonModal();
+        });
+
+        const setGalleryImage = (index = 0) => {
+            if (!galleryUrls.length) return;
+            currentGalleryIndex = (index + galleryUrls.length) % galleryUrls.length;
+            document.getElementById('zoom-img').src = galleryUrls[currentGalleryIndex];
+        };
+
+        const closeImageModal = () => {
+            const modal = document.getElementById('img-modal');
+            if (!modal) return;
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+            currentGalleryIndex = -1;
+        };
+
+        const openImageModal = (url, index = -1) => {
+            const safeUrl = sanitizeUrl(url);
+            if (!safeUrl) return;
+            const resolvedIndex = index >= 0 ? index : galleryUrls.indexOf(safeUrl);
+            if (!galleryUrls.includes(safeUrl)) galleryUrls = [safeUrl];
+            setGalleryImage(resolvedIndex >= 0 ? resolvedIndex : 0);
+            const modal = document.getElementById('img-modal');
+            modal.style.display = 'flex';
+            modal.setAttribute('aria-hidden', 'false');
+        };
+
+        document.getElementById('img-modal')?.addEventListener('click', (event) => {
+            if (event.target === event.currentTarget) closeImageModal();
+        });
+        document.getElementById('gallery-prev-btn')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            setGalleryImage(currentGalleryIndex - 1);
+        });
+        document.getElementById('gallery-next-btn')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            setGalleryImage(currentGalleryIndex + 1);
+        });
+        document.getElementById('zoom-img')?.addEventListener('click', (event) => event.stopPropagation());
+        document.getElementById('img-modal')?.addEventListener('touchstart', (event) => {
+            galleryTouchStartX = event.changedTouches?.[0]?.clientX || 0;
+        }, { passive: true });
+        document.getElementById('img-modal')?.addEventListener('touchend', (event) => {
+            const endX = event.changedTouches?.[0]?.clientX || 0;
+            const deltaX = endX - galleryTouchStartX;
+            if (Math.abs(deltaX) < 45) return;
+            setGalleryImage(currentGalleryIndex + (deltaX < 0 ? 1 : -1));
+        }, { passive: true });
+
+        function togglePassword(inputId, iconId) {
+            const input = document.getElementById(inputId);
+            const icon = document.getElementById(iconId);
+            if (input.type === "password") {
+                input.type = "text";
+                icon.classList.remove("fa-eye");
+                icon.classList.add("fa-eye-slash");
+                icon.style.color = "#3b82f6";
+            } else {
+                input.type = "password";
+                icon.classList.remove("fa-eye-slash");
+                icon.classList.add("fa-eye");
+                icon.style.color = "#94a3b8";
+            }
+        }
+        document.getElementById('saved-student-add-btn')?.addEventListener('click', () => {
+            document.getElementById('saved-student-modal').style.display = 'none';
+            openStudentLoginModal();
+        });
+        document.getElementById('saved-student-list')?.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('.saved-account-remove') || e.target.closest('.saved-student-remove');
+            const card = e.target.closest('.saved-account-card') || e.target.closest('.saved-student-card');
+            if (removeBtn) {
+                e.stopPropagation();
+                if (!confirm('Remove this account from this device?')) return;
+                window.AppSession?.removeRememberedAccount?.(removeBtn.dataset.id);
+                renderSavedAccounts();
+                return;
+            }
+            if (card) {
+                const accountId = card.dataset.id;
+                const switched = window.AppSession?.switchAccount?.(accountId);
+                if (!switched) {
+                    const stSwitched = window.AppSession?.switchStudent?.(accountId);
+                    if (stSwitched) window.location.href = 'student.html';
+                }
+            }
+        });
+
+        function fitHeroTitle() {
+            const el = document.getElementById('hero-main-title');
+            if(!el) return;
+            el.style.fontSize = '';
+        }
+        window.addEventListener('resize', fitHeroTitle);
+
+        registerServiceWorker();
+        let allStudents = [], selectedLoginStudent = null;
+        let allStaffCategories = [];
+        let directoryCategories = [];
+        let directoryEntries = [];
+        let staffDirectoryEntries = [];
+        let cachedActiveStaff = [];
+        let categoryAuthConfig = { categories: {} };
+        let pageAccessConfig = { categories: {}, overrides: {} };
+        const normalizeCategoryAuthItem = (raw = {}) => ({
+            enabled: raw?.enabled === true,
+            mode: raw?.mode === 'mapped' ? 'mapped' : 'manual',
+            targetPage: raw?.targetPage === 'student' ? 'student' : 'collection'
+        });
+        const normalizeCategoryPageAccess = (raw = {}) => ({
+            collection: raw?.collection === true,
+            student: raw?.student === true
+        });
+        const hashCredentialValue = async (rawValue = '') => {
+            const value = String(rawValue || '');
+            if (!value) return '';
+            if (!(window.crypto?.subtle)) return value;
+            const encoded = new TextEncoder().encode(value);
+            const digest = await window.crypto.subtle.digest('SHA-256', encoded);
+            return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+        };
+        const resolveDirectoryLogin = async (usernameInput = '', passwordInput = '') => {
+            const username = String(usernameInput || '').trim().toLowerCase();
+            const passwordHash = await hashCredentialValue(passwordInput);
+            if (!username || !passwordHash) return null;
+            for (const entry of (Array.isArray(directoryEntries) ? directoryEntries : [])) {
+                if (!entry?.categoryId) continue;
+                const authConfig = normalizeCategoryAuthItem(categoryAuthConfig?.categories?.[entry.categoryId] || {});
+                if (!authConfig.enabled) continue;
+                const authMeta = entry?.authMeta && typeof entry.authMeta === 'object' ? entry.authMeta : {};
+                if ((String(authMeta.username || '').toLowerCase() || '') !== username) continue;
+                if ((String(authMeta.passwordHash || '') || '') !== passwordHash) continue;
+
+                const categoryAccess = normalizeCategoryPageAccess(pageAccessConfig?.categories?.[entry.categoryId] || {});
+                const override = pageAccessConfig?.overrides?.[entry.id] || {};
+                if (override?.blocked === true) return { blocked: true };
+                const access = {
+                    collection: (override?.collection === true) || (override?.collection !== false && categoryAccess.collection === true),
+                    student: (override?.student === true) || (override?.student !== false && categoryAccess.student === true),
+                    source: 'directory',
+                    categoryId: entry.categoryId,
+                    entryId: entry.id
+                };
+                return {
+                    blocked: false,
+                    targetPage: authConfig.targetPage,
+                    access,
+                    entry
+                };
+            }
+            return null;
+        };
+        let loaded = { config: false, content: false, students: false, staff: false };
+        let minTimeOver = false;
+        let splashHidden = false; 
+
+        setTimeout(() => { minTimeOver = true; triggerAnim(); }, 800); 
+        setTimeout(() => { forceHideSplash(); }, 3000); 
+
+        function forceHideSplash() {
+            if(splashHidden) return;
+            splashHidden = true;
+            const splash = document.getElementById('splash-screen');
+            if(splash && splash.style.display !== 'none') {
+                splash.style.opacity = '0';
+                const hero = document.querySelector('.hero');
+                if(hero) hero.classList.add('animate-active');
+                setTimeout(() => splash.style.display = 'none', 500);
+            }
+        }
+
+        function triggerAnim() {
+            if (minTimeOver && loaded.config && loaded.content && loaded.staff && !splashHidden) {
+                forceHideSplash();
+            }
+        }
+
+        const noticeModal = document.getElementById('notice-modal');
+        const noticeModalTitle = document.getElementById('notice-modal-title');
+        const noticeModalDate = document.getElementById('notice-modal-date');
+        const noticeModalBody = document.getElementById('notice-modal-body');
+        const closeNoticeModalBtn = document.getElementById('close-notice-modal');
+        const noticeListEl = document.getElementById('notices-list');
+        let latestNoticeCache = [];
+
+        const closeNoticeModal = () => {
+            if (!noticeModal) return;
+            noticeModal.style.display = 'none';
+            noticeModal.setAttribute('aria-hidden', 'true');
+        };
+
+        closeNoticeModalBtn?.addEventListener('click', closeNoticeModal);
+        noticeModal?.addEventListener('click', (event) => {
+            if (event.target === noticeModal) closeNoticeModal();
+        });
+
+        const renderNoticeTextWithLinks = (rawText = '', linkLabelLength = 25) => {
+            const text = String(rawText || '');
+            const urlPattern = /(https?:\/\/[^\s]+)/gi;
+            let cursor = 0;
+            let html = '';
+            text.replace(urlPattern, (url, _unused, offset) => {
+                const leading = text.slice(cursor, offset);
+                html += escapeHtml(leading);
+                const safeHref = sanitizeUrl(url, ['https:', 'http:']);
+                if (safeHref) {
+                    const shortLabel = url.length > linkLabelLength
+                        ? `${url.slice(0, linkLabelLength)}...`
+                        : url;
+                    html += `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline break-all">${escapeHtml(shortLabel)}</a>`;
+                } else {
+                    html += escapeHtml(url);
+                }
+                cursor = offset + url.length;
+                return url;
+            });
+            html += escapeHtml(text.slice(cursor));
+            return html.replace(/\n/g, '<br>');
+        };
+        const renderDynamicDirectory = () => {
+            const container = document.getElementById('dynamic-directory-container');
+            const sectionsEl = document.getElementById('dynamic-directory-sections');
+            const navDynamicLinks = document.getElementById('nav-dynamic-directory-links');
+            if (!container || !sectionsEl) return;
+            const visibleCategories = (Array.isArray(directoryCategories) ? directoryCategories : [])
+                .filter((category) => category?.showPublic !== false)
+                .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
+            if (!visibleCategories.length) {
+                container.classList.add('hidden');
+                if (navDynamicLinks) {
+                    navDynamicLinks.classList.add('hidden');
+                    navDynamicLinks.innerHTML = '';
+                }
+                return;
+            }
+            container.classList.remove('hidden');
+            if (navDynamicLinks) {
+                navDynamicLinks.classList.remove('hidden');
+                navDynamicLinks.innerHTML = `<ul class="space-y-1">${visibleCategories.map((category) => {
+                    const sectionId = `directory-category-${category.id}`;
+                    return `<li><a href="#${escapeHtml(sectionId)}" class="nav-link" onclick="smoothScrollTo(event, '${escapeHtml(sectionId)}')">${escapeHtml(category.name || 'Category')}</a></li>`;
+                }).join('')}</ul>`;
+            }
+            sectionsEl.innerHTML = visibleCategories.map((category) => {
+                const fields = (Array.isArray(category.fields) ? category.fields : []).sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
+                const combinedDirectoryEntries = [...directoryEntries, ...staffDirectoryEntries];
+                const rows = combinedDirectoryEntries
+                    .filter((entry) => entry.categoryId === category.id)
+                    .sort((a, b) => {
+                        const orderDiff = Number(a?.displayOrder || 999) - Number(b?.displayOrder || 999);
+                        if (orderDiff !== 0) return orderDiff;
+                        return Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0);
+                    });
+                const sectionId = `directory-category-${category.id}`;
+                const accordionId = `accordion-${category.id}`;
+                if (!rows.length) return `<div id="${escapeHtml(sectionId)}" class="container">
+                    <div class="section-header">
+                        <button type="button" class="accordion-heading-btn section-heading-pill" onclick="window.togglePublicAccordion('${escapeHtml(accordionId)}')">
+                            <span>${escapeHtml(category.name || 'Category')}</span>
+                            <i class="fas fa-chevron-down text-sm" data-accordion-icon="${escapeHtml(accordionId)}"></i>
+                        </button>
+                        <div></div>
+                    </div>
+                    <div id="${escapeHtml(accordionId)}" data-accordion-content class="hidden mt-3"><div class="about-box"><p class="text-sm text-gray-500 italic">No entries yet.</p></div></div>
+                </div>`;
+                return `<div id="${escapeHtml(sectionId)}" class="container">
+                    <div class="section-header">
+                        <button type="button" class="accordion-heading-btn section-heading-pill" onclick="window.togglePublicAccordion('${escapeHtml(accordionId)}')">
+                            <span>${escapeHtml(category.name || 'Category')}</span>
+                            <i class="fas fa-chevron-down text-sm" data-accordion-icon="${escapeHtml(accordionId)}"></i>
+                        </button>
+                        <div></div>
+                    </div>
+                    <div id="${escapeHtml(accordionId)}" data-accordion-content class="hidden mt-3"><div class="scroll-wrapper">${rows.map((entry) => {
+                        const values = entry.values || {};
+                        const nameValue = String(values.name || values.Name || values.title || 'Profile');
+                        const rawPhoto = values.photo || values.Photo || values.image || values.img || '';
+                        const photoValue = (rawPhoto && rawPhoto.startsWith('data:')) ? rawPhoto : (sanitizeUrl(rawPhoto) || 'https://via.placeholder.com/150?text=User');
+                        const phoneValue = String(values.phone || values.mobile || values.contact || '');
+                        const addressValue = String(values.address || values.place || '');
+                        const roleField = fields.find((field) => !['name', 'role', 'photo', 'phone', 'address'].includes(String(field.key || '').toLowerCase()));
+                        const roleValue = String(values.role || (roleField ? (values[roleField.key] || '') : '')).trim();
+                        return `<button type="button" class="person-card" data-person-name="${escapeHtml(nameValue)}" data-person-role="${escapeHtml(roleValue || 'Role not added')}" data-person-phone="${escapeHtml(phoneValue)}" data-person-img="${escapeHtml(photoValue)}" data-person-address="${escapeHtml(addressValue)}">
+                            <img src="${photoValue}" class="person-img" alt="${escapeHtml(nameValue)}">
+                            <div class="person-name">${escapeHtml(nameValue)}</div>
+                            <div class="person-role">${escapeHtml(roleValue || 'Role not added')}</div>
+                        </button>`;
+                    }).join('')}</div></div>
+                </div>`;
+            }).join('');
+        };
+
+        const deriveNoticeHeading = (notice = {}, index = 0) => {
+            const directHeading = notice.heading || notice.title;
+            if (directHeading && String(directHeading).trim()) return String(directHeading).trim();
+            if (notice.image || notice.imageUrl) return '';
+            const baseText = String(notice.text || '').trim();
+            if (!baseText) return `Notification ${index + 1}`;
+            const firstLine = baseText.split('\n').map((line) => line.trim()).find(Boolean) || '';
+            const firstSentence = firstLine.split(/[.!?]/).map((part) => part.trim()).find(Boolean) || '';
+            const compact = firstSentence || firstLine || baseText;
+            return compact.length > 70 ? `${compact.slice(0, 70)}...` : compact;
+        };
+
+        const isNoticeLong = (text = '') => String(text || '').length > 260 || String(text || '').split('\n').length > 5;
+
+        const openNoticeModal = (noticeIndex) => {
+            const selected = latestNoticeCache[noticeIndex];
+            if (!selected || !noticeModal || !noticeModalBody) return;
+            noticeModalTitle.textContent = selected.heading || 'Notification';
+            noticeModalDate.textContent = selected.date ? `Posted: ${selected.date}` : 'Posted date unavailable';
+            const imgHtml = selected.image
+                ? `<div class="mb-3 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex justify-center"><img src="${selected.image}" alt="${escapeHtml(selected.heading || 'Notice image')}" class="max-h-[60vh] w-auto object-contain cursor-pointer notice-modal-img" data-notice-img-url="${escapeHtml(selected.image)}"></div>`
+                : '';
+            const textHtml = selected.text
+                ? `<div class="notice-modal-text">${renderNoticeTextWithLinks(selected.text, 25)}</div>`
+                : '';
+            noticeModalBody.innerHTML = `${imgHtml}${textHtml}`;
+            noticeModal.style.display = 'flex';
+            noticeModal.setAttribute('aria-hidden', 'false');
+        };
+
+        noticeModalBody?.addEventListener('click', (event) => {
+            const imgEl = event.target.closest('[data-notice-img-url]');
+            if (!imgEl) return;
+            openImageModal(imgEl.dataset.noticeImgUrl, -1);
+        });
+
+        noticeListEl?.addEventListener('click', (event) => {
+            const imgBtn = event.target.closest('[data-notice-card-img]');
+            if (imgBtn) {
+                const noticeIndex = Number(imgBtn.dataset.noticeIndex);
+                if (!Number.isNaN(noticeIndex)) {
+                    openNoticeModal(noticeIndex);
+                }
+                return;
+            }
+            const expandButton = event.target.closest('.notice-expand-btn');
+            if (!expandButton) return;
+            const noticeIndex = Number(expandButton.dataset.noticeIndex);
+            if (Number.isNaN(noticeIndex)) return;
+            openNoticeModal(noticeIndex);
+        });
+
+        const fitNoticeViewportForFourCards = () => {
+            if (!noticeListEl) return;
+            const cards = Array.from(noticeListEl.querySelectorAll('.notice-card'));
+            if (!cards.length) {
+                noticeListEl.style.maxHeight = '';
+                return;
+            }
+            const width = window.innerWidth;
+            const cols = width >= 1024 ? 3 : (width >= 640 ? 2 : 1);
+            const maxRowsToFit = cols === 1 ? Math.min(4, cards.length) : Math.min(2, Math.ceil(cards.length / cols));
+
+            let totalHeight = 0;
+            for (let r = 0; r < maxRowsToFit; r++) {
+                const rowCards = cards.slice(r * cols, (r + 1) * cols);
+                if (!rowCards.length) break;
+                const maxRowHeight = Math.max(...rowCards.map(c => c.offsetHeight || 0));
+                totalHeight += maxRowHeight;
+            }
+            const gapSize = cols >= 3 ? 20 : (cols === 2 ? 16 : 14);
+            const gaps = Math.max(0, maxRowsToFit - 1) * gapSize;
+            noticeListEl.style.maxHeight = `${totalHeight + gaps + 12}px`;
+        };
+        window.addEventListener('resize', fitNoticeViewportForFourCards);
+
+
+        function populateClassDropdown(conf = globalInstitutionConfig) {
+            const configClasses = Array.isArray(conf?.classes) && conf.classes.length > 0
+                ? conf.classes
+                : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+            let classOptions = configClasses.map(c => {
+                const raw = String(c).trim();
+                const label = raw.toLowerCase().startsWith('class') ? raw : `Class: ${raw}`;
+                return `<option value="${escapeHtml(raw)}">${escapeHtml(label)}</option>`;
+            }).join('');
+            classOptions += `<option value="Alumni">🎓 Alumni</option>`;
+            const loginClassEl = document.getElementById('login-class');
+            if (loginClassEl) {
+                const currentVal = loginClassEl.value;
+                loginClassEl.innerHTML = '<option value="">Select Class</option>' + classOptions;
+                if (currentVal) loginClassEl.value = currentVal;
+            }
+        }
+
+        async function init() {
+            populateClassDropdown();
+
+            // 1. Institution Config snapshot (Public)
+            onSnapshot(doc(db, `${BASE_PATH}/settings`, 'config'), snap => {
+                const conf = snap.exists() ? snap.data() : {};
+                globalInstitutionConfig = conf;
+                if (conf.enabledModules && typeof conf.enabledModules === 'object') {
+                    try {
+                        localStorage.setItem('app_enabled_modules', JSON.stringify(conf.enabledModules));
+                    } catch (_) {}
+                }
+                
+                const institutionName = conf.institutionName || conf.schoolName || conf.name || '';
+                if (institutionName) {
+                    const loginTitleEl = document.getElementById('login-title');
+                    if (loginTitleEl) loginTitleEl.textContent = institutionName;
+                }
+                applyInstitutionBranding(conf, {
+                    defaultAppName: 'Institution',
+                    primaryTitleIds: ['hero-main-title'],
+                    subtitleIds: ['hero-subtitle'],
+                    logoIds: ['splash-logo-img', 'hero-logo-img', 'header-logo']
+                });
+
+                setTimeout(() => { fitHeroTitle(); }, 50);
+
+                if (conf.logoUrl) {
+                    const splashLogo = document.getElementById('splash-logo-img');
+                    if (splashLogo) splashLogo.src = conf.logoUrl;
+                    const heroLogo = document.getElementById('hero-logo-img');
+                    if (heroLogo) heroLogo.src = conf.logoUrl;
+                    const headerLogo = document.getElementById('header-logo');
+                    if (headerLogo) {
+                        headerLogo.src = conf.logoUrl;
+                        headerLogo.style.opacity = '1';
+                    }
+                }
+                
+                renderVersionInfo();
+                populateClassDropdown(conf);
+                const stats = conf.stats || {};
+                const statTotal = document.getElementById('stat-total');
+                const statMale = document.getElementById('stat-male');
+                const statFemale = document.getElementById('stat-female');
+                if (statTotal) statTotal.textContent = (stats.total !== undefined && stats.total !== null) ? stats.total : '-';
+                if (statMale) statMale.textContent = (stats.male !== undefined && stats.male !== null) ? stats.male : '-';
+                if (statFemale) statFemale.textContent = (stats.female !== undefined && stats.female !== null) ? stats.female : '-';
+                loaded.config = true;
+                loaded.students = true;
+                triggerAnim();
+            }, err => {
+                console.warn('Config snapshot notice:', err);
+                loaded.config = true;
+                loaded.students = true;
+                triggerAnim();
+            });
+
+            // 2. Institution Content snapshot (Notices & Gallery) (Public)
+            onSnapshot(doc(db, `${BASE_PATH}/settings`, 'content'), snap => {
+                const content = snap.exists() ? snap.data() : {};
+                const rawDirCats = Array.isArray(content.directoryCategories) ? content.directoryCategories : [];
+                allStaffCategories = rawDirCats;
+                directoryCategories = rawDirCats.filter((c) => c && !['Teacher', 'Management'].includes(String(c.id || '').trim()));
+                const aboutDescEl = document.getElementById('about-desc');
+                if (aboutDescEl) {
+                    aboutDescEl.innerHTML = renderNoticeTextWithLinks(content.description || 'Welcome to our institution.', 25);
+                }
+                
+                // Notices Display Logic
+                const notices = Array.isArray(content.notices) ? content.notices : [];
+                const noticesCont = document.getElementById('notices-container');
+                const navNoticesLink = document.getElementById('nav-notices-link');
+                const heroBtnNotice = document.getElementById('hero-btn-notice');
+                
+                if (notices.length === 0) {
+                    noticesCont.classList.add('hidden');
+                    if (navNoticesLink) navNoticesLink.classList.add('hidden');
+                    if (heroBtnNotice) heroBtnNotice.classList.add('hidden');
+                } else {
+                    noticesCont.classList.remove('hidden');
+                    if (navNoticesLink) navNoticesLink.classList.remove('hidden');
+                    if (heroBtnNotice) heroBtnNotice.classList.remove('hidden');
+                    
+                    const sortedNotices = notices
+                        .map((notice, originalIndex) => ({ notice, originalIndex }))
+                        .sort((a, b) => {
+                            const pinWeight = Number(b.notice?.pinned === true) - Number(a.notice?.pinned === true);
+                            if (pinWeight !== 0) return pinWeight;
+                            const dateA = new Date(a.notice?.date || 0).getTime() || 0;
+                            const dateB = new Date(b.notice?.date || 0).getTime() || 0;
+                            if (dateA !== dateB) return dateB - dateA;
+                            return b.originalIndex - a.originalIndex;
+                        })
+                        .map((entry) => entry.notice);
+
+                    latestNoticeCache = sortedNotices.map((notice, index) => {
+                        const text = String(notice?.text || '').trim();
+                        const rawImg = String(notice?.image || notice?.imageUrl || '').trim();
+                        const safeImage = (rawImg && rawImg.startsWith('data:image/')) ? rawImg : sanitizeUrl(rawImg);
+                        return {
+                            heading: deriveNoticeHeading(notice, index),
+                            text,
+                            image: safeImage || '',
+                            date: String(notice?.date || ''),
+                            pinned: notice?.pinned === true
+                        };
+                    });
+
+                    noticeListEl.innerHTML = latestNoticeCache.map((notice, index) => {
+                        const longNotice = isNoticeLong(notice.text);
+                        const hasHeading = Boolean(notice.heading);
+                        const hasText = Boolean(notice.text);
+                        const hasImage = Boolean(notice.image);
+                        return `
+                        <article class="notice-card">
+                            <div class="notice-card-content">
+                                ${hasHeading ? `<h4 class="notice-title">${notice.pinned ? '<i class="fas fa-thumbtack text-amber-500 mr-1" title="Pinned"></i>' : ''}${escapeHtml(notice.heading)}</h4>` : (notice.pinned ? `<div class="text-xs font-bold text-amber-600 flex items-center justify-center gap-1"><i class="fas fa-thumbtack"></i> Pinned Notice</div>` : '')}
+                                ${hasImage ? `<div class="notice-image-wrap cursor-pointer" data-notice-card-img="1" data-notice-index="${index}"><img src="${notice.image}" alt="${escapeHtml(notice.heading || 'Notification image')}" loading="lazy"></div>` : ''}
+                                ${hasText ? `<p class="notice-body ${longNotice ? 'notice-preview-clamp' : ''}">${renderNoticeTextWithLinks(notice.text, 25)}</p>` : ''}
+                            </div>
+                            <div class="notice-footer">
+                                <span class="notice-date"><i class="far fa-calendar-alt"></i> ${escapeHtml(notice.date || 'Date unavailable')}</span>
+                                ${(longNotice || hasImage) ? `<button type="button" class="notice-expand-btn" data-notice-index="${index}">${longNotice ? 'Expand' : 'View'}</button>` : ''}
+                            </div>
+                        </article>
+                    `;
+                    }).join('');
+                    fitNoticeViewportForFourCards();
+                    noticeListEl.querySelectorAll('img').forEach((img) => {
+                        img.addEventListener('load', fitNoticeViewportForFourCards, { once: true });
+                    });
+                }
+
+                // Gallery Display Logic
+                const gallery = Array.isArray(content.gallery) ? content.gallery : [];
+                const galleryCont = document.getElementById('gallery-container');
+                const navGalleryLink = document.getElementById('nav-gallery-link');
+                const heroBtnGallery = document.getElementById('hero-btn-gallery');
+                
+                if (gallery.length === 0) {
+                    galleryCont.classList.add('hidden');
+                    if (navGalleryLink) navGalleryLink.classList.add('hidden');
+                    if (heroBtnGallery) heroBtnGallery.classList.add('hidden');
+                } else {
+                    galleryCont.classList.remove('hidden');
+                    if (navGalleryLink) navGalleryLink.classList.remove('hidden');
+                    if (heroBtnGallery) heroBtnGallery.classList.remove('hidden');
+                    
+                    galleryUrls = gallery
+                        .map((item, originalIndex) => {
+                            const parsedOrder = Number(item?.order);
+                            return {
+                                url: typeof item === 'string' ? item : (item?.url || item?.imageUrl || item?.src || ''),
+                                order: Number.isFinite(parsedOrder) && parsedOrder > 0 ? parsedOrder : originalIndex + 1,
+                                originalIndex
+                            };
+                        })
+                        .sort((a, b) => (a.order - b.order) || (a.originalIndex - b.originalIndex))
+                        .map((item) => sanitizeUrl(item.url))
+                        .filter(Boolean);
+                    document.getElementById('gallery-list').innerHTML = galleryUrls.map((safeUrl, index) => {
+                        return `<button type="button" class="gallery-item" data-gallery-index="${index}" data-gallery-url="${escapeHtml(safeUrl)}" aria-label="View photo ${index + 1}"><img src="${safeUrl}" alt="Gallery image ${index + 1}" loading="lazy"></button>`;
+                    }).join('');
+                }
+                
+                loaded.content = true;
+                triggerAnim();
+                renderDynamicDirectory();
+                if (typeof renderStaffDirectory === 'function') renderStaffDirectory();
+            }, err => {
+                console.warn('Content snapshot notice:', err);
+                loaded.content = true;
+                triggerAnim();
+            });
+
+            // 3. Public Directory snapshot
+            onSnapshot(collection(db, `${BASE_PATH}/publicDirectory`), snap => {
+                directoryEntries = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+                renderDynamicDirectory();
+            }, err => {
+                console.warn('Public directory notice:', err);
+            });
+
+            // 4. Category Auth & Page Access settings
+            onSnapshot(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig'), snap => {
+                const payload = snap.exists() ? snap.data() : {};
+                categoryAuthConfig = payload && typeof payload.categories === 'object' ? payload : { categories: {} };
+            }, err => {
+                console.warn('Category auth notice:', err);
+            });
+
+            onSnapshot(doc(db, `${BASE_PATH}/settings`, 'pageAccess'), snap => {
+                const payload = snap.exists() ? snap.data() : {};
+                pageAccessConfig = (payload && typeof payload === 'object') ? payload : { categories: {}, overrides: {} };
+            }, err => {
+                console.warn('Page access notice:', err);
+            });
+
+            const isCategoryPubliclyVisible = (categoryId = '') => {
+                const target = String(categoryId || '').trim().toLowerCase();
+                const match = allStaffCategories.find((c) => c && (String(c.id || '').trim().toLowerCase() === target || String(c.name || '').trim().toLowerCase() === target));
+                return match ? match.showPublic !== false : true;
+            };
+
+            const renderStaffDirectory = () => {
+                const isTeacherPublic = isCategoryPubliclyVisible('Teacher');
+                const isMgmtPublic = isCategoryPubliclyVisible('Management');
+
+                staffDirectoryEntries = cachedActiveStaff
+                    .filter((staffMember) => staffMember.showPublic !== false && directoryCategories.some((category) => category.id === staffMember.type && category.showPublic !== false))
+                    .map((staffMember) => ({
+                        id: `staff:${staffMember.id}`,
+                        categoryId: staffMember.type,
+                        displayOrder: staffMember.displayOrder || 999,
+                        updatedAt: staffMember.updatedAt || 0,
+                        values: {
+                            name: staffMember.name || '',
+                            role: staffMember.role || '',
+                            phone: staffMember.phone || '',
+                            photo: staffMember.photo || '',
+                            address: staffMember.address || ''
+                        }
+                    }));
+                renderDynamicDirectory();
+                const sortByDisplayOrder = (list = []) => [...list].sort((a, b) => {
+                    const orderDiff = Number(a?.displayOrder || 999) - Number(b?.displayOrder || 999);
+                    if (orderDiff !== 0) return orderDiff;
+                    return String(a?.name || '').localeCompare(String(b?.name || ''));
+                });
+                const publicStaff = cachedActiveStaff.filter((staffMember) => staffMember.showPublic !== false);
+                const teachers = sortByDisplayOrder(publicStaff.filter(s => s.type === 'Teacher'));
+                const mgmt = sortByDisplayOrder(publicStaff.filter(s => s.type === 'Management'));
+                
+                const renderStaffList = (id, list, contId, linkId, btnId, isCategoryVisible) => {
+                    const cont = document.getElementById(contId);
+                    const navLink = linkId ? document.getElementById(linkId) : null;
+                    const heroBtn = btnId ? document.getElementById(btnId) : null;
+                    if (!cont) return;
+
+                    if (!isCategoryVisible) {
+                        cont.classList.add('hidden');
+                        if (navLink) navLink.classList.add('hidden');
+                        if (heroBtn) heroBtn.classList.add('hidden');
+                        return;
+                    }
+
+                    const forceShow = id === 'teachers-list';
+                    if (!list.length) { 
+                        if (forceShow) {
+                            cont.classList.remove('hidden');
+                            if (navLink) navLink.classList.remove('hidden');
+                            if (heroBtn) heroBtn.classList.remove('hidden');
+                            document.getElementById(id).innerHTML = '<p class="text-sm text-gray-500 italic">No profiles available.</p>';
+                        } else {
+                            cont.classList.add('hidden'); 
+                            if (navLink) navLink.classList.add('hidden'); 
+                            if (heroBtn) heroBtn.classList.add('hidden'); 
+                        }
+                    } else { 
+                        cont.classList.remove('hidden'); 
+                        if (navLink) navLink.classList.remove('hidden'); 
+                        if (heroBtn) heroBtn.classList.remove('hidden'); 
+                        
+                        document.getElementById(id).innerHTML = list.map((p) => {
+                            const safePhoto = (p.photo && p.photo.startsWith('data:')) ? p.photo : (sanitizeUrl(p.photo) || 'https://via.placeholder.com/150?text=User');
+                            return `<button type="button" class="person-card" data-person-name="${escapeHtml(p.name || '')}" data-person-role="${escapeHtml(p.role || '')}" data-person-phone="${escapeHtml(p.phone || '')}" data-person-img="${escapeHtml(safePhoto)}" data-person-address="${escapeHtml(p.address || '')}"><img src="${safePhoto}" class="person-img" alt="${escapeHtml(p.name || 'Staff member')}"><div class="person-name">${escapeHtml(p.name)}</div><div class="person-role">${escapeHtml(p.role)}</div></button>`;
+                        }).join('');
+                    }
+                };
+                
+                renderStaffList('teachers-list', teachers, 'teachers-container', 'nav-teachers-link', 'hero-btn-teachers', isTeacherPublic);
+                renderStaffList('comm-list', mgmt, 'management-container', 'nav-management-link', null, isMgmtPublic);
+                
+                const statStaffEl = document.getElementById('stat-staff');
+                if (statStaffEl) {
+                    statStaffEl.textContent = isTeacherPublic ? teachers.length : 0;
+                }
+            };
+
+            // 5. Staff Directory snapshot (Public profiles)
+            onSnapshot(collection(db, `${BASE_PATH}/staff`), snap => {
+                const allStaff = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                cachedActiveStaff = allStaff.filter(s => s.isActive);
+                renderStaffDirectory();
+                loaded.staff = true;
+                triggerAnim();
+            }, err => {
+                console.warn('Staff listener notice:', err);
+                loaded.staff = true;
+                triggerAnim();
+            });
+        }
+
+
+        const lName = document.getElementById('login-student-name');
+        const lClass = document.getElementById('login-class');
+        const lSugg = document.getElementById('student-suggestions');
+        const galleryList = document.getElementById('gallery-list');
+        const galleryPrevBtn = document.getElementById('gallery-nav-prev');
+        const galleryNextBtn = document.getElementById('gallery-nav-next');
+        const staffContainers = ['teachers-list', 'comm-list', 'dynamic-directory-sections']
+            .map((id) => document.getElementById(id))
+            .filter(Boolean);
+
+        galleryPrevBtn?.addEventListener('click', () => {
+            if (!galleryList) return;
+            const scrollDist = galleryList.clientWidth * 0.75;
+            galleryList.scrollBy({ left: -scrollDist, behavior: 'smooth' });
+        });
+        galleryNextBtn?.addEventListener('click', () => {
+            if (!galleryList) return;
+            const scrollDist = galleryList.clientWidth * 0.75;
+            galleryList.scrollBy({ left: scrollDist, behavior: 'smooth' });
+        });
+
+        let isGalleryDragging = false;
+        let galleryStartX = 0;
+        let galleryScrollLeft = 0;
+        let hasGalleryDragged = false;
+
+        galleryList?.addEventListener('mousedown', (e) => {
+            isGalleryDragging = true;
+            hasGalleryDragged = false;
+            galleryStartX = e.pageX - galleryList.offsetLeft;
+            galleryScrollLeft = galleryList.scrollLeft;
+            galleryList.style.cursor = 'grabbing';
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (!isGalleryDragging) return;
+            isGalleryDragging = false;
+            if (galleryList) galleryList.style.cursor = '';
+        });
+
+        galleryList?.addEventListener('mousemove', (e) => {
+            if (!isGalleryDragging) return;
+            const x = e.pageX - galleryList.offsetLeft;
+            const walk = (x - galleryStartX) * 1.4;
+            if (Math.abs(walk) > 6) hasGalleryDragged = true;
+            galleryList.scrollLeft = galleryScrollLeft - walk;
+        });
+
+        galleryList?.addEventListener('click', (event) => {
+            if (hasGalleryDragged) {
+                event.preventDefault();
+                event.stopPropagation();
+                hasGalleryDragged = false;
+                return;
+            }
+            const card = event.target.closest('[data-gallery-url]');
+            if (!card) return;
+            openImageModal(card.dataset.galleryUrl, Number(card.dataset.galleryIndex || -1));
+        }, true);
+
+        staffContainers.forEach((container) => {
+            container.addEventListener('click', (event) => {
+                const card = event.target.closest('[data-person-name]');
+                if (!card) return;
+                window.openPersonModal(
+                    card.dataset.personName || '',
+                    card.dataset.personRole || '',
+                    card.dataset.personPhone || '',
+                    card.dataset.personImg || '',
+                    card.dataset.personAddress || ''
+                );
+            });
+        });
+        
+        // State for unified smart verification & login
+        let verifiedUser = null;
+
+        const loginModalEl = document.getElementById('login-modal');
+        loginModalEl?.addEventListener('click', (e) => {
+            if (e.target === loginModalEl) loginModalEl.style.display = 'none';
+        });
+
+        document.getElementById('toggle-universal-pass')?.addEventListener('click', () => {
+            const passEl = document.getElementById('login-password');
+            const icon = document.getElementById('toggle-universal-pass');
+            if (passEl) {
+                const isPass = passEl.type === 'password';
+                passEl.type = isPass ? 'text' : 'password';
+                icon?.classList.toggle('fa-eye', !isPass);
+                icon?.classList.toggle('fa-eye-slash', isPass);
+            }
+        });
+
+        const resetUniversalLoginForm = () => {
+            verifiedUser = null;
+            document.getElementById('login-step-2')?.classList.add('hidden');
+            document.getElementById('login-step-1')?.classList.remove('hidden');
+            const userInput = document.getElementById('login-username');
+            if (userInput) {
+                userInput.value = '';
+                userInput.focus();
+            }
+            const passInput = document.getElementById('login-password');
+            if (passInput) passInput.value = '';
+            showLoginMessage('');
+        };
+
+        document.getElementById('btn-change-user')?.addEventListener('click', () => {
+            verifiedUser = null;
+            document.getElementById('login-step-2')?.classList.add('hidden');
+            document.getElementById('login-step-1')?.classList.remove('hidden');
+            document.getElementById('login-username')?.focus();
+            showLoginMessage('');
+        });
+
+        const verifyUniversalIdentifier = async () => {
+            const userInput = document.getElementById('login-username');
+            const rawInput = (userInput?.value || '').trim();
+            if (!rawInput) {
+                showLoginMessage('Please enter your Username, Admission Number, or Email.');
+                userInput?.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-verify-user');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Verifying...';
+            }
+            showLoginMessage('');
+
+            try {
+                const cleanAdm = rawInput.toLowerCase().replace(/[\\/\\s]+/g, '_');
+                const cleanEmail = rawInput.toLowerCase();
+                const cleanPhone = normalizePhone(rawInput);
+
+                let matched = null;
+
+                // 1. Check Student Auth Lookup (public)
+                try {
+                    let lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
+                    if (lookupSnap.exists()) {
+                        matched = {
+                            type: 'student',
+                            data: lookupSnap.data(),
+                            displayName: lookupSnap.data().name || 'Student',
+                            meta: `Student • Class ${lookupSnap.data().class || '-'} (Adm: ${lookupSnap.data().adm || rawInput})`
+                        };
+                    } else {
+                        lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, cleanAdm));
+                        if (lookupSnap.exists()) {
+                            matched = {
+                                type: 'student',
+                                data: lookupSnap.data(),
+                                displayName: lookupSnap.data().name || 'Student',
+                                meta: `Student • Class ${lookupSnap.data().class || '-'} (Adm: ${lookupSnap.data().adm || rawInput})`
+                            };
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Student lookup notice:', e);
+                }
+
+                // 2. Check Staff Registry (from in-memory public cachedActiveStaff)
+                if (!matched) {
+                    const staffMember = (cachedActiveStaff || []).find((s) => {
+                        if (!s || s.isActive === false) return false;
+                        const sEmail = String(s.email || '').toLowerCase().trim();
+                        const sUsername = String(s.username || sEmail.split('@')[0] || '').toLowerCase().trim();
+                        const sPhone = normalizePhone(s.phone || '');
+                        return sEmail === cleanEmail || sUsername === cleanAdm || (cleanPhone && sPhone === cleanPhone);
+                    });
+
+                    if (staffMember) {
+                        const loginEmail = staffMember.email && staffMember.email.includes('@')
+                            ? staffMember.email.toLowerCase().trim()
+                            : `${(staffMember.username || staffMember.email || cleanAdm).toLowerCase().trim()}@school.internal`;
+
+                        matched = {
+                            type: 'staff',
+                            data: staffMember,
+                            displayName: staffMember.name || 'Staff Member',
+                            meta: staffMember.role || staffMember.type || 'Staff Member',
+                            loginEmail: loginEmail
+                        };
+                    }
+                }
+
+                // 3. Check Admin Registry
+                if (!matched) {
+                    const adminProfile = globalInstitutionConfig?.adminProfile || {};
+                    const adminEmail = (adminProfile.email || '').toLowerCase().trim();
+                    const adminUsername = (adminProfile.username || 'admin').toLowerCase().trim();
+                    const isAdminMatch = (adminEmail && adminEmail === cleanEmail) ||
+                                         (adminUsername && adminUsername === cleanAdm) ||
+                                         cleanAdm === 'admin';
+
+                    if (isAdminMatch) {
+                        matched = {
+                            type: 'admin',
+                            data: adminProfile,
+                            displayName: adminProfile.name || 'Institution Administrator',
+                            meta: 'Administrator',
+                            loginEmail: adminEmail || (cleanEmail.includes('@') ? cleanEmail : `${cleanAdm}@school.internal`)
+                        };
+                    } else if (cleanEmail.includes('@')) {
+                        // Email fallback for administrative accounts
+                        matched = {
+                            type: 'admin',
+                            data: { email: cleanEmail },
+                            displayName: 'Administrator / Staff',
+                            meta: 'Account Verification',
+                            loginEmail: cleanEmail
+                        };
+                    }
+                }
+
+                // 4. Check Directory Login Registry
+                if (!matched) {
+                    const dirMatch = (Array.isArray(directoryEntries) ? directoryEntries : []).find(e => {
+                        const u = String(e?.authMeta?.username || '').toLowerCase();
+                        return u && (u === cleanAdm || u === cleanEmail);
+                    });
+                    if (dirMatch) {
+                        matched = {
+                            type: 'directory',
+                            data: dirMatch,
+                            displayName: dirMatch.name || String(dirMatch.authMeta?.usernameRaw || 'Staff Member'),
+                            meta: dirMatch.role || 'Staff Member',
+                            loginId: cleanEmail
+                        };
+                    }
+                }
+
+                if (matched) {
+                    verifiedUser = matched;
+                    const nameEl = document.getElementById('verified-user-name');
+                    const metaEl = document.getElementById('verified-user-meta');
+                    const passLabel = document.getElementById('login-password-label');
+                    const passInput = document.getElementById('login-password');
+                    const passHint = document.getElementById('login-password-hint');
+
+                    if (nameEl) nameEl.textContent = matched.displayName;
+                    if (metaEl) metaEl.textContent = matched.meta;
+
+                    if (matched.type === 'student') {
+                        if (passLabel) passLabel.textContent = 'Registered Mobile Number (Password)';
+                        if (passInput) {
+                            passInput.placeholder = '10-digit mobile number';
+                            passInput.type = 'password';
+                        }
+                        if (passHint) passHint.textContent = 'Enter the mobile phone number registered with the school.';
+                    } else {
+                        if (passLabel) passLabel.textContent = 'Password';
+                        if (passInput) {
+                            passInput.placeholder = 'Enter account password';
+                            passInput.type = 'password';
+                        }
+                        if (passHint) passHint.textContent = 'Enter your account credentials to log in.';
+                    }
+
+                    document.getElementById('login-step-1')?.classList.add('hidden');
+                    document.getElementById('login-step-2')?.classList.remove('hidden');
+                    if (passInput) {
+                        passInput.value = '';
+                        passInput.focus();
+                    }
+                } else {
+                    showLoginMessage(`User "${rawInput}" not found. Please verify your Username or Admission Number.`);
+                    userInput?.focus();
+                }
+            } catch (err) {
+                console.error('Universal verification error:', err);
+                showLoginMessage('Verification error: ' + err.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check-circle"></i> <span>Verify</span>';
+                }
+            }
+        };
+
+        const handleUniversalLoginSubmit = async () => {
+            if (!verifiedUser) {
+                resetUniversalLoginForm();
+                return;
+            }
+
+            const passInput = document.getElementById('login-password');
+            const enteredPass = (passInput?.value || '').trim();
+            if (!enteredPass) {
+                const isStudent = verifiedUser.type === 'student';
+                showLoginMessage(isStudent ? 'Please enter registered mobile number.' : 'Please enter your password.');
+                passInput?.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-login-submit');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Authenticating...';
+            }
+            showLoginMessage('');
+
+            try {
+                if (verifiedUser.type === 'student') {
+                    const enteredPhone = normalizePhone(enteredPass);
+                    const st = verifiedUser.data;
+                    const phones = Array.isArray(st.phones)
+                        ? st.phones
+                        : [normalizePhone(st.phone || '')];
+
+                    const isMatch = phones.some(p => p && (p === enteredPhone || p.endsWith(enteredPhone) || enteredPhone.endsWith(p)));
+                    if (isMatch) {
+                        showLoginMessage('');
+                        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Loading Dashboard...';
+                        if (!auth.currentUser) {
+                            try { await signInAnonymously(auth); } catch (_) {}
+                        }
+                        window.AppSession?.startStudent(st.studentId, {
+                            name: st.name || '',
+                            class: st.class || '',
+                            adm: st.adm || ''
+                        });
+                        window.location.href = 'student.html';
+                        return;
+                    } else {
+                        showLoginMessage('Incorrect registered mobile number. Please check and try again.');
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                        }
+                    }
+                    return;
+                }
+
+                // If Admin or Staff
+                await window.AppSession?.clearAll();
+                const loginEmail = verifiedUser.loginEmail || (verifiedUser.data?.email || '').toLowerCase();
+                const userLogin = loginEmail || verifiedUser.displayName.toLowerCase();
+                const enteredPassword = enteredPass.trim();
+                const storedPassword = (verifiedUser.data?.password || '').trim();
+
+                let isAuthenticated = false;
+                let userCred = null;
+
+                // 1. Check direct password match for staff
+                if (storedPassword && storedPassword === enteredPassword) {
+                    isAuthenticated = true;
+                }
+
+                // 2. Firebase Auth login attempt
+                if (!isAuthenticated) {
+                    try {
+                        userCred = await signInWithEmailAndPassword(auth, loginEmail, enteredPassword);
+                        if (userCred?.user) isAuthenticated = true;
+                    } catch (authError) {
+                        if (!loginEmail.includes('@')) {
+                            try {
+                                userCred = await signInWithEmailAndPassword(auth, `${loginEmail}@school.internal`, enteredPassword);
+                                if (userCred?.user) isAuthenticated = true;
+                            } catch (_) {}
+                        }
+                    }
+                }
+
+                // 3. Try directory login fallback
+                if (!isAuthenticated) {
+                    const directoryLogin = await resolveDirectoryLogin(userLogin, enteredPassword);
+                    if (directoryLogin?.entry) {
+                        const access = directoryLogin.access || {};
+                        const rawName = String(directoryLogin.entry?.authMeta?.usernameRaw || userLogin || 'User');
+                        window.AppSession?.startStaff(rawName, userLogin, { ...access, worksheet: true, userKey: userLogin, loginId: userLogin, source: 'directory' });
+                        window.location.href = 'official.html';
+                        return;
+                    }
+
+                    showLoginMessage('Incorrect password. Please verify your credentials.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                    }
+                    return;
+                }
+
+                if (!auth.currentUser) {
+                    try { await signInAnonymously(auth); } catch (_) {}
+                }
+
+                const authedEmail = (userCred?.user?.email || loginEmail).toLowerCase();
+                const authedUsername = authedEmail.includes('@school.internal') ? authedEmail.replace('@school.internal', '') : authedEmail.split('@')[0];
+
+                // 1. Check if Admin
+                let isAdmin = (verifiedUser.type === 'admin');
+                try {
+                    const adminRef = doc(db, `${BASE_PATH}/settings`, ADMIN_AUTH_DOC_ID);
+                    const adminSnap = await getDoc(adminRef);
+                    if (adminSnap.exists()) {
+                        const adminData = adminSnap.data();
+                        const adminEmail = (adminData.email || '').toLowerCase();
+                        const adminAccounts = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminData.admins) ? adminData.admins : []);
+                        if (adminEmail === authedEmail || adminAccounts.some((a) => (a.email || '').toLowerCase() === authedEmail && a.isActive !== false)) {
+                            isAdmin = true;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Admin check notice:', e);
+                }
+
+                if (isAdmin) {
+                    window.AppSession?.startAdmin({ name: verifiedUser.displayName, email: authedEmail });
+                    window.location.href = 'official.html';
+                    return;
+                }
+
+                // 2. Check Staff Access
+                try {
+                    let staffAccessDoc = await getDoc(doc(db, `${BASE_PATH}/staffAccess`, authedEmail));
+                    if (!staffAccessDoc.exists() && authedUsername) {
+                        staffAccessDoc = await getDoc(doc(db, `${BASE_PATH}/staffAccess`, authedUsername));
+                    }
+
+                    if (staffAccessDoc.exists() && staffAccessDoc.data()?.isActive !== false) {
+                        const activeCollector = staffAccessDoc.data();
+                        const collectorKey = authedEmail;
+                        const dutyClasses = Array.isArray(activeCollector.dutyClasses) && activeCollector.dutyClasses.length
+                            ? activeCollector.dutyClasses.filter(Boolean)
+                            : (Array.isArray(activeCollector.assignedClasses) ? activeCollector.assignedClasses.filter(Boolean) : []);
+                        const staffAccess = {
+                            collection: activeCollector.canCollect === true,
+                            worksheet: activeCollector.canAccessWorksheet === true,
+                            result: activeCollector.canManageResults === true,
+                            attendance: activeCollector.canAccessAttendance === true,
+                            academicPlan: activeCollector.canAccessAcademicPlan === true,
+                            studentActivity: activeCollector.canAccessActivity === true,
+                            classroomEvaluation: activeCollector.canAccessEvaluation === true,
+                            evaluation: activeCollector.canAccessEvaluation === true,
+                            admin: activeCollector.canAccessAdmin === true,
+                            canAccessAdmin: activeCollector.canAccessAdmin === true,
+                            actLikeSuperAdmin: activeCollector.actLikeSuperAdmin === true,
+                            dutyClasses,
+                            staffId: activeCollector.staffId || '',
+                            name: activeCollector.name || verifiedUser.displayName || '',
+                            phone: activeCollector.phone || '',
+                            role: activeCollector.role || activeCollector.type || 'Staff',
+                            type: activeCollector.type || 'Staff',
+                            photo: activeCollector.photo || '',
+                            source: 'staff',
+                            userKey: collectorKey,
+                            loginId: authedUsername || userLogin
+                        };
+                        window.AppSession?.startStaff(activeCollector.name || verifiedUser.displayName || '', collectorKey, staffAccess);
+
+                        const officialSessionObj = {
+                            id: activeCollector.staffId || '',
+                            name: activeCollector.name || verifiedUser.displayName || '',
+                            username: collectorKey,
+                            email: authedEmail,
+                            phone: activeCollector.phone || '',
+                            role: activeCollector.role || activeCollector.type || 'Staff',
+                            type: activeCollector.type || 'Staff',
+                            photo: activeCollector.photo || '',
+                            dutyClasses,
+                            canAccessAdmin: activeCollector.canAccessAdmin === true,
+                            actLikeSuperAdmin: activeCollector.actLikeSuperAdmin === true,
+                            canCollect: activeCollector.canCollect === true,
+                            canAccessWorksheet: activeCollector.canAccessWorksheet === true,
+                            canManageResults: activeCollector.canManageResults === true,
+                            canAccessAttendance: activeCollector.canAccessAttendance === true,
+                            canAccessAcademicPlan: activeCollector.canAccessAcademicPlan === true,
+                            canAccessActivity: activeCollector.canAccessActivity === true,
+                            canAccessEvaluation: activeCollector.canAccessEvaluation === true,
+                            source: 'staff',
+                            access: staffAccess
+                        };
+                        localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
+                        window.location.href = 'official.html';
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Staff access notice:', e);
+                }
+
+                // If authenticated and in verified staff record
+                if (verifiedUser.data) {
+                    const staffData = verifiedUser.data;
+                    const staffDutyClasses = Array.isArray(staffData.dutyClasses) && staffData.dutyClasses.length
+                        ? staffData.dutyClasses.filter(Boolean)
+                        : (Array.isArray(staffData.assignedClasses) ? staffData.assignedClasses.filter(Boolean) : []);
+                    const staffAccess = {
+                        collection: staffData.canCollect === true,
+                        worksheet: staffData.canAccessWorksheet !== false,
+                        result: staffData.canManageResults === true,
+                        attendance: staffData.canAccessAttendance === true,
+                        academicPlan: staffData.canAccessAcademicPlan === true,
+                        studentActivity: staffData.canAccessActivity === true,
+                        classroomEvaluation: staffData.canAccessEvaluation === true,
+                        evaluation: staffData.canAccessEvaluation === true,
+                        admin: staffData.canAccessAdmin === true,
+                        canAccessAdmin: staffData.canAccessAdmin === true,
+                        actLikeSuperAdmin: staffData.actLikeSuperAdmin === true,
+                        dutyClasses: staffDutyClasses,
+                        staffId: staffData.id || '',
+                        name: staffData.name || '',
+                        role: staffData.role || 'Staff',
+                        type: staffData.type || 'Staff',
+                        phone: staffData.phone || '',
+                        photo: staffData.photo || '',
+                        source: 'staff',
+                        userKey: authedEmail,
+                        loginId: authedUsername || userLogin
+                    };
+                    window.AppSession?.startStaff(staffData.name || '', authedEmail, staffAccess);
+
+                    const officialSessionObj = {
+                        id: staffData.id || '',
+                        name: staffData.name || '',
+                        username: authedUsername || authedEmail,
+                        email: staffData.email || authedEmail,
+                        phone: staffData.phone || '',
+                        role: staffData.role || 'Staff',
+                        type: staffData.type || 'Staff',
+                        photo: staffData.photo || '',
+                        dutyClasses: staffDutyClasses,
+                        canAccessAdmin: staffData.canAccessAdmin === true,
+                        actLikeSuperAdmin: staffData.actLikeSuperAdmin === true,
+                        canCollect: staffData.canCollect === true,
+                        canAccessWorksheet: staffData.canAccessWorksheet !== false,
+                        canManageResults: staffData.canManageResults === true,
+                        canAccessAttendance: staffData.canAccessAttendance === true,
+                        canAccessAcademicPlan: staffData.canAccessAcademicPlan === true,
+                        canAccessActivity: staffData.canAccessActivity === true,
+                        canAccessEvaluation: staffData.canAccessEvaluation === true,
+                        source: 'staff',
+                        access: staffAccess
+                    };
+                    localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
+                    window.location.href = 'official.html';
+                    return;
+                }
+
+                showLoginMessage('Incorrect credentials or account not active.');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                }
+            } catch (err) {
+                console.error('Universal login error:', err);
+                showLoginMessage('Login failed: ' + (err.message || 'Invalid credentials.'));
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                }
+            }
+        };
+
+        document.getElementById('btn-verify-user')?.addEventListener('click', verifyUniversalIdentifier);
+        document.getElementById('login-username')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                verifyUniversalIdentifier();
+            }
+        });
+        document.getElementById('btn-login-submit')?.addEventListener('click', handleUniversalLoginSubmit);
+        document.getElementById('login-password')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleUniversalLoginSubmit();
+            }
+        });
+
+        document.getElementById('login-username')?.addEventListener('input', (e) => {
+            if (e.target.value.length > 60) e.target.value = e.target.value.slice(0, 60);
+        });
+        document.getElementById('login-password')?.addEventListener('input', (e) => {
+            if (e.target.value.length > 60) e.target.value = e.target.value.slice(0, 60);
+        });
+
+        const sessionNotice = window.AppSession?.consumeFlash?.();
+        if (sessionNotice) {
+            window.openLogin();
+            showLoginMessage(sessionNotice);
+        }
+        if (new URLSearchParams(window.location.search).get('addStudent') === '1') {
+            history.replaceState(null, '', window.location.pathname);
+            openStudentLoginModal();
+        }
+
+        init();

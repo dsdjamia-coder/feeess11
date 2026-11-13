@@ -1,0 +1,9 @@
+{
+  "name": "Institution Tracer",
+  "description": "Institution Tracer - Management and administrative system for academic institutions.",
+  "requestFramePermissions": ["camera"],
+  "permissions": {},
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
