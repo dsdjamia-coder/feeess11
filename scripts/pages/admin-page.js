@@ -4627,13 +4627,87 @@ window.toggleStaffStatus = async (id, nextState) => {
 };
 
 // --- 2. ADD STUDENTS ---
-window.downloadCSVTemplate = () => {
-    const csvData = "Student Name,ID/UID,Father's Name,Mother's Name,Gender,Admission Number (Adm. No.),Date of Birth,Date of Admission,Student Status,Aadhaar Number,Father's Phone Number,Mother's Phone Number,Permanent Address\n";
-    const blob = new Blob([csvData], { type: 'text/csv' });
+const BULK_TEMPLATE_HEADERS = [
+    "Student Name",
+    "ID/UID",
+    "Father's Name",
+    "Mother's Name",
+    "Gender",
+    "Admission Number (Adm. No.)",
+    "Date of Birth",
+    "Date of Admission",
+    "Student Status",
+    "Aadhaar Number",
+    "Father's Phone Number",
+    "Mother's Phone Number",
+    "Permanent Address"
+];
+
+window.downloadBulkTemplate = (format = 'csv') => {
+    const ext = String(format || 'csv').toLowerCase().replace(/^\./, '');
+    if (ext === 'xlsx' || ext === 'xls') {
+        if (typeof XLSX === 'undefined') {
+            alert('Spreadsheet library is still loading. Please try again in a moment.');
+            return;
+        }
+        const ws = XLSX.utils.aoa_to_sheet([BULK_TEMPLATE_HEADERS]);
+        ws['!cols'] = BULK_TEMPLATE_HEADERS.map((h) => ({ wch: Math.max(h.length + 4, 16) }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Students');
+        XLSX.writeFile(wb, `student_upload_template.${ext}`, { bookType: ext });
+        return;
+    }
+
+    const csvLine = BULK_TEMPLATE_HEADERS.map((h) => (/[",\n]/.test(h) ? `"${h.replace(/"/g, '""')}"` : h)).join(',') + '\n';
+    const blob = new Blob(['\uFEFF' + csvLine], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.setAttribute('hidden', ''); a.setAttribute('href', url); a.setAttribute('download', 'student_upload_template.csv');
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', 'student_upload_template.csv');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
 };
+
+window.downloadCSVTemplate = () => window.downloadBulkTemplate('csv');
+
+(() => {
+    const dropdown = document.getElementById('bulk-template-dropdown');
+    const menuBtn = document.getElementById('bulk-template-menu-btn');
+    const menu = document.getElementById('bulk-template-menu');
+    const chevron = document.getElementById('bulk-template-chevron');
+    if (!dropdown || !menuBtn || !menu) return;
+
+    const setMenuOpen = (isOpen) => {
+        menu.classList.toggle('hidden', !isOpen);
+        menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (chevron) chevron.classList.toggle('rotate-180', isOpen);
+    };
+
+    menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setMenuOpen(menu.classList.contains('hidden'));
+    });
+
+    menu.querySelectorAll('.bulk-template-option').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const fmt = btn.getAttribute('data-template-format') || 'csv';
+            setMenuOpen(false);
+            window.downloadBulkTemplate(fmt);
+        });
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!dropdown.contains(e.target)) setMenuOpen(false);
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') setMenuOpen(false);
+    });
+})();
 
 const dropZone = document.getElementById('excel-drop-zone'), fileInput = document.getElementById('excel-file-input');
 let excelParsedData = [];
@@ -5315,21 +5389,193 @@ function rebuildAllExcelDataAndRender() {
     renderExcelPreviewTable();
 }
 
+function decodeCsvBuffer(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    let text = '';
+    if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+        text = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+    } else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+        text = new TextDecoder('utf-16be').decode(bytes.subarray(2));
+    } else if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+        text = new TextDecoder('utf-8').decode(bytes.subarray(3));
+    } else {
+        text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+        if (text.includes('\u0000')) {
+            text = new TextDecoder('utf-16le').decode(bytes);
+        }
+    }
+    return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function detectCsvDelimiter(text) {
+    const lines = text.split('\n');
+    const headerLine = lines.find((line) => line.trim() !== '') || '';
+    const counts = { ',': 0, ';': 0, '\t': 0 };
+    let inQuotes = false;
+    for (let i = 0; i < headerLine.length; i += 1) {
+        const ch = headerLine[i];
+        if (ch === '"') {
+            if (inQuotes && headerLine[i + 1] === '"') {
+                i += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (!inQuotes && Object.prototype.hasOwnProperty.call(counts, ch)) {
+            counts[ch] += 1;
+        }
+    }
+    if (counts[';'] > counts[','] && counts[';'] >= counts['\t']) return ';';
+    if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) return '\t';
+    return ',';
+}
+
+function parseCsvMatrix(text, delimiter) {
+    const rows = [];
+    let currentRow = [];
+    let currentCell = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (text[i + 1] === '"') {
+                    currentCell += '"';
+                    i += 1;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                currentCell += ch;
+            }
+        } else if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === delimiter) {
+            currentRow.push(currentCell);
+            currentCell = '';
+        } else if (ch === '\n') {
+            currentRow.push(currentCell);
+            if (currentRow.some((cell) => String(cell).trim() !== '')) {
+                rows.push(currentRow);
+            }
+            currentRow = [];
+            currentCell = '';
+        } else {
+            currentCell += ch;
+        }
+    }
+
+    if (currentCell.length > 0 || currentRow.length > 0) {
+        currentRow.push(currentCell);
+        if (currentRow.some((cell) => String(cell).trim() !== '')) {
+            rows.push(currentRow);
+        }
+    }
+    return rows;
+}
+
+function parseCsvArrayBufferToObjects(arrayBuffer) {
+    const text = decodeCsvBuffer(arrayBuffer);
+    if (!text.trim()) return [];
+    const delimiter = detectCsvDelimiter(text);
+    const matrix = parseCsvMatrix(text, delimiter);
+    if (matrix.length < 2) return [];
+
+    const rawHeaders = matrix[0];
+    const usedHeaders = new Set();
+    const headers = rawHeaders.map((h, idx) => {
+        const cleaned = String(h || '').trim();
+        let candidate = cleaned || `Column ${idx + 1}`;
+        let suffix = 2;
+        while (usedHeaders.has(candidate)) {
+            candidate = `${cleaned || `Column ${idx + 1}`} (${suffix})`;
+            suffix += 1;
+        }
+        usedHeaders.add(candidate);
+        return candidate;
+    });
+
+    const objects = [];
+    for (let r = 1; r < matrix.length; r += 1) {
+        const cells = matrix[r];
+        const rowObj = {};
+        let hasAnyValue = false;
+        headers.forEach((header, idx) => {
+            const val = cells[idx] !== undefined && cells[idx] !== null ? String(cells[idx]).trim() : '';
+            if (val !== '') hasAnyValue = true;
+            rowObj[header] = val;
+        });
+        if (hasAnyValue) objects.push(rowObj);
+    }
+    return objects;
+}
+
+function formatSpreadsheetCellValue(val) {
+    if (val === undefined || val === null) return '';
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        return normalizeToIsoDate(val);
+    }
+    return String(val).trim();
+}
+
 function handleExcelFile(file) {
     const selectedBulkClass = (document.getElementById('bulk-upload-class')?.value || '').toUpperCase().trim();
-    if(!selectedBulkClass) {
+    if (!selectedBulkClass) {
         alert('Please select a target class first.');
-        fileInput.value = '';
+        if (fileInput) fileInput.value = '';
         return;
     }
-    document.getElementById('excel-file-name').textContent = file.name;
+
+    const fileName = String(file?.name || '');
+    const ext = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+    const mime = String(file?.type || '').toLowerCase();
+    const isCsv = ext === 'csv' || (!ext && (mime.includes('csv') || mime === 'text/plain'));
+    const isExcel = !isCsv && (ext === 'xlsx' || ext === 'xls' || mime.includes('spreadsheetml') || mime.includes('ms-excel'));
+
+    if (!isCsv && !isExcel) {
+        alert('Unsupported file format. Please upload a .xlsx, .xls, or .csv file.');
+        if (fileInput) fileInput.value = '';
+        return;
+    }
+
+    document.getElementById('excel-file-name').textContent = fileName;
+    const fileIconEl = document.getElementById('excel-file-icon');
+    if (fileIconEl) {
+        fileIconEl.className = isCsv
+            ? 'fas fa-file-csv text-blue-600 text-lg'
+            : 'fas fa-file-excel text-emerald-600 text-lg';
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
         try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, {type: 'array', cellDates: true});
-            const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {defval: ""});
-            if(rawData.length === 0) return alert("File is empty.");
+            let rawData = [];
+            if (isCsv) {
+                rawData = parseCsvArrayBufferToObjects(e.target.result);
+            } else {
+                if (typeof XLSX === 'undefined') {
+                    alert('Spreadsheet library is still loading. Please try again in a moment.');
+                    if (fileInput) fileInput.value = '';
+                    return;
+                }
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                    alert('No worksheets found in the uploaded file.');
+                    if (fileInput) fileInput.value = '';
+                    return;
+                }
+                const sheetRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+                rawData = sheetRows.filter((row) =>
+                    Object.values(row).some((val) => val !== undefined && val !== null && String(val).trim() !== '')
+                );
+            }
+
+            if (rawData.length === 0) {
+                alert('File is empty or has no student data rows.');
+                if (fileInput) fileInput.value = '';
+                return;
+            }
 
             const normalizeHeader = (value = '') => value.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
             const aliasMap = {
@@ -5378,7 +5624,7 @@ function handleExcelFile(file) {
             excelWorkingRows = rawData.map(rawRow => {
                 const row = {};
                 excelColumns.forEach(c => {
-                    row[c.id] = rawRow[c.header] !== undefined && rawRow[c.header] !== null ? String(rawRow[c.header]).trim() : '';
+                    row[c.id] = formatSpreadsheetCellValue(rawRow[c.header]);
                 });
                 return row;
             });
@@ -5391,10 +5637,15 @@ function handleExcelFile(file) {
             document.getElementById('excel-preview-area').classList.remove('hidden');
             document.getElementById('upload-progress-bar').classList.add('hidden');
             document.getElementById('upload-status-text').textContent = "Ready to upload";
-        } catch(err) {
-            console.error("Error parsing Excel file:", err);
+        } catch (err) {
+            console.error("Error parsing spreadsheet file:", err);
             alert("Error reading file: " + (err.message || err));
+            if (fileInput) fileInput.value = '';
         }
+    };
+    reader.onerror = () => {
+        alert('Failed to read the selected file. Please try again.');
+        if (fileInput) fileInput.value = '';
     };
     reader.readAsArrayBuffer(file);
 }

@@ -868,9 +868,34 @@
                 
 
                 <div class="card p-5 rounded-xl shadow-sm border-blue-200 bg-blue-50/30">
-                    <div class="flex justify-between items-center mb-4 border-b border-blue-200 pb-2">
-                        <h2 class="text-xl font-bold text-blue-900"><i class="fas fa-file-excel text-green-600 mr-2"></i>Bulk Upload (CSV/Excel)</h2>
-                        <button onclick="window.downloadCSVTemplate()" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2"><i class="fas fa-download text-blue-600"></i> Download CSV Template</button>
+                    <div class="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-blue-200 pb-3">
+                        <h2 class="text-xl font-bold text-blue-900 flex items-center flex-wrap gap-2">
+                            <i class="fas fa-file-excel text-green-600"></i>
+                            <span>Bulk Upload</span>
+                            <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">Excel (.xlsx, .xls) &amp; CSV (.csv)</span>
+                        </h2>
+                        <div class="relative inline-block text-left" id="bulk-template-dropdown">
+                            <button type="button" id="bulk-template-menu-btn" aria-haspopup="true" aria-expanded="false" class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 cursor-pointer transition">
+                                <i class="fas fa-download text-blue-600"></i>
+                                <span>Download Template</span>
+                                <i class="fas fa-chevron-down text-xs text-gray-500 transition-transform" id="bulk-template-chevron"></i>
+                            </button>
+                            <div id="bulk-template-menu" role="menu" class="hidden absolute right-0 mt-2 w-60 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-40">
+                                <div class="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">Choose Template Format</div>
+                                <button type="button" role="menuitem" data-template-format="xlsx" class="bulk-template-option w-full text-left px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                    <span class="flex items-center gap-2.5"><i class="fas fa-file-excel text-emerald-600 w-4 text-center"></i><span>Excel Workbook</span></span>
+                                    <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">.xlsx</span>
+                                </button>
+                                <button type="button" role="menuitem" data-template-format="xls" class="bulk-template-option w-full text-left px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                    <span class="flex items-center gap-2.5"><i class="fas fa-file-excel text-teal-600 w-4 text-center"></i><span>Excel 97-2003</span></span>
+                                    <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">.xls</span>
+                                </button>
+                                <button type="button" role="menuitem" data-template-format="csv" class="bulk-template-option w-full text-left px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                    <span class="flex items-center gap-2.5"><i class="fas fa-file-csv text-blue-600 w-4 text-center"></i><span>CSV (Comma Separated)</span></span>
+                                    <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">.csv</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                     <p class="text-sm text-gray-600 mb-4">Select target <b>Class</b> before uploading. Header variations such as <b>DOB</b>, <b>Adm. Date</b>, <b>Adm_No</b>, etc. and dates in <b>DD-MM-YYYY</b> format are automatically detected and converted.</p>
                     <div class="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -885,13 +910,18 @@
                             <span>Academic Year: <span id="bulk-upload-year-badge" class="font-black text-indigo-700">--</span></span>
                         </div>
                     </div>
-                    <div class="upload-area max-w-2xl mx-auto my-2" id="excel-drop-zone"><input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden"><i class="fas fa-cloud-upload-alt text-4xl text-blue-400 mb-3"></i><p class="font-semibold text-gray-700">Click to select or drag and drop CSV/Excel file here</p></div>
+                    <div class="upload-area max-w-2xl mx-auto my-2" id="excel-drop-zone">
+                        <input type="file" id="excel-file-input" accept=".xlsx,.xls,.csv,text/csv,application/csv,text/comma-separated-values,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-blue-400 mb-3"></i>
+                        <p class="font-semibold text-gray-700">Click to select or drag and drop Excel / CSV file here</p>
+                        <p class="text-xs text-slate-500 mt-1.5 font-medium">Supported formats: <span class="font-mono font-bold text-slate-700">.xlsx</span>, <span class="font-mono font-bold text-slate-700">.xls</span>, <span class="font-mono font-bold text-slate-700">.csv</span></p>
+                    </div>
                     <div id="excel-preview-area" class="mt-4 hidden p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
                         <!-- Top Header & Primary Action Toolbar -->
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                             <div>
                                 <div class="flex items-center gap-2">
-                                    <i class="fas fa-file-excel text-emerald-600 text-lg"></i>
+                                    <i id="excel-file-icon" class="fas fa-file-excel text-emerald-600 text-lg"></i>
                                     <span class="font-bold text-slate-800 text-sm sm:text-base break-all" id="excel-file-name">filename.csv</span>
                                 </div>
                                 <div class="text-xs text-slate-500 mt-0.5">Review data before importing into target class</div>
