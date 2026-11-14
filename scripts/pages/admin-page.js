@@ -15396,6 +15396,21 @@ document.getElementById('update-admin-credentials-btn')?.addEventListener('click
             }
             const nextLegacyEmail = legacyEmail === oldEmail ? nextEmail : legacyEmail;
             await setDoc(adminRef, buildAdminAuthPayload(nextLegacyEmail, nextAdmins), { merge: true });
+            await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), {
+                adminProfile: {
+                    email: nextLegacyEmail,
+                    username: nextLegacyEmail.split('@')[0],
+                    name: authUser.displayName || 'Institution Administrator',
+                    admins: nextAdmins
+                        .filter((acc) => acc && acc.isActive !== false && acc.email)
+                        .map((acc) => ({
+                            email: normalizeEmail(acc.email),
+                            username: normalizeEmail(acc.email).split('@')[0],
+                            name: acc.name || 'Institution Administrator',
+                            isActive: true
+                        }))
+                }
+            }, { merge: true }).catch(() => {});
             currentAdminEmail = nextEmail;
         }
 
@@ -16844,11 +16859,20 @@ onAuthStateChanged(auth, async (user) => {
         if (snap.exists()) {
             const aData = snap.data();
             const aEmail = normalizeEmail(aData.email || currentAdminEmail);
+            const publicAdmins = (SINGLE_ADMIN_MODE ? [] : (Array.isArray(aData.admins) ? aData.admins : []))
+                .filter((acc) => acc && acc.isActive !== false && acc.email)
+                .map((acc) => ({
+                    email: normalizeEmail(acc.email),
+                    username: acc.username || normalizeEmail(acc.email).split('@')[0],
+                    name: acc.name || 'Institution Administrator',
+                    isActive: true
+                }));
             setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), {
                 adminProfile: {
                     email: aEmail,
                     username: aData.username || aEmail.split('@')[0],
-                    name: aData.name || 'Institution Administrator'
+                    name: aData.name || 'Institution Administrator',
+                    admins: publicAdmins
                 }
             }, { merge: true }).catch(() => {});
         }
@@ -17147,14 +17171,14 @@ onAuthStateChanged(auth, async (user) => {
             document.getElementById('footer-inst-name').textContent = d.appName || 'Institution Name';
             renderVersionInfo();
             document.getElementById('app-subtitle-header').textContent = d.appSubtitle || 'Institute Management';
-            const effectiveLogoUrl = rememberInstitutionLogo(d.logoUrl || '') || 'assets/images/logo.png';
+            const effectiveLogoUrl = rememberInstitutionLogo(d.logoUrl || '') || '/assets/images/logo.png';
             ['admin-header-logo', 'admin-loader-logo'].forEach((id) => {
                 const logoEl = document.getElementById(id);
                 if (!logoEl) return;
                 logoEl.src = effectiveLogoUrl;
                 logoEl.onerror = () => {
                     logoEl.onerror = null;
-                    logoEl.src = 'assets/images/logo.png';
+                    logoEl.src = '/assets/images/logo.png';
                 };
             });
             const setValueIfExists = (id, value = '') => {

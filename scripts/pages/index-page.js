@@ -618,24 +618,16 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
                 setTimeout(() => { fitHeroTitle(); }, 50);
 
-                if (conf.logoUrl) {
-                    const splashLogo = document.getElementById('splash-logo-img');
-                    if (splashLogo) splashLogo.src = conf.logoUrl;
-                    const heroLogo = document.getElementById('hero-logo-img');
-                    if (heroLogo) heroLogo.src = conf.logoUrl;
-                    const headerLogo = document.getElementById('header-logo');
-                    if (headerLogo) {
-                        headerLogo.src = conf.logoUrl;
-                        headerLogo.style.opacity = '1';
-                    }
-                    const loginModalLogo = document.getElementById('login-modal-logo');
-                    const loginModalLogoFallback = document.getElementById('login-modal-logo-fallback');
-                    if (loginModalLogo) {
-                        loginModalLogo.src = conf.logoUrl;
-                        loginModalLogo.classList.remove('hidden');
-                        loginModalLogoFallback?.classList.add('hidden');
-                    }
-                }
+                const effectiveLogo = sanitizeUrl(conf.logoUrl || '') || '/assets/images/logo.png';
+                ['splash-logo-img', 'hero-logo-img', 'header-logo', 'login-modal-logo'].forEach((id) => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.src = effectiveLogo;
+                    el.classList.remove('hidden');
+                    el.style.display = '';
+                    el.style.opacity = '1';
+                });
+                document.getElementById('login-modal-logo-fallback')?.classList.add('hidden');
                 
                 renderVersionInfo();
                 populateClassDropdown(conf);
@@ -976,6 +968,11 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
         const loginModalLogoEl = document.getElementById('login-modal-logo');
         const loginModalLogoFallbackEl = document.getElementById('login-modal-logo-fallback');
         loginModalLogoEl?.addEventListener('error', () => {
+            const currentSrc = loginModalLogoEl.getAttribute('src') || '';
+            if (currentSrc !== '/assets/images/logo.png') {
+                loginModalLogoEl.src = '/assets/images/logo.png';
+                return;
+            }
             loginModalLogoEl.classList.add('hidden');
             loginModalLogoFallbackEl?.classList.remove('hidden');
         });
@@ -1091,6 +1088,48 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             showLoginMessage('');
         });
 
+        const normalizeAdmKey = (value = '') => String(value || '').trim().toLowerCase().replace(/[\\/\s]+/g, '_');
+
+        const ensureVerificationRegistriesLoaded = async () => {
+            const fetches = [];
+            if (!loaded.config) {
+                fetches.push(
+                    getDoc(doc(db, `${BASE_PATH}/settings`, 'config'))
+                        .then((snap) => {
+                            if (snap.exists()) globalInstitutionConfig = snap.data() || {};
+                            loaded.config = true;
+                        })
+                        .catch(() => {})
+                );
+            }
+            if (!loaded.staff) {
+                fetches.push(
+                    getDocs(collection(db, `${BASE_PATH}/staff`))
+                        .then((snap) => {
+                            cachedActiveStaff = snap.docs
+                                .map((d) => ({ id: d.id, ...d.data() }))
+                                .filter((s) => s.isActive !== false);
+                            loaded.staff = true;
+                        })
+                        .catch(() => {})
+                );
+            }
+            if (!loaded.content) {
+                fetches.push(
+                    Promise.all([
+                        getDocs(collection(db, `${BASE_PATH}/publicDirectory`)).catch(() => null),
+                        getDoc(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig')).catch(() => null),
+                        getDoc(doc(db, `${BASE_PATH}/settings`, 'pageAccess')).catch(() => null)
+                    ]).then(([dirSnap, authSnap, accessSnap]) => {
+                        if (dirSnap) directoryEntries = dirSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                        if (authSnap?.exists?.()) categoryAuthConfig = { categories: {}, ...(authSnap.data() || {}) };
+                        if (accessSnap?.exists?.()) pageAccessConfig = { categories: {}, overrides: {}, ...(accessSnap.data() || {}) };
+                    })
+                );
+            }
+            if (fetches.length > 0) await Promise.all(fetches);
+        };
+
         const verifyUniversalIdentifier = async () => {
             const userInput = document.getElementById('login-username');
             const rawInput = (userInput?.value || '').trim();
@@ -1108,104 +1147,158 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             showLoginMessage('');
 
             try {
-                const cleanAdm = rawInput.toLowerCase().replace(/[\\/\\s]+/g, '_');
-                const cleanEmail = rawInput.toLowerCase();
+                await ensureVerificationRegistriesLoaded();
+
+                const cleanLower = rawInput.toLowerCase();
+                const cleanAdm = normalizeAdmKey(rawInput);
+                const cleanEmail = cleanLower;
                 const cleanPhone = normalizePhone(rawInput);
 
                 let matched = null;
 
-                // 1. Check Student Auth Lookup (public)
-                try {
-                    let lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
-                    if (lookupSnap.exists()) {
-                        matched = {
-                            type: 'student',
-                            data: lookupSnap.data(),
-                            displayName: lookupSnap.data().name || 'Student',
-                            meta: `Student • Class ${lookupSnap.data().class || '-'} (Adm: ${lookupSnap.data().adm || rawInput})`
-                        };
-                    } else {
-                        lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, cleanAdm));
+                // 1. Strict Student Auth Lookup (exact Admission Number only)
+                if (cleanAdm) {
+                    try {
+                        let lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
                         if (lookupSnap.exists()) {
-                            matched = {
-                                type: 'student',
-                                data: lookupSnap.data(),
-                                displayName: lookupSnap.data().name || 'Student',
-                                meta: `Student • Class ${lookupSnap.data().class || '-'} (Adm: ${lookupSnap.data().adm || rawInput})`
-                            };
+                            const stData = lookupSnap.data() || {};
+                            if (stData.studentId) {
+                                matched = {
+                                    type: 'student',
+                                    data: stData,
+                                    displayName: stData.name || 'Student',
+                                    meta: `Student • Class ${stData.class || '-'} (Adm: ${stData.adm || rawInput})`
+                                };
+                            }
+                        } else {
+                            lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, cleanAdm));
+                            if (lookupSnap.exists()) {
+                                const stData = lookupSnap.data() || {};
+                                const recordAdmKey = normalizeAdmKey(stData.adm || '');
+                                if (stData.studentId && (!recordAdmKey || recordAdmKey === cleanAdm)) {
+                                    matched = {
+                                        type: 'student',
+                                        data: stData,
+                                        displayName: stData.name || 'Student',
+                                        meta: `Student • Class ${stData.class || '-'} (Adm: ${stData.adm || rawInput})`
+                                    };
+                                }
+                            }
                         }
+                    } catch (e) {
+                        console.warn('Student lookup notice:', e);
                     }
-                } catch (e) {
-                    console.warn('Student lookup notice:', e);
                 }
 
-                // 2. Check Staff Registry (from in-memory public cachedActiveStaff)
+                // 2. Strict Staff Registry Verification (active staff only)
                 if (!matched) {
                     const staffMember = (cachedActiveStaff || []).find((s) => {
                         if (!s || s.isActive === false) return false;
                         const sEmail = String(s.email || '').toLowerCase().trim();
-                        const sUsername = String(s.username || sEmail.split('@')[0] || '').toLowerCase().trim();
+                        const explicitUsernames = [
+                            s.username,
+                            s.userName,
+                            s.loginId,
+                            s.login,
+                            s.staffId
+                        ].map((val) => String(val || '').toLowerCase().trim()).filter(Boolean);
+                        if (!s.username && sEmail.includes('@')) {
+                            explicitUsernames.push(sEmail.split('@')[0]);
+                        }
                         const sPhone = normalizePhone(s.phone || '');
-                        return sEmail === cleanEmail || sUsername === cleanAdm || (cleanPhone && sPhone === cleanPhone);
+                        const isEmailMatch = Boolean(sEmail && sEmail === cleanEmail);
+                        const isUsernameMatch = explicitUsernames.some((u) => u === cleanLower || normalizeAdmKey(u) === cleanAdm);
+                        const isPhoneMatch = Boolean(
+                            cleanPhone.length >= 7 &&
+                            sPhone &&
+                            (sPhone === cleanPhone || (sPhone.length >= 10 && cleanPhone.length >= 10 && sPhone.slice(-10) === cleanPhone.slice(-10)))
+                        );
+                        return isEmailMatch || isUsernameMatch || isPhoneMatch;
                     });
 
                     if (staffMember) {
+                        const baseLoginId = (staffMember.username || staffMember.userName || staffMember.loginId || staffMember.email || cleanAdm).toLowerCase().trim();
                         const loginEmail = staffMember.email && staffMember.email.includes('@')
                             ? staffMember.email.toLowerCase().trim()
-                            : `${(staffMember.username || staffMember.email || cleanAdm).toLowerCase().trim()}@school.internal`;
+                            : `${baseLoginId}@school.internal`;
 
                         matched = {
                             type: 'staff',
                             data: staffMember,
                             displayName: staffMember.name || 'Staff Member',
                             meta: staffMember.role || staffMember.type || 'Staff Member',
-                            loginEmail: loginEmail
+                            loginEmail
                         };
                     }
                 }
 
-                // 3. Check Admin Registry
+                // 3. Strict Admin Registry Verification (no arbitrary email or hardcoded 'admin' fallback)
                 if (!matched) {
                     const adminProfile = globalInstitutionConfig?.adminProfile || {};
-                    const adminEmail = (adminProfile.email || '').toLowerCase().trim();
-                    const adminUsername = (adminProfile.username || 'admin').toLowerCase().trim();
-                    const isAdminMatch = (adminEmail && adminEmail === cleanEmail) ||
-                                         (adminUsername && adminUsername === cleanAdm) ||
-                                         cleanAdm === 'admin';
+                    const adminCandidates = [];
+                    const primaryEmail = String(adminProfile.email || '').toLowerCase().trim();
+                    const primaryUsername = String(adminProfile.username || '').toLowerCase().trim();
+                    if (primaryEmail || primaryUsername) {
+                        adminCandidates.push({
+                            email: primaryEmail,
+                            username: primaryUsername || (primaryEmail.includes('@') ? primaryEmail.split('@')[0] : ''),
+                            name: adminProfile.name || 'Institution Administrator'
+                        });
+                    }
+                    if (Array.isArray(adminProfile.admins)) {
+                        adminProfile.admins.forEach((entry) => {
+                            if (!entry || entry.isActive === false) return;
+                            const eEmail = String(entry.email || '').toLowerCase().trim();
+                            const eUsername = String(entry.username || (eEmail.includes('@') ? eEmail.split('@')[0] : '')).toLowerCase().trim();
+                            if (eEmail || eUsername) {
+                                adminCandidates.push({
+                                    email: eEmail,
+                                    username: eUsername,
+                                    name: entry.name || adminProfile.name || 'Institution Administrator'
+                                });
+                            }
+                        });
+                    }
 
-                    if (isAdminMatch) {
+                    const matchedAdmin = adminCandidates.find((candidate) => (
+                        (candidate.email && candidate.email === cleanEmail) ||
+                        (candidate.username && (candidate.username === cleanLower || normalizeAdmKey(candidate.username) === cleanAdm))
+                    ));
+
+                    if (matchedAdmin) {
                         matched = {
                             type: 'admin',
                             data: adminProfile,
-                            displayName: adminProfile.name || 'Institution Administrator',
+                            displayName: matchedAdmin.name || 'Institution Administrator',
                             meta: 'Administrator',
-                            loginEmail: adminEmail || (cleanEmail.includes('@') ? cleanEmail : `${cleanAdm}@school.internal`)
-                        };
-                    } else if (cleanEmail.includes('@')) {
-                        // Email fallback for administrative accounts
-                        matched = {
-                            type: 'admin',
-                            data: { email: cleanEmail },
-                            displayName: 'Administrator / Staff',
-                            meta: 'Account Verification',
-                            loginEmail: cleanEmail
+                            loginEmail: matchedAdmin.email || (cleanEmail.includes('@') ? cleanEmail : `${matchedAdmin.username}@school.internal`)
                         };
                     }
                 }
 
-                // 4. Check Directory Login Registry
+                // 4. Strict Directory Login Verification
                 if (!matched) {
-                    const dirMatch = (Array.isArray(directoryEntries) ? directoryEntries : []).find(e => {
-                        const u = String(e?.authMeta?.username || '').toLowerCase();
-                        return u && (u === cleanAdm || u === cleanEmail);
+                    const dirMatch = (Array.isArray(directoryEntries) ? directoryEntries : []).find((e) => {
+                        if (!e?.categoryId) return false;
+                        const authConf = normalizeCategoryAuthItem(categoryAuthConfig?.categories?.[e.categoryId] || {});
+                        if (!authConf.enabled) return false;
+                        if (pageAccessConfig?.overrides?.[e.id]?.blocked === true) return false;
+                        const usernameField = String(categoryAuthConfig?.categories?.[e.categoryId]?.usernameField || '').trim();
+                        const configuredUsername = usernameField ? String(e?.values?.[usernameField] || '').toLowerCase().trim() : '';
+                        const authUsername = String(e?.authMeta?.username || '').toLowerCase().trim();
+                        return [authUsername, configuredUsername]
+                            .filter(Boolean)
+                            .some((u) => u === cleanLower || normalizeAdmKey(u) === cleanAdm);
                     });
                     if (dirMatch) {
+                        const displayName = dirMatch.name || dirMatch.values?.name || dirMatch.values?.Name || String(dirMatch.authMeta?.usernameRaw || 'Staff Member');
+                        const resolvedUsername = String(dirMatch.authMeta?.username || cleanLower).toLowerCase().trim();
                         matched = {
                             type: 'directory',
                             data: dirMatch,
-                            displayName: dirMatch.name || String(dirMatch.authMeta?.usernameRaw || 'Staff Member'),
-                            meta: dirMatch.role || 'Staff Member',
-                            loginId: cleanEmail
+                            displayName,
+                            meta: dirMatch.role || dirMatch.values?.role || 'Staff Member',
+                            loginId: resolvedUsername
                         };
                     }
                 }

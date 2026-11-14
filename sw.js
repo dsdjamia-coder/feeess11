@@ -1,24 +1,17 @@
-const CACHE_NAME = 'institution-tracer-v3-03-03-24';
-const IMAGE_CACHE_NAME = 'institution-tracer-images-v1';
+const CACHE_NAME = 'institution-tracer-v3-04-00';
+const IMAGE_CACHE_NAME = 'institution-tracer-images-v2';
 const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './official.html',
-  './student.html',
-  './styles/main.css',
-  './scripts/shared/session-guard.js',
-  './scripts/shared/app-common.js',
-  './scripts/pages/index-page.js',
-  './scripts/pages/official-shared-bootstrap.js',
-  './scripts/pages/student-page.js',
-  './scripts/shared/receipt-service.js',
-  './worksheet.html',
-  './result.html',
-  './config/firebase-config.js',
-  './config/app-config.js',
-  './config/version.js',
-  './manifest.json',
-  './assets/images/logo.png'
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/assets/images/logo.png',
+  '/assets/images/pwa-192x192.png',
+  '/assets/images/pwa-512x512.png',
+  '/assets/images/pwa-maskable-512x512.png',
+  '/assets/images/apple-touch-icon.png',
+  '/scripts/shared/session-guard.js',
+  '/scripts/shared/page-guards.js',
+  '/scripts/shared/hub-navigation.js'
 ];
 
 const SENSITIVE_ROUTE_SUFFIXES = [
@@ -37,18 +30,25 @@ const isSameOrigin = (url) => url.origin === self.location.origin;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => {
-      return self.skipWaiting();
-    })
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await Promise.allSettled(
+        ASSETS_TO_CACHE.map(async (assetUrl) => {
+          try {
+            const response = await fetch(assetUrl, { cache: 'no-cache' });
+            if (response && response.ok) {
+              await cache.put(assetUrl, response);
+            }
+          } catch (_err) {}
+        })
+      );
+    }).then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => Promise.all(
-      cacheNames.map((cacheName) => cacheName !== CACHE_NAME ? caches.delete(cacheName) : Promise.resolve())
+      cacheNames.map((cacheName) => (cacheName !== CACHE_NAME && cacheName !== IMAGE_CACHE_NAME) ? caches.delete(cacheName) : Promise.resolve())
     ))
   );
   self.clients.claim();
@@ -187,8 +187,8 @@ self.addEventListener('message', (event) => {
     const title = String(payload.title || 'New Notification');
     const options = {
       body: String(payload.body || ''),
-      icon: payload.icon || './assets/images/logo.png',
-      badge: payload.badge || './assets/images/logo.png',
+      icon: payload.icon || '/assets/images/pwa-192x192.png',
+      badge: payload.badge || '/assets/images/pwa-192x192.png',
       tag: String(payload.tag || `notif-${Date.now()}`),
       renotify: true,
       vibrate: [200, 100, 200],

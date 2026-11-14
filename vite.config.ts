@@ -1,12 +1,48 @@
 import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const resolve = path.resolve;
+
+const copyRecursive = (srcPath: string, destPath: string) => {
+  if (!fs.existsSync(srcPath)) return;
+  const stat = fs.statSync(srcPath);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(destPath, { recursive: true });
+    for (const entry of fs.readdirSync(srcPath)) {
+      copyRecursive(path.join(srcPath, entry), path.join(destPath, entry));
+    }
+    return;
+  }
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.copyFileSync(srcPath, destPath);
+};
+
+const copyStaticAssetsPlugin = (): Plugin => ({
+  name: 'copy-static-assets',
+  closeBundle() {
+    const outDir = resolve(__dirname, 'dist');
+    if (!fs.existsSync(outDir)) return;
+
+    const staticEntries = [
+      'assets/images',
+      'manifest.json',
+      'sw.js',
+      'scripts/shared/session-guard.js',
+      'scripts/shared/page-guards.js',
+      'scripts/shared/hub-navigation.js'
+    ];
+
+    for (const relPath of staticEntries) {
+      copyRecursive(resolve(__dirname, relPath), resolve(outDir, relPath));
+    }
+  }
+});
 
 const cleanUrlsPlugin = (): Plugin => {
   const handler = (req: any, res: any, next: () => void) => {
@@ -56,7 +92,7 @@ const cleanUrlsPlugin = (): Plugin => {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss(), cleanUrlsPlugin()],
+  plugins: [react(), tailwindcss(), cleanUrlsPlugin(), copyStaticAssetsPlugin()],
   server: {
     host: '0.0.0.0',
     port: 3000,

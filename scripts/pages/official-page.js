@@ -968,7 +968,7 @@ const tryLogin = async () => {
     try {
       const cred = await signInWithEmailAndPassword(auth, username, password);
       if (cred?.user?.email && String(cred.user.email).toLowerCase() === uname) {
-        session = { name: 'Super Admin', username: cred.user.email, type: 'Admin', source: 'firebase', photo: 'assets/images/logo.png' };
+        session = { name: 'Super Admin', username: cred.user.email, type: 'Admin', source: 'firebase', photo: '/assets/images/logo.png' };
       }
     } catch (_error) {}
   }
@@ -976,7 +976,7 @@ const tryLogin = async () => {
   const adminAuthSnap = await getDoc(doc(db, `${BASE_PATH}/settings`, 'adminAuth'));
   const adminAuth = adminAuthSnap.exists() ? adminAuthSnap.data() : {};
   if (!session && String(adminAuth.email || '').toLowerCase() === uname && String(adminAuth.password || '').trim() === password) {
-    session = { name: 'Super Admin', username, type: 'Admin', source: 'legacy-admin', photo: 'assets/images/logo.png' };
+    session = { name: 'Super Admin', username, type: 'Admin', source: 'legacy-admin', photo: '/assets/images/logo.png' };
   }
 
   if (!session) {

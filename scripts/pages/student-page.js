@@ -619,7 +619,7 @@ const studentPwa = registerPortalForPwa('student', {
         const triggerPhoneSystemNotification = async (item, forceShow = false) => {
             if (!forceShow && !isPhoneNotificationEnabled()) return;
             if (!('Notification' in window) || Notification.permission !== 'granted') return;
-            const logoSrc = document.getElementById('header-logo')?.getAttribute('src') || './assets/images/logo.png';
+            const logoSrc = document.getElementById('header-logo')?.getAttribute('src') || '/assets/images/logo.png';
             const payload = {
                 title: item.title || 'New School Update',
                 body: item.message || 'Tap to view details in Student Dashboard.',
@@ -2748,7 +2748,7 @@ const studentPwa = registerPortalForPwa('student', {
 
             // Load and draw Institution Logo, Name, Reg No, and Place
             const headerLogoEl = document.getElementById('header-logo');
-            const instLogoSrc = conf.logo || conf.logoUrl || headerLogoEl?.getAttribute('src') || 'assets/images/logo.png';
+            const instLogoSrc = conf.logo || conf.logoUrl || headerLogoEl?.getAttribute('src') || '/assets/images/logo.png';
             const instLogoImg = await loadPosterImage(instLogoSrc);
 
             const instName = conf.institutionName || conf.appName || document.getElementById('id-school-name')?.textContent?.trim() || 'INSTITUTION NAME';
@@ -3015,11 +3015,11 @@ const studentPwa = registerPortalForPwa('student', {
 
                 if (!examScopedResults.length) {
                     const headerLogo = document.getElementById('header-logo')?.getAttribute('src') || '';
-                    const logo = sanitizeUrl(headerLogo) || 'assets/images/logo.png';
+                    const logo = sanitizeUrl(headerLogo) || '/assets/images/logo.png';
                     const noticeItems = getConfiguredExamNoticeItems(activeYear, classLabel);
                     container.innerHTML = `
                         <div class="rounded-2xl border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/60 px-5 py-8 text-center shadow-sm">
-                            <img src="${escapeHtml(logo)}" class="mx-auto h-24 w-24 object-contain mb-4 opacity-90" alt="Institution Logo" onerror="this.src='assets/images/logo.png'">
+                            <img src="${escapeHtml(logo)}" class="mx-auto h-24 w-24 object-contain mb-4 opacity-90" alt="Institution Logo" onerror="this.onerror=null;this.src='/assets/images/logo.png'">
                             <h3 class="text-lg font-extrabold text-indigo-900 mb-2">Results will be published here</h3>
                             <p class="text-sm font-semibold text-slate-600 leading-relaxed max-w-md mx-auto">
                                 ${escapeHtml(activeYear)} academic year results have not been published yet. After each exam is completed, these exam results will be available here.
@@ -3065,7 +3065,7 @@ const studentPwa = registerPortalForPwa('student', {
 
                     const conf = window.institutionConfig || {};
                     const headerLogoEl = document.getElementById('header-logo');
-                    const instLogoSrc = conf.logo || conf.logoUrl || headerLogoEl?.getAttribute('src') || 'assets/images/logo.png';
+                    const instLogoSrc = conf.logo || conf.logoUrl || headerLogoEl?.getAttribute('src') || '/assets/images/logo.png';
                     const instName = conf.institutionName || conf.appName || document.getElementById('id-school-name')?.textContent?.trim() || 'INSTITUTION NAME';
                     const rawReg = conf.regNo || conf.regNumber || conf.registrationNumber || document.getElementById('header-regno')?.textContent?.trim() || '';
                     const cleanRegNo = String(rawReg).replace(/^(reg(istration)?\s*(no)?[:.]*\s*)+/gi, '').trim();

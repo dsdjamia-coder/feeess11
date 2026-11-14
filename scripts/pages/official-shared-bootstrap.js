@@ -952,12 +952,12 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
         } catch (_e) {}
       }
       const institutionName = resolveInstitutionName(conf) || 'Official Portal';
-      const effectiveLogo = rememberInstitutionLogo(conf.logoUrl || '') || 'assets/images/logo.png';
+      const effectiveLogo = rememberInstitutionLogo(conf.logoUrl || '') || '/assets/images/logo.png';
       ['header-logo', 'official-login-modal-logo'].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.src = effectiveLogo;
-        el.onerror = () => { el.onerror = null; el.src = 'assets/images/logo.png'; };
+        el.onerror = () => { el.onerror = null; el.src = '/assets/images/logo.png'; };
       });
       const titleEl = document.getElementById('header-title');
       if (titleEl) titleEl.textContent = institutionName;
@@ -1029,7 +1029,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
     const renderKeyValueGrid = (obj = {}, skipKeys = []) => renderEntriesGrid(getVisibleEntries(obj, skipKeys).map(([key, value]) => ({ key, label: toLabel(key), value })));
     const getPhoto = (obj = {}) => {
         const rawPhoto = extractStudentPhoto(obj) || obj.logo || '';
-        return (rawPhoto && rawPhoto.startsWith('data:')) ? rawPhoto : (sanitizeUrl(rawPhoto) || 'assets/images/logo.png');
+        return (rawPhoto && rawPhoto.startsWith('data:')) ? rawPhoto : (sanitizeUrl(rawPhoto) || '/assets/images/logo.png');
     };
     const getStudentClass = (student = {}) => String(student.class || '--').trim() || '--';
     const getStudentGender = (student = {}) => String(student.gender || '').trim();
@@ -3384,7 +3384,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
         <div class="space-y-4">
           <div class="flex flex-col sm:flex-row items-center sm:items-start gap-4 p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white shadow-md">
             <div class="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-white/20 bg-slate-800 flex-shrink-0 shadow">
-              <img src="${escapeHtml(photoUrl)}" alt="Member" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='assets/images/logo.png'">
+              <img src="${escapeHtml(photoUrl)}" alt="Member" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='/assets/images/logo.png'">
             </div>
             <div>
               <h3 class="text-xl font-extrabold text-white">${escapeHtml(entry.values?.name || entry.values?.title || 'Member Profile')}</h3>

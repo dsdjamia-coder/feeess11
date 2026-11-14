@@ -109,7 +109,7 @@ export const initGlobalModalScrollLock = () => {
 export const registerServiceWorker = () => {
     if (!('serviceWorker' in navigator)) return;
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').then((registration) => {
+        navigator.serviceWorker.register('/sw.js').then((registration) => {
             registration.addEventListener('updatefound', () => {
                 const installingWorker = registration.installing;
                 if (installingWorker) {
@@ -144,12 +144,13 @@ const setLink = (id, value, prefix = '') => {
     if (safeValue) el.href = safeValue;
 };
 
-const DEFAULT_LOGO_URL = 'assets/images/logo.png';
+const DEFAULT_LOGO_URL = '/assets/images/logo.png';
 const LOGO_CACHE_KEY = 'institution_logo_url_v1';
 const FAST_LOGO_IDS = [
     'splash-logo-img',
     'header-logo',
     'hero-logo-img',
+    'login-modal-logo',
     'admin-loader-logo',
     'admin-header-logo',
     'header-logo-right',
@@ -197,11 +198,19 @@ const setLogo = (ids, logoUrl, { useCachedFallback = false } = {}) => {
         const el = document.getElementById(id);
         if (!el) return;
         if (el.getAttribute('src') !== effectiveLogo) el.src = effectiveLogo;
+        el.classList.remove('hidden');
+        el.style.display = '';
         el.style.opacity = '1';
         el.onerror = () => {
-            el.onerror = null;
-            el.src = DEFAULT_LOGO_URL;
-            el.style.opacity = '1';
+            const currentSrc = el.getAttribute('src') || '';
+            if (currentSrc !== DEFAULT_LOGO_URL) {
+                el.src = DEFAULT_LOGO_URL;
+                el.classList.remove('hidden');
+                el.style.display = '';
+                el.style.opacity = '1';
+            } else {
+                el.onerror = null;
+            }
         };
     });
 };
@@ -530,6 +539,12 @@ export const applyInstitutionBranding = (conf = {}, options = {}) => {
 
     rememberInstitutionLogo(conf.logoUrl || '');
     setLogo(logoIds, conf.logoUrl);
+    const effectiveFavicon = normalizeLogoUrl(conf.logoUrl) || DEFAULT_LOGO_URL;
+    document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((linkEl) => {
+        if (linkEl.getAttribute('href') !== effectiveFavicon) {
+            linkEl.setAttribute('href', effectiveFavicon);
+        }
+    });
 
     if (updateDocumentTitle) {
         document.title = documentTitleSuffix ? `${appName} - ${documentTitleSuffix}` : appName;

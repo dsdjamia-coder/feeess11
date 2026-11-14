@@ -1,25 +1,31 @@
 {
-  "id": "./",
+  "id": "/",
   "name": "Institution Tracer",
   "short_name": "InstTracer",
   "description": "Official Institution Tracer Management Application",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f3f4f6",
   "theme_color": "#2563eb",
   "icons": [
     {
-      "src": "assets/images/logo.png",
+      "src": "/assets/images/pwa-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "assets/images/logo.png",
+      "src": "/assets/images/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/assets/images/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
