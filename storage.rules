@@ -29,14 +29,13 @@ service firebase.storage {
 
     // Student photos and document submissions
     match /institutions/{institutionId}/students/{allPaths=**} {
-      allow read: if isAuthenticated();
+      allow read: if isSignedIn();
       allow write: if isAuthenticated() && isValidImage();
     }
 
-    // Fallback for application files
+    // Deny all other arbitrary paths by default
     match /{allPaths=**} {
-      allow read: if true;
-      allow write: if isAuthenticated() && isValidImage();
+      allow read, write: if false;
     }
   }
 }

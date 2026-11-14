@@ -1,5 +1,5 @@
-import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { doc, onSnapshot, collection, getDoc, getDocs, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { doc, onSnapshot, collection, getDoc, getDocs, setDoc, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
 import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, normalizePhone, registerServiceWorker, renderVersionInfo, sanitizePhone, sanitizeUrl } from '../shared/app-common.js';
@@ -71,14 +71,14 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     metaText = `Class ${escapeHtml(account.class || '--')} • Adm: ${escapeHtml(account.adm || '--')}`;
                     avatarIcon = 'fa-user-graduate';
                     avatarBg = 'bg-blue-100 text-blue-700';
-                } else if (isStaff) {
+                } else if (isStaff || account.role === 'directory') {
                     roleBadgeHtml = `<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">${escapeHtml(account.roleTitle || 'Staff')}</span>`;
-                    metaText = escapeHtml(account.email || 'Staff Portal Access');
+                    metaText = escapeHtml(account.email || account.loginId || 'Staff Portal Access');
                     avatarIcon = 'fa-chalkboard-user';
                     avatarBg = 'bg-emerald-100 text-emerald-700';
                 } else if (isAdmin) {
                     roleBadgeHtml = '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">Super Admin</span>';
-                    metaText = 'Full Institutional Administration';
+                    metaText = escapeHtml(account.email || 'Full Institutional Administration');
                     avatarIcon = 'fa-user-shield';
                     avatarBg = 'bg-purple-100 text-purple-700';
                 }
@@ -109,6 +109,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
         const renderSavedStudents = renderSavedAccounts;
 
         let globalInstitutionConfig = {};
+        let isOpeningLoginFlow = false;
         const openSavedStudentModal = () => {
             renderSavedAccounts();
             document.getElementById('saved-student-modal').style.display = 'flex';
@@ -125,18 +126,189 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             const sessionNotice = window.AppSession?.consumeFlash?.();
             if (sessionNotice) showLoginMessage(sessionNotice);
         };
-        window.openLogin = () => {
-            if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
-                window.location.href = 'official.html';
-                return;
+        const openStep2ForRememberedAccount = (account = {}, noticeMessage = '') => {
+            const modalEl = document.getElementById('login-modal');
+            const savedModalEl = document.getElementById('saved-student-modal');
+            if (savedModalEl) savedModalEl.style.display = 'none';
+            if (modalEl) modalEl.style.display = 'flex';
+            setMobileMenuState(false);
+
+            const isAdminAcc = account.role === 'admin';
+            const cleanEmail = String(account.email || '').trim().toLowerCase();
+            const matchedStaff = !isAdminAcc
+                ? (allStaffSnapshotRecords || []).find((s) =>
+                    (account.staffId && s.id === account.staffId)
+                    || (cleanEmail && String(s.email || '').trim().toLowerCase() === cleanEmail)
+                )
+                : null;
+
+            verifiedUser = {
+                type: isAdminAcc ? 'admin' : 'staff',
+                data: isAdminAcc ? (globalInstitutionConfig?.adminProfile || {}) : (matchedStaff || account.access || null),
+                displayName: account.name || (isAdminAcc ? 'Institution Administrator' : 'Staff Member'),
+                meta: isAdminAcc ? 'Administrator' : (account.roleTitle || 'Staff Member'),
+                loginEmail: cleanEmail || (account.loginId ? `${account.loginId}@school.internal` : '')
+            };
+
+            const nameEl = document.getElementById('verified-user-name');
+            const metaEl = document.getElementById('verified-user-meta');
+            const avatarIcon = document.getElementById('verified-user-avatar-icon');
+            const passLeadingIcon = document.getElementById('login-password-leading-icon');
+            const passLabel = document.getElementById('login-password-label');
+            const passInput = document.getElementById('login-password');
+            const passHint = document.getElementById('login-password-hint');
+
+            if (nameEl) nameEl.textContent = verifiedUser.displayName;
+            if (metaEl) metaEl.textContent = verifiedUser.meta;
+            resetPasswordVisibility();
+            if (avatarIcon) avatarIcon.className = isAdminAcc ? 'fas fa-user-shield' : 'fas fa-user-tie';
+            if (passLeadingIcon) passLeadingIcon.className = 'fas fa-lock login-input-leading';
+            if (passLabel) passLabel.textContent = 'Password';
+            if (passInput) {
+                passInput.placeholder = 'Enter account password';
+                passInput.type = 'password';
+                passInput.value = '';
             }
-            const accounts = window.AppSession?.getRememberedAccounts?.() || window.AppSession?.getStudentAccounts?.() || [];
-            const forceAdd = new URLSearchParams(window.location.search).get('addStudent') === '1' || new URLSearchParams(window.location.search).get('login') === 'new';
-            if (!forceAdd && (accounts.length > 0 || window.AppSession?.hasStudentSession?.())) {
-                openSavedStudentModal();
-                return;
+            if (passHint) passHint.textContent = 'Enter your account credentials to log in.';
+
+            setLoginStepState(2);
+            document.getElementById('login-step-1')?.classList.add('hidden');
+            document.getElementById('login-step-2')?.classList.remove('hidden');
+            showLoginMessage(noticeMessage || '');
+            setTimeout(() => passInput?.focus(), 60);
+        };
+        const activateRememberedAccount = async (account) => {
+            if (!account) return false;
+            await ensureVerificationRegistriesLoaded();
+            const isValid = await isRememberedAccountValid(account, { verifyStudentOnline: true });
+            if (!isValid) {
+                window.AppSession?.removeRememberedAccount?.(account.id || account.studentId);
+                renderSavedAccounts();
+                showToast('This account is no longer active or has been removed by the administrator.', 'error');
+                const remaining = window.AppSession?.getRememberedAccounts?.() || [];
+                if (!remaining.length) {
+                    document.getElementById('saved-student-modal').style.display = 'none';
+                    openStudentLoginModal();
+                    showLoginMessage('Saved account is no longer active. Please log in with an active account.');
+                }
+                return false;
             }
-            openStudentLoginModal();
+
+            if (account.role === 'student' || (!account.role && account.studentId)) {
+                if (!auth.currentUser) {
+                    try { await signInAnonymously(auth); } catch (_) {}
+                }
+                const targetStudentId = account.studentId || account.id;
+                if (auth.currentUser && targetStudentId) {
+                    try {
+                        const stuSnap = await getDoc(doc(db, `${BASE_PATH}/students`, targetStudentId));
+                        const st = stuSnap.exists() ? stuSnap.data() : null;
+                        const statusNorm = String(st?.status || '').trim().toLowerCase();
+                        if (!stuSnap.exists() || st?.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') {
+                            window.AppSession?.removeRememberedAccount?.(account.id || targetStudentId);
+                            renderSavedAccounts();
+                            showToast('Your student account is inactive or has been removed.', 'error');
+                            const remaining = window.AppSession?.getRememberedAccounts?.() || [];
+                            if (!remaining.length) {
+                                document.getElementById('saved-student-modal').style.display = 'none';
+                                openStudentLoginModal();
+                            }
+                            return false;
+                        }
+                    } catch (_) {}
+                }
+                return window.AppSession?.switchAccount?.(account.id || targetStudentId);
+            }
+
+            if (account.source === 'directory' || account.role === 'directory') {
+                if (!auth.currentUser) {
+                    try { await signInAnonymously(auth); } catch (_) {}
+                }
+                return window.AppSession?.switchAccount?.(account.id);
+            }
+
+            if (account.role === 'admin') {
+                const emailLower = String(account.email || '').trim().toLowerCase();
+                const hasMatchingEmailAuth = Boolean(
+                    auth.currentUser
+                    && !auth.currentUser.isAnonymous
+                    && (!emailLower || String(auth.currentUser.email || '').trim().toLowerCase() === emailLower)
+                );
+                if (hasMatchingEmailAuth) {
+                    return window.AppSession?.switchAccount?.(account.id);
+                }
+                openStep2ForRememberedAccount(account, 'Please enter your password to restore secure admin access.');
+                return false;
+            }
+
+            // Staff account
+            const staffEmailLower = String(account.email || '').trim().toLowerCase();
+            const matchedStaff = (allStaffSnapshotRecords || []).find((s) =>
+                (account.staffId && s.id === account.staffId)
+                || (staffEmailLower && String(s.email || '').trim().toLowerCase() === staffEmailLower)
+            );
+            const hasDirectPassword = Boolean(String(matchedStaff?.password || '').trim());
+            const needsEmailAuth = account.requiresEmailAuth === true || !hasDirectPassword;
+
+            if (needsEmailAuth) {
+                const hasMatchingEmailAuth = Boolean(
+                    auth.currentUser
+                    && !auth.currentUser.isAnonymous
+                    && (!staffEmailLower || String(auth.currentUser.email || '').trim().toLowerCase() === staffEmailLower)
+                );
+                if (hasMatchingEmailAuth) {
+                    return window.AppSession?.switchAccount?.(account.id);
+                }
+                openStep2ForRememberedAccount(account, 'Please enter your password to restore secure staff access.');
+                return false;
+            }
+
+            if (!auth.currentUser) {
+                try { await signInAnonymously(auth); } catch (_) {}
+            }
+            return window.AppSession?.switchAccount?.(account.id);
+        };
+        window.openLogin = async () => {
+            if (isOpeningLoginFlow) return;
+            isOpeningLoginFlow = true;
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const forceAdd = params.get('addStudent') === '1' || params.get('login') === 'new';
+                if (forceAdd) {
+                    openStudentLoginModal();
+                    return;
+                }
+
+                await ensureVerificationRegistriesLoaded();
+                await validateAndPruneRememberedAccounts({ verifyStudentsOnline: true });
+
+                if (window.AppSession?.hasStudentSession?.()) {
+                    const activeStudentId = window.AppSession?.getStudentId?.();
+                    const activeStudentStillRemembered = (window.AppSession?.getRememberedAccounts?.() || [])
+                        .some((a) => (a.role === 'student' || a.studentId) && (a.id === activeStudentId || a.studentId === activeStudentId));
+                    if (activeStudentStillRemembered) {
+                        window.location.href = 'student.html';
+                        return;
+                    }
+                }
+                if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                    window.location.href = 'official.html';
+                    return;
+                }
+
+                const accounts = window.AppSession?.getRememberedAccounts?.() || [];
+                if (accounts.length === 1) {
+                    await activateRememberedAccount(accounts[0]);
+                    return;
+                }
+                if (accounts.length > 1) {
+                    openSavedStudentModal();
+                    return;
+                }
+                openStudentLoginModal();
+            } finally {
+                isOpeningLoginFlow = false;
+            }
         };
 
         const setAccordionState = (accordionId = '', open = false) => {
@@ -272,7 +444,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             document.getElementById('saved-student-modal').style.display = 'none';
             openStudentLoginModal();
         });
-        document.getElementById('saved-student-list')?.addEventListener('click', (e) => {
+        document.getElementById('saved-student-list')?.addEventListener('click', async (e) => {
             const removeBtn = e.target.closest('.saved-account-remove') || e.target.closest('.saved-student-remove');
             const card = e.target.closest('.saved-account-card') || e.target.closest('.saved-student-card');
             if (removeBtn) {
@@ -284,8 +456,11 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             }
             if (card) {
                 const accountId = card.dataset.id;
-                const switched = window.AppSession?.switchAccount?.(accountId);
-                if (!switched) {
+                const accounts = window.AppSession?.getRememberedAccounts?.() || [];
+                const targetAccount = accounts.find((a) => a.id === accountId || a.studentId === accountId);
+                if (targetAccount) {
+                    await activateRememberedAccount(targetAccount);
+                } else {
                     const stSwitched = window.AppSession?.switchStudent?.(accountId);
                     if (stSwitched) window.location.href = 'student.html';
                 }
@@ -305,6 +480,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
         let directoryCategories = [];
         let directoryEntries = [];
         let staffDirectoryEntries = [];
+        let allStaffSnapshotRecords = [];
         let cachedActiveStaff = [];
         let categoryAuthConfig = { categories: {} };
         let pageAccessConfig = { categories: {}, overrides: {} };
@@ -356,7 +532,9 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             }
             return null;
         };
-        let loaded = { config: false, content: false, students: false, staff: false };
+        let loaded = { config: false, content: false, students: false, staff: false, dirEntries: false, dirAuth: false, pageAccess: false };
+        let staffSnapshotFromServer = false;
+        let dirEntriesFromServer = false;
         let minTimeOver = false;
         let splashHidden = false; 
 
@@ -769,24 +947,34 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             // 3. Public Directory snapshot
             onSnapshot(collection(db, `${BASE_PATH}/publicDirectory`), snap => {
                 directoryEntries = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+                loaded.dirEntries = true;
+                dirEntriesFromServer = !snap.metadata?.fromCache;
                 renderDynamicDirectory();
+                validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
             }, err => {
                 console.warn('Public directory notice:', err);
+                loaded.dirEntries = true;
             });
 
             // 4. Category Auth & Page Access settings
             onSnapshot(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig'), snap => {
                 const payload = snap.exists() ? snap.data() : {};
                 categoryAuthConfig = payload && typeof payload.categories === 'object' ? payload : { categories: {} };
+                loaded.dirAuth = true;
+                validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
             }, err => {
                 console.warn('Category auth notice:', err);
+                loaded.dirAuth = true;
             });
 
             onSnapshot(doc(db, `${BASE_PATH}/settings`, 'pageAccess'), snap => {
                 const payload = snap.exists() ? snap.data() : {};
                 pageAccessConfig = (payload && typeof payload === 'object') ? payload : { categories: {}, overrides: {} };
+                loaded.pageAccess = true;
+                validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
             }, err => {
                 console.warn('Page access notice:', err);
+                loaded.pageAccess = true;
             });
 
             const isCategoryPubliclyVisible = (categoryId = '') => {
@@ -872,11 +1060,13 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
             // 5. Staff Directory snapshot (Public profiles)
             onSnapshot(collection(db, `${BASE_PATH}/staff`), snap => {
-                const allStaff = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                cachedActiveStaff = allStaff.filter(s => s.isActive);
+                allStaffSnapshotRecords = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                cachedActiveStaff = allStaffSnapshotRecords.filter(s => s.isActive !== false);
+                staffSnapshotFromServer = !snap.metadata?.fromCache;
                 renderStaffDirectory();
                 loaded.staff = true;
                 triggerAnim();
+                validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
             }, err => {
                 console.warn('Staff listener notice:', err);
                 loaded.staff = true;
@@ -1106,28 +1296,147 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                 fetches.push(
                     getDocs(collection(db, `${BASE_PATH}/staff`))
                         .then((snap) => {
-                            cachedActiveStaff = snap.docs
-                                .map((d) => ({ id: d.id, ...d.data() }))
-                                .filter((s) => s.isActive !== false);
+                            allStaffSnapshotRecords = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                            cachedActiveStaff = allStaffSnapshotRecords.filter((s) => s.isActive !== false);
+                            staffSnapshotFromServer = !snap.metadata?.fromCache;
                             loaded.staff = true;
                         })
                         .catch(() => {})
                 );
             }
-            if (!loaded.content) {
+            if (!loaded.dirEntries || !loaded.dirAuth || !loaded.pageAccess) {
                 fetches.push(
                     Promise.all([
                         getDocs(collection(db, `${BASE_PATH}/publicDirectory`)).catch(() => null),
                         getDoc(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig')).catch(() => null),
                         getDoc(doc(db, `${BASE_PATH}/settings`, 'pageAccess')).catch(() => null)
                     ]).then(([dirSnap, authSnap, accessSnap]) => {
-                        if (dirSnap) directoryEntries = dirSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-                        if (authSnap?.exists?.()) categoryAuthConfig = { categories: {}, ...(authSnap.data() || {}) };
-                        if (accessSnap?.exists?.()) pageAccessConfig = { categories: {}, overrides: {}, ...(accessSnap.data() || {}) };
+                        if (dirSnap) {
+                            directoryEntries = dirSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                            dirEntriesFromServer = !dirSnap.metadata?.fromCache;
+                            loaded.dirEntries = true;
+                        }
+                        if (authSnap?.exists?.()) {
+                            categoryAuthConfig = { categories: {}, ...(authSnap.data() || {}) };
+                            loaded.dirAuth = true;
+                        }
+                        if (accessSnap?.exists?.()) {
+                            pageAccessConfig = { categories: {}, overrides: {}, ...(accessSnap.data() || {}) };
+                            loaded.pageAccess = true;
+                        }
                     })
                 );
             }
             if (fetches.length > 0) await Promise.all(fetches);
+        };
+
+        const isRememberedAccountValid = async (account, { verifyStudentOnline = false } = {}) => {
+            if (!account) return false;
+            const role = account.role || (account.studentId ? 'student' : '');
+
+            if (role === 'student') {
+                if (!verifyStudentOnline) return true;
+                const studentId = account.studentId || account.id;
+                if (auth.currentUser && studentId) {
+                    try {
+                        const stuSnap = await getDoc(doc(db, `${BASE_PATH}/students`, studentId));
+                        if (!stuSnap.metadata?.fromCache || stuSnap.exists()) {
+                            if (!stuSnap.exists()) return false;
+                            const st = stuSnap.data() || {};
+                            const statusNorm = String(st.status || '').trim().toLowerCase();
+                            if (st.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') return false;
+                        }
+                    } catch (_) {}
+                }
+                const cleanAdm = normalizeAdmKey(account.adm || '');
+                if (cleanAdm) {
+                    try {
+                        let lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
+                        if (!lookupSnap.exists()) {
+                            lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, cleanAdm));
+                        }
+                        if (lookupSnap.exists()) {
+                            const st = lookupSnap.data() || {};
+                            const statusNorm = String(st.status || '').trim().toLowerCase();
+                            if (st.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') return false;
+                        }
+                    } catch (_) {}
+                }
+                return true;
+            }
+
+            if (account.source === 'directory' || role === 'directory') {
+                if (!loaded.dirEntries || !loaded.dirAuth || !loaded.pageAccess) return true;
+                if (!dirEntriesFromServer && directoryEntries.length === 0) return true;
+                const cleanLogin = String(account.loginId || account.email || '').trim().toLowerCase();
+                const entry = (directoryEntries || []).find((e) =>
+                    (account.entryId && e.id === account.entryId)
+                    || (cleanLogin && String(e.authMeta?.username || '').trim().toLowerCase() === cleanLogin)
+                );
+                if (!entry) return false;
+                const authConf = normalizeCategoryAuthItem(categoryAuthConfig?.categories?.[entry.categoryId] || {});
+                if (!authConf.enabled) return false;
+                if (pageAccessConfig?.overrides?.[entry.id]?.blocked === true) return false;
+                return true;
+            }
+
+            if (role === 'staff') {
+                if (!loaded.staff) return true;
+                if (!staffSnapshotFromServer && allStaffSnapshotRecords.length === 0) return true;
+                const cleanEmail = String(account.email || '').trim().toLowerCase();
+                const cleanLogin = String(account.loginId || '').trim().toLowerCase();
+                const matched = (allStaffSnapshotRecords || []).find((s) =>
+                    (account.staffId && s.id === account.staffId)
+                    || (cleanEmail && String(s.email || '').trim().toLowerCase() === cleanEmail)
+                    || (cleanLogin && [s.username, s.userName, s.loginId].some((u) => String(u || '').trim().toLowerCase() === cleanLogin))
+                );
+                if (!matched || matched.isActive === false) return false;
+                return true;
+            }
+
+            if (role === 'admin') {
+                if (!loaded.config) return true;
+                const adminProfile = globalInstitutionConfig?.adminProfile || {};
+                const activeEmails = new Set();
+                if (adminProfile.email) activeEmails.add(String(adminProfile.email).trim().toLowerCase());
+                if (Array.isArray(adminProfile.admins)) {
+                    adminProfile.admins.forEach((a) => {
+                        if (a && a.isActive !== false && a.email) {
+                            activeEmails.add(String(a.email).trim().toLowerCase());
+                        }
+                    });
+                }
+                const accEmail = String(account.email || '').trim().toLowerCase();
+                if (activeEmails.size > 0 && accEmail && !activeEmails.has(accEmail)) {
+                    return false;
+                }
+                return true;
+            }
+
+            return true;
+        };
+
+        const validateAndPruneRememberedAccounts = async ({ verifyStudentsOnline = false } = {}) => {
+            const accounts = window.AppSession?.getRememberedAccounts?.() || [];
+            if (!accounts.length) return [];
+            let removedAny = false;
+            const validList = [];
+            for (const account of accounts) {
+                const ok = await isRememberedAccountValid(account, { verifyStudentOnline: verifyStudentsOnline });
+                if (!ok) {
+                    window.AppSession?.removeRememberedAccount?.(account.id || account.studentId);
+                    removedAny = true;
+                } else {
+                    validList.push(account);
+                }
+            }
+            if (removedAny) {
+                const savedModal = document.getElementById('saved-student-modal');
+                if (savedModal && savedModal.style.display === 'flex') {
+                    renderSavedAccounts();
+                }
+            }
+            return validList;
         };
 
         const verifyUniversalIdentifier = async () => {
@@ -1273,11 +1582,20 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             meta: 'Administrator',
                             loginEmail: matchedAdmin.email || (cleanEmail.includes('@') ? cleanEmail : `${matchedAdmin.username}@school.internal`)
                         };
+                    } else if (cleanEmail.includes('@') && !cleanEmail.endsWith('@school.internal')) {
+                        // Allow first-time Super Admin verification on fresh Firebase projects before adminProfile exists in settings/config
+                        matched = {
+                            type: 'admin_candidate',
+                            data: null,
+                            displayName: cleanEmail.split('@')[0] || 'Administrator',
+                            meta: 'Email Account Verification',
+                            loginEmail: cleanEmail
+                        };
                     }
                 }
 
                 // 4. Strict Directory Login Verification
-                if (!matched) {
+                if (!matched || matched.type === 'admin_candidate') {
                     const dirMatch = (Array.isArray(directoryEntries) ? directoryEntries : []).find((e) => {
                         if (!e?.categoryId) return false;
                         const authConf = normalizeCategoryAuthItem(categoryAuthConfig?.categories?.[e.categoryId] || {});
@@ -1327,7 +1645,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         }
                         if (passHint) passHint.textContent = 'Enter the mobile phone number registered with the school.';
                     } else {
-                        if (avatarIcon) avatarIcon.className = matched.type === 'admin' ? 'fas fa-user-shield' : 'fas fa-user-tie';
+                        if (avatarIcon) avatarIcon.className = (matched.type === 'admin' || matched.type === 'admin_candidate') ? 'fas fa-user-shield' : 'fas fa-user-tie';
                         if (passLeadingIcon) passLeadingIcon.className = 'fas fa-lock login-input-leading';
                         if (passLabel) passLabel.textContent = 'Password';
                         if (passInput) {
@@ -1393,6 +1711,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     if (isMatch) {
                         showLoginMessage('');
                         if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Loading Dashboard...</span>';
+                        await window.AppSession?.clearAll?.();
                         if (!auth.currentUser) {
                             try { await signInAnonymously(auth); } catch (_) {}
                         }
@@ -1418,22 +1737,16 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                 const loginEmail = verifiedUser.loginEmail || (verifiedUser.data?.email || '').toLowerCase();
                 const userLogin = loginEmail || verifiedUser.displayName.toLowerCase();
                 const enteredPassword = enteredPass.trim();
-                const storedPassword = (verifiedUser.data?.password || '').trim();
 
                 let isAuthenticated = false;
                 let userCred = null;
 
-                // 1. Check direct password match for staff
-                if (storedPassword && storedPassword === enteredPassword) {
-                    isAuthenticated = true;
-                }
-
-                // 2. Firebase Auth login attempt
-                if (!isAuthenticated) {
+                // 1. Firebase Auth login attempt (Admin & Staff)
+                if (verifiedUser.type !== 'directory' && loginEmail) {
                     try {
                         userCred = await signInWithEmailAndPassword(auth, loginEmail, enteredPassword);
                         if (userCred?.user) isAuthenticated = true;
-                    } catch (authError) {
+                    } catch (_authError) {
                         if (!loginEmail.includes('@')) {
                             try {
                                 userCred = await signInWithEmailAndPassword(auth, `${loginEmail}@school.internal`, enteredPassword);
@@ -1443,13 +1756,46 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     }
                 }
 
-                // 3. Try directory login fallback
+                // 2. Directory login fallback (for Category Users)
                 if (!isAuthenticated) {
                     const directoryLogin = await resolveDirectoryLogin(userLogin, enteredPassword);
                     if (directoryLogin?.entry) {
+                        if (!auth.currentUser) {
+                            try { await signInAnonymously(auth); } catch (_) {}
+                        }
                         const access = directoryLogin.access || {};
-                        const rawName = String(directoryLogin.entry?.authMeta?.usernameRaw || userLogin || 'User');
-                        window.AppSession?.startStaff(rawName, userLogin, { ...access, worksheet: true, userKey: userLogin, loginId: userLogin, source: 'directory' });
+                        const entry = directoryLogin.entry;
+                        const rawName = String(entry?.values?.name || entry?.values?.Name || entry?.authMeta?.usernameRaw || userLogin || 'User');
+                        const dirRoleTitle = String(entry?.values?.role || entry?.role || 'Category User');
+                        const dirAccess = {
+                            ...access,
+                            worksheet: true,
+                            userKey: userLogin,
+                            loginId: userLogin,
+                            entryId: entry.id,
+                            categoryId: entry.categoryId || '',
+                            name: rawName,
+                            role: dirRoleTitle,
+                            type: 'Category User',
+                            source: 'directory',
+                            requiresEmailAuth: false
+                        };
+                        window.AppSession?.startStaff(rawName, userLogin, dirAccess);
+                        const activeProject = window.AppSession?.getActiveProjectId?.() || '';
+                        localStorage.setItem('official_portal_session_v1', JSON.stringify({
+                            ...(activeProject ? { projectId: activeProject } : {}),
+                            id: entry.id,
+                            name: rawName,
+                            username: userLogin,
+                            email: '',
+                            role: dirRoleTitle,
+                            type: 'Category User',
+                            categoryId: entry.categoryId || '',
+                            canCollect: dirAccess.collection === true,
+                            canAccessWorksheet: true,
+                            source: 'directory',
+                            access: dirAccess
+                        }));
                         window.location.href = 'official.html';
                         return;
                     }
@@ -1468,17 +1814,23 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
                 const authedEmail = (userCred?.user?.email || loginEmail).toLowerCase();
                 const authedUsername = authedEmail.includes('@school.internal') ? authedEmail.replace('@school.internal', '') : authedEmail.split('@')[0];
+                const usedFirebaseEmailAuth = Boolean(userCred?.user && !userCred.user.isAnonymous);
 
-                // 1. Check if Admin
-                let isAdmin = (verifiedUser.type === 'admin');
+                // 1. Check if Admin via settings/adminAuth
+                let isAdmin = false;
+                let adminAuthData = null;
                 try {
                     const adminRef = doc(db, `${BASE_PATH}/settings`, ADMIN_AUTH_DOC_ID);
                     const adminSnap = await getDoc(adminRef);
                     if (adminSnap.exists()) {
-                        const adminData = adminSnap.data();
-                        const adminEmail = (adminData.email || '').toLowerCase();
-                        const adminAccounts = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminData.admins) ? adminData.admins : []);
-                        if (adminEmail === authedEmail || adminAccounts.some((a) => (a.email || '').toLowerCase() === authedEmail && a.isActive !== false)) {
+                        adminAuthData = adminSnap.data();
+                        const adminEmail = (adminAuthData.email || '').toLowerCase();
+                        const adminAccounts = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminAuthData.admins) ? adminAuthData.admins : []);
+                        if (
+                            adminEmail === authedEmail
+                            || adminAuthData?.adminsIndex?.[authedEmail] === true
+                            || adminAccounts.some((a) => (a.email || '').toLowerCase() === authedEmail && a.isActive !== false)
+                        ) {
                             isAdmin = true;
                         }
                     }
@@ -1486,8 +1838,22 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     console.warn('Admin check notice:', e);
                 }
 
-                if (isAdmin) {
-                    window.AppSession?.startAdmin({ name: verifiedUser.displayName, email: authedEmail });
+                if (isAdmin && usedFirebaseEmailAuth) {
+                    const adminName = verifiedUser.type === 'admin'
+                        ? (verifiedUser.displayName || 'Institution Administrator')
+                        : (adminAuthData?.name || 'Institution Administrator');
+                    if (!globalInstitutionConfig?.adminProfile?.email) {
+                        try {
+                            await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), {
+                                adminProfile: {
+                                    email: authedEmail,
+                                    username: authedUsername,
+                                    name: adminName
+                                }
+                            }, { merge: true });
+                        } catch (_) {}
+                    }
+                    window.AppSession?.startAdmin({ name: adminName, email: authedEmail });
                     window.location.href = 'official.html';
                     return;
                 }
@@ -1526,11 +1892,14 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             photo: activeCollector.photo || '',
                             source: 'staff',
                             userKey: collectorKey,
-                            loginId: authedUsername || userLogin
+                            loginId: authedUsername || userLogin,
+                            requiresEmailAuth: usedFirebaseEmailAuth
                         };
                         window.AppSession?.startStaff(activeCollector.name || verifiedUser.displayName || '', collectorKey, staffAccess);
 
+                        const activeProject = window.AppSession?.getActiveProjectId?.() || '';
                         const officialSessionObj = {
+                            ...(activeProject ? { projectId: activeProject } : {}),
                             id: activeCollector.staffId || '',
                             name: activeCollector.name || verifiedUser.displayName || '',
                             username: collectorKey,
@@ -1560,8 +1929,8 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     console.warn('Staff access notice:', e);
                 }
 
-                // If authenticated and in verified staff record
-                if (verifiedUser.data) {
+                // If authenticated via Firebase Email Auth and matched in staff registry
+                if (verifiedUser.type === 'staff' && verifiedUser.data && usedFirebaseEmailAuth && verifiedUser.data.isActive !== false) {
                     const staffData = verifiedUser.data;
                     const staffDutyClasses = Array.isArray(staffData.dutyClasses) && staffData.dutyClasses.length
                         ? staffData.dutyClasses.filter(Boolean)
@@ -1587,11 +1956,14 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         photo: staffData.photo || '',
                         source: 'staff',
                         userKey: authedEmail,
-                        loginId: authedUsername || userLogin
+                        loginId: authedUsername || userLogin,
+                        requiresEmailAuth: usedFirebaseEmailAuth
                     };
                     window.AppSession?.startStaff(staffData.name || '', authedEmail, staffAccess);
 
+                    const activeProject = window.AppSession?.getActiveProjectId?.() || '';
                     const officialSessionObj = {
+                        ...(activeProject ? { projectId: activeProject } : {}),
                         id: staffData.id || '',
                         name: staffData.name || '',
                         username: authedUsername || authedEmail,
@@ -1618,6 +1990,9 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     return;
                 }
 
+                if (usedFirebaseEmailAuth) {
+                    try { await signOut(auth); } catch (_) {}
+                }
                 showLoginMessage('Incorrect credentials or account not active.');
                 if (btn) {
                     btn.disabled = false;

@@ -1,6 +1,6 @@
-import { signOut, onAuthStateChanged,  EmailAuthProvider, reauthenticateWithCredential, updateEmail, updatePassword, createUserWithEmailAndPassword, getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updateEmail, updatePassword, createUserWithEmailAndPassword, sendPasswordResetEmail, getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { doc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, setDoc, getDoc, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, setDoc, getDoc, orderBy, limit, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '../../config/app-config.js';
 import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
@@ -20,7 +20,7 @@ if (typeof window !== 'undefined' && window.location && window.location.hash) {
 }
 
 async function provisionStaffAuthUser(email, password) {
-    if (!email || !password) return null;
+    if (!email || !password) return { email: email || '', created: false, exists: false, error: 'Missing email or password' };
     try {
         const secondaryAppName = 'SecondaryStaffProvisioner';
         let secondaryApp = getApps().find(a => a.name === secondaryAppName);
@@ -30,13 +30,13 @@ async function provisionStaffAuthUser(email, password) {
         const secondaryAuth = getAuth(secondaryApp);
         const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
         await signOut(secondaryAuth);
-        return cred.user;
+        return { user: cred.user, email, created: true, exists: false };
     } catch (err) {
         if (err.code === 'auth/email-already-in-use') {
-            return { email, exists: true };
+            return { email, created: false, exists: true };
         }
         console.warn('Staff Auth provisioning notice:', err.message);
-        return null;
+        return { email, created: false, exists: false, error: err?.message || 'Auth provisioning failed' };
     }
 }
 
@@ -45,12 +45,9 @@ let staffAdminRecord = null;
 
 const confirmPublicExit = (message = 'Navigating to the public page will log out this session. Do you want to continue?') => confirm(message);
 window.logoutAdmin = (options = {}) => {
-    const { skipConfirm = false } = options;
-    if(!skipConfirm && !confirmPublicExit()) return;
-    signOut(auth).then(async () => {
-        await window.AppSession?.clearAll({ purgeClientData: true });
-        window.location.href = 'index.html';
-    });
+    const { skipConfirm = false, redirectUrl = 'index.html?public=1' } = options;
+    if (!skipConfirm && !confirmPublicExit()) return;
+    window.AppSession?.signOut?.(auth, { redirectUrl });
 };
 
 const STUDENT_STATUS_OPTIONS = ['Active', 'Inactive', 'Alumni', 'Discontinued'];
@@ -247,7 +244,7 @@ const syncStaffAccessRecord = async (staffRecord = {}) => {
     const payload = {
         email,
         username: staffRecord.username || '',
-        password: staffRecord.password || '',
+        password: deleteField(),
         isActive: staffRecord.isActive !== false,
         canCollect: staffRecord.canCollect === true,
         canAccessWorksheet: staffRecord.canAccessWorksheet === true,
@@ -292,6 +289,7 @@ const rebuildStaffAccessIndex = async (staffRecords = []) => {
         if (!email) return;
         operations.push((batch) => batch.set(getStaffAccessRef(email), {
             email,
+            password: deleteField(),
             isActive: staffRecord.isActive !== false,
             canCollect: staffRecord.canCollect === true,
             canAccessWorksheet: staffRecord.canAccessWorksheet === true,
@@ -3538,7 +3536,7 @@ const renderDynamicStaffFormFields = (prefix = 'st', categoryId = 'Teacher', ini
         html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
         otherFields.forEach((field, idx) => {
             const key = field.key;
-            const val = String(preserved[key] ?? (preserved.customFields?.[key] ?? ''));
+            const val = key === 'password' ? '' : String(preserved[key] ?? (preserved.customFields?.[key] ?? ''));
             const reqStar = field.required ? ' <span class="mandatory-star">*</span>' : '';
             const fieldId = `${prefix}-field-${key}`;
             const isFullWidth = field.type === 'textarea' || key === 'address';
@@ -3556,12 +3554,12 @@ const renderDynamicStaffFormFields = (prefix = 'st', categoryId = 'Teacher', ini
                     <textarea id="${fieldId}" data-staff-field-key="${escapeHtml(key)}" data-staff-field-required="${field.required ? 'true' : 'false'}" data-staff-field-label="${escapeHtml(field.label)}" rows="2" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white" placeholder="${escapeHtml(field.label)}">${escapeHtml(val)}</textarea>
                 </div>`;
             } else {
-                const inputType = field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'email' ? 'email' : 'text';
+                const inputType = key === 'password' ? 'password' : field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'email' ? 'email' : 'text';
                 const iconHtml = key === 'email' ? '<i class="fas fa-envelope text-blue-600 mr-1"></i>' : key === 'password' ? '<i class="fas fa-key text-blue-600 mr-1"></i>' : '';
                 html += `
                 <div class="${wrapperClass}">
                     <label for="${fieldId}" class="block text-sm font-semibold ${isCredentialField ? 'text-blue-900' : 'text-gray-800'} mb-1">${iconHtml}${idx + 2}. ${escapeHtml(field.label)}${reqStar}</label>
-                    <input type="${inputType}" id="${fieldId}" data-staff-field-key="${escapeHtml(key)}" data-staff-field-required="${field.required ? 'true' : 'false'}" data-staff-field-label="${escapeHtml(field.label)}" value="${escapeHtml(val)}" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white" placeholder="${escapeHtml(field.label)}">
+                    <input type="${inputType}" id="${fieldId}" data-staff-field-key="${escapeHtml(key)}" data-staff-field-required="${field.required ? 'true' : 'false'}" data-staff-field-label="${escapeHtml(field.label)}" value="${escapeHtml(val)}" class="w-full p-2.5 border border-gray-300 rounded-lg bg-white" placeholder="${escapeHtml(field.label)}" ${key === 'password' ? 'autocomplete="new-password"' : ''}>
                 </div>`;
             }
         });
@@ -3716,9 +3714,14 @@ const extractAndValidateStaffForm = (prefix = 'st') => {
     const hasAnyPortalAccess = canCollect || canAccessWorksheet || canManageResults || canAccessAttendance || canAccessAcademicPlan || canAccessActivity || canAccessEvaluation || canAccessAdmin;
     const passwordInputExists = fieldElements.some((el) => el.dataset.staffFieldKey === 'password');
     const existingStaffForValidation = (prefix === 'e-st' && editingStaffId) ? allStaff.find((st) => st.id === editingStaffId) : null;
-    const effectivePassword = values.password || existingStaffForValidation?.password || '';
-    if (hasAnyPortalAccess && passwordInputExists && values.email && !effectivePassword) {
-        alert('Please provide a Login Password when granting portal access.');
+    const hasExistingAuthAccount = Boolean(existingStaffForValidation?.email && normalizeEmail(existingStaffForValidation.email) === normalizeEmail(values.email));
+    const effectivePassword = String(values.password || '').trim();
+    if (hasAnyPortalAccess && passwordInputExists && values.email && !hasExistingAuthAccount && !effectivePassword) {
+        alert('Please provide a Login Password (at least 6 characters) when provisioning portal access.');
+        return null;
+    }
+    if (effectivePassword && effectivePassword.length < 6) {
+        alert('Login Password must be at least 6 characters.');
         return null;
     }
 
@@ -3809,11 +3812,12 @@ document.getElementById('add-staff-btn').addEventListener('click', async () => {
 
     const initialAuthPass = staffRecord._initialAuthPassword;
     delete staffRecord._initialAuthPassword;
-    if (initialAuthPass) {
-        staffRecord.password = initialAuthPass;
-    }
+    delete staffRecord.password;
     if (staffRecord.email && initialAuthPass) {
-        await provisionStaffAuthUser(staffRecord.email, initialAuthPass);
+        const authRes = await provisionStaffAuthUser(staffRecord.email, initialAuthPass);
+        if (authRes?.error && !authRes.exists) {
+            alert(`Staff profile will be saved, but Firebase Auth account could not be created: ${authRes.error}`);
+        }
     }
     const staffDoc = await addDoc(collection(db, `${BASE_PATH}/staff`), staffRecord);
     staffRecord.id = staffDoc.id;
@@ -4337,24 +4341,29 @@ document.getElementById('edit-staff-update').onclick = async () => {
     if (!nextStaffRecord) return;
     if(!confirm("Save changes?")) return;
     const existingStaff = allStaff.find((staffMember) => staffMember.id === editingStaffId) || {};
-    const finalPassword = nextStaffRecord.password ? nextStaffRecord.password : (existingStaff.password || '');
+    const newInitialPassword = nextStaffRecord._initialAuthPassword || '';
+    delete nextStaffRecord._initialAuthPassword;
     const mergedRecord = {
         ...existingStaff,
         ...nextStaffRecord,
-        password: finalPassword,
+        password: deleteField(),
         customFields: {
             ...(existingStaff.customFields || {}),
             ...(nextStaffRecord.customFields || {})
         }
     };
     delete mergedRecord.id;
+    if (mergedRecord.email && newInitialPassword) {
+        await provisionStaffAuthUser(mergedRecord.email, newInitialPassword);
+    }
     await updateDoc(doc(db, `${BASE_PATH}/staff`, editingStaffId), mergedRecord);
     if (existingStaff.email && normalizeEmail(existingStaff.email) !== normalizeEmail(mergedRecord.email)) {
         await removeStaffAccessRecord(existingStaff.email);
     }
-    mergedRecord.id = editingStaffId;
-    await syncStaffAccessRecord(mergedRecord);
-    await logAuditEvent({ category: 'security', action: 'staff.update', entityType: 'staff', entityId: editingStaffId, message: `Staff updated: ${mergedRecord.name}.` });
+    const localRecord = { ...mergedRecord, id: editingStaffId };
+    delete localRecord.password;
+    await syncStaffAccessRecord(localRecord);
+    await logAuditEvent({ category: 'security', action: 'staff.update', entityType: 'staff', entityId: editingStaffId, message: `Staff updated: ${localRecord.name}.` });
     closeEditStaffModal();
     renderStaffList();
     showToast?.('Staff details updated successfully!', 'success');
@@ -4379,13 +4388,21 @@ window.resetStaffCredentials = (id) => {
 
     const emailInput = document.getElementById('staff-cred-email');
     const passInput = document.getElementById('staff-cred-password');
+    const resetBtn = document.getElementById('staff-cred-send-reset-btn');
+    const normalizedSavedEmail = normalizeEmail(staffRecord.email || '');
     if (emailInput) {
         const rawSaved = staffRecord.username || staffRecord.email || '';
         emailInput.value = rawSaved.endsWith('@school.internal') ? rawSaved.replace('@school.internal', '') : rawSaved;
     }
     if (passInput) {
-        passInput.value = staffRecord.password || '';
+        passInput.value = '';
         passInput.type = 'password';
+    }
+    if (resetBtn) {
+        const hasRealEmail = Boolean(normalizedSavedEmail && normalizedSavedEmail.includes('@') && !normalizedSavedEmail.endsWith('@school.internal'));
+        resetBtn.classList.toggle('hidden', !hasRealEmail);
+        resetBtn.classList.toggle('inline-flex', hasRealEmail);
+        resetBtn.dataset.email = hasRealEmail ? normalizedSavedEmail : '';
     }
     const eyeIcon = document.getElementById('staff-cred-eye-icon');
     if (eyeIcon) {
@@ -4417,6 +4434,30 @@ document.getElementById('staff-cred-toggle-pass')?.addEventListener('click', () 
     } else {
         passInput.type = 'password';
         if (eyeIcon) eyeIcon.className = 'fas fa-eye';
+    }
+});
+
+document.getElementById('staff-cred-send-reset-btn')?.addEventListener('click', async () => {
+    if (!requirePermission('staff.manage')) return;
+    const resetBtn = document.getElementById('staff-cred-send-reset-btn');
+    const email = normalizeEmail(resetBtn?.dataset?.email || '');
+    if (!email || email.endsWith('@school.internal')) {
+        alert('Password reset emails can only be sent to valid external email addresses.');
+        return;
+    }
+    try {
+        await sendPasswordResetEmail(auth, email);
+        await logAuditEvent({
+            category: 'security',
+            action: 'staff.credentials.reset_email',
+            entityType: 'staff',
+            entityId: document.getElementById('staff-cred-staff-id')?.value || email,
+            message: `Password reset email sent to ${email}`
+        });
+        showToast?.(`Password reset email sent to ${email}`, 'success');
+    } catch (err) {
+        console.error('Failed to send staff password reset email:', err);
+        alert('Could not send password reset email: ' + (err?.message || 'Check Firebase Auth configuration.'));
     }
 });
 
@@ -4473,15 +4514,19 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
         const nextStaffPayload = {
             ...staffRecord,
             email: normalizedEmail,
-            username: username,
-            password: rawPassword
+            username: username
         };
+        delete nextStaffPayload.password;
 
-        await provisionStaffAuthUser(normalizedEmail, rawPassword);
+        const authRes = await provisionStaffAuthUser(normalizedEmail, rawPassword);
+        if (authRes?.error && !authRes.exists) {
+            throw new Error(authRes.error);
+        }
+
         await updateDoc(doc(db, `${BASE_PATH}/staff`, staffId), {
             email: normalizedEmail,
             username: username,
-            password: rawPassword,
+            password: deleteField(),
             updatedAt: new Date().toISOString()
         });
 
@@ -4492,7 +4537,7 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
 
         staffRecord.email = normalizedEmail;
         staffRecord.username = username;
-        staffRecord.password = rawPassword;
+        delete staffRecord.password;
 
         await logAuditEvent({
             category: 'security',
@@ -4504,7 +4549,11 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
 
         closeStaffCredentialsModal();
         renderStaffList();
-        showToast?.('Login credentials updated successfully!', 'success');
+        if (authRes?.exists) {
+            alert(`Saved username/email (${normalizedEmail}). This Firebase Auth account already exists, so its password in Firebase Auth cannot be overwritten directly from the browser. To set a brand-new password from Admin, change the username or use "Send Reset Email" for real email addresses.`);
+        } else {
+            showToast?.('Firebase Auth login credentials provisioned securely!', 'success');
+        }
     } catch (err) {
         console.error('Failed to save staff credentials:', err);
         alert('Failed to save credentials: ' + (err.message || 'Please check your network connection.'));
@@ -15092,6 +15141,72 @@ document.getElementById('update-admin-credentials-btn')?.addEventListener('click
         alert(`Credential update failed: ${error?.message || 'Please verify current password and try again.'}`);
     }
 });
+document.getElementById('clean-legacy-passwords-btn')?.addEventListener('click', async () => {
+    if (!requirePermission('security.manage')) return;
+    if (!confirm('Remove all legacy plaintext password fields from Firestore (staff, staffAccess, and settings/adminAuth)? Users will continue signing in via Firebase Authentication.')) return;
+    const btn = document.getElementById('clean-legacy-passwords-btn');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin text-[11px]"></i><span>Cleaning...</span>';
+    }
+    try {
+        let cleanedCount = 0;
+        const operations = [];
+
+        const staffSnap = await getDocs(collection(db, `${BASE_PATH}/staff`));
+        staffSnap.forEach((docSnap) => {
+            const data = docSnap.data() || {};
+            if (Object.prototype.hasOwnProperty.call(data, 'password')) {
+                cleanedCount++;
+                operations.push((batch) => batch.update(docSnap.ref, { password: deleteField() }));
+            }
+        });
+
+        const accessSnap = await getDocs(collection(db, STAFF_ACCESS_COLLECTION));
+        accessSnap.forEach((docSnap) => {
+            const data = docSnap.data() || {};
+            if (Object.prototype.hasOwnProperty.call(data, 'password')) {
+                cleanedCount++;
+                operations.push((batch) => batch.update(docSnap.ref, { password: deleteField() }));
+            }
+        });
+
+        const adminRef = getAdminAuthRef();
+        const adminSnap = await getDoc(adminRef);
+        if (adminSnap.exists() && Object.prototype.hasOwnProperty.call(adminSnap.data() || {}, 'password')) {
+            cleanedCount++;
+            operations.push((batch) => batch.update(adminRef, { password: deleteField() }));
+        }
+
+        if (operations.length > 0) {
+            await runBatchedWrites(operations);
+        }
+
+        allStaff.forEach((st) => {
+            if (st && 'password' in st) delete st.password;
+        });
+
+        await logAuditEvent({
+            category: 'security',
+            action: 'security.legacy_passwords.purged',
+            entityType: 'security',
+            entityId: 'legacy_passwords',
+            message: `Cleaned legacy plaintext password field from ${cleanedCount} Firestore document(s).`
+        });
+        alert(cleanedCount > 0
+            ? `Successfully removed plaintext password fields from ${cleanedCount} Firestore document(s).`
+            : 'No legacy plaintext password fields were found in Firestore.');
+    } catch (err) {
+        console.error('Failed to clean legacy passwords:', err);
+        alert('Cleanup failed: ' + (err?.message || 'Permission or network error.'));
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+});
 document.getElementById('add-admin-role-btn')?.addEventListener('click', async () => {
     if(!requirePermission('security.manage')) return;
     alert('Only one Super Admin is allowed. Use "Update Current Admin Login" to change email/password.');
@@ -16661,8 +16776,13 @@ onAuthStateChanged(auth, async (user) => {
                     enforceResultOperatorModeUI();
                     return;
                 }
-                alert('Your admin access was removed or disabled. Please sign in again.');
-                window.logoutAdmin();
+                if (adminSnap.metadata?.fromCache) return;
+                window.AppSession?.revokeCurrentAccount?.({
+                    accountId: 'admin_master',
+                    message: 'Your admin access was removed or disabled. Please sign in again.',
+                    authInstance: auth,
+                    redirectUrl: 'index.html'
+                });
                 return;
             }
             currentAdminRole = currentAccount.role || 'super_admin';
@@ -16686,8 +16806,13 @@ onAuthStateChanged(auth, async (user) => {
             onSnapshot(doc(db, `${BASE_PATH}/staff`, staffAdminRecord.id), (staffDocSnap) => {
                 const sData = staffDocSnap.exists() ? staffDocSnap.data() : null;
                 if (!sData || sData.isActive === false || sData.canAccessAdmin !== true) {
-                    alert('Your staff admin access was removed or disabled. Please sign in again.');
-                    window.logoutAdmin();
+                    if (staffDocSnap.metadata?.fromCache) return;
+                    window.AppSession?.revokeCurrentAccount?.({
+                        accountId: staffAdminRecord.id,
+                        message: 'Your staff admin access was removed or disabled. Please sign in again.',
+                        authInstance: auth,
+                        redirectUrl: 'index.html'
+                    });
                     return;
                 }
                 currentAdminRole = (sData.actLikeSuperAdmin === true || sData.canAccessAdmin === true) ? 'super_admin' : 'operations_admin';

@@ -43,7 +43,7 @@ service cloud.firestore {
     }
 
     function isStaff(institutionId) {
-      return hasEmailIdentity() && exists(staffAccessRef(institutionId));
+      return hasEmailIdentity() && exists(staffAccessRef(institutionId)) && get(staffAccessRef(institutionId)).data.isActive != false;
     }
 
     function staffData(institutionId) {
@@ -193,47 +193,75 @@ service cloud.firestore {
 
     // 1. Settings Collection
     match /institutions/{institutionId}/settings/{docId} {
-      // Sensitive admin auth doc is STRICTLY Admin only
+      // Sensitive admin auth doc is STRICTLY Admin only (never publicly readable)
       allow read, write: if docId == 'adminAuth' && isAdmin(institutionId);
 
-      // Public settings: institution config, announcements, public category permissions
-      allow read: if docId in ['config', 'content', 'categoryAuthConfig', 'pageAccess', 'websiteContent', 'institutionConfig'];
-      allow write: if isAdmin(institutionId) && docId in ['config', 'content', 'categoryAuthConfig', 'pageAccess', 'websiteContent', 'institutionConfig'];
+      // Public settings required by landing page & portal shells (explicit allowlist, excludes adminAuth)
+      allow read: if docId in [
+        'config',
+        'content',
+        'categoryAuthConfig',
+        'pageAccess',
+        'websiteContent',
+        'institutionConfig',
+        'academicYears',
+        'sessionControl'
+      ];
 
-      // Module specific configuration
-      allow read: if true;
+      // Module-specific configuration documents require an active authenticated or student session
+      allow read: if docId != 'adminAuth' && isSignedIn() && (
+        isAdmin(institutionId)
+        || isStaff(institutionId)
+        || docId in [
+          'resultCenter',
+          'sessionRegistry',
+          'receiptSequence',
+          'attendanceConfig',
+          'timetableStructure',
+          'yearPlanConfig',
+          'academicPlanningConfig',
+          'activityConfig',
+          'taskDefinitions',
+          'concessions',
+          'feeSettings'
+        ]
+        || docId.matches('evaluationConfig_.*')
+      );
+
       allow write: if isAdmin(institutionId)
+        || (docId == 'sessionRegistry' && isSignedIn() && validSessionRegistryWrite())
         || (isResultOperator(institutionId) && docId == 'resultCenter')
         || (isCollector(institutionId) && docId in ['sessionRegistry', 'receiptSequence'])
         || (canManageAttendance(institutionId) && (docId == 'attendanceConfig' || docId == 'timetableStructure'))
         || (canManageAcademicPlan(institutionId) && (docId == 'yearPlanConfig' || docId == 'academicPlanningConfig'))
+        || (canManageActivity(institutionId) && (docId == 'activityConfig' || docId == 'taskDefinitions'))
         || (canManageEvaluation(institutionId) && docId.matches('evaluationConfig_.*'));
     }
 
-    // 2. Staff Profiles (Public profiles without sensitive permissions or credentials)
+    // 2. Staff Profiles (Public profiles; credentials stored strictly in Firebase Auth)
     match /institutions/{institutionId}/staff/{docId} {
       allow read: if true;
       allow write: if isAdmin(institutionId);
     }
 
-    // 3. Staff Access (Roles & Permissions)
+    // 3. Staff Access (Roles & Permissions - scoped to Admin or own signed-in Staff identity)
     match /institutions/{institutionId}/staffAccess/{docId} {
-      allow read: if isSignedIn();
+      allow list: if isAdmin(institutionId);
+      allow get: if isAdmin(institutionId)
+        || (hasEmailIdentity() && (docId == request.auth.token.email || isStaff(institutionId)));
       allow write: if isAdmin(institutionId);
     }
 
-    // 4. Student Auth Lookup (Zero-PII index for student verification)
+    // 4. Student Auth Lookup (Exact single-doc lookup for login; list restricted to Staff/Admin)
     match /institutions/{institutionId}/studentAuthLookup/{docId} {
       allow get: if true;
-      allow list: if isSignedIn();
-      allow write: if isAdmin(institutionId);
+      allow list: if isAdmin(institutionId) || isStaff(institutionId);
+      allow write: if isAdmin(institutionId) || isCollector(institutionId);
     }
 
-    // 5. Students
+    // 5. Students (List restricted to Staff/Admin; single-doc get for Student Portal session)
     match /institutions/{institutionId}/students/{docId} {
-      // Authenticated staff & admins can list and query all students
-      allow list: if isSignedIn();
-      // Allow single document read (get) for authenticated users or active student portal sessions
+      allow list: if isAdmin(institutionId) || isStaff(institutionId);
       allow get: if isSignedIn();
       allow create, delete: if isAdmin(institutionId) || isCollector(institutionId);
       allow update: if isAdmin(institutionId)
@@ -244,122 +272,125 @@ service cloud.firestore {
 
     // 6. Student Groups
     match /institutions/{institutionId}/studentGroups/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isAdmin(institutionId) || isCollector(institutionId);
     }
 
-    // 6. Student Notification State
+    // 7. Student Notification State (Authenticated student/staff sessions only)
     match /institutions/{institutionId}/studentNotificationState/{docId} {
-      allow read: if true;
-      allow write: if hasOnlyKeys(request.resource.data, ['lastMarkedAllReadAt', 'readIds'])
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && hasOnlyKeys(request.resource.data, ['lastMarkedAllReadAt', 'readIds'])
         && (!('lastMarkedAllReadAt' in request.resource.data) || request.resource.data.lastMarkedAllReadAt is number)
         && (!('readIds' in request.resource.data) || request.resource.data.readIds is list);
     }
 
-    // 7. System Notifications
+    // 8. System Notifications (Admin/Staff write only)
     match /institutions/{institutionId}/systemNotifications/{docId} {
-      allow read: if true;
-      allow write: if isAdmin(institutionId) || isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isAdmin(institutionId) || isStaff(institutionId);
     }
 
-    // 8. Payments
+    // 9. Payments (Staff/Admin unrestricted; student session capped list query)
     match /institutions/{institutionId}/payments/{docId} {
-      allow read: if isCollector(institutionId) || isAdmin(institutionId) || isSignedIn();
+      allow get: if isCollector(institutionId) || isAdmin(institutionId) || isSignedIn();
+      allow list: if isCollector(institutionId) || isAdmin(institutionId) || isStaff(institutionId)
+        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
       allow create, update: if (isAdmin(institutionId) || isCollector(institutionId)) && validPaymentWrite();
       allow delete: if isAdmin(institutionId);
     }
 
-    // 9. Donations
+    // 10. Donations
     match /institutions/{institutionId}/donations/{docId} {
       allow read, write: if isAdmin(institutionId) || isCollector(institutionId);
     }
 
-    // 10. Attendance
+    // 11. Attendance
     match /institutions/{institutionId}/attendance/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageAttendance(institutionId);
     }
 
-    // 11. Timetables & Classes
+    // 12. Timetables & Classes
     match /institutions/{institutionId}/timetables/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/classSubjects/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/yearPlans/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/syllabusDailyLogs/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/examTimetables/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageAcademicPlan(institutionId);
     }
 
-    // 12. Activities, Ibadah, Tasks
+    // 13. Activities, Ibadah, Tasks
     match /institutions/{institutionId}/activities/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/ibadah/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/taskCompletions/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/studentCustomBadges/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/studentBonusPoints/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/rewardSettings/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/prayerSettings/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageActivity(institutionId);
     }
 
-    // 13. Evaluations & Impositions
+    // 14. Evaluations & Impositions
     match /institutions/{institutionId}/evaluations/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageEvaluation(institutionId);
     }
 
     match /institutions/{institutionId}/impositions/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageEvaluation(institutionId);
     }
 
-    // 14. Worksheets
+    // 15. Worksheets
     match /institutions/{institutionId}/worksheets/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if canManageWorksheet(institutionId);
     }
 
-    // 15. Public Directory
+    // 16. Public Directory (Public read for landing page; auth metadata isolated to admin)
     match /institutions/{institutionId}/publicDirectory/{docId} {
       allow read: if true;
       allow write: if isAdmin(institutionId);
@@ -373,24 +404,25 @@ service cloud.firestore {
       allow read, write: if isAdmin(institutionId);
     }
 
-    // 16. Results & Promotion
+    // 17. Results & Promotion
     match /institutions/{institutionId}/resultSchemas/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isResultOperator(institutionId);
     }
 
     match /institutions/{institutionId}/examResults/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isResultOperator(institutionId);
     }
 
     match /institutions/{institutionId}/promotionDecisions/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isResultOperator(institutionId);
     }
 
     match /institutions/{institutionId}/studentPhotoSubmissions/{docId} {
-      allow read: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
+      allow list: if isAdmin(institutionId) || isCollector(institutionId);
+      allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
       allow create, update: if isAdmin(institutionId)
         || isCollector(institutionId)
         || (
@@ -408,48 +440,52 @@ service cloud.firestore {
       allow read, write: if isAdmin(institutionId) || isCollector(institutionId);
     }
 
-    // 17. Academic Years Subcollections
+    // 18. Academic Years Subcollections
     match /institutions/{institutionId}/academicYears/{yearId}/classes/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isAdmin(institutionId);
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/enrollments/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isAdmin(institutionId) || isCollector(institutionId);
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/feeItems/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isAdmin(institutionId);
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/payments/{docId} {
-      allow read: if isSignedIn();
+      allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
+      allow list: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId)
+        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
       allow create, update: if (isAdmin(institutionId) || isCollector(institutionId)) && validPaymentWrite();
       allow delete: if isAdmin(institutionId);
     }
 
     match /institutions/{institutionId}/years/{yearId}/payments/{docId} {
-      allow read: if isSignedIn();
+      allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
+      allow list: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId)
+        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
       allow create, update: if (isAdmin(institutionId) || isCollector(institutionId)) && validPaymentWrite();
       allow delete: if isAdmin(institutionId);
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/results/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isResultOperator(institutionId);
     }
 
-    // 18. Audit Logs (Append-only, Admin read-only)
+    // 19. Audit Logs (Append-only by non-anonymous authenticated Staff/Admin, Admin read-only)
     match /institutions/{institutionId}/auditLogs/{docId} {
       allow read: if isAdmin(institutionId);
-      allow create: if isSignedIn();
+      allow create: if isAuthenticated();
       allow update, delete: if false;
     }
 
     match /institutions/{institutionId}/transferCertificates/{docId} {
-      allow read: if true;
+      allow read: if isSignedIn();
       allow write: if isAdmin(institutionId);
     }
 

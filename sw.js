@@ -1,4 +1,4 @@
-const CACHE_NAME = 'institution-tracer-v3-04-00';
+const CACHE_NAME = 'institution-tracer-v3-05-00';
 const IMAGE_CACHE_NAME = 'institution-tracer-images-v2';
 const ASSETS_TO_CACHE = [
   '/',
@@ -15,8 +15,12 @@ const ASSETS_TO_CACHE = [
 ];
 
 const SENSITIVE_ROUTE_SUFFIXES = [
+  '/admin',
   '/admin.html',
+  '/collection',
   '/collection.html',
+  '/official',
+  '/official.html',
   '/scripts/pages/admin-page.js',
   '/scripts/pages/collection-page.js',
   '/scripts/pages/student-page.js',
@@ -25,7 +29,7 @@ const SENSITIVE_ROUTE_SUFFIXES = [
   '/scripts/shared/app-common.js'
 ];
 
-const isSensitiveRequest = (url) => SENSITIVE_ROUTE_SUFFIXES.some((suffix) => url.pathname.endsWith(suffix));
+const isSensitiveRequest = (url) => SENSITIVE_ROUTE_SUFFIXES.some((suffix) => url.pathname === suffix || url.pathname.endsWith(suffix));
 const isSameOrigin = (url) => url.origin === self.location.origin;
 
 self.addEventListener('install', (event) => {
@@ -96,7 +100,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
-    if (requestUrl.pathname.endsWith('/admin.html') || requestUrl.pathname.endsWith('/collection.html')) {
+    if (
+      requestUrl.pathname === '/admin'
+      || requestUrl.pathname.endsWith('/admin.html')
+      || requestUrl.pathname === '/collection'
+      || requestUrl.pathname.endsWith('/collection.html')
+    ) {
       event.respondWith(fetch(event.request, { cache: 'no-store' }));
       return;
     }

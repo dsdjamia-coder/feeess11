@@ -1703,9 +1703,7 @@ const initEventBindings = () => {
 
     // Logout Handling (Sidebar Desktop & More Mobile Sheet)
     const handleLogout = async () => {
-        await window.AppSession?.clearAll({ purgeClientData: true });
-        await signOut(auth);
-        window.location.href = 'official.html';
+        await window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
     };
     document.getElementById('sidebar-logout-btn')?.addEventListener('click', handleLogout);
     document.getElementById('mobile-more-logout-btn')?.addEventListener('click', handleLogout);
@@ -2135,14 +2133,46 @@ const initEvaluationModule = async () => {
         }
     });
 
+    onSnapshot(collection(db, BASE_PATH, 'staff'), (snap) => {
+        if (isSuperAdmin || (window.AppSession?.getRole?.() || '') === 'admin') return;
+        const session = window.AppSession?.getSession?.() || {};
+        const staffAccess = window.AppSession?.getStaffAccess?.() || {};
+        const emailNorm = String(session.email || session.username || staffAccess.email || '').trim().toLowerCase();
+        const staffId = String(session.id || session.staffId || staffAccess.staffId || '').trim();
+        const staffDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const matched = staffDocs.find((data) =>
+            (staffId && data.id === staffId)
+            || (emailNorm && String(data.email || '').trim().toLowerCase() === emailNorm)
+            || (emailNorm && String(data.username || '').trim().toLowerCase() === emailNorm)
+            || (session.name && String(data.name || '').trim().toLowerCase() === String(session.name).trim().toLowerCase())
+        );
+        if ((!matched && !snap.metadata?.fromCache) || matched?.isActive === false) {
+            window.AppSession?.revokeCurrentAccount?.({
+                accountId: matched?.id || staffId || '',
+                message: 'Your staff account is no longer active or has been removed by the administrator.',
+                authInstance: auth,
+                redirectUrl: 'index.html'
+            });
+            return;
+        }
+        if (matched) {
+            currentStaffDoc = matched;
+            teacherAssignedClasses = getStaffAssignedClasses(matched, staffAccess);
+            window.AppSession?.updateStaffAccess?.({
+                dutyClasses: Array.isArray(matched.dutyClasses) ? matched.dutyClasses : [],
+                staffId: matched.id,
+                name: matched.name || ''
+            });
+        }
+    });
+
     onSnapshot(doc(db, `${BASE_PATH}/settings`, 'sessionControl'), (snap) => {
         if (!snap.exists()) return;
         const ctrl = snap.data();
         const role = window.AppSession?.getRole?.() || '';
         if (ctrl.isLocked && role !== 'admin') {
-            sessionStorage.setItem('app_session_flash', ctrl.lockMessage || 'Official session is currently locked by institution administrator.');
-            window.AppSession?.clearAll?.();
-            window.location.href = 'index.html';
+            window.AppSession?.setFlash?.(ctrl.lockMessage || 'Official session is currently locked by institution administrator.');
+            window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
         }
     });
 };

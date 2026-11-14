@@ -15,6 +15,9 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+if (typeof window !== 'undefined') {
+  window.AppSession?.syncFirebaseProject?.(firebaseConfig.projectId);
+}
 
 const appCheckSiteKey = String(window.__APP_CHECK_SITE_KEY || '').trim();
 const canEnableAppCheck = appCheckSiteKey && appCheckSiteKey !== 'REPLACE_WITH_RECAPTCHA_V3_SITE_KEY';
@@ -30,7 +33,7 @@ if (!canEnableAppCheck) {
 }
 
 const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true
+  experimentalForceLongPolling: true
 }, firebaseConfig.firestoreDatabaseId);
 const auth = getAuth(app);
 if (typeof window !== 'undefined') {

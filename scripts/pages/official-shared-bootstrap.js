@@ -1,6 +1,7 @@
-import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
     import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { db, auth } from '../../config/firebase-config.js';
+    import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
     import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, escapeHtml, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
     import { registerPortalForPwa } from '../shared/pwa-install.js';
 
@@ -28,6 +29,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
     let pageAccessConfig = { categories: {}, overrides: {} };
     let userSession = null;
     let authReady = false;
+    let staffSnapshotAuthoritative = false;
+    let directorySnapshotAuthoritative = false;
+    let isRevokingOfficialSession = false;
     const OFFICIAL_SESSION_KEY = 'official_portal_session_v1';
     
     applyCachedInstitutionLogo(['header-logo', 'official-login-modal-logo']);
@@ -1164,9 +1168,63 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
       }
     }
 
-    function syncLiveStaffSession() {
+    function findMatchedStaffRecord() {
+      const staffEmail = normalizeText(userSession?.email || userSession?.username || window.AppSession?.getStaffEmail?.() || window.AppSession?.getStaffAccess?.()?.userKey || '');
+      const staffLoginId = normalizeText(userSession?.access?.loginId || window.AppSession?.getStaffAccess?.()?.loginId || '');
+      const staffName = normalizeText(userSession?.name || window.AppSession?.getStaffName?.() || '');
+      const staffId = userSession?.id || userSession?.staffId || window.AppSession?.getStaffAccess?.()?.staffId || '';
+      return allStaff.find((staff) =>
+        (staffId && staff.id === staffId)
+        || (staffEmail && (normalizeText(staff.email) === staffEmail || normalizeText(staff.username) === staffEmail || normalizeText(staff.loginId) === staffEmail))
+        || (staffLoginId && (normalizeText(staff.username) === staffLoginId || normalizeText(staff.loginId) === staffLoginId))
+        || (staffName && normalizeText(staff.name) === staffName)
+      ) || null;
+    }
+
+    function syncLiveStaffSession({ authoritative = false } = {}) {
+      if (isRevokingOfficialSession) return;
+      const role = window.AppSession?.getRole?.() || '';
+      const isDirectoryUser = userSession?.source === 'directory' || window.AppSession?.getStaffAccess?.()?.source === 'directory';
+      const isMasterAdmin = role === 'admin' && !isDirectoryUser;
+
+      if (isDirectoryUser && (authoritative || directorySnapshotAuthoritative)) {
+        const targetId = userSession?.id || userSession?.access?.entryId || '';
+        const targetLogin = normalizeText(userSession?.username || userSession?.access?.loginId || '');
+        const entry = directoryEntries.find((item) =>
+          (targetId && item.id === targetId)
+          || (targetLogin && normalizeText(item.authMeta?.username) === targetLogin)
+        );
+        const catId = entry?.categoryId || userSession?.categoryId || '';
+        const authItem = catId ? getCategoryAuthItem(catId) : { enabled: true };
+        const accessItem = catId ? getPageAccessItem(catId, entry?.id || targetId) : { blocked: false };
+        if (!entry || !authItem.enabled || accessItem.blocked === true) {
+          isRevokingOfficialSession = true;
+          window.AppSession?.revokeCurrentAccount?.({
+            accountId: targetId ? `dir_${targetId}` : '',
+            message: 'Your portal access is no longer active or has been removed by the administrator.',
+            authInstance: auth,
+            redirectUrl: 'index.html'
+          });
+          return;
+        }
+      }
+
+      if (!isMasterAdmin && !isDirectoryUser && (authoritative || staffSnapshotAuthoritative)) {
+        const matchedStaff = findMatchedStaffRecord();
+        if (!matchedStaff || matchedStaff.isActive === false) {
+          isRevokingOfficialSession = true;
+          window.AppSession?.revokeCurrentAccount?.({
+            accountId: userSession?.id || matchedStaff?.id || '',
+            message: 'Your staff account is no longer active or has been removed by the administrator.',
+            authInstance: auth,
+            redirectUrl: 'index.html'
+          });
+          return;
+        }
+      }
+
       const profile = getCurrentSessionProfile() || {};
-      if (profile && profile.id && window.AppSession?.updateStaffAccess) {
+      if (!isDirectoryUser && profile && profile.id && window.AppSession?.updateStaffAccess) {
         window.AppSession.updateStaffAccess({
           collection: profile.canCollect === true,
           worksheet: profile.canAccessWorksheet === true,
@@ -1189,6 +1247,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
         });
       }
       renderOfficialProfileHeader();
+      if (!isWorksheetPage) {
+        renderDashboard();
+      }
     }
 
     const getMobileToggle = () => document.getElementById('official-my-profile-btn') || document.getElementById('mobile-menu-btn');
@@ -1479,8 +1540,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
 
     const evaluateModulePermissions = () => {
       const role = window.AppSession?.getRole?.() || '';
-      const isStaffSession = userSession?.source === 'staff' || role === 'staff' || Boolean(window.AppSession?.getStaffAccess?.());
-      const isMasterAdmin = !isStaffSession && (role === 'admin' || userSession?.source === 'firebase' || userSession?.source === 'legacy-admin' || userSession?.type === 'Admin');
+      const isDirectorySession = userSession?.source === 'directory' || window.AppSession?.getStaffAccess?.()?.source === 'directory';
+      const isStaffSession = !isDirectorySession && (userSession?.source === 'staff' || role === 'staff' || Boolean(window.AppSession?.getStaffAccess?.()));
+      const isMasterAdmin = !isDirectorySession && !isStaffSession && (role === 'admin' || userSession?.source === 'firebase' || userSession?.source === 'legacy-admin' || userSession?.type === 'Admin');
       
       let canCollection = false;
       let canResult = false;
@@ -1781,8 +1843,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
       });
       document.getElementById('hub-quick-logout')?.addEventListener('click', () => {
         localStorage.removeItem(OFFICIAL_SESSION_KEY);
-        window.AppSession?.clearAll?.();
-        window.location.href = 'index.html';
+        window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
       });
     };
 
@@ -3691,18 +3752,17 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
     };
 
     function getCurrentSessionProfile() {
-      const isStaff = userSession?.source === 'staff' || window.AppSession?.getRole?.() === 'staff' || Boolean(window.AppSession?.getStaffAccess?.());
-      if (isStaff) {
-        const staffEmail = normalizeText(userSession?.username || userSession?.email || window.AppSession?.getStaffEmail?.() || window.AppSession?.getStaffAccess?.()?.userKey || '');
-        const staffName = normalizeText(userSession?.name || window.AppSession?.getStaffName?.() || '');
-        const staffId = userSession?.id || window.AppSession?.getStaffAccess?.()?.staffId || '';
-        const found = allStaff.find((staff) => (staffId && staff.id === staffId) || (staffEmail && normalizeText(staff.email) === staffEmail) || (staffEmail && normalizeText(staff.username) === staffEmail) || (staffName && normalizeText(staff.name) === staffName));
-        if (found) return found;
+      if (userSession?.source === 'directory' || window.AppSession?.getStaffAccess?.()?.source === 'directory') {
+        const targetId = userSession?.id || window.AppSession?.getStaffAccess?.()?.entryId || '';
+        const entry = directoryEntries.find((item) => item.id === targetId);
+        if (entry) return entry;
         return userSession || {};
       }
-      if (userSession?.source === 'directory') {
-        const entry = directoryEntries.find((item) => item.id === userSession.id);
-        if (entry) return entry;
+      const isStaff = userSession?.source === 'staff' || window.AppSession?.getRole?.() === 'staff' || Boolean(window.AppSession?.getStaffAccess?.());
+      if (isStaff) {
+        const found = findMatchedStaffRecord();
+        if (found) return found;
+        return userSession || {};
       }
       return userSession || {};
     }
@@ -7629,9 +7689,10 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
       ]);
       allStudents = studentsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       allStaff = staffSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      syncLiveStaffSession();
+      staffSnapshotAuthoritative = !staffSnap.metadata?.fromCache;
       studentGroups = groupsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       directoryEntries = dirSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      directorySnapshotAuthoritative = !dirSnap.metadata?.fromCache;
       if (classesSnap && classesSnap.exists && classesSnap.exists()) {
         const cd = classesSnap.data() || {};
         adminConfiguredClasses = Array.isArray(cd.list) ? cd.list : (Array.isArray(cd.classes) ? cd.classes : []);
@@ -7649,6 +7710,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
       directoryCategories = Array.isArray(content.directoryCategories) ? content.directoryCategories : [];
       categoryAuthConfig = authConfigSnap.exists() ? { categories: {}, ...(authConfigSnap.data() || {}) } : { categories: {} };
       pageAccessConfig = pageAccessSnap.exists() ? { categories: {}, overrides: {}, ...(pageAccessSnap.data() || {}) } : { categories: {}, overrides: {} };
+      syncLiveStaffSession({ authoritative: true });
       await syncWorksheetTemplatesFromFirestore();
       const yearsData = academicYearsSnap.exists() ? (academicYearsSnap.data() || {}) : {};
       const currentYearVal = resolveAuthoritativeCurrentYear(yearsData, '');
@@ -7775,12 +7837,53 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
           renderAll();
         }
         syncHeaderActiveYear();
-      });
+      }, () => {});
 
       onSnapshot(collection(db, `${BASE_PATH}/staff`), (snap) => {
         allStaff = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        syncLiveStaffSession();
+        if (!snap.metadata?.fromCache) staffSnapshotAuthoritative = true;
+        syncLiveStaffSession({ authoritative: !snap.metadata?.fromCache });
       }, () => {});
+
+      onSnapshot(collection(db, `${BASE_PATH}/publicDirectory`), (snap) => {
+        directoryEntries = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        if (!snap.metadata?.fromCache) directorySnapshotAuthoritative = true;
+        syncLiveStaffSession({ authoritative: !snap.metadata?.fromCache });
+      }, () => {});
+
+      onSnapshot(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig'), (snap) => {
+        const payload = snap.exists() ? snap.data() : {};
+        categoryAuthConfig = payload && typeof payload.categories === 'object' ? payload : { categories: {} };
+        syncLiveStaffSession({ authoritative: !snap.metadata?.fromCache });
+      }, () => {});
+
+      onSnapshot(doc(db, `${BASE_PATH}/settings`, 'pageAccess'), (snap) => {
+        const payload = snap.exists() ? snap.data() : {};
+        pageAccessConfig = (payload && typeof payload === 'object') ? payload : { categories: {}, overrides: {} };
+        syncLiveStaffSession({ authoritative: !snap.metadata?.fromCache });
+      }, () => {});
+
+      if ((window.AppSession?.getRole?.() || '') === 'admin' && auth.currentUser && !auth.currentUser.isAnonymous) {
+        onSnapshot(doc(db, `${BASE_PATH}/settings`, ADMIN_AUTH_DOC_ID), (adminSnap) => {
+          if (isRevokingOfficialSession || adminSnap.metadata?.fromCache || !adminSnap.exists()) return;
+          const adminData = adminSnap.data() || {};
+          const currentEmail = normalizeText(auth.currentUser?.email || userSession?.email || '');
+          if (!currentEmail) return;
+          const primaryEmail = normalizeText(adminData.email || '');
+          const extraAdmins = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminData.admins) ? adminData.admins : []);
+          const stillActive = (primaryEmail && primaryEmail === currentEmail)
+            || extraAdmins.some((acc) => normalizeText(acc?.email) === currentEmail && acc?.isActive !== false);
+          if (!stillActive) {
+            isRevokingOfficialSession = true;
+            window.AppSession?.revokeCurrentAccount?.({
+              accountId: 'admin_master',
+              message: 'Your administrator access was removed or disabled. Please sign in again.',
+              authInstance: auth,
+              redirectUrl: 'index.html'
+            });
+          }
+        }, () => {});
+      }
 
       onSnapshot(collection(db, `${BASE_PATH}/students`), (snap) => {
         allStudents = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -7809,9 +7912,8 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
         const ctrl = snap.data();
         const role = window.AppSession?.getRole?.() || '';
         if (ctrl.isLocked && role !== 'admin') {
-          sessionStorage.setItem('app_session_flash', ctrl.lockMessage || 'Official session locked by institution administrator.');
-          window.AppSession?.clearAll?.();
-          window.location.href = 'index.html';
+          window.AppSession?.setFlash?.(ctrl.lockMessage || 'Official session locked by institution administrator.');
+          window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
         }
       }, () => {});
 
@@ -7869,9 +7971,33 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
       }
     };
 
-    onAuthStateChanged(auth, async (user) => {
+    const waitForFirebaseAuthUser = () => {
+      if (auth.currentUser) {
+        authReady = true;
+        return Promise.resolve(auth.currentUser);
+      }
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (user) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          try { unsubscribe?.(); } catch (_) {}
+          if (user) authReady = true;
+          resolve(user || null);
+        };
+        const unsubscribe = onAuthStateChanged(auth, (user) => finish(user));
+        const timer = setTimeout(() => finish(auth.currentUser || null), 5000);
+      });
+    };
+
+    onAuthStateChanged(auth, (user) => {
       if (!user) {
-        window.location.replace('index.html');
+        if (authReady) {
+          localStorage.removeItem(OFFICIAL_SESSION_KEY);
+          window.AppSession?.clearAll?.();
+          window.location.replace('index.html');
+        }
         return;
       }
       authReady = true;
@@ -7880,12 +8006,13 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
     document.querySelectorAll('#official-logout-btn, .official-logout-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         localStorage.removeItem(OFFICIAL_SESSION_KEY);
-        window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html' });
+        window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
       });
     });
 
     const restoreOfficialSession = async () => {
       let hasValidSession = false;
+      let sessionRequiresEmailAuth = false;
       try {
         if (window.AppSession && window.AppSession.isFresh()) {
           const role = window.AppSession.getRole();
@@ -7894,18 +8021,21 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
             const rawState = localStorage.getItem(stateKey);
             const state = rawState ? JSON.parse(rawState) : {};
 
-            const isStaffState = role === 'staff' || Boolean(state.access) || state.access?.source === 'staff';
+            const isDirectoryState = state.access?.source === 'directory';
+            const isStaffState = !isDirectoryState && (role === 'staff' || Boolean(state.access) || state.access?.source === 'staff');
             const dutyClasses = Array.isArray(state.dutyClasses) ? state.dutyClasses
                 : (Array.isArray(state.access?.dutyClasses) ? state.access.dutyClasses : []);
+            sessionRequiresEmailAuth = role === 'admin' || state.access?.requiresEmailAuth === true;
             userSession = {
-              name: state.name || (isStaffState ? 'Staff' : 'Super Admin'),
-              username: state.email || (isStaffState ? (state.userKey || 'staff') : 'admin'),
-              email: state.email || (isStaffState ? (state.userKey || '') : 'admin'),
-              type: isStaffState ? (state.access?.type || 'Staff') : 'Admin',
-              role: isStaffState ? (state.access?.role || 'Staff') : 'Super Admin',
-              source: isStaffState ? 'staff' : 'firebase',
+              name: state.name || (isStaffState || isDirectoryState ? 'Staff' : 'Super Admin'),
+              username: state.email || (isStaffState || isDirectoryState ? (state.userKey || state.access?.loginId || 'staff') : 'admin'),
+              email: state.email || (isStaffState || isDirectoryState ? (state.userKey || '') : 'admin'),
+              type: isDirectoryState ? 'Category User' : (isStaffState ? (state.access?.type || 'Staff') : 'Admin'),
+              role: isDirectoryState ? (state.access?.role || 'Category User') : (isStaffState ? (state.access?.role || 'Staff') : 'Super Admin'),
+              source: isDirectoryState ? 'directory' : (isStaffState ? 'staff' : 'firebase'),
+              categoryId: state.access?.categoryId || '',
               access: state.access || null,
-              id: state.access?.staffId || state.staffId || state.id || '',
+              id: state.access?.entryId || state.access?.staffId || state.staffId || state.id || '',
               staffId: state.access?.staffId || state.staffId || state.id || '',
               phone: state.access?.phone || '',
               photo: state.access?.photo || '',
@@ -7921,6 +8051,21 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
 
       if (!hasValidSession) {
         // Direct link access without valid session from index.html must return to index.html
+        window.location.replace('index.html');
+        return;
+      }
+
+      let firebaseUser = await waitForFirebaseAuthUser();
+      if (!firebaseUser && !sessionRequiresEmailAuth) {
+        try {
+          const anonCred = await signInAnonymously(auth);
+          firebaseUser = anonCred?.user || null;
+        } catch (_) {}
+      }
+      if (!firebaseUser || (sessionRequiresEmailAuth && firebaseUser.isAnonymous)) {
+        localStorage.removeItem(OFFICIAL_SESSION_KEY);
+        window.AppSession?.setFlash?.('Please enter your password to restore secure access.');
+        await window.AppSession?.clearAll?.();
         window.location.replace('index.html');
         return;
       }

@@ -6,12 +6,12 @@
         } catch (_) {}
     }
 
-    const DEFAULT_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 8;
-    const DEFAULT_SESSION_IDLE_MAX_AGE_MS = 1000 * 60 * 45;
+    const DEFAULT_SESSION_MAX_AGE_MS = 0;
+    const DEFAULT_SESSION_IDLE_MAX_AGE_MS = 0;
     const ROLE_SESSION_POLICY = {
-        student: { maxAgeMs: 1000 * 60 * 60 * 2, idleMs: 1000 * 60 * 30 },
-        staff: { maxAgeMs: 1000 * 60 * 60 * 12, idleMs: 1000 * 60 * 60 },
-        admin: { maxAgeMs: 1000 * 60 * 60 * 8, idleMs: 1000 * 60 * 45 }
+        student: { maxAgeMs: 0, idleMs: 0 },
+        staff: { maxAgeMs: 0, idleMs: 0 },
+        admin: { maxAgeMs: 0, idleMs: 0 }
     };
     const STAFF_STATE_KEY = 'app_session_staff_state';
     const ADMIN_STATE_KEY = 'app_session_admin_state';
@@ -20,6 +20,8 @@
     const REMEMBERED_ACCOUNTS_KEY = 'app_remembered_accounts';
     const CURRENT_ROLE_KEY = 'app_session_current_role';
     const FLASH_KEY = 'app_session_flash';
+    const ACTIVE_PROJECT_KEY = 'app_active_firebase_project_id';
+    const OFFICIAL_SESSION_KEY = 'official_portal_session_v1';
 
     const now = () => Date.now();
 
@@ -34,6 +36,29 @@
     const writeJson = (key, value) => localStorage.setItem(key, JSON.stringify(value));
     const removeKey = (key) => localStorage.removeItem(key);
 
+    const getActiveProjectId = () => {
+        try {
+            return String(localStorage.getItem(ACTIVE_PROJECT_KEY) || '').trim();
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const setActiveProjectId = (projectId = '') => {
+        const clean = String(projectId || '').trim();
+        if (!clean) return;
+        try {
+            localStorage.setItem(ACTIVE_PROJECT_KEY, clean);
+        } catch (_) {}
+    };
+
+    const matchesProjectScope = (record = null) => {
+        if (!record || typeof record !== 'object') return false;
+        const activeProject = getActiveProjectId();
+        if (!activeProject) return true;
+        return record.projectId === activeProject;
+    };
+
     const setCurrentRole = (role = '') => {
         if (role) {
             sessionStorage.setItem(CURRENT_ROLE_KEY, role);
@@ -45,7 +70,11 @@
     };
     const getRole = () => {
         const storedRole = sessionStorage.getItem(CURRENT_ROLE_KEY) || localStorage.getItem(CURRENT_ROLE_KEY);
-        if (storedRole) return storedRole;
+        if (storedRole) {
+            if (storedRole === 'student' && getStudentState()?.studentId) return 'student';
+            if (storedRole === 'staff' && isStateFresh(getStaffState(), 'staff')) return 'staff';
+            if (storedRole === 'admin' && isStateFresh(getAdminState(), 'admin')) return 'admin';
+        }
         if (getStudentState()?.studentId) return 'student';
         if (isStateFresh(getStaffState(), 'staff')) return 'staff';
         if (isStateFresh(getAdminState(), 'admin')) return 'admin';
@@ -54,9 +83,11 @@
 
     const buildState = (extra = {}) => {
         const timestamp = now();
+        const projectId = getActiveProjectId();
         return {
             startedAt: timestamp,
             lastActiveAt: timestamp,
+            ...(projectId ? { projectId } : {}),
             ...extra
         };
     };
@@ -66,29 +97,43 @@
         idleMs: DEFAULT_SESSION_IDLE_MAX_AGE_MS
     };
 
-    const isStateFresh = (state, role = getRole()) => {
+    const isStateFresh = (state, _role = getRole()) => {
         if (!state || !state.lastActiveAt || !state.startedAt) return false;
-        const policy = getSessionPolicy(role);
-        const age = now() - Number(state.startedAt);
-        const idle = now() - Number(state.lastActiveAt);
-        const maxAgeMs = Number(policy.maxAgeMs || 0);
-        const idleMs = Number(policy.idleMs || 0);
-        const ageOk = maxAgeMs <= 0 || age <= maxAgeMs;
-        const idleOk = idleMs <= 0 || idle <= idleMs;
-        return ageOk && idleOk;
+        if (!matchesProjectScope(state)) return false;
+        return true;
     };
 
-    const getStaffState = () => readJson(STAFF_STATE_KEY);
-    const getAdminState = () => readJson(ADMIN_STATE_KEY);
-    const getStudentState = () => readJson(STUDENT_STATE_KEY);
+    const getStaffState = () => {
+        const state = readJson(STAFF_STATE_KEY);
+        return matchesProjectScope(state) ? state : null;
+    };
+    const getAdminState = () => {
+        const state = readJson(ADMIN_STATE_KEY);
+        return matchesProjectScope(state) ? state : null;
+    };
+    const getStudentState = () => {
+        const state = readJson(STUDENT_STATE_KEY);
+        return matchesProjectScope(state) ? state : null;
+    };
     const getStudentAccounts = () => {
         const accounts = readJson(STUDENT_ACCOUNTS_KEY);
-        return Array.isArray(accounts) ? accounts : [];
+        if (!Array.isArray(accounts)) return [];
+        const activeProject = getActiveProjectId();
+        if (!activeProject) return accounts;
+        return accounts.filter((a) => a && a.projectId === activeProject);
     };
-    const saveStudentAccounts = (accounts = []) => writeJson(STUDENT_ACCOUNTS_KEY, accounts);
+    const saveStudentAccounts = (accounts = []) => {
+        const activeProject = getActiveProjectId();
+        const stamped = (Array.isArray(accounts) ? accounts : []).map((a) => ({
+            ...a,
+            ...(activeProject ? { projectId: activeProject } : {})
+        }));
+        writeJson(STUDENT_ACCOUNTS_KEY, stamped);
+    };
 
     const getRememberedAccounts = () => {
         let accounts = readJson(REMEMBERED_ACCOUNTS_KEY);
+        const activeProject = getActiveProjectId();
         if (!Array.isArray(accounts)) {
             const legacyStudents = getStudentAccounts();
             accounts = legacyStudents.map((st) => ({
@@ -98,21 +143,30 @@
                 name: st.name || '',
                 class: st.class || '',
                 adm: st.adm || '',
+                ...(st.projectId || activeProject ? { projectId: st.projectId || activeProject } : {}),
                 updatedAt: st.updatedAt || now()
             }));
             if (accounts.length) writeJson(REMEMBERED_ACCOUNTS_KEY, accounts);
         }
-        return Array.isArray(accounts) ? accounts : [];
+        if (!Array.isArray(accounts)) return [];
+        if (!activeProject) return accounts;
+        return accounts.filter((a) => a && a.projectId === activeProject);
     };
 
     const saveRememberedAccounts = (accounts = []) => {
-        writeJson(REMEMBERED_ACCOUNTS_KEY, accounts);
-        const studentOnly = accounts.filter((a) => a.role === 'student');
+        const activeProject = getActiveProjectId();
+        const stamped = (Array.isArray(accounts) ? accounts : []).map((a) => ({
+            ...a,
+            ...(activeProject ? { projectId: activeProject } : {})
+        }));
+        writeJson(REMEMBERED_ACCOUNTS_KEY, stamped);
+        const studentOnly = stamped.filter((a) => a.role === 'student');
         saveStudentAccounts(studentOnly.map((s) => ({
             studentId: s.studentId || s.id,
             name: s.name,
             class: s.class,
             adm: s.adm,
+            ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: s.updatedAt
         })));
     };
@@ -120,8 +174,10 @@
     const registerRememberedAccount = (accountData = {}) => {
         if (!accountData || !accountData.id || !accountData.role) return;
         const currentAccounts = getRememberedAccounts();
+        const activeProject = getActiveProjectId();
         const nextAccount = {
             ...accountData,
+            ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: now()
         };
         const updatedAccounts = [nextAccount, ...currentAccounts.filter((a) => a.id !== accountData.id)].slice(0, 10);
@@ -146,6 +202,8 @@
             if (savedStudentAccounts) preserve[STUDENT_ACCOUNTS_KEY] = savedStudentAccounts;
             const savedRemembered = localStorage.getItem(REMEMBERED_ACCOUNTS_KEY);
             if (savedRemembered) preserve[REMEMBERED_ACCOUNTS_KEY] = savedRemembered;
+            const savedProject = localStorage.getItem(ACTIVE_PROJECT_KEY);
+            if (savedProject) preserve[ACTIVE_PROJECT_KEY] = savedProject;
             localStorage.clear();
             Object.entries(preserve).forEach(([key, value]) => localStorage.setItem(key, value));
         } catch (error) {
@@ -163,25 +221,67 @@
     };
 
     const clearAll = async (options = {}) => {
-        [STAFF_STATE_KEY, ADMIN_STATE_KEY, STUDENT_STATE_KEY].forEach(removeKey);
+        [STAFF_STATE_KEY, ADMIN_STATE_KEY, STUDENT_STATE_KEY, OFFICIAL_SESSION_KEY].forEach(removeKey);
         setCurrentRole('');
         if (options.purgeClientData) {
             await clearClientData();
         }
+        if (options.redirectUrl) {
+            window.location.href = options.redirectUrl;
+        }
+    };
+
+    const syncFirebaseProject = (projectId = '') => {
+        const cleanProject = String(projectId || '').trim();
+        if (!cleanProject) return false;
+        const previousProject = getActiveProjectId();
+        const rawRemembered = readJson(REMEMBERED_ACCOUNTS_KEY);
+        const rawStudents = readJson(STUDENT_ACCOUNTS_KEY);
+        const rawStaff = readJson(STAFF_STATE_KEY);
+        const rawAdmin = readJson(ADMIN_STATE_KEY);
+        const rawStudent = readJson(STUDENT_STATE_KEY);
+
+        const hasStaleOrUntaggedRemembered = Array.isArray(rawRemembered) && rawRemembered.some((a) => !a || a.projectId !== cleanProject);
+        const hasStaleOrUntaggedStudents = Array.isArray(rawStudents) && rawStudents.some((a) => !a || a.projectId !== cleanProject);
+        const hasStaleOrUntaggedSession = [rawStaff, rawAdmin, rawStudent].some((s) => s && s.projectId !== cleanProject);
+
+        const projectChanged = Boolean(previousProject && previousProject !== cleanProject);
+        const needsLegacyPurge = !previousProject && (hasStaleOrUntaggedRemembered || hasStaleOrUntaggedStudents || hasStaleOrUntaggedSession);
+
+        if (projectChanged || needsLegacyPurge || hasStaleOrUntaggedRemembered || hasStaleOrUntaggedStudents || hasStaleOrUntaggedSession) {
+            [
+                STAFF_STATE_KEY,
+                ADMIN_STATE_KEY,
+                STUDENT_STATE_KEY,
+                STUDENT_ACCOUNTS_KEY,
+                REMEMBERED_ACCOUNTS_KEY,
+                OFFICIAL_SESSION_KEY,
+                'app_enabled_modules',
+                'app_current_academic_year',
+                'current_academic_year'
+            ].forEach(removeKey);
+            setCurrentRole('');
+            setActiveProjectId(cleanProject);
+            return projectChanged || needsLegacyPurge;
+        }
+
+        setActiveProjectId(cleanProject);
+        return false;
     };
 
     const pruneExpiredStates = () => {
-        if (!isStateFresh(getStaffState(), 'staff')) removeKey(STAFF_STATE_KEY);
-        if (!isStateFresh(getAdminState(), 'admin')) removeKey(ADMIN_STATE_KEY);
-        const studentState = getStudentState();
-        if (studentState && !studentState.studentId) removeKey(STUDENT_STATE_KEY);
+        const staffState = readJson(STAFF_STATE_KEY);
+        if (staffState && !isStateFresh(staffState, 'staff')) removeKey(STAFF_STATE_KEY);
+        const adminState = readJson(ADMIN_STATE_KEY);
+        if (adminState && !isStateFresh(adminState, 'admin')) removeKey(ADMIN_STATE_KEY);
+        const studentState = readJson(STUDENT_STATE_KEY);
+        if (studentState && (!studentState.studentId || !matchesProjectScope(studentState))) removeKey(STUDENT_STATE_KEY);
     };
 
     const touchSession = () => {
         const role = getRole();
         const state = getStateByRole(role);
         if (!state) return;
-        if (role !== 'student' && !isStateFresh(state, role)) return;
         writeJson(role === 'admin' ? ADMIN_STATE_KEY : role === 'staff' ? STAFF_STATE_KEY : STUDENT_STATE_KEY, {
             ...state,
             lastActiveAt: now()
@@ -226,6 +326,8 @@
         SESSION_MAX_AGE_MS: DEFAULT_SESSION_MAX_AGE_MS,
         SESSION_IDLE_MAX_AGE_MS: DEFAULT_SESSION_IDLE_MAX_AGE_MS,
         SESSION_POLICY: ROLE_SESSION_POLICY,
+        getActiveProjectId,
+        syncFirebaseProject,
         clearAll,
         async signOut(authInstance, options = {}) {
             try {
@@ -237,10 +339,74 @@
             } catch (err) {
                 console.warn('Firebase sign out failed:', err);
             }
-            await clearAll({ purgeClientData: true, ...options });
-            const redirectUrl = options.redirectUrl !== undefined ? options.redirectUrl : 'index.html';
+            await clearAll({ purgeClientData: true });
+            const redirectUrl = options.redirectUrl !== undefined ? options.redirectUrl : 'index.html?public=1';
             if (redirectUrl) {
                 window.location.href = redirectUrl;
+            }
+        },
+        async revokeCurrentAccount(options = {}) {
+            const {
+                accountId = '',
+                message = 'Your account is no longer active or has been removed by the administrator.',
+                authInstance = null,
+                redirectUrl = 'index.html'
+            } = options;
+
+            const role = getRole();
+            const resolvedAccountIds = new Set();
+            if (accountId) resolvedAccountIds.add(accountId);
+            if (role === 'student') {
+                const sid = getStudentState()?.studentId;
+                if (sid) resolvedAccountIds.add(sid);
+            } else if (role === 'staff') {
+                const staffState = getStaffState();
+                const official = readJson(OFFICIAL_SESSION_KEY) || {};
+                const candidates = [
+                    staffState?.staffId,
+                    staffState?.email,
+                    staffState?.access?.entryId,
+                    staffState?.access?.staffId,
+                    official?.id,
+                    official?.email
+                ].filter(Boolean);
+                candidates.forEach((c) => {
+                    resolvedAccountIds.add(c);
+                    resolvedAccountIds.add(`staff_${c}`);
+                    resolvedAccountIds.add(`dir_${c}`);
+                });
+            } else if (role === 'admin') {
+                const adminState = getAdminState();
+                const email = adminState?.email || '';
+                resolvedAccountIds.add('admin_master');
+                if (email) resolvedAccountIds.add(`admin_${email}`);
+            }
+
+            if (resolvedAccountIds.size > 0) {
+                const filteredRemembered = getRememberedAccounts().filter((a) => {
+                    if (!a) return false;
+                    if (resolvedAccountIds.has(a.id)) return false;
+                    if (a.studentId && resolvedAccountIds.has(a.studentId)) return false;
+                    if (a.staffId && resolvedAccountIds.has(a.staffId)) return false;
+                    if (a.entryId && resolvedAccountIds.has(a.entryId)) return false;
+                    if (a.email && resolvedAccountIds.has(a.email)) return false;
+                    return true;
+                });
+                saveRememberedAccounts(filteredRemembered);
+            }
+
+            if (message) setFlash(message);
+            await clearAll({ purgeClientData: true });
+            try {
+                const authRef = authInstance || window.__firebaseAuth;
+                if (authRef && typeof authRef.signOut === 'function') {
+                    await authRef.signOut();
+                }
+            } catch (err) {
+                console.warn('Sign out on account revocation warning:', err);
+            }
+            if (redirectUrl) {
+                window.location.replace(redirectUrl);
             }
         },
         consumeFlash() {
@@ -269,14 +435,14 @@
         getStaffName() {
             const state = getStaffState();
             if (state?.name) return state.name;
-            const official = readJson('official_portal_session_v1');
-            return official?.name || '';
+            const official = readJson(OFFICIAL_SESSION_KEY);
+            return matchesProjectScope(official) ? (official?.name || '') : '';
         },
         getStaffEmail() {
             const state = getStaffState();
             if (state?.email) return state.email;
-            const official = readJson('official_portal_session_v1');
-            return official?.email || official?.username || '';
+            const official = readJson(OFFICIAL_SESSION_KEY);
+            return matchesProjectScope(official) ? (official?.email || official?.username || '') : '';
         },
         isFresh() {
             const role = getRole();
@@ -321,20 +487,26 @@
             if (removeAccount && activeStudentId) {
                 const nextAccounts = getStudentAccounts().filter((account) => account.studentId !== activeStudentId);
                 saveStudentAccounts(nextAccounts);
+                const nextRemembered = getRememberedAccounts().filter((a) => a.id !== activeStudentId && a.studentId !== activeStudentId);
+                saveRememberedAccounts(nextRemembered);
             }
             removeKey(STUDENT_STATE_KEY);
             if (getRole() === 'student') setCurrentRole('');
         },
         startStaff(name = '', email = '', access = null) {
             const dutyClasses = Array.isArray(access?.dutyClasses) ? access.dutyClasses.filter(Boolean) : [];
-            const staffId = access?.staffId || email || name;
+            const staffId = access?.staffId || access?.entryId || email || name;
+            const source = access?.source === 'directory' ? 'directory' : 'staff';
+            const accountId = source === 'directory'
+                ? `dir_${access?.entryId || staffId}`
+                : `staff_${staffId}`;
             const profile = {
                 id: staffId,
                 staffId,
                 name: name || 'Staff Member',
                 email: email || '',
                 role: access?.role || access?.type || 'Staff Member',
-                type: access?.type || 'Staff',
+                type: access?.type || (source === 'directory' ? 'Category User' : 'Staff'),
                 phone: access?.phone || '',
                 photo: access?.photo || '',
                 dutyClasses
@@ -349,11 +521,16 @@
                 access: access && typeof access === 'object' ? access : null
             }));
             registerRememberedAccount({
-                id: `staff_${staffId}`,
+                id: accountId,
                 role: 'staff',
+                source,
                 staffId: access?.staffId || '',
+                entryId: access?.entryId || '',
+                categoryId: access?.categoryId || '',
+                loginId: access?.loginId || email || '',
                 name: name || 'Staff Member',
                 email: email || '',
+                requiresEmailAuth: access?.requiresEmailAuth === true,
                 roleTitle: access?.role || access?.type || 'Staff Member',
                 access: access && typeof access === 'object' ? access : null,
                 dutyClasses
@@ -395,8 +572,8 @@
             if (Array.isArray(staffState?.access?.dutyClasses) && staffState.access.dutyClasses.length) {
                 return staffState.access.dutyClasses.filter(Boolean);
             }
-            const officialSession = readJson('official_portal_session_v1');
-            if (Array.isArray(officialSession?.dutyClasses) && officialSession.dutyClasses.length) {
+            const officialSession = readJson(OFFICIAL_SESSION_KEY);
+            if (matchesProjectScope(officialSession) && Array.isArray(officialSession?.dutyClasses) && officialSession.dutyClasses.length) {
                 return officialSession.dutyClasses.filter(Boolean);
             }
             return [];
@@ -420,11 +597,12 @@
             }
             if (role === 'staff' || hasStaffSession()) {
                 const state = this.getStaffState() || {};
-                const official = readJson('official_portal_session_v1') || {};
+                const rawOfficial = readJson(OFFICIAL_SESSION_KEY);
+                const official = (rawOfficial && matchesProjectScope(rawOfficial)) ? rawOfficial : {};
                 const access = state.access || official.access || {};
                 const dutyClasses = this.getDutyClasses();
                 return {
-                    id: state.staffId || access.staffId || official.id || '',
+                    id: state.staffId || access.staffId || access.entryId || official.id || '',
                     staffId: state.staffId || access.staffId || official.id || '',
                     name: state.name || official.name || 'Staff Member',
                     username: state.email || official.username || official.email || '',
@@ -442,7 +620,8 @@
                         role: access.role || official.role || 'Staff',
                         dutyClasses
                     },
-                    source: 'staff',
+                    source: access.source || official.source || 'staff',
+                    categoryId: access.categoryId || official.categoryId || '',
                     actLikeSuperAdmin: access.actLikeSuperAdmin === true || official.actLikeSuperAdmin === true
                 };
             }
@@ -496,13 +675,16 @@
             });
         },
         startAdmin(adminProfile = {}) {
-            writeJson(ADMIN_STATE_KEY, buildState({ role: 'admin' }));
+            const email = String(adminProfile?.email || 'admin').trim().toLowerCase();
+            const name = adminProfile?.name || 'Administrator';
+            writeJson(ADMIN_STATE_KEY, buildState({ role: 'admin', name, email }));
             registerRememberedAccount({
                 id: 'admin_master',
                 role: 'admin',
-                name: adminProfile?.name || 'Administrator',
+                name,
                 roleTitle: 'Super Admin',
-                email: adminProfile?.email || 'admin'
+                email,
+                requiresEmailAuth: true
             });
             setCurrentRole('admin');
         },
@@ -512,40 +694,51 @@
         switchAccount(accountId = '') {
             const account = getRememberedAccounts().find((a) => a.id === accountId);
             if (!account) return false;
+            const activeProject = getActiveProjectId();
 
             if (account.role === 'student') {
+                removeKey(STAFF_STATE_KEY);
+                removeKey(ADMIN_STATE_KEY);
+                removeKey(OFFICIAL_SESSION_KEY);
                 this.startStudent(account.studentId || account.id, account);
                 window.location.href = 'student.html';
                 return true;
             }
 
-            if (account.role === 'staff') {
+            if (account.role === 'staff' || account.role === 'directory') {
+                removeKey(STUDENT_STATE_KEY);
+                removeKey(ADMIN_STATE_KEY);
                 const dutyClasses = Array.isArray(account.dutyClasses) && account.dutyClasses.length
                     ? account.dutyClasses
                     : (Array.isArray(account.access?.dutyClasses) ? account.access.dutyClasses : []);
+                const source = account.source === 'directory' || account.role === 'directory' ? 'directory' : 'staff';
                 const staffAccess = account.access || {
-                    staffId: account.staffId || '',
+                    staffId: account.staffId || account.entryId || '',
+                    entryId: account.entryId || '',
+                    categoryId: account.categoryId || '',
                     name: account.name || 'Staff Member',
                     role: account.roleTitle || 'Staff',
                     dutyClasses,
-                    source: 'staff',
+                    source,
                     worksheet: true
                 };
                 if (!staffAccess.dutyClasses || !staffAccess.dutyClasses.length) {
                     staffAccess.dutyClasses = dutyClasses;
                 }
-                this.startStaff(account.name, account.email, staffAccess);
+                this.startStaff(account.name, account.email || account.loginId || '', staffAccess);
 
                 const officialSessionObj = {
-                    id: account.staffId || '',
+                    ...(activeProject ? { projectId: activeProject } : {}),
+                    id: account.staffId || account.entryId || '',
                     name: account.name || 'Staff Member',
-                    username: account.email || 'staff',
+                    username: account.email || account.loginId || 'staff',
                     email: account.email || '',
                     phone: staffAccess.phone || '',
                     role: account.roleTitle || staffAccess.role || 'Staff',
-                    type: staffAccess.type || 'Staff',
+                    type: staffAccess.type || (source === 'directory' ? 'Category User' : 'Staff'),
                     photo: staffAccess.photo || '',
                     dutyClasses,
+                    categoryId: account.categoryId || staffAccess.categoryId || '',
                     canAccessAdmin: staffAccess.admin === true || staffAccess.canAccessAdmin === true,
                     actLikeSuperAdmin: staffAccess.actLikeSuperAdmin === true,
                     canCollect: staffAccess.collection === true,
@@ -555,17 +748,20 @@
                     canAccessAcademicPlan: staffAccess.academicPlan === true,
                     canAccessActivity: staffAccess.studentActivity === true || staffAccess.activity === true,
                     canAccessEvaluation: staffAccess.evaluation === true,
-                    source: 'staff',
+                    source,
                     access: staffAccess
                 };
-                localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
+                localStorage.setItem(OFFICIAL_SESSION_KEY, JSON.stringify(officialSessionObj));
                 window.location.href = 'official.html';
                 return true;
             }
 
             if (account.role === 'admin') {
+                removeKey(STUDENT_STATE_KEY);
+                removeKey(STAFF_STATE_KEY);
                 this.startAdmin(account);
                 const officialSessionObj = {
+                    ...(activeProject ? { projectId: activeProject } : {}),
                     id: 'admin',
                     name: account.name || 'Administrator',
                     username: account.email || 'admin',
@@ -583,7 +779,7 @@
                     canAccessActivity: true,
                     canAccessEvaluation: true
                 };
-                localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
+                localStorage.setItem(OFFICIAL_SESSION_KEY, JSON.stringify(officialSessionObj));
                 window.location.href = 'official.html';
                 return true;
             }
@@ -592,10 +788,22 @@
         },
         removeRememberedAccount(accountId = '') {
             if (!accountId) return;
+            const target = getRememberedAccounts().find((a) => a.id === accountId);
             const updated = getRememberedAccounts().filter((a) => a.id !== accountId);
             saveRememberedAccounts(updated);
-            if (getStudentState()?.studentId === accountId) {
+            if (getStudentState()?.studentId === accountId || (target?.studentId && getStudentState()?.studentId === target.studentId)) {
                 removeKey(STUDENT_STATE_KEY);
+                if (getRole() === 'student') setCurrentRole('');
+            }
+            if ((target?.role === 'staff' || target?.role === 'directory') && getStaffState()?.staffId && (getStaffState()?.staffId === target.staffId || getStaffState()?.staffId === target.entryId || `staff_${getStaffState()?.staffId}` === accountId || `dir_${getStaffState()?.staffId}` === accountId)) {
+                removeKey(STAFF_STATE_KEY);
+                removeKey(OFFICIAL_SESSION_KEY);
+                if (getRole() === 'staff') setCurrentRole('');
+            }
+            if (target?.role === 'admin' && (accountId === 'admin_master' || getAdminState())) {
+                removeKey(ADMIN_STATE_KEY);
+                removeKey(OFFICIAL_SESSION_KEY);
+                if (getRole() === 'admin') setCurrentRole('');
             }
         },
         canViewAlumni() {
@@ -630,7 +838,7 @@
                 setCurrentRole('staff');
                 return;
             }
-            redirectHome('Your staff/admin session expired. Please log in again.');
+            redirectHome('Please log in to continue.');
         },
         guardStaffPageAccess(requiredPage = 'collection') {
             pruneExpiredStates();
@@ -673,7 +881,7 @@
                     setCurrentRole('admin');
                     return;
                 }
-                redirectHome('Your staff session expired. Please log in again.');
+                redirectHome('Please log in to continue.');
                 return;
             }
             setCurrentRole('staff');
@@ -747,7 +955,7 @@
                 setCurrentRole('staff');
                 return;
             }
-            redirectHome('Your admin session expired. Please log in again.');
+            redirectHome('Please log in to continue.');
         }
     };
 }());

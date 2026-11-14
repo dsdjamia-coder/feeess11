@@ -1406,15 +1406,15 @@ document.getElementById('header-user-badge')?.addEventListener('click', openProf
 const handleCollectionLogout = async () => {
     try {
         if (window.AppSession?.signOut) {
-            await window.AppSession.signOut(auth, { redirectUrl: 'index.html' });
+            await window.AppSession.signOut(auth, { redirectUrl: 'index.html?public=1' });
         } else {
             await signOut(auth);
             await window.AppSession?.clearAll({ purgeClientData: true });
-            window.location.href = 'index.html';
+            window.location.href = 'index.html?public=1';
         }
     } catch (err) {
         console.warn('Logout error, forcing redirect:', err);
-        window.location.href = 'index.html';
+        window.location.href = 'index.html?public=1';
     }
 };
 
@@ -6860,14 +6860,32 @@ onAuthStateChanged(auth, async (user) => {
                 collectorPaymentDetails = serverDutyPayment;
                 localStorage.setItem(getDutyPaymentStorageKey(), JSON.stringify(collectorPaymentDetails));
                 setResultPageNavVisibility(myData.canManageResults === true || staffAccess?.result === true);
-            } else if (myData && (myData.isActive === false || myData.canCollect === false)) {
-                alert("Your collection access is not active. Please contact administrator.");
-                window.location.href = 'index.html';
+            } else if (myData && myData.isActive === false) {
+                if (!snap.metadata?.fromCache) {
+                    window.AppSession?.revokeCurrentAccount?.({
+                        accountId: myData.id || '',
+                        message: 'Your staff account has been deactivated by the administrator.',
+                        authInstance: auth,
+                        redirectUrl: 'index.html'
+                    });
+                }
+                return;
+            } else if (myData && myData.canCollect === false) {
+                window.AppSession?.setFlash?.('Access Restricted: Fee Collection permission is disabled for your account.');
+                window.location.href = 'official.html';
                 return;
             } else {
                 if (isDirectoryCollector) {
                     if (displayEl) displayEl.textContent = window.AppSession?.getStaffName?.() || 'COLLECTOR';
                     setDutyPaymentDetailsInputs(collectorPaymentDetails);
+                } else if (!snap.metadata?.fromCache && (window.AppSession?.getRole?.() || '') !== 'admin') {
+                    window.AppSession?.revokeCurrentAccount?.({
+                        accountId: staffAccess?.staffId || '',
+                        message: 'Your staff account was removed by the administrator.',
+                        authInstance: auth,
+                        redirectUrl: 'index.html'
+                    });
+                    return;
                 } else {
                     selectedDutyClasses = resolveStaffDutyClasses(null);
                     if (displayEl) displayEl.textContent = window.AppSession?.getStaffName?.() || 'STAFF';
@@ -6888,8 +6906,27 @@ onAuthStateChanged(auth, async (user) => {
         updateDashboardMetrics();
         refreshVisibleViewOnDataUpdate();
     });
+    const verifyLiveDirectoryCollectorAccess = (fromCache = false) => {
+        if (!isDirectoryCollector || fromCache) return;
+        const entryId = staffAccess?.entryId || officialSession?.id || '';
+        const loginId = String(staffAccess?.loginId || officialSession?.username || '').trim().toLowerCase();
+        const matchedEntry = directoryEntries.find((e) =>
+            (entryId && e.id === entryId)
+            || (loginId && String(e.authMeta?.username || '').trim().toLowerCase() === loginId)
+        );
+        const isBlocked = matchedEntry && pageAccessConfig?.overrides?.[matchedEntry.id]?.blocked === true;
+        if (!matchedEntry || isBlocked) {
+            window.AppSession?.revokeCurrentAccount?.({
+                accountId: matchedEntry?.id ? `dir_${matchedEntry.id}` : (entryId ? `dir_${entryId}` : ''),
+                message: 'Your collection access is no longer active or has been removed by the administrator.',
+                authInstance: auth,
+                redirectUrl: 'index.html'
+            });
+        }
+    };
     onSnapshot(collection(db, `${BASE_PATH}/publicDirectory`), (snap) => {
         directoryEntries = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        verifyLiveDirectoryCollectorAccess(Boolean(snap.metadata?.fromCache));
         renderStaffDirectory();
     });
     onSnapshot(doc(db, `${BASE_PATH}/settings`, 'content'), (contentSnap) => {
@@ -6900,6 +6937,7 @@ onAuthStateChanged(auth, async (user) => {
     onSnapshot(doc(db, `${BASE_PATH}/settings`, 'pageAccess'), (accessSnap) => {
         const payload = accessSnap.exists() ? accessSnap.data() : {};
         pageAccessConfig = payload && typeof payload === 'object' ? { categories: {}, overrides: {}, ...payload } : { categories: {}, overrides: {} };
+        verifyLiveDirectoryCollectorAccess(Boolean(accessSnap.metadata?.fromCache));
         renderStaffDirectory();
     });
     getDoc(getSessionRegistryRef()).then((sessionSnap) => {

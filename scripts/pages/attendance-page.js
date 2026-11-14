@@ -496,6 +496,17 @@ const setupFirestoreListeners = () => {
                 (staffPhoneKey && s.phone && String(s.phone).replace(/\D/g, '').includes(staffPhoneKey)) ||
                 (s.name && s.name.toLowerCase() === currentStaffName.toLowerCase())
             );
+            if (!matchedStaff || matchedStaff.isActive === false) {
+                if (!snap.metadata?.fromCache && (window.AppSession?.getRole?.() || '') !== 'admin') {
+                    window.AppSession?.revokeCurrentAccount?.({
+                        accountId: matchedStaff?.id || staffIdKey || '',
+                        message: 'Your staff account is no longer active or has been removed by the administrator.',
+                        authInstance: auth,
+                        redirectUrl: 'index.html'
+                    });
+                    return;
+                }
+            }
             if (matchedStaff) {
                 currentStaffDoc = matchedStaff;
                 teacherAssignedClasses = getStaffAssignedClasses(matchedStaff, staffAccess);
@@ -2708,7 +2719,7 @@ const setupEventListeners = () => {
 
     // 7. Sign Out
     const handleLogout = () => {
-        window.AppSession?.clearAll?.({ redirectUrl: 'index.html' });
+        window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
     };
     document.getElementById('sidebar-logout-btn')?.addEventListener('click', handleLogout);
     document.getElementById('mobile-more-logout-btn')?.addEventListener('click', handleLogout);

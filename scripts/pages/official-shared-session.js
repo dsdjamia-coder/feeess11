@@ -1,8 +1,8 @@
 (function () {
-        const DEFAULT_SESSION_MAX_AGE_MS = 1000 * 60 * 15;
-        const DEFAULT_SESSION_IDLE_MAX_AGE_MS = 1000 * 60 * 10;
+        const DEFAULT_SESSION_MAX_AGE_MS = 0;
+        const DEFAULT_SESSION_IDLE_MAX_AGE_MS = 0;
         const ROLE_SESSION_POLICY = {
-            student: { maxAgeMs: 1000 * 60 * 30, idleMs: 1000 * 60 * 20 },
+            student: { maxAgeMs: 0, idleMs: 0 },
             staff: { maxAgeMs: 0, idleMs: 0 },
             admin: { maxAgeMs: 0, idleMs: 0 }
         };
@@ -22,15 +22,7 @@
         const buildState = (extra = {}) => { const timestamp = now(); return { startedAt: timestamp, lastActiveAt: timestamp, ...extra }; };
         const getSessionPolicy = (role = '') => ROLE_SESSION_POLICY[role] || { maxAgeMs: DEFAULT_SESSION_MAX_AGE_MS, idleMs: DEFAULT_SESSION_IDLE_MAX_AGE_MS };
 
-        const isStateFresh = (state, role = getRole()) => {
-            if (!state || !state.lastActiveAt || !state.startedAt) return false;
-            const policy = getSessionPolicy(role);
-            const age = now() - Number(state.startedAt);
-            const idle = now() - Number(state.lastActiveAt);
-            const maxAgeMs = Number(policy.maxAgeMs || 0);
-            const idleMs = Number(policy.idleMs || 0);
-            return (maxAgeMs <= 0 || age <= maxAgeMs) && (idleMs <= 0 || idle <= idleMs);
-        };
+        const isStateFresh = (state) => Boolean(state && state.lastActiveAt && state.startedAt);
 
         const getStaffState = () => readJson(STAFF_STATE_KEY);
         const getAdminState = () => readJson(ADMIN_STATE_KEY);

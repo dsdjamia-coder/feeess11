@@ -964,35 +964,46 @@ const tryLogin = async () => {
   const passHash = await hashCredentialValue(password);
   let session = null;
 
+  let authCred = null;
   if (uname.includes('@')) {
     try {
-      const cred = await signInWithEmailAndPassword(auth, username, password);
-      if (cred?.user?.email && String(cred.user.email).toLowerCase() === uname) {
-        session = { name: 'Super Admin', username: cred.user.email, type: 'Admin', source: 'firebase', photo: '/assets/images/logo.png' };
-      }
+      authCred = await signInWithEmailAndPassword(auth, username, password);
+    } catch (_error) {}
+  } else if (!uname.includes('@')) {
+    try {
+      authCred = await signInWithEmailAndPassword(auth, `${uname}@school.internal`, password);
     } catch (_error) {}
   }
 
-  const adminAuthSnap = await getDoc(doc(db, `${BASE_PATH}/settings`, 'adminAuth'));
-  const adminAuth = adminAuthSnap.exists() ? adminAuthSnap.data() : {};
-  if (!session && String(adminAuth.email || '').toLowerCase() === uname && String(adminAuth.password || '').trim() === password) {
-    session = { name: 'Super Admin', username, type: 'Admin', source: 'legacy-admin', photo: '/assets/images/logo.png' };
-  }
+  if (authCred?.user?.email) {
+    const authedEmail = String(authCred.user.email).toLowerCase();
+    try {
+      const adminAuthSnap = await getDoc(doc(db, `${BASE_PATH}/settings`, 'adminAuth'));
+      const adminAuth = adminAuthSnap.exists() ? adminAuthSnap.data() : {};
+      if (String(adminAuth.email || '').toLowerCase() === authedEmail || adminAuth?.adminsIndex?.[authedEmail] === true) {
+        session = { name: 'Super Admin', username: authedEmail, type: 'Admin', source: 'firebase', photo: '/assets/images/logo.png' };
+      }
+    } catch (_err) {}
 
-  if (!session) {
-    const staffSnap = await getDocs(collection(db, `${BASE_PATH}/staff`));
-    const staff = staffSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })).find((item) => {
-      if (item.isActive === false) return false;
-      const usernames = [
-        item.email, item.username, item.userName, item.loginId, item.login, item.staffId
-      ].map((v) => String(v || '').toLowerCase()).filter(Boolean);
-      const passwordMatches = [
-        String(item.password || '').trim() === password,
-        String(item.passwordHash || '').trim() === passHash
-      ].some(Boolean);
-      return usernames.includes(uname) && passwordMatches;
-    });
-    if (staff) session = { ...staff, name: staff.name || 'Staff', username, type: staff.type || 'Staff', source: 'staff', photo: staff.photo || '' };
+    if (!session) {
+      const staffSnap = await getDocs(collection(db, `${BASE_PATH}/staff`));
+      const staff = staffSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })).find((item) => {
+        if (item.isActive === false) return false;
+        const staffEmail = String(item.email || '').toLowerCase().trim();
+        const usernames = [
+          staffEmail,
+          item.username,
+          item.userName,
+          item.loginId,
+          item.login,
+          item.staffId
+        ].map((v) => String(v || '').toLowerCase().trim()).filter(Boolean);
+        return staffEmail === authedEmail || usernames.includes(uname);
+      });
+      if (staff) {
+        session = { ...staff, name: staff.name || 'Staff', username: authedEmail, type: staff.type || 'Staff', source: 'staff', photo: staff.photo || '' };
+      }
+    }
   }
 
   if (!session) {
@@ -1033,9 +1044,32 @@ const tryLogin = async () => {
   showApp();
 };
 
-onAuthStateChanged(auth, async (user) => {
+const waitForFirebaseAuthUser = () => {
+  if (auth.currentUser) {
+    authReady = true;
+    return Promise.resolve(auth.currentUser);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (user) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { unsubscribe?.(); } catch (_) {}
+      if (user) authReady = true;
+      resolve(user || null);
+    };
+    const unsubscribe = onAuthStateChanged(auth, (user) => finish(user));
+    const timer = setTimeout(() => finish(auth.currentUser || null), 5000);
+  });
+};
+
+onAuthStateChanged(auth, (user) => {
   if (!user) {
-    window.location.replace('index.html');
+    if (authReady) {
+      localStorage.removeItem(OFFICIAL_SESSION_KEY);
+      window.location.replace('index.html');
+    }
     return;
   }
   authReady = true;
@@ -1052,7 +1086,7 @@ document.getElementById('official-toggle-password').addEventListener('click', ()
 });
 document.getElementById('official-logout-btn').addEventListener('click', () => {
   localStorage.removeItem(OFFICIAL_SESSION_KEY);
-  window.location.reload();
+  window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
 });
 
 const restoreOfficialSession = async () => {
@@ -1061,6 +1095,12 @@ const restoreOfficialSession = async () => {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     if (!parsed?.username) return;
+    const firebaseUser = await waitForFirebaseAuthUser();
+    if (!firebaseUser) {
+      localStorage.removeItem(OFFICIAL_SESSION_KEY);
+      window.location.replace('index.html');
+      return;
+    }
     userSession = parsed;
     await loadData();
     showApp();

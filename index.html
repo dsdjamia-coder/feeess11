@@ -25,7 +25,8 @@
                 const params = new URLSearchParams(window.location.search);
                 const isExplicitPublic = params.get('public') === '1' || params.get('view') === 'public';
                 const isAddStudent = params.get('addStudent') === '1';
-                if (!isExplicitPublic && !isAddStudent && window.AppSession) {
+                const isForceNewLogin = params.get('login') === 'new';
+                if (!isExplicitPublic && !isAddStudent && !isForceNewLogin && window.AppSession) {
                     if (window.AppSession.hasStudentSession?.()) {
                         window.location.replace('student.html');
                     } else if (window.AppSession.hasStaffSession?.() || window.AppSession.hasAdminSession?.()) {

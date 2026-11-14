@@ -862,6 +862,17 @@ onAuthStateChanged(auth, async (user) => {
         onSnapshot(collection(db, `${BASE_PATH}/staff`), async (staffSnap) => {
             allStaff = staffSnap.docs.map(d => ({id: d.id, ...d.data()}));
             const access = await resolveResultAccess({ isAdminUser: isCurrentAdmin, staffDocs: allStaff, user, staffAccess, userKey: currentUserKey });
+            if (!isCurrentAdmin && (window.AppSession?.getRole?.() || '') !== 'admin' && !staffSnap.metadata?.fromCache) {
+                if (!access.staffDoc || access.staffDoc.isActive === false) {
+                    window.AppSession?.revokeCurrentAccount?.({
+                        accountId: access.staffDoc?.id || staffAccess?.staffId || '',
+                        message: 'Your staff account is no longer active or has been removed by the administrator.',
+                        authInstance: auth,
+                        redirectUrl: 'index.html'
+                    });
+                    return;
+                }
+            }
             if (access.allowed) grantResultAccess(access);
             else denyResultAccess();
         });
@@ -875,10 +886,7 @@ onAuthStateChanged(auth, async (user) => {
 
 // --- User Logout Handling ---
 const handleLogout = () => {
-    signOut(auth).then(async () => {
-        await window.AppSession?.clearAll?.({ purgeClientData: true });
-        window.location.replace('index.html'); 
-    });
+    window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
 };
 
 document.getElementById('logout-btn')?.addEventListener('click', handleLogout);

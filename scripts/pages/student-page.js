@@ -1,5 +1,5 @@
 import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { doc, getDoc, getDocFromCache, collection, query, where, getDocs, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, getDoc, getDocFromCache, collection, query, where, getDocs, onSnapshot, setDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { BASE_PATH, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, isUpcomingAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
 import { registerPortalForPwa } from '../shared/pwa-install.js';
@@ -6994,8 +6994,8 @@ const studentPwa = registerPortalForPwa('student', {
                     const startedAt = window.AppSession?.getStartedAt?.() || 0;
                     const forcedAt = sessionData?.lastForcedLogoutAt ? new Date(sessionData.lastForcedLogoutAt).getTime() : 0;
                     if (forcedAt && startedAt && forcedAt > startedAt) {
-                        alert(sessionData.message || 'An administrator ended this session. Please sign in again.');
-                        logoutStudent();
+                        window.AppSession?.setFlash?.(sessionData.message || 'An administrator ended this session. Please sign in again.');
+                        logoutStudent({ skipConfirm: true });
                     }
                 });
                 onSnapshot(doc(db, `${BASE_PATH}/settings`, 'academicYears'), (academicYearSnap) => {
@@ -7063,12 +7063,27 @@ const studentPwa = registerPortalForPwa('student', {
 
                 if (!stuSnap.exists()) {
                     dismissLoader();
-                    alert("Student profile not found.");
-                    logoutStudent();
+                    await window.AppSession?.revokeCurrentAccount?.({
+                        accountId: studentId,
+                        message: 'Your student profile was removed by the administrator.',
+                        authInstance: auth,
+                        redirectUrl: 'index.html'
+                    });
                     return;
                 }
 
                 const st = stuSnap.data();
+                const initialStatusNorm = String(st?.status || '').trim().toLowerCase();
+                if (st?.isActive === false || initialStatusNorm === 'inactive' || initialStatusNorm === 'discontinued') {
+                    dismissLoader();
+                    await window.AppSession?.revokeCurrentAccount?.({
+                        accountId: studentId,
+                        message: 'Your student account is currently inactive. Please contact the administration.',
+                        authInstance: auth,
+                        redirectUrl: 'index.html'
+                    });
+                    return;
+                }
                 studentProfile = { id: stuSnap.id, ...st };
                 studentGroups = grpSnap.docs ? grpSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
                 const activeGroup = studentGroups.find((group) => Array.isArray(group.memberIds) && group.memberIds.includes(studentId));
@@ -7081,8 +7096,8 @@ const studentPwa = registerPortalForPwa('student', {
                 }
                 const safeTargetIds = targetMemberIds.slice(0, 10);
                 const payQuery = safeTargetIds.length > 1
-                    ? query(collection(db, `${BASE_PATH}/payments`), where('studentId', 'in', safeTargetIds))
-                    : query(collection(db, `${BASE_PATH}/payments`), where('studentId', '==', studentId));
+                    ? query(collection(db, `${BASE_PATH}/payments`), where('studentId', 'in', safeTargetIds), limit(150))
+                    : query(collection(db, `${BASE_PATH}/payments`), where('studentId', '==', studentId), limit(150));
 
                 const processPayments = (docs) => {
                     const myId = String(studentId || '').trim();
@@ -7217,31 +7232,50 @@ const studentPwa = registerPortalForPwa('student', {
                 });
 
                 onSnapshot(doc(db, `${BASE_PATH}/students`, studentId), (studentSnap) => {
-                    if (studentSnap.exists()) {
-                        const updatedData = studentSnap.data();
-                        studentProfile = { id: studentSnap.id, ...updatedData };
-                        classByYear[updatedData.academicYear || '--'] = updatedData.class || '--';
-                        if (typeof renderStudentComprehensiveProfile === 'function') {
-                            renderStudentComprehensiveProfile(studentProfile, studentPhotoSubmission);
+                    if (!studentSnap.exists()) {
+                        if (!studentSnap.metadata?.fromCache) {
+                            window.AppSession?.revokeCurrentAccount?.({
+                                accountId: studentId,
+                                message: 'Your student profile was removed by the administrator.',
+                                authInstance: auth,
+                                redirectUrl: 'index.html'
+                            });
                         }
-                        if (typeof renderStudentFeeDetails === 'function') {
-                            renderStudentFeeDetails(studentProfile, selectedFeeAcademicYear);
-                        }
-                        if (typeof renderStudentAttendanceModule === 'function') {
-                            renderStudentAttendanceModule(studentProfile, selectedAttendanceAcademicYear);
-                        }
-                        if (typeof renderStudentTimetableModule === 'function') {
-                            renderStudentTimetableModule(studentProfile, selectedTimetableAcademicYear);
-                        }
-                        if (typeof renderStudentSyllabusModule === 'function') {
-                            renderStudentSyllabusModule(studentProfile, selectedTimetableAcademicYear);
-                        }
-                        if (typeof renderStudentActivitiesModule === 'function') {
-                            renderStudentActivitiesModule(studentProfile);
-                        }
-                        rawFeeAlerts = buildFeeNotificationAlerts(studentProfile);
-                        if (window.triggerNotificationUpdate) window.triggerNotificationUpdate();
+                        return;
                     }
+                    const updatedData = studentSnap.data() || {};
+                    const liveStatusNorm = String(updatedData.status || '').trim().toLowerCase();
+                    if (updatedData.isActive === false || liveStatusNorm === 'inactive' || liveStatusNorm === 'discontinued') {
+                        window.AppSession?.revokeCurrentAccount?.({
+                            accountId: studentId,
+                            message: 'Your student account has been deactivated by the administrator.',
+                            authInstance: auth,
+                            redirectUrl: 'index.html'
+                        });
+                        return;
+                    }
+                    studentProfile = { id: studentSnap.id, ...updatedData };
+                    classByYear[updatedData.academicYear || '--'] = updatedData.class || '--';
+                    if (typeof renderStudentComprehensiveProfile === 'function') {
+                        renderStudentComprehensiveProfile(studentProfile, studentPhotoSubmission);
+                    }
+                    if (typeof renderStudentFeeDetails === 'function') {
+                        renderStudentFeeDetails(studentProfile, selectedFeeAcademicYear);
+                    }
+                    if (typeof renderStudentAttendanceModule === 'function') {
+                        renderStudentAttendanceModule(studentProfile, selectedAttendanceAcademicYear);
+                    }
+                    if (typeof renderStudentTimetableModule === 'function') {
+                        renderStudentTimetableModule(studentProfile, selectedTimetableAcademicYear);
+                    }
+                    if (typeof renderStudentSyllabusModule === 'function') {
+                        renderStudentSyllabusModule(studentProfile, selectedTimetableAcademicYear);
+                    }
+                    if (typeof renderStudentActivitiesModule === 'function') {
+                        renderStudentActivitiesModule(studentProfile);
+                    }
+                    rawFeeAlerts = buildFeeNotificationAlerts(studentProfile);
+                    if (window.triggerNotificationUpdate) window.triggerNotificationUpdate();
                 }, (studentErr) => {
                     console.warn('Real-time student snapshot error:', studentErr);
                 });
