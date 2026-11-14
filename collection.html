@@ -2229,6 +2229,81 @@
         </div>
     </div>
 
+    <!-- Fee Register PDF Export Configuration Modal -->
+    <div id="ledger-pdf-export-modal" class="modal-overlay hidden !p-3 sm:!p-4">
+        <div class="modal-box relative !max-w-md w-full !p-0 text-left flex flex-col max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl border border-slate-200 bg-white">
+            <!-- Header -->
+            <div class="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-200 bg-white shrink-0">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-sm shrink-0">
+                        <i class="fas fa-file-pdf"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="text-sm font-black text-slate-800 leading-tight truncate">Export Fee Register (PDF)</h3>
+                        <p class="text-[11px] text-slate-500 leading-tight truncate">Customize optional columns for printing</p>
+                    </div>
+                </div>
+                <button type="button" id="ledger-pdf-modal-close-x" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer" title="Close">
+                    <i class="fas fa-times text-base"></i>
+                </button>
+            </div>
+
+            <!-- Scope Overview -->
+            <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs text-slate-600 flex items-center justify-between">
+                <span id="ledger-pdf-modal-scope-label" class="font-bold truncate">Scope: All Classes</span>
+                <span id="ledger-pdf-modal-count-label" class="font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full text-[10px] shrink-0">0 Records</span>
+            </div>
+
+            <!-- Options Checklist -->
+            <div class="p-4 space-y-2.5 bg-white text-xs overflow-y-auto">
+                <p class="font-bold text-slate-700 mb-1">Optional Columns to Include:</p>
+
+                <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition select-none">
+                    <input type="checkbox" id="ledger-pdf-opt-class" class="w-4 h-4 mt-0.5 rounded text-rose-600 focus:ring-rose-500 border-slate-300">
+                    <div>
+                        <div class="font-bold text-slate-800">Include Class Column</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">Keep unchecked for a clean layout. Records are already grouped under Class banners.</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition select-none">
+                    <input type="checkbox" id="ledger-pdf-opt-guardian" class="w-4 h-4 mt-0.5 rounded text-rose-600 focus:ring-rose-500 border-slate-300">
+                    <div>
+                        <div class="font-bold text-slate-800">Include Guardian Name</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">Include parent or guardian name in the register table.</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition select-none">
+                    <input type="checkbox" id="ledger-pdf-opt-phone" class="w-4 h-4 mt-0.5 rounded text-rose-600 focus:ring-rose-500 border-slate-300">
+                    <div>
+                        <div class="font-bold text-slate-800">Include Phone Number</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">Combined into a single Guardian &amp; Phone column when Guardian Name is also checked.</div>
+                    </div>
+                </label>
+
+                <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer transition select-none">
+                    <input type="checkbox" id="ledger-pdf-opt-fee-setup" class="w-4 h-4 mt-0.5 rounded text-rose-600 focus:ring-rose-500 border-slate-300">
+                    <div>
+                        <div class="font-bold text-slate-800">Include Fee Setup</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">Show monthly fee rate, concession, or sibling group configuration.</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="flex items-center justify-between gap-2 px-4 py-3 border-t border-slate-200 bg-white shrink-0">
+                <button type="button" id="ledger-pdf-modal-cancel-btn" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition border border-slate-200 cursor-pointer">
+                    Cancel
+                </button>
+                <button type="button" id="ledger-pdf-modal-confirm-btn" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5 active:scale-95 cursor-pointer">
+                    <i class="fas fa-file-pdf"></i>
+                    <span>Generate PDF</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
 
 
     <!-- ========================================== -->

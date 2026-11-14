@@ -7785,10 +7785,13 @@ import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gsta
       onSnapshot(collection(db, `${BASE_PATH}/students`), (snap) => {
         allStudents = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
         if (isWorksheetPage) {
-          syncFilteredRows();
-          renderWorksheet();
-          renderStudents();
           buildClassSummary();
+          renderStudents();
+          if (canUserViewAlumni()) renderAlumniTab();
+          if (document.getElementById('official-tab-export')?.classList.contains('flex')) {
+            renderExportTab();
+            setupExcelEngine();
+          }
         } else {
           renderDashboard();
         }

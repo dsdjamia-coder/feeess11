@@ -1098,8 +1098,73 @@ export const submitLedgerPayment = async () => {
     return submitFeeEntryPayment();
 };
 
+// Open PDF Export Options Modal for Fee Register
+const openLedgerPdfModal = () => {
+    if (!filters.classFilter) {
+        showToast('Please select a class or choose All Classes to preview PDF.', 'info');
+        return;
+    }
+
+    if (!window.jspdf?.jsPDF) {
+        showToast('PDF generator is loading, please try again.', 'info');
+        return;
+    }
+
+    const list = getFilteredUnits();
+    if (list.length === 0) {
+        showToast('No records available to export.', 'error');
+        return;
+    }
+
+    const modal = document.getElementById('ledger-pdf-export-modal');
+    if (!modal) {
+        exportLedgerPdfWithOptions({});
+        return;
+    }
+
+    const scopeLabel = document.getElementById('ledger-pdf-modal-scope-label');
+    const countLabel = document.getElementById('ledger-pdf-modal-count-label');
+    const optClass = document.getElementById('ledger-pdf-opt-class');
+    const optGuardian = document.getElementById('ledger-pdf-opt-guardian');
+    const optPhone = document.getElementById('ledger-pdf-opt-phone');
+    const optFeeSetup = document.getElementById('ledger-pdf-opt-fee-setup');
+
+    if (scopeLabel) {
+        const classTxt = filters.classFilter && filters.classFilter !== 'all'
+            ? (filters.classFilter.toLowerCase().startsWith('class') ? filters.classFilter : `Class: ${filters.classFilter}`)
+            : 'All Classes';
+        scopeLabel.textContent = `Scope: ${classTxt}`;
+    }
+    if (countLabel) {
+        countLabel.textContent = `${list.length} Records`;
+    }
+    if (optClass) optClass.checked = false;
+    if (optGuardian) optGuardian.checked = false;
+    if (optPhone) optPhone.checked = false;
+    if (optFeeSetup) optFeeSetup.checked = false;
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    modal.style.display = 'flex';
+};
+
+// Close Fee Register PDF Export Options Modal
+const closeLedgerPdfModal = () => {
+    const modal = document.getElementById('ledger-pdf-export-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        modal.style.display = 'none';
+    }
+};
+
 // Export to Landscape PDF (Class-wise Boys then Girls, without currency symbols)
-const exportLedgerPdf = () => {
+const exportLedgerPdfWithOptions = ({
+    includeClass = false,
+    includeGuardian = false,
+    includePhone = false,
+    includeFeeSetup = false
+} = {}) => {
     if (!filters.classFilter) {
         showToast('Please select a class or choose All Classes to preview PDF.', 'info');
         return;
@@ -1161,20 +1226,41 @@ const exportLedgerPdf = () => {
         return acc;
     }, {})).sort((a, b) => compareClassLabelsNatural(a.classLabel, b.classLabel));
 
-    const buildHead = (genderTitle) => [
-        ['NO', 'CLASS', genderTitle, 'GUARDIAN & PHONE', 'FEE SETUP', 'TOTAL DUE', ...ledgerAcademicMonths.map(m => m.toUpperCase()), 'STATUS']
-    ];
+    const includeContactCol = includeGuardian || includePhone;
+    const contactHeaderLabel = (includeGuardian && includePhone)
+        ? 'GUARDIAN & PHONE'
+        : (includeGuardian ? 'GUARDIAN' : 'PHONE');
+
+    const buildHead = (genderTitle) => {
+        const cols = ['NO'];
+        if (includeClass) cols.push('CLASS');
+        cols.push(genderTitle);
+        if (includeContactCol) cols.push(contactHeaderLabel);
+        if (includeFeeSetup) cols.push('FEE SETUP');
+        cols.push('TOTAL DUE', ...ledgerAcademicMonths.map(m => m.toUpperCase()), 'STATUS');
+        return [cols];
+    };
 
     const buildRows = (units = []) => units.map((unit, idx) => {
         const studentNamesStr = unit.students.map((s, i) => `${unit.isGroup ? `${i + 1}. ` : ''}${s.name} (${s.gender === 'F' ? 'F' : 'M'})${s.adm ? ` [${s.adm}]` : ''}`).join('\n');
         const classesStr = unit.classes.join('\n');
-        const guardianStr = `${unit.guardian}\n${unit.phone || '--'}`;
+
+        let contactStr = '';
+        if (includeGuardian && includePhone) {
+            contactStr = `${unit.guardian || '--'}\n${unit.phone || '--'}`;
+        } else if (includeGuardian) {
+            contactStr = `${unit.guardian || '--'}`;
+        } else if (includePhone) {
+            contactStr = `${unit.phone || '--'}`;
+        }
+
         let feeStr = `${unit.fee}`;
         if (unit.isGroup) feeStr = `Group (${unit.students.length})\n${unit.fee}`;
         else if (unit.isGroupMember) feeStr = `Group: ${unit.groupName}\n${unit.fee}`;
         else if (unit.isConcession) feeStr = `Concession\n${unit.fee}`;
 
-        const dueStr = (unit.totalDue || 0) > 0 ? `${formatCurrency(unit.totalDue)}\n(${unit.unpaidMonthsCount} mos)` : 'Nil Due';
+        const plainDueAmount = Math.round(Number(unit.totalDue || 0));
+        const dueStr = plainDueAmount > 0 ? `${plainDueAmount}\n(${unit.unpaidMonthsCount} mos)` : 'Nil Due';
 
         const monthValues = ledgerAcademicMonths.map(m => {
             const st = unit.monthStatus[m];
@@ -1189,41 +1275,59 @@ const exportLedgerPdf = () => {
 
         const overallStatus = (unit.totalDue || 0) === 0 ? 'Completed' : `${unit.unpaidMonthsCount} mos due`;
 
-        return [
-            idx + 1,
-            classesStr,
-            studentNamesStr,
-            guardianStr,
-            feeStr,
-            dueStr,
-            ...monthValues,
-            overallStatus
-        ];
+        const row = [idx + 1];
+        if (includeClass) row.push(classesStr);
+        row.push(studentNamesStr);
+        if (includeContactCol) row.push(contactStr);
+        if (includeFeeSetup) row.push(feeStr);
+        row.push(dueStr, ...monthValues, overallStatus);
+        return row;
     });
 
     const usableWidth = pageWidth - (marginH * 2);
-    const monthCount = ledgerAcademicMonths.length || 12;
-    const fixedCols = { no: 20, cls: 32, name: 92, guardian: 78, fee: 42, due: 44, status: 48 };
-    const fixedSum = Object.values(fixedCols).reduce((sum, w) => sum + w, 0);
-    const remainingForMonths = Math.max(120, usableWidth - fixedSum - 2);
+    const monthCount = Math.max(1, ledgerAcademicMonths.length || 12);
+    const contactColWidth = includeContactCol
+        ? ((includeGuardian && includePhone) ? 78 : (includeGuardian ? 68 : 56))
+        : 0;
+    const fixedCols = {
+        no: 20,
+        cls: includeClass ? 32 : 0,
+        contact: contactColWidth,
+        fee: includeFeeSetup ? 42 : 0,
+        due: 44,
+        status: 48
+    };
+    const targetNameWidth = 92;
+    const minNameWidth = 68;
+    const fixedWithoutName = Object.values(fixedCols).reduce((sum, w) => sum + w, 0);
+    const maxMonthsBudget = Math.max(120, usableWidth - fixedWithoutName - minNameWidth - 4);
+    const idealMonthsBudget = Math.max(120, usableWidth - fixedWithoutName - targetNameWidth - 2);
+    const remainingForMonths = Math.min(maxMonthsBudget, idealMonthsBudget);
     const monthColWidth = Math.floor((remainingForMonths / monthCount) * 10) / 10;
     const isDenseMonths = monthCount > 13;
 
-    const ledgerColumnStyles = {
-        0: { cellWidth: fixedCols.no, halign: 'center' },
-        1: { cellWidth: fixedCols.cls, halign: 'center', fontStyle: 'bold' },
-        2: { cellWidth: fixedCols.name },
-        3: { cellWidth: fixedCols.guardian },
-        4: { cellWidth: fixedCols.fee, halign: 'center' },
-        5: { cellWidth: fixedCols.due, halign: 'center', fontStyle: 'bold' }
-    };
-    for (let mIdx = 0; mIdx < monthCount; mIdx++) {
-        ledgerColumnStyles[6 + mIdx] = { cellWidth: monthColWidth, halign: 'center' };
+    const ledgerColumnStyles = {};
+    let colIdx = 0;
+    ledgerColumnStyles[colIdx++] = { cellWidth: fixedCols.no, halign: 'center' };
+    if (includeClass) {
+        ledgerColumnStyles[colIdx++] = { cellWidth: fixedCols.cls, halign: 'center', fontStyle: 'bold' };
     }
-    ledgerColumnStyles[6 + monthCount] = { cellWidth: fixedCols.status, halign: 'center' };
+    ledgerColumnStyles[colIdx++] = { cellWidth: 'auto', minCellWidth: minNameWidth };
+    if (includeContactCol) {
+        ledgerColumnStyles[colIdx++] = { cellWidth: fixedCols.contact };
+    }
+    if (includeFeeSetup) {
+        ledgerColumnStyles[colIdx++] = { cellWidth: fixedCols.fee, halign: 'center' };
+    }
+    ledgerColumnStyles[colIdx++] = { cellWidth: fixedCols.due, halign: 'center', fontStyle: 'bold' };
+    const monthStartColIdx = colIdx;
+    for (let mIdx = 0; mIdx < monthCount; mIdx++) {
+        ledgerColumnStyles[colIdx++] = { cellWidth: monthColWidth, halign: 'center' };
+    }
+    ledgerColumnStyles[colIdx++] = { cellWidth: fixedCols.status, halign: 'center' };
 
     const sharedDidParseCell = (data) => {
-        if (data.section === 'body' && data.column.index >= 6 && data.column.index < 6 + monthCount) {
+        if (data.section === 'body' && data.column.index >= monthStartColIdx && data.column.index < monthStartColIdx + monthCount) {
             const cellText = String(data.cell.raw || '').trim();
             data.cell.styles.halign = 'center';
             if (cellText) {
@@ -1531,11 +1635,35 @@ export const initMasterLedgerModule = () => {
     document.getElementById('ledger-bulk-collect-btn')?.addEventListener('click', () => openLedgerBulkActionModal('pay'));
     document.getElementById('ledger-bulk-edit-btn')?.addEventListener('click', () => openLedgerBulkActionModal('edit'));
 
-    // 8. PDF Export Button
+    // 8. PDF Export Button & Configuration Modal Listeners
     const pdfBtn = document.getElementById('master-ledger-pdf-btn');
     if (pdfBtn) {
-        pdfBtn.addEventListener('click', exportLedgerPdf);
+        pdfBtn.addEventListener('click', openLedgerPdfModal);
     }
+
+    document.getElementById('ledger-pdf-modal-close-x')?.addEventListener('click', closeLedgerPdfModal);
+    document.getElementById('ledger-pdf-modal-cancel-btn')?.addEventListener('click', closeLedgerPdfModal);
+    document.getElementById('ledger-pdf-export-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'ledger-pdf-export-modal') {
+            closeLedgerPdfModal();
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('ledger-pdf-export-modal');
+            if (modal && !modal.classList.contains('hidden')) {
+                closeLedgerPdfModal();
+            }
+        }
+    });
+    document.getElementById('ledger-pdf-modal-confirm-btn')?.addEventListener('click', () => {
+        const includeClass = Boolean(document.getElementById('ledger-pdf-opt-class')?.checked);
+        const includeGuardian = Boolean(document.getElementById('ledger-pdf-opt-guardian')?.checked);
+        const includePhone = Boolean(document.getElementById('ledger-pdf-opt-phone')?.checked);
+        const includeFeeSetup = Boolean(document.getElementById('ledger-pdf-opt-fee-setup')?.checked);
+        closeLedgerPdfModal();
+        exportLedgerPdfWithOptions({ includeClass, includeGuardian, includePhone, includeFeeSetup });
+    });
 
     // 9. Quick Pay Modal Close & Submit Buttons are managed by shared-fee-modal.js
 
@@ -1549,7 +1677,8 @@ window.MasterLedger = {
     update: updateMasterLedgerData,
     render: renderLedgerTable,
     renderTable: renderLedgerTable,
-    exportPdf: exportLedgerPdf,
+    exportPdf: openLedgerPdfModal,
+    exportPdfWithOptions: exportLedgerPdfWithOptions,
     openQuickPayModal: openQuickPayModal,
     openStudentQuickPayModal: openStudentQuickPayModal,
     openEditPaymentInQuickModal: openEditPaymentInQuickModal,

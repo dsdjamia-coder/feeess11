@@ -33,15 +33,17 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
         });
 
         const loginMessageEl = document.getElementById('login-msg');
+        const loginMessageTextEl = document.getElementById('login-msg-text');
         const showLoginMessage = (message) => {
             if (!loginMessageEl) return;
+            const target = loginMessageTextEl || loginMessageEl;
             if (!message) {
-                loginMessageEl.textContent = '';
+                target.textContent = '';
                 loginMessageEl.style.display = 'none';
                 return;
             }
-            loginMessageEl.textContent = message;
-            loginMessageEl.style.display = 'block';
+            target.textContent = message;
+            loginMessageEl.style.display = 'flex';
         };
 
         const renderSavedAccounts = () => {
@@ -602,16 +604,16 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     } catch (_) {}
                 }
                 
-                const institutionName = conf.institutionName || conf.schoolName || conf.name || '';
+                const institutionName = conf.appName || conf.institutionName || conf.schoolName || conf.name || '';
                 if (institutionName) {
-                    const loginTitleEl = document.getElementById('login-title');
-                    if (loginTitleEl) loginTitleEl.textContent = institutionName;
+                    const loginInstEl = document.getElementById('login-institution-name');
+                    if (loginInstEl) loginInstEl.textContent = institutionName;
                 }
                 applyInstitutionBranding(conf, {
                     defaultAppName: 'Institution',
                     primaryTitleIds: ['hero-main-title'],
                     subtitleIds: ['hero-subtitle'],
-                    logoIds: ['splash-logo-img', 'hero-logo-img', 'header-logo']
+                    logoIds: ['splash-logo-img', 'hero-logo-img', 'header-logo', 'login-modal-logo']
                 });
 
                 setTimeout(() => { fitHeroTitle(); }, 50);
@@ -625,6 +627,13 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     if (headerLogo) {
                         headerLogo.src = conf.logoUrl;
                         headerLogo.style.opacity = '1';
+                    }
+                    const loginModalLogo = document.getElementById('login-modal-logo');
+                    const loginModalLogoFallback = document.getElementById('login-modal-logo-fallback');
+                    if (loginModalLogo) {
+                        loginModalLogo.src = conf.logoUrl;
+                        loginModalLogo.classList.remove('hidden');
+                        loginModalLogoFallback?.classList.add('hidden');
                     }
                 }
                 
@@ -961,26 +970,102 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
         // State for unified smart verification & login
         let verifiedUser = null;
 
+        const VERIFY_BTN_HTML = '<i class="fas fa-arrow-right" aria-hidden="true"></i><span>Verify Account</span>';
+        const SIGN_IN_BTN_HTML = '<i class="fas fa-shield-halved" aria-hidden="true"></i><span>Sign In Securely</span>';
+
+        const loginModalLogoEl = document.getElementById('login-modal-logo');
+        const loginModalLogoFallbackEl = document.getElementById('login-modal-logo-fallback');
+        loginModalLogoEl?.addEventListener('error', () => {
+            loginModalLogoEl.classList.add('hidden');
+            loginModalLogoFallbackEl?.classList.remove('hidden');
+        });
+        loginModalLogoEl?.addEventListener('load', () => {
+            if (loginModalLogoEl.getAttribute('src')) {
+                loginModalLogoEl.classList.remove('hidden');
+                loginModalLogoFallbackEl?.classList.add('hidden');
+            }
+        });
+
+        const setLoginStepState = (step = 1) => {
+            const step1Item = document.getElementById('login-progress-step-1');
+            const step2Item = document.getElementById('login-progress-step-2');
+            const stepDot1 = document.getElementById('login-step-dot-1');
+            const stepLine = document.getElementById('login-progress-line');
+
+            if (step === 2) {
+                step1Item?.classList.remove('is-active');
+                step1Item?.classList.add('is-completed');
+                step1Item?.removeAttribute('aria-current');
+                if (stepDot1) stepDot1.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i>';
+                stepLine?.classList.add('is-completed');
+                step2Item?.classList.add('is-active');
+                step2Item?.setAttribute('aria-current', 'step');
+            } else {
+                step1Item?.classList.add('is-active');
+                step1Item?.classList.remove('is-completed');
+                step1Item?.setAttribute('aria-current', 'step');
+                if (stepDot1) stepDot1.textContent = '1';
+                stepLine?.classList.remove('is-completed');
+                step2Item?.classList.remove('is-active');
+                step2Item?.removeAttribute('aria-current');
+            }
+        };
+
+        const resetPasswordVisibility = () => {
+            const passEl = document.getElementById('login-password');
+            const toggleBtn = document.getElementById('toggle-universal-pass');
+            const toggleIcon = document.getElementById('toggle-universal-pass-icon');
+            if (passEl) passEl.type = 'password';
+            if (toggleIcon) {
+                toggleIcon.classList.add('fa-eye');
+                toggleIcon.classList.remove('fa-eye-slash');
+            }
+            if (toggleBtn) {
+                toggleBtn.setAttribute('aria-label', 'Show password');
+                toggleBtn.setAttribute('aria-pressed', 'false');
+            }
+        };
+
         const loginModalEl = document.getElementById('login-modal');
         loginModalEl?.addEventListener('click', (e) => {
             if (e.target === loginModalEl) loginModalEl.style.display = 'none';
         });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && loginModalEl && loginModalEl.style.display === 'flex') {
+                loginModalEl.style.display = 'none';
+            }
+        });
 
         document.getElementById('toggle-universal-pass')?.addEventListener('click', () => {
             const passEl = document.getElementById('login-password');
-            const icon = document.getElementById('toggle-universal-pass');
+            const toggleBtn = document.getElementById('toggle-universal-pass');
+            const icon = document.getElementById('toggle-universal-pass-icon') || toggleBtn;
             if (passEl) {
                 const isPass = passEl.type === 'password';
                 passEl.type = isPass ? 'text' : 'password';
                 icon?.classList.toggle('fa-eye', !isPass);
                 icon?.classList.toggle('fa-eye-slash', isPass);
+                toggleBtn?.setAttribute('aria-label', isPass ? 'Hide password' : 'Show password');
+                toggleBtn?.setAttribute('aria-pressed', isPass ? 'true' : 'false');
             }
         });
 
         const resetUniversalLoginForm = () => {
             verifiedUser = null;
+            setLoginStepState(1);
+            resetPasswordVisibility();
             document.getElementById('login-step-2')?.classList.add('hidden');
             document.getElementById('login-step-1')?.classList.remove('hidden');
+            const verifyBtn = document.getElementById('btn-verify-user');
+            if (verifyBtn) {
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = VERIFY_BTN_HTML;
+            }
+            const submitBtn = document.getElementById('btn-login-submit');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = SIGN_IN_BTN_HTML;
+            }
             const userInput = document.getElementById('login-username');
             if (userInput) {
                 userInput.value = '';
@@ -993,8 +1078,15 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
         document.getElementById('btn-change-user')?.addEventListener('click', () => {
             verifiedUser = null;
+            setLoginStepState(1);
+            resetPasswordVisibility();
             document.getElementById('login-step-2')?.classList.add('hidden');
             document.getElementById('login-step-1')?.classList.remove('hidden');
+            const submitBtn = document.getElementById('btn-login-submit');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = SIGN_IN_BTN_HTML;
+            }
             document.getElementById('login-username')?.focus();
             showLoginMessage('');
         });
@@ -1011,7 +1103,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             const btn = document.getElementById('btn-verify-user');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Verifying...';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Verifying...</span>';
             }
             showLoginMessage('');
 
@@ -1122,14 +1214,19 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     verifiedUser = matched;
                     const nameEl = document.getElementById('verified-user-name');
                     const metaEl = document.getElementById('verified-user-meta');
+                    const avatarIcon = document.getElementById('verified-user-avatar-icon');
+                    const passLeadingIcon = document.getElementById('login-password-leading-icon');
                     const passLabel = document.getElementById('login-password-label');
                     const passInput = document.getElementById('login-password');
                     const passHint = document.getElementById('login-password-hint');
 
                     if (nameEl) nameEl.textContent = matched.displayName;
                     if (metaEl) metaEl.textContent = matched.meta;
+                    resetPasswordVisibility();
 
                     if (matched.type === 'student') {
+                        if (avatarIcon) avatarIcon.className = 'fas fa-user-graduate';
+                        if (passLeadingIcon) passLeadingIcon.className = 'fas fa-mobile-screen-button login-input-leading';
                         if (passLabel) passLabel.textContent = 'Registered Mobile Number (Password)';
                         if (passInput) {
                             passInput.placeholder = '10-digit mobile number';
@@ -1137,6 +1234,8 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         }
                         if (passHint) passHint.textContent = 'Enter the mobile phone number registered with the school.';
                     } else {
+                        if (avatarIcon) avatarIcon.className = matched.type === 'admin' ? 'fas fa-user-shield' : 'fas fa-user-tie';
+                        if (passLeadingIcon) passLeadingIcon.className = 'fas fa-lock login-input-leading';
                         if (passLabel) passLabel.textContent = 'Password';
                         if (passInput) {
                             passInput.placeholder = 'Enter account password';
@@ -1145,6 +1244,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         if (passHint) passHint.textContent = 'Enter your account credentials to log in.';
                     }
 
+                    setLoginStepState(2);
                     document.getElementById('login-step-1')?.classList.add('hidden');
                     document.getElementById('login-step-2')?.classList.remove('hidden');
                     if (passInput) {
@@ -1161,7 +1261,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             } finally {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-check-circle"></i> <span>Verify</span>';
+                    btn.innerHTML = VERIFY_BTN_HTML;
                 }
             }
         };
@@ -1184,7 +1284,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             const btn = document.getElementById('btn-login-submit');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Authenticating...';
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Authenticating...</span>';
             }
             showLoginMessage('');
 
@@ -1199,7 +1299,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     const isMatch = phones.some(p => p && (p === enteredPhone || p.endsWith(enteredPhone) || enteredPhone.endsWith(p)));
                     if (isMatch) {
                         showLoginMessage('');
-                        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Loading Dashboard...';
+                        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Loading Dashboard...</span>';
                         if (!auth.currentUser) {
                             try { await signInAnonymously(auth); } catch (_) {}
                         }
@@ -1214,7 +1314,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         showLoginMessage('Incorrect registered mobile number. Please check and try again.');
                         if (btn) {
                             btn.disabled = false;
-                            btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                            btn.innerHTML = SIGN_IN_BTN_HTML;
                         }
                     }
                     return;
@@ -1264,7 +1364,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     showLoginMessage('Incorrect password. Please verify your credentials.');
                     if (btn) {
                         btn.disabled = false;
-                        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                        btn.innerHTML = SIGN_IN_BTN_HTML;
                     }
                     return;
                 }
@@ -1428,14 +1528,14 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                 showLoginMessage('Incorrect credentials or account not active.');
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                    btn.innerHTML = SIGN_IN_BTN_HTML;
                 }
             } catch (err) {
                 console.error('Universal login error:', err);
                 showLoginMessage('Login failed: ' + (err.message || 'Invalid credentials.'));
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Login Securely';
+                    btn.innerHTML = SIGN_IN_BTN_HTML;
                 }
             }
         };

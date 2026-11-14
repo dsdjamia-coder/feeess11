@@ -796,20 +796,20 @@ export const exportFeeDuesPdfWithOptions = ({ includeClass = false, includeGuard
         });
     };
 
-    // Dynamic column widths
+    // Dynamic column widths (leave flexible text columns as 'auto' so autoTable fits usable page width cleanly)
     const getColumnStyles = () => {
         let colIdx = 0;
         const styles = {};
         styles[colIdx++] = { cellWidth: 26, halign: 'center' }; // NO
         styles[colIdx++] = { cellWidth: 46, halign: 'center', fontStyle: 'bold' }; // ADM
-        styles[colIdx++] = { cellWidth: includeGuardianPhone ? 140 : 180, fontStyle: 'bold' }; // NAME
+        styles[colIdx++] = { cellWidth: 'auto', minCellWidth: includeGuardianPhone ? 120 : 150, fontStyle: 'bold' }; // NAME
         if (includeClass) {
             styles[colIdx++] = { cellWidth: 44, halign: 'center', fontStyle: 'bold' }; // CLASS
         }
         if (includeGuardianPhone) {
             styles[colIdx++] = { cellWidth: 125 }; // GUARDIAN & PHONE
         }
-        styles[colIdx++] = { cellWidth: includeGuardianPhone ? 150 : 210 }; // UNPAID MONTHS
+        styles[colIdx++] = { cellWidth: 'auto', minCellWidth: includeGuardianPhone ? 130 : 170 }; // UNPAID MONTHS
         styles[colIdx++] = { cellWidth: 70, halign: 'right' }; // CURRENT DUE
         styles[colIdx++] = { cellWidth: 70, halign: 'right' }; // PAST DUES
         styles[colIdx++] = { cellWidth: 80, halign: 'right', fontStyle: 'bold' }; // TOTAL DUE

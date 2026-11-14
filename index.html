@@ -190,56 +190,91 @@
     </footer>
 
     <!-- Login Modal -->
-    <div id="login-modal" class="modal-overlay">
-        <div class="modal-box">
-            <button type="button" class="modal-close-btn" aria-label="Close login modal" onclick="document.getElementById('login-modal').style.display='none'">&times;</button>
-            <div class="icon-badge"><i class="fas fa-shield-halved"></i></div>
-            <h3 id="login-title" class="modal-title mb-4">Portal Login</h3>
+    <div id="login-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <div class="modal-box login-modal-card">
+            <button type="button" id="btn-close-login-modal" class="modal-close-btn login-modal-close" aria-label="Close login modal" onclick="document.getElementById('login-modal').style.display='none'">
+                <i class="fas fa-xmark" aria-hidden="true"></i>
+            </button>
 
-            <!-- Step 1: Identifier Input (Green-accented card) -->
-            <div id="login-step-1" class="space-y-3 text-left">
-                <div class="p-3 rounded-2xl border-2 border-emerald-500 bg-emerald-50/40 shadow-2xs space-y-1.5 text-left">
-                    <label for="login-username" class="block text-xs font-black text-emerald-950 uppercase tracking-wide text-left">
-                        <i class="fas fa-user-circle mr-1 text-emerald-600"></i> Username
-                    </label>
-                    <input type="text" id="login-username" maxlength="60" class="form-input bg-white border-emerald-400 focus:border-emerald-600 focus:ring-emerald-500 tracking-wide font-medium text-left" placeholder="Username / Admission No" autocomplete="username">
+            <div class="login-modal-header">
+                <div class="login-brand-wrap">
+                    <img id="login-modal-logo" src="assets/images/logo.png" alt="Institution Logo" class="login-brand-logo" referrerpolicy="no-referrer">
+                    <span id="login-modal-logo-fallback" class="login-brand-fallback hidden" aria-hidden="true">
+                        <i class="fas fa-graduation-cap"></i>
+                    </span>
                 </div>
-                <button type="button" id="btn-verify-user" class="main-login-btn w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 shadow-xs transition flex items-center justify-center gap-2 cursor-pointer">
-                    <i class="fas fa-check-circle"></i>
-                    <span>Verify</span>
+                <h3 id="login-title" class="login-modal-heading">Portal Login</h3>
+                <p id="login-institution-name" class="login-modal-subheading">Institution</p>
+            </div>
+
+            <div class="login-stepper" aria-label="Login progress">
+                <div id="login-progress-step-1" class="login-step-item is-active" aria-current="step">
+                    <span class="login-step-dot" id="login-step-dot-1">1</span>
+                    <span class="login-step-label">Verify Account</span>
+                </div>
+                <div id="login-progress-line" class="login-step-connector" aria-hidden="true"></div>
+                <div id="login-progress-step-2" class="login-step-item">
+                    <span class="login-step-dot" id="login-step-dot-2">2</span>
+                    <span class="login-step-label">Sign In</span>
+                </div>
+            </div>
+
+            <!-- Step 1: Identifier Input -->
+            <div id="login-step-1" class="login-step-panel">
+                <div class="login-field-group">
+                    <label for="login-username" class="login-field-label">Username, Admission No, or Email</label>
+                    <div class="login-input-group">
+                        <i class="fas fa-user login-input-leading" aria-hidden="true"></i>
+                        <input type="text" id="login-username" maxlength="60" class="login-field-input" placeholder="e.g., 1045, username, or email" autocomplete="username">
+                    </div>
+                    <p class="login-field-hint">Use your admission number, staff username, or admin email to continue.</p>
+                </div>
+                <button type="button" id="btn-verify-user" class="login-primary-btn">
+                    <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                    <span>Verify Account</span>
                 </button>
             </div>
 
             <!-- Step 2: Confirmed Profile & Password (Initially Hidden) -->
-            <div id="login-step-2" class="space-y-3 hidden">
-                <div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
-                    <div class="flex items-center gap-2.5 overflow-hidden">
-                        <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs shrink-0">
-                            <i class="fas fa-user-check"></i>
+            <div id="login-step-2" class="login-step-panel hidden">
+                <div class="login-verified-card">
+                    <div class="login-verified-identity">
+                        <div class="login-verified-avatar" aria-hidden="true">
+                            <i id="verified-user-avatar-icon" class="fas fa-user-check"></i>
                         </div>
-                        <div class="truncate">
-                            <div class="text-xs font-black text-emerald-950 truncate" id="verified-user-name">User Name</div>
-                            <div class="text-[11px] text-emerald-700 font-semibold" id="verified-user-meta">Student • Class 5</div>
+                        <div class="login-verified-text">
+                            <div id="verified-user-name" class="login-verified-name">User Name</div>
+                            <div id="verified-user-meta" class="login-verified-meta">Student • Class 5</div>
                         </div>
                     </div>
-                    <button type="button" id="btn-change-user" class="text-xs text-emerald-800 hover:text-emerald-950 hover:underline font-bold shrink-0 ml-2 cursor-pointer">Change</button>
+                    <button type="button" id="btn-change-user" class="login-change-btn">
+                        <i class="fas fa-pen" aria-hidden="true"></i>
+                        <span>Change</span>
+                    </button>
                 </div>
 
-                <div class="space-y-1">
-                    <label id="login-password-label" for="login-password" class="block text-xs font-bold text-gray-700">Password</label>
-                    <div class="input-with-icon">
-                        <input type="password" id="login-password" maxlength="60" class="form-input form-input-with-trailing-icon font-mono" placeholder="Password" autocomplete="current-password">
-                        <i class="fas fa-eye trailing-icon cursor-pointer" id="toggle-universal-pass"></i>
+                <div class="login-field-group">
+                    <label id="login-password-label" for="login-password" class="login-field-label">Password</label>
+                    <div class="login-input-group has-trailing">
+                        <i id="login-password-leading-icon" class="fas fa-lock login-input-leading" aria-hidden="true"></i>
+                        <input type="password" id="login-password" maxlength="60" class="login-field-input" placeholder="Enter account password" autocomplete="current-password">
+                        <button type="button" id="toggle-universal-pass" class="login-input-trailing-btn" aria-label="Show password" aria-pressed="false">
+                            <i id="toggle-universal-pass-icon" class="fas fa-eye" aria-hidden="true"></i>
+                        </button>
                     </div>
-                    <p id="login-password-hint" class="text-[11px] text-gray-500">Enter your credentials to continue.</p>
+                    <p id="login-password-hint" class="login-field-hint">Enter your credentials to continue.</p>
                 </div>
 
-                <button type="button" id="btn-login-submit" class="main-login-btn w-full rounded-xl">
-                    <i class="fas fa-sign-in-alt"></i> Login Securely
+                <button type="button" id="btn-login-submit" class="login-primary-btn">
+                    <i class="fas fa-shield-halved" aria-hidden="true"></i>
+                    <span>Sign In Securely</span>
                 </button>
             </div>
 
-            <p id="login-msg" class="auth-alert"></p>
+            <div id="login-msg" class="auth-alert login-alert" role="alert" aria-live="polite">
+                <i class="fas fa-circle-exclamation login-alert-icon" aria-hidden="true"></i>
+                <span id="login-msg-text"></span>
+            </div>
         </div>
     </div>
 

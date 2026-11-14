@@ -1711,10 +1711,12 @@ const exportMonthlyRegisterToPDF = () => {
     const usableWidth = pageWidth - (marginH * 2);
     const colNo = 18;
     const colAdm = 32;
-    const colName = 78;
+    const targetNameWidth = 78;
+    const minNameWidth = 60;
     const colSummary = { w: 20, p: 19, a: 19, prev: 28, tot: 28, l: 19, pct: 23 };
-    const fixedSum = colNo + colAdm + colName + Object.values(colSummary).reduce((s, v) => s + v, 0);
-    const dayColWidth = Math.floor(((usableWidth - fixedSum - 2) / daysInMonth) * 10) / 10;
+    const fixedOthers = colNo + colAdm + Object.values(colSummary).reduce((s, v) => s + v, 0);
+    const dayBudget = Math.min(usableWidth - fixedOthers - minNameWidth - 4, usableWidth - fixedOthers - targetNameWidth - 2);
+    const dayColWidth = Math.floor((dayBudget / daysInMonth) * 10) / 10;
 
     const buildHead = (genderTitle) => [[
         'NO',
@@ -1751,7 +1753,7 @@ const exportMonthlyRegisterToPDF = () => {
     const columnStyles = {
         0: { cellWidth: colNo, halign: 'center' },
         1: { cellWidth: colAdm, halign: 'center', fontStyle: 'bold' },
-        2: { cellWidth: colName, halign: 'left', fontStyle: 'bold' }
+        2: { cellWidth: 'auto', minCellWidth: minNameWidth, halign: 'left', fontStyle: 'bold' }
     };
     for (let dIdx = 0; dIdx < daysInMonth; dIdx++) {
         columnStyles[3 + dIdx] = { cellWidth: dayColWidth, halign: 'center' };

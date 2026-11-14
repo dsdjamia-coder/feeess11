@@ -3239,8 +3239,10 @@ const loadMarksTable = () => {
     }
 
     if (entryStudents.length === 0) {
-        document.getElementById('entry-table-title').textContent = `Class: ${className}`;
-        document.getElementById('entry-table-subtitle').textContent = `Exam: ${currentExamContext?.label || currentExamSchema.name}`;
+        const emptyTitleEl = document.getElementById('entry-table-title');
+        if (emptyTitleEl) emptyTitleEl.textContent = `Class: ${className}`;
+        const emptySubtitleEl = document.getElementById('entry-table-subtitle');
+        if (emptySubtitleEl) emptySubtitleEl.textContent = `Exam: ${currentExamContext?.label || currentExamSchema.name}`;
         const studentCountBadge = document.getElementById('entry-student-count-badge');
         if (studentCountBadge) studentCountBadge.textContent = '0 Students';
 
@@ -3250,8 +3252,10 @@ const loadMarksTable = () => {
         return;
     }
 
-    document.getElementById('entry-table-title').textContent = `Class: ${className}`;
-    document.getElementById('entry-table-subtitle').textContent = `Exam: ${currentExamContext?.label || currentExamSchema.name}`;
+    const tableTitleEl = document.getElementById('entry-table-title');
+    if (tableTitleEl) tableTitleEl.textContent = `Class: ${className}`;
+    const tableSubtitleEl = document.getElementById('entry-table-subtitle');
+    if (tableSubtitleEl) tableSubtitleEl.textContent = `Exam: ${currentExamContext?.label || currentExamSchema.name}`;
     const studentCountBadge = document.getElementById('entry-student-count-badge');
     if (studentCountBadge) studentCountBadge.textContent = `${entryStudents.length} Students`;
 
@@ -6496,16 +6500,19 @@ const exportReportPDF = (optionsOrModel = {}) => {
             const denseTable = isA5 || cr.reportSubjects.length > 7 || orientation === 'portrait';
             const noColW = isA5 ? 6.5 : 8.5;
             const admColW = isA5 ? 13 : 16;
-            const nameColW = isA5 ? 23 : (orientation === 'portrait' ? 28 : 35);
+            const targetNameW = isA5 ? 23 : (orientation === 'portrait' ? 28 : 35);
+            const minNameW = isA5 ? 16 : 22;
             const trailingCount = 4; // Total, Result, Att., Rank
             const subjectCount = cr.reportSubjects.length;
             const otherColsCount = Math.max(1, subjectCount + trailingCount);
-            const remainingW = Math.max(40, regUsableW - (noColW + admColW + nameColW) - 1);
+            const maxOtherBudget = Math.max(20, regUsableW - (noColW + admColW + minNameW) - 1);
+            const idealOtherBudget = Math.max(20, regUsableW - (noColW + admColW + targetNameW) - 1);
+            const remainingW = Math.min(maxOtherBudget, idealOtherBudget);
             const perSubColW = Math.floor((remainingW / otherColsCount) * 10) / 10;
             const regColumnStyles = {
                 0: { cellWidth: noColW, halign: 'center' },
                 1: { cellWidth: admColW },
-                2: { cellWidth: nameColW }
+                2: { cellWidth: 'auto', minCellWidth: minNameW }
             };
             for (let cIdx = 3; cIdx < totalCols; cIdx++) {
                 regColumnStyles[cIdx] = { cellWidth: perSubColW, halign: 'center' };
@@ -6715,7 +6722,7 @@ const exportReportPDF = (optionsOrModel = {}) => {
                 headStyles: { fillColor: tableHeadFill, textColor: [255, 255, 255], fontStyle: 'bold' },
                 columnStyles: isA5 ? {
                     0: { cellWidth: 7, halign: 'center' },
-                    1: { cellWidth: 36 },
+                    1: { cellWidth: 'auto', minCellWidth: 30 },
                     2: { cellWidth: 15, halign: 'center' },
                     3: { cellWidth: 15, halign: 'center' },
                     4: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
@@ -6723,12 +6730,12 @@ const exportReportPDF = (optionsOrModel = {}) => {
                     6: { cellWidth: 21, halign: 'center' }
                 } : {
                     0: { cellWidth: 10, halign: 'center' },
-                    1: { cellWidth: 50 },
+                    1: { cellWidth: 'auto', minCellWidth: 48 },
                     2: { cellWidth: 22, halign: 'center' },
                     3: { cellWidth: 22, halign: 'center' },
                     4: { cellWidth: 26, halign: 'center', fontStyle: 'bold' },
                     5: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
-                    6: { halign: 'center' }
+                    6: { cellWidth: 26, halign: 'center' }
                 },
                 didParseCell: (cellData) => {
                     if (cellData.section === 'body' && cellData.column.index === 6) {

@@ -6846,10 +6846,10 @@ const exportStudentsToPDF = () => {
         0: { cellWidth: 40, halign: 'center' },
         1: { cellWidth: 55, halign: 'center', fontStyle: 'bold' },
         2: { cellWidth: 70, halign: 'center', fontStyle: 'bold' },
-        3: { cellWidth: 185, fontStyle: 'bold' },
+        3: { cellWidth: 'auto', minCellWidth: 150, fontStyle: 'bold' },
         4: { cellWidth: 60, halign: 'center' },
         5: { cellWidth: 70, halign: 'center' },
-        6: { cellWidth: 175 },
+        6: { cellWidth: 'auto', minCellWidth: 130 },
         7: { cellWidth: 125, halign: 'center' }
     };
 

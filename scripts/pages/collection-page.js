@@ -5829,7 +5829,7 @@ const generateMonthlyReportPdf = (selectedMonths = []) => {
         ]],
         styles: { fontSize: 7.5, cellPadding: 3, overflow: 'linebreak' },
         columnStyles: {
-            0: { cellWidth: 111, halign: 'left', fontStyle: 'bold' },
+            0: { cellWidth: 'auto', minCellWidth: 95, halign: 'left', fontStyle: 'bold' },
             1: { cellWidth: 72, halign: 'right' },
             2: { cellWidth: 72, halign: 'right' },
             3: { cellWidth: 72, halign: 'right' },
@@ -5953,7 +5953,7 @@ const generateMonthlyReportPdf = (selectedMonths = []) => {
                 styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
                 columnStyles: {
                     0: { cellWidth: 58, halign: 'center' },
-                    1: { cellWidth: 254, halign: 'left' },
+                    1: { cellWidth: 'auto', minCellWidth: 200, halign: 'left' },
                     2: { cellWidth: 115, halign: 'right', fontStyle: 'bold' },
                     3: { cellWidth: 115, halign: 'left' }
                 },
@@ -6000,10 +6000,10 @@ const generateMonthlyReportPdf = (selectedMonths = []) => {
                 styles: { fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak' },
                 columnStyles: {
                     0: { cellWidth: 52, halign: 'center' },
-                    1: { cellWidth: 124, halign: 'left' },
+                    1: { cellWidth: 'auto', minCellWidth: 105, halign: 'left' },
                     2: { cellWidth: 48, halign: 'center' },
                     3: { cellWidth: 52, halign: 'center' },
-                    4: { cellWidth: 98, halign: 'left' },
+                    4: { cellWidth: 'auto', minCellWidth: 85, halign: 'left' },
                     5: { cellWidth: 80, halign: 'right', fontStyle: 'bold' },
                     6: { cellWidth: 88, halign: 'left' }
                 },
@@ -6063,8 +6063,8 @@ const generateMonthlyReportPdf = (selectedMonths = []) => {
                 styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
                 columnStyles: {
                     0: { cellWidth: 52, halign: 'center' },
-                    1: { cellWidth: 152, halign: 'left' },
-                    2: { cellWidth: 148, halign: 'left' },
+                    1: { cellWidth: 'auto', minCellWidth: 125, halign: 'left' },
+                    2: { cellWidth: 'auto', minCellWidth: 125, halign: 'left' },
                     3: { cellWidth: 95, halign: 'right', fontStyle: 'bold' },
                     4: { cellWidth: 95, halign: 'left' }
                 },
@@ -6207,7 +6207,7 @@ const generateCollectorWiseReportPdf = (selectedMonths = []) => {
             styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
             columnStyles: {
                 0: { cellWidth: 42, halign: 'center' },
-                1: { cellWidth: 170, halign: 'left', fontStyle: 'bold' },
+                1: { cellWidth: 'auto', minCellWidth: 140, halign: 'left', fontStyle: 'bold' },
                 2: { cellWidth: 110, halign: 'right' },
                 3: { cellWidth: 110, halign: 'right' },
                 4: { cellWidth: 110, halign: 'right', fontStyle: 'bold' }
@@ -6297,7 +6297,7 @@ const generateCollectorWiseReportPdf = (selectedMonths = []) => {
             styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
             columnStyles: {
                 0: { cellWidth: 42, halign: 'center' },
-                1: { cellWidth: 170, halign: 'left', fontStyle: 'bold' },
+                1: { cellWidth: 'auto', minCellWidth: 140, halign: 'left', fontStyle: 'bold' },
                 2: { cellWidth: 110, halign: 'right' },
                 3: { cellWidth: 110, halign: 'right' },
                 4: { cellWidth: 110, halign: 'right', fontStyle: 'bold' }

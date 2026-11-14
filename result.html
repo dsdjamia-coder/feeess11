@@ -553,275 +553,235 @@
 
         <!-- Main Content Area -->
         <div class="result-main-wrapper transition-all duration-300">
-            <main id="app" class="w-full min-w-0 max-w-full px-4 sm:px-6 lg:px-8 py-4">
-        <div id="result-fatal-error" class="hidden container mt-4">
-            <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm font-semibold">
+            <main id="app" class="w-full min-w-0 max-w-full px-3 sm:px-5 lg:px-6 py-2.5 sm:py-3">
+        <div id="result-fatal-error" class="hidden container mt-3">
+            <div class="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm font-semibold">
                 Something went wrong while loading Result Management. Please refresh and try again.
             </div>
         </div>
         <!-- Access Denied Block -->
-        <div id="access-denied-block" class="hidden container text-center pt-20">
-            <i class="fas fa-lock text-5xl text-red-400 mb-4"></i>
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-            <p class="text-gray-500 mb-6">You do not have permission to access Result Management.</p>
-            <button onclick="window.location.href='collection.html'" class="btn-primary py-2 px-6 rounded-lg font-bold">Go Back</button>
+        <div id="access-denied-block" class="hidden container text-center pt-16">
+            <i class="fas fa-lock text-4xl text-red-400 mb-3"></i>
+            <h2 class="text-xl font-bold text-gray-800 mb-1.5">Access Denied</h2>
+            <p class="text-sm text-gray-500 mb-5">You do not have permission to access Result Management.</p>
+            <button onclick="window.location.href='collection.html'" class="btn-primary py-2 px-5 rounded-lg font-bold text-sm">Go Back</button>
         </div>
 
-        <div id="page-content" class="hidden w-full min-w-0 max-w-full pt-0 pb-3">
+        <div id="page-content" class="hidden w-full min-w-0 max-w-full pt-0 pb-2">
             
             <!-- 1. Overview -->
             <section id="dashboard-page" class="page-content">
-                <div id="teacher-assigned-banner" class="hidden mb-4 p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl flex items-center justify-between text-xs text-indigo-900 shadow-sm">
-                    <div class="flex items-center gap-2.5">
-                        <i class="fas fa-user-check text-indigo-600 text-base"></i>
-                        <span>Teacher Scope: <strong id="teacher-assigned-classes-text" class="font-bold underline decoration-indigo-400">All Assigned Classes</strong></span>
+                <div id="teacher-assigned-banner" class="hidden mb-2.5 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between text-xs text-indigo-900">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-user-check text-indigo-600"></i>
+                        <span>Teacher Scope: <strong id="teacher-assigned-classes-text" class="font-bold">All Assigned Classes</strong></span>
                     </div>
-                    <span class="bg-indigo-600 text-white font-bold px-2.5 py-1 rounded-lg text-[11px]">Class Teacher Access</span>
-                </div>
-                <div class="flex justify-between items-center mb-4 px-2">
-                    <h2 class="text-xl font-bold text-gray-800">Result Overview</h2>
-                    <div id="academic-year-badge" class="bg-indigo-100 text-indigo-800 font-bold px-3 py-1 rounded-lg text-sm border border-indigo-200">Loading...</div>
+                    <span class="text-indigo-700 font-bold text-[11px]">Class Teacher Access</span>
                 </div>
                 
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-5">
-                    <div class="bg-gradient-to-br from-indigo-600 to-indigo-500 text-white p-3.5 sm:p-4 rounded-xl shadow-xs relative overflow-hidden flex items-center justify-between">
-                        <div class="relative z-10 min-w-0">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 mb-3">
+                    <div class="bg-gradient-to-br from-indigo-600 to-indigo-500 text-white p-3 rounded-xl shadow-xs flex items-center justify-between">
+                        <div class="min-w-0">
                             <h2 class="text-[11px] font-bold text-indigo-100 uppercase tracking-wider">Classes</h2>
-                            <div class="text-2xl sm:text-3xl font-bold font-mono leading-tight mt-0.5" id="dash-total-classes">0</div>
+                            <div class="text-2xl font-bold font-mono leading-tight mt-0.5 tabular-nums" id="dash-total-classes">0</div>
                         </div>
-                        <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-white/80 text-lg">
+                        <div class="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-white/85 text-base">
                             <i class="fas fa-layer-group"></i>
                         </div>
                     </div>
                     
-                    <div class="bg-gradient-to-br from-emerald-600 to-emerald-500 text-white p-3.5 sm:p-4 rounded-xl shadow-xs relative overflow-hidden flex items-center justify-between">
-                        <div class="relative z-10 min-w-0">
+                    <div class="bg-gradient-to-br from-emerald-600 to-emerald-500 text-white p-3 rounded-xl shadow-xs flex items-center justify-between">
+                        <div class="min-w-0">
                             <h2 class="text-[11px] font-bold text-emerald-100 uppercase tracking-wider">Students</h2>
-                            <div class="text-2xl sm:text-3xl font-bold font-mono leading-tight mt-0.5" id="dash-total-students">0</div>
+                            <div class="text-2xl font-bold font-mono leading-tight mt-0.5 tabular-nums" id="dash-total-students">0</div>
                         </div>
-                        <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-white/80 text-lg">
+                        <div class="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-white/85 text-base">
                             <i class="fas fa-users"></i>
                         </div>
                     </div>
 
-                    <div class="bg-gradient-to-br from-amber-500 to-orange-500 text-white p-3.5 sm:p-4 rounded-xl shadow-xs relative overflow-hidden flex items-center justify-between">
-                        <div class="relative z-10 min-w-0">
+                    <div class="bg-gradient-to-br from-amber-500 to-orange-500 text-white p-3 rounded-xl shadow-xs flex items-center justify-between">
+                        <div class="min-w-0">
                             <h2 class="text-[11px] font-bold text-amber-100 uppercase tracking-wider">Status</h2>
-                            <div class="text-base sm:text-lg font-bold leading-tight mt-1 truncate" id="dash-publish-status">Loading</div>
+                            <div class="text-base font-bold leading-tight mt-1 truncate" id="dash-publish-status">Loading</div>
                         </div>
-                        <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-white/80 text-lg">
+                        <div class="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-white/85 text-base">
                             <i class="fas fa-broadcast-tower"></i>
                         </div>
                     </div>
                     
-                    <div class="bg-gradient-to-br from-violet-600 to-violet-500 text-white p-3.5 sm:p-4 rounded-xl shadow-xs relative overflow-hidden flex items-center justify-between">
-                        <div class="relative z-10 min-w-0">
+                    <div class="bg-gradient-to-br from-violet-600 to-violet-500 text-white p-3 rounded-xl shadow-xs flex items-center justify-between">
+                        <div class="min-w-0">
                             <h2 class="text-[11px] font-bold text-violet-100 uppercase tracking-wider">Pass %</h2>
-                            <div class="text-2xl sm:text-3xl font-bold font-mono leading-tight mt-0.5" id="dash-pass-percent">0%</div>
+                            <div class="text-2xl font-bold font-mono leading-tight mt-0.5 tabular-nums" id="dash-pass-percent">0%</div>
                         </div>
-                        <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-white/80 text-lg">
+                        <div class="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0 text-white/85 text-base">
                             <i class="fas fa-chart-line"></i>
                         </div>
                     </div>
                 </div>
-                <div class="card p-4 rounded-xl shadow-sm mb-6">
-                    <div class="flex items-center justify-between text-sm font-semibold text-gray-700 mb-2"><span>Overall Academic Year Pass Health</span><span id="dash-health-label">0%</span></div>
-                    <div class="w-full bg-gray-200 rounded-full h-3"><div id="dash-health-bar" class="bg-emerald-500 h-3 rounded-full transition-all duration-300" style="width:0%"></div></div>
+
+                <div class="card p-3 rounded-xl shadow-xs border border-slate-200 mb-3">
+                    <div class="flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
+                        <span>Overall Academic Year Pass Health</span>
+                        <span id="dash-health-label" class="font-mono tabular-nums font-bold text-slate-900">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2.5"><div id="dash-health-bar" class="bg-emerald-500 h-2.5 rounded-full transition-all duration-300" style="width:0%"></div></div>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-2">
                     <!-- Class-wise Performance Breakdown -->
-                    <div class="card p-5 rounded-2xl shadow-sm border border-slate-200">
-                        <div class="flex justify-between items-center border-b pb-2 mb-3">
-                            <h3 class="font-bold text-gray-800 text-sm sm:text-base flex items-center gap-2">
-                                <i class="fas fa-layer-group text-indigo-600"></i> Class Performance Breakdown
+                    <div class="card p-3.5 sm:p-4 rounded-xl shadow-xs border border-slate-200">
+                        <div class="flex justify-between items-center border-b border-slate-200 pb-2 mb-2.5">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                <i class="fas fa-layer-group text-indigo-600"></i> Class Performance
                             </h3>
-                            <span class="text-[11px] font-semibold text-gray-500">Pass Rates</span>
+                            <span class="text-xs font-medium text-slate-500">Pass Rates</span>
                         </div>
-                        <div id="dash-class-breakdown" class="space-y-3">
-                            <p class="text-gray-400 text-xs italic">Loading class breakdown...</p>
+                        <div id="dash-class-breakdown" class="space-y-2.5">
+                            <p class="text-slate-400 text-xs">Loading class breakdown...</p>
                         </div>
                     </div>
 
                     <!-- Gender Performance & Top Scorers -->
-                    <div class="space-y-4">
-                        <div class="card p-5 rounded-2xl shadow-sm border border-slate-200">
-                            <div class="flex justify-between items-center border-b pb-2 mb-3">
-                                <h3 class="font-bold text-gray-800 text-sm sm:text-base flex items-center gap-2">
-                                    <i class="fas fa-venus-mars text-indigo-600"></i> Gender Performance Analytics
+                    <div class="space-y-3">
+                        <div class="card p-3.5 sm:p-4 rounded-xl shadow-xs border border-slate-200">
+                            <div class="flex justify-between items-center border-b border-slate-200 pb-2 mb-2.5">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                    <i class="fas fa-venus-mars text-indigo-600"></i> Gender Analytics
                                 </h3>
                             </div>
-                            <div id="dash-gender-stats" class="grid grid-cols-2 gap-3 text-center">
-                                <div class="p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                                    <div class="text-xs font-bold text-blue-700 uppercase">Boys</div>
-                                    <div class="text-xl font-extrabold text-blue-900 mt-1" id="dash-boys-pass">0 / 0</div>
-                                    <div class="text-[11px] text-blue-600 font-semibold" id="dash-boys-pct">0% Pass</div>
+                            <div id="dash-gender-stats" class="grid grid-cols-2 gap-2.5 text-center">
+                                <div class="p-2.5 bg-blue-50 border border-blue-100 rounded-lg">
+                                    <div class="text-[11px] font-bold text-blue-700 uppercase">Boys</div>
+                                    <div class="text-lg font-extrabold text-blue-900 mt-0.5 tabular-nums" id="dash-boys-pass">0 / 0</div>
+                                    <div class="text-[11px] text-blue-600 font-semibold tabular-nums" id="dash-boys-pct">0% Pass</div>
                                 </div>
-                                <div class="p-3 bg-pink-50 border border-pink-100 rounded-xl">
-                                    <div class="text-xs font-bold text-pink-700 uppercase">Girls</div>
-                                    <div class="text-xl font-extrabold text-pink-900 mt-1" id="dash-girls-pass">0 / 0</div>
-                                    <div class="text-[11px] text-pink-600 font-semibold" id="dash-girls-pct">0% Pass</div>
+                                <div class="p-2.5 bg-pink-50 border border-pink-100 rounded-lg">
+                                    <div class="text-[11px] font-bold text-pink-700 uppercase">Girls</div>
+                                    <div class="text-lg font-extrabold text-pink-900 mt-0.5 tabular-nums" id="dash-girls-pass">0 / 0</div>
+                                    <div class="text-[11px] text-pink-600 font-semibold tabular-nums" id="dash-girls-pct">0% Pass</div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="card p-5 rounded-2xl shadow-sm border border-slate-200">
-                            <div class="flex justify-between items-center border-b pb-2 mb-3">
-                                <h3 class="font-bold text-gray-800 text-sm sm:text-base flex items-center gap-2">
-                                    <i class="fas fa-trophy text-amber-500"></i> Top Performers Spotlight
+                        <div class="card p-3.5 sm:p-4 rounded-xl shadow-xs border border-slate-200">
+                            <div class="flex justify-between items-center border-b border-slate-200 pb-2 mb-2.5">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                    <i class="fas fa-trophy text-amber-500"></i> Top Performers
                                 </h3>
                             </div>
-                            <div id="dash-top-performers" class="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scroll">
-                                <p class="text-gray-400 text-xs italic">Top student ranks will appear once results are available.</p>
+                            <div id="dash-top-performers" class="space-y-1.5 max-h-48 overflow-y-auto pr-1 custom-scroll">
+                                <p class="text-slate-400 text-xs">Top student ranks will appear once results are available.</p>
                             </div>
                         </div>
                     </div>
                 </div>
-
-
             </section>
 
             <!-- 2. Marks Entry -->
             <section id="marks-page" class="page-content hidden">
-                <div class="card p-3 sm:p-4 shadow-sm mb-3 rounded-xl border border-slate-200">
+                <div class="card p-3 shadow-xs mb-2.5 rounded-xl border border-slate-200 space-y-2.5">
                     <!-- Compact Top Bar: Title & Selectors -->
-                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-gray-100">
-                        <div class="flex items-center gap-2">
-                            <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
-                                <i class="fas fa-edit"></i>
-                            </div>
-                            <div>
-                                <h2 class="text-base sm:text-lg font-bold text-gray-800 leading-tight">Marks Entry</h2>
-                                <p class="text-[11px] text-gray-500">Select class and exam to enter or manage marks</p>
-                            </div>
-                        </div>
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                        <h2 class="text-sm sm:text-base font-bold text-slate-800 whitespace-nowrap shrink-0 flex items-center gap-2">
+                            <i class="fas fa-pen-to-square text-indigo-600"></i>
+                            <span>Marks Entry</span>
+                        </h2>
 
-                        <!-- Class & Exam Compact Selectors (Single line on all screens) -->
-                        <div class="grid grid-cols-2 gap-2 w-full lg:w-auto">
-                            <div class="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition">
-                                <label for="entry-class-select" class="text-xs font-semibold text-gray-600 whitespace-nowrap">Class <span class="text-red-500">*</span>:</label>
-                                <select id="entry-class-select" class="w-full text-xs font-medium bg-transparent border-none outline-none py-1 text-gray-800">
+                        <!-- Class & Exam Compact Selectors -->
+                        <div class="grid grid-cols-2 gap-2 w-full lg:w-auto lg:min-w-[380px]">
+                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition">
+                                <label for="entry-class-select" class="text-xs font-semibold text-slate-600 whitespace-nowrap">Class <span class="text-red-500">*</span>:</label>
+                                <select id="entry-class-select" class="w-full text-xs font-semibold bg-transparent border-none outline-none py-1 text-slate-800">
                                     <option value="">-- Choose Class --</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition">
-                                <label for="entry-exam-select" class="text-xs font-semibold text-gray-600 whitespace-nowrap">Exam <span class="text-red-500">*</span>:</label>
-                                <select id="entry-exam-select" class="w-full text-xs font-medium bg-transparent border-none outline-none py-1 text-gray-800">
+                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition">
+                                <label for="entry-exam-select" class="text-xs font-semibold text-slate-600 whitespace-nowrap">Exam <span class="text-red-500">*</span>:</label>
+                                <select id="entry-exam-select" class="w-full text-xs font-semibold bg-transparent border-none outline-none py-1 text-slate-800">
                                     <option value="">-- Choose Exam --</option>
                                 </select>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Modern Responsive Download & Bulk Upload Center -->
-                    <div class="pt-3 border-t border-slate-200/80">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <!-- Card 1: Download Pre-filled Templates -->
-                            <div class="bg-gradient-to-br from-slate-50 to-indigo-50/40 border border-slate-200 rounded-2xl p-3 sm:p-3.5 shadow-2xs flex flex-col justify-between">
-                                <div class="flex items-center justify-between gap-2 mb-2">
-                                    <div class="flex items-center gap-2">
-                                        <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0">
-                                            <i class="fas fa-file-arrow-down"></i>
-                                        </span>
-                                        <div>
-                                            <h4 class="text-xs font-extrabold text-slate-800 leading-tight">1. Download Template</h4>
-                                            <p class="text-[11px] text-slate-500 font-medium">With student list &amp; subject limits</p>
-                                        </div>
-                                    </div>
-                                    <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-full border border-indigo-200 hidden sm:inline-block">Offline</span>
-                                </div>
-                                <div class="grid grid-cols-2 gap-2 mt-1">
-                                    <button id="marks-template-csv-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white border border-slate-200 text-slate-400 font-bold text-xs shadow-2xs transition opacity-50 cursor-not-allowed">
-                                        <i class="fas fa-file-csv text-blue-500 text-sm"></i>
-                                        <span>CSV Format</span>
-                                    </button>
-                                    <button id="marks-template-xlsx-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white border border-slate-200 text-slate-400 font-bold text-xs shadow-2xs transition opacity-50 cursor-not-allowed">
-                                        <i class="fas fa-file-excel text-emerald-600 text-sm"></i>
-                                        <span>Excel (.xlsx)</span>
-                                    </button>
-                                </div>
+                    <!-- Compact Template Download & Bulk Upload Row -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between gap-2">
+                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <i class="fas fa-file-arrow-down text-indigo-600"></i>
+                                <span>Download Template</span>
+                            </h4>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="marks-template-csv-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white border border-slate-200 text-slate-400 font-bold text-xs transition opacity-50 cursor-not-allowed">
+                                    <i class="fas fa-file-csv text-blue-500 text-sm"></i>
+                                    <span>CSV Format</span>
+                                </button>
+                                <button id="marks-template-xlsx-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white border border-slate-200 text-slate-400 font-bold text-xs transition opacity-50 cursor-not-allowed">
+                                    <i class="fas fa-file-excel text-emerald-600 text-sm"></i>
+                                    <span>Excel (.xlsx)</span>
+                                </button>
                             </div>
+                        </div>
 
-                            <!-- Card 2: Bulk Upload & Validation Review -->
-                            <div class="bg-gradient-to-br from-slate-50 to-emerald-50/40 border border-slate-200 rounded-2xl p-3 sm:p-3.5 shadow-2xs flex flex-col justify-between">
-                                <div class="flex items-center justify-between gap-2 mb-2">
-                                    <div class="flex items-center gap-2">
-                                        <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0">
-                                            <i class="fas fa-cloud-arrow-up"></i>
-                                        </span>
-                                        <div>
-                                            <h4 class="text-xs font-extrabold text-slate-800 leading-tight">2. Upload Filled File</h4>
-                                            <p class="text-[11px] text-slate-500 font-medium">Auto-validates marks against limits</p>
-                                        </div>
-                                    </div>
-                                    <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-200 hidden sm:inline-block">Bulk</span>
-                                </div>
-                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-1">
-                                    <label id="marks-file-picker-label" class="flex-1 flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 shadow-2xs transition overflow-hidden opacity-50 cursor-not-allowed">
-                                        <i class="fas fa-paperclip text-slate-400 shrink-0"></i>
-                                        <span id="marks-bulk-filename" class="truncate text-slate-500">Choose CSV or Excel...</span>
-                                        <input type="file" id="marks-bulk-file" accept=".csv,.xlsx,.xls" disabled class="sr-only">
-                                    </label>
-                                    <button id="marks-bulk-upload-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-200 text-slate-400 font-extrabold text-xs shadow-2xs transition opacity-50 cursor-not-allowed shrink-0">
-                                        <i class="fas fa-cloud-arrow-up"></i>
-                                        <span>Upload &amp; Review</span>
-                                    </button>
-                                </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between gap-2">
+                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <i class="fas fa-cloud-arrow-up text-emerald-600"></i>
+                                <span>Bulk Upload</span>
+                            </h4>
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                <label id="marks-file-picker-label" class="flex-1 flex items-center gap-2 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 transition overflow-hidden opacity-50 cursor-not-allowed">
+                                    <i class="fas fa-paperclip text-slate-400 shrink-0"></i>
+                                    <span id="marks-bulk-filename" class="truncate text-slate-500">Choose CSV or Excel...</span>
+                                    <input type="file" id="marks-bulk-file" accept=".csv,.xlsx,.xls" disabled class="sr-only">
+                                </label>
+                                <button id="marks-bulk-upload-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-lg bg-slate-200 text-slate-400 font-bold text-xs transition opacity-50 cursor-not-allowed shrink-0">
+                                    <i class="fas fa-cloud-arrow-up"></i>
+                                    <span>Upload &amp; Review</span>
+                                </button>
                             </div>
                         </div>
                     </div>
 
                     <!-- Status & Progress -->
-                    <div id="marks-bulk-progress-card" class="mt-2.5 bg-slate-50 border border-slate-200/90 rounded-xl p-3">
-                        <div class="flex items-center justify-between text-xs mb-1.5">
+                    <div id="marks-bulk-progress-card" class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                        <div class="flex items-center justify-between text-xs mb-1">
                             <div class="flex items-center gap-2 truncate pr-2">
                                 <span id="marks-bulk-status-icon" class="text-indigo-600"><i class="fas fa-file-import"></i></span>
-                                <span id="marks-bulk-status" class="font-semibold text-slate-700 truncate">Select class and exam to begin entering marks or upload Excel/CSV templates.</span>
+                                <span id="marks-bulk-status" class="font-medium text-slate-700 truncate">Select class and exam to begin.</span>
                             </div>
-                            <span id="marks-bulk-percent" class="font-extrabold text-indigo-700 shrink-0 font-mono text-xs">0%</span>
+                            <span id="marks-bulk-percent" class="font-bold text-indigo-700 shrink-0 font-mono tabular-nums text-xs">0%</span>
                         </div>
-                        <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                            <div id="marks-bulk-progress" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style="width:0%"></div>
+                        <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div id="marks-bulk-progress" class="bg-indigo-600 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
                         </div>
                     </div>
                 </div>
 
-                <div id="marks-entry-container" class="hidden card shadow-sm overflow-hidden border-t-4 border-indigo-500">
-                    <!-- Clean 2-Tier Marks Entry Header -->
+                <div id="marks-entry-container" class="hidden card shadow-xs rounded-xl overflow-hidden border border-slate-200">
                     <div class="bg-slate-50 border-b border-slate-200">
-                        <!-- Tier 1: Class / Exam Info & Legend Badges -->
-                        <div class="p-3 sm:p-4 pb-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 border-b border-slate-200/80">
-                            <div class="flex items-center gap-2.5 flex-wrap">
-                                <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
-                                    <i class="fas fa-graduation-cap"></i>
-                                </div>
-                                <div>
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <h3 class="font-bold text-slate-800 text-sm sm:text-base leading-tight" id="entry-table-title">Class Marks</h3>
-                                        <span id="entry-student-count-badge" class="bg-indigo-50 text-indigo-700 text-xs font-bold px-2.5 py-0.5 rounded-md border border-indigo-200">0 Students</span>
-                                    </div>
-                                    <p class="text-xs text-slate-500 font-medium" id="entry-table-subtitle">Subject-wise marks</p>
-                                </div>
+                        <!-- Compact Info & Legend Row -->
+                        <div class="px-3 py-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80">
+                            <div class="flex items-center gap-2 flex-wrap text-xs">
+                                <h3 class="font-bold text-slate-800 text-sm leading-tight" id="entry-table-title">Class Marks</h3>
+                                <span class="text-slate-300" aria-hidden="true">/</span>
+                                <span class="text-xs text-slate-600 font-semibold" id="entry-table-subtitle">Subject-wise marks</span>
+                                <span class="text-slate-300" aria-hidden="true">·</span>
+                                <span id="entry-student-count-badge" class="text-indigo-700 text-xs font-bold tabular-nums">0 Students</span>
                             </div>
 
-                            <!-- Legend Badges -->
-                            <div class="flex items-center gap-2 flex-wrap self-stretch sm:self-auto justify-end">
-                                <span class="text-xs bg-amber-50 text-amber-800 font-bold px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1.5 shadow-xs" title="Enter 'A' to mark student absent">
-                                    <span class="w-4 h-4 rounded-full bg-amber-200 text-amber-900 flex items-center justify-center text-[10px] font-black">A</span>
-                                    <span>Absent</span>
-                                </span>
-                                <span class="text-xs bg-emerald-50 text-emerald-800 font-bold px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1.5 shadow-xs" title="Enter 'P' to mark student passed in this subject">
-                                    <span class="w-4 h-4 rounded-full bg-emerald-200 text-emerald-900 flex items-center justify-center text-[10px] font-black">P</span>
-                                    <span>Passed</span>
-                                </span>
+                            <div class="flex items-center gap-3 text-xs text-slate-600 font-semibold">
+                                <span title="Enter 'A' to mark student absent"><strong class="text-amber-700">A</strong> = Absent</span>
+                                <span class="text-slate-300" aria-hidden="true">·</span>
+                                <span title="Enter 'P' to mark student passed in this subject"><strong class="text-emerald-700">P</strong> = Passed</span>
                             </div>
                         </div>
 
-                        <!-- Tier 2: Sorting, Order & Action Controls Toolbar -->
-                        <div class="p-2.5 sm:px-4 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2.5 bg-white">
-                            <!-- Left: Sorting, Order & Total Attendance -->
+                        <!-- Sorting, Order & Action Controls Toolbar -->
+                        <div class="p-2.5 sm:px-3 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2 bg-white">
                             <div class="flex items-center gap-2 flex-wrap">
-                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs shadow-xs focus-within:border-indigo-400 focus-within:bg-white transition">
+                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus-within:border-indigo-400 focus-within:bg-white transition">
                                     <i class="fas fa-arrow-down-a-z text-slate-400"></i>
                                     <label for="entry-sort-order" class="font-bold text-slate-600 text-xs">Sort:</label>
                                     <select id="entry-sort-order" class="bg-transparent border-none text-xs font-bold text-slate-800 outline-none cursor-pointer">
@@ -831,7 +791,7 @@
                                         <option value="adm_desc">Adm No: High to Low</option>
                                     </select>
                                 </div>
-                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs shadow-xs focus-within:border-indigo-400 focus-within:bg-white transition">
+                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus-within:border-indigo-400 focus-within:bg-white transition">
                                     <i class="fas fa-users text-slate-400"></i>
                                     <label for="entry-gender-order" class="font-bold text-slate-600 text-xs">Order:</label>
                                     <select id="entry-gender-order" class="bg-transparent border-none text-xs font-bold text-slate-800 outline-none cursor-pointer">
@@ -840,26 +800,25 @@
                                         <option value="girls_first">Girls First, then Boys</option>
                                     </select>
                                 </div>
-                                <div class="flex items-center gap-1.5 bg-indigo-50/70 border border-indigo-200 rounded-lg px-2.5 py-1 text-xs shadow-xs focus-within:border-indigo-500 focus-within:bg-white transition" title="Input Total Attendance (working days) to set for all students automatically">
+                                <div class="flex items-center gap-1.5 bg-indigo-50/70 border border-indigo-200 rounded-lg px-2.5 py-1 text-xs focus-within:border-indigo-500 focus-within:bg-white transition" title="Input Total Attendance (working days) to set for all students automatically">
                                     <i class="fas fa-calendar-check text-indigo-600"></i>
                                     <label for="entry-top-total-attendance" class="font-bold text-indigo-900 text-xs whitespace-nowrap">Total Att:</label>
                                     <input type="number" min="0" id="entry-top-total-attendance" placeholder="Set for all" class="w-18 bg-white border border-indigo-200 rounded px-1.5 py-0.5 text-xs font-extrabold text-indigo-900 outline-none text-center focus:border-indigo-500">
                                 </div>
                             </div>
 
-                            <!-- Right: Bulk Fill & Action Buttons -->
                             <div class="w-full sm:w-auto grid grid-cols-2 sm:flex sm:items-center gap-2 justify-end">
-                                <button type="button" id="mark-fill-absent-btn" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold py-1.5 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5 shadow-xs" title="Fill empty fields with 'A'">
+                                <button type="button" id="mark-fill-absent-btn" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold py-1.5 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5" title="Fill empty fields with 'A'">
                                     <i class="fas fa-user-xmark"></i> Empty as 'A'
                                 </button>
-                                <button type="button" id="mark-clear-btn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold py-1.5 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5 shadow-xs" title="Clear all marks">
+                                <button type="button" id="mark-clear-btn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold py-1.5 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5" title="Clear all marks">
                                     <i class="fas fa-eraser"></i> Clear
                                 </button>
                                 <div class="h-5 w-px bg-slate-200 hidden sm:block mx-0.5"></div>
-                                <button id="save-draft-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-3.5 rounded-lg shadow-sm transition flex items-center justify-center gap-1.5 text-xs sm:text-sm">
+                                <button id="save-draft-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-3.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 text-xs">
                                     <i class="fas fa-file"></i> Save as Draft
                                 </button>
-                                <button id="save-publish-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3.5 rounded-lg shadow-sm transition flex items-center justify-center gap-1.5 text-xs sm:text-sm">
+                                <button id="save-publish-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3.5 rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 text-xs">
                                     <i class="fas fa-upload"></i> Publish
                                 </button>
                             </div>
@@ -875,24 +834,24 @@
                             </tbody>
                         </table>
                     </div>
-                    <div id="marks-validation-note" class="px-4 py-3 text-xs font-semibold text-red-600 hidden">Invalid marks detected. Allowed values: numbers within maximum mark, 'A' (Absent), or 'P' (Passed).</div>
+                    <div id="marks-validation-note" class="px-3 py-2 text-xs font-semibold text-red-600 hidden">Invalid marks detected. Allowed values: numbers within maximum mark, 'A' (Absent), or 'P' (Passed).</div>
                 </div>
             </section>
 
             <!-- 3. Draft Review -->
             <section id="draft-page" class="page-content hidden">
-                <div class="card p-5 shadow-sm">
-                    <div class="flex justify-between items-center mb-3 border-b pb-2">
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-800">Draft Results</h2>
-                            <p class="text-xs text-gray-500">Review entered marks before official publication</p>
-                        </div>
+                <div class="card p-3 sm:p-4 shadow-xs rounded-xl border border-slate-200">
+                    <div class="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+                        <h2 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fas fa-file-lines text-indigo-600"></i>
+                            <span>Draft Results</span>
+                        </h2>
                     </div>
 
                     <!-- Filter & Sorting Toolbar -->
-                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 space-y-3">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 space-y-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-chalkboard text-slate-400"></i>
                                 <label for="draft-class-filter" class="font-bold text-slate-600 whitespace-nowrap">Class:</label>
                                 <select id="draft-class-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
@@ -900,12 +859,12 @@
                                     <option value="ALL" selected>All Classes</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-book-open text-slate-400"></i>
                                 <label for="draft-exam-filter" class="font-bold text-slate-600 whitespace-nowrap">Exam:</label>
                                 <select id="draft-exam-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer"></select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-filter text-slate-400"></i>
                                 <label for="draft-status-filter" class="font-bold text-slate-600 whitespace-nowrap">Filter:</label>
                                 <select id="draft-status-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
@@ -916,7 +875,7 @@
                                     <option value="p_awarded">P Awarded</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-arrow-down-a-z text-slate-400"></i>
                                 <label for="draft-order-filter" class="font-bold text-slate-600 whitespace-nowrap">Order:</label>
                                 <select id="draft-order-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
@@ -929,17 +888,17 @@
                                     <option value="mixed">Mixed</option>
                                 </select>
                             </div>
-                            <button id="draft-select-toggle-btn" class="bg-white hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 shadow-xs transition flex items-center justify-center gap-1.5">
+                            <button id="draft-select-toggle-btn" class="bg-white hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 transition flex items-center justify-center gap-1.5">
                                 <i class="fas fa-check-square text-indigo-500"></i> Select All
                             </button>
                         </div>
                         <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80" data-role-scope="admin-only">
-                            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Bulk Actions</span>
+                            <span class="text-[11px] font-bold text-slate-500">Bulk Actions</span>
                             <div class="flex flex-wrap items-center gap-2">
-                                <button id="draft-bulk-publish-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-xs transition flex items-center gap-1.5">
+                                <button id="draft-bulk-publish-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5">
                                     <i class="fas fa-check-double"></i> Bulk Publish
                                 </button>
-                                <button id="draft-bulk-delete-btn" class="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-xs transition flex items-center gap-1.5">
+                                <button id="draft-bulk-delete-btn" class="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5">
                                     <i class="fas fa-trash"></i> Bulk Delete
                                 </button>
                             </div>
@@ -951,17 +910,17 @@
 
             <!-- 4. Published Results (Admin Only) -->
             <section id="published-page" class="page-content hidden" data-role-scope="admin-only">
-                <div class="card p-5 shadow-sm mb-6">
-                    <div class="flex justify-between items-center mb-3 border-b pb-2">
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-800">Published Results</h2>
-                            <p class="text-xs text-gray-500">Live published results visible in Student Portal</p>
-                        </div>
+                <div class="card p-3 sm:p-4 shadow-xs rounded-xl border border-slate-200">
+                    <div class="flex items-center justify-between mb-2.5 pb-2 border-b border-slate-100">
+                        <h2 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fas fa-circle-check text-indigo-600"></i>
+                            <span>Published Results</span>
+                        </h2>
                     </div>
                     <!-- Filter & Sorting Toolbar -->
-                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 space-y-3">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 space-y-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-chalkboard text-slate-400"></i>
                                 <label for="published-class-filter" class="font-bold text-slate-600 whitespace-nowrap">Class:</label>
                                 <select id="published-class-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
@@ -969,12 +928,12 @@
                                     <option value="ALL" selected>All Classes</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-book-open text-slate-400"></i>
                                 <label for="published-exam-filter" class="font-bold text-slate-600 whitespace-nowrap">Exam:</label>
                                 <select id="published-exam-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer"></select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-filter text-slate-400"></i>
                                 <label for="published-status-filter" class="font-bold text-slate-600 whitespace-nowrap">Filter:</label>
                                 <select id="published-status-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
@@ -985,7 +944,7 @@
                                     <option value="p_awarded">P Awarded</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs shadow-xs focus-within:border-indigo-400">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
                                 <i class="fas fa-arrow-down-a-z text-slate-400"></i>
                                 <label for="published-order-filter" class="font-bold text-slate-600 whitespace-nowrap">Order:</label>
                                 <select id="published-order-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
@@ -998,17 +957,17 @@
                                     <option value="mixed">Mixed</option>
                                 </select>
                             </div>
-                            <button id="published-select-toggle-btn" class="bg-white hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 shadow-xs transition flex items-center justify-center gap-1.5">
+                            <button id="published-select-toggle-btn" class="bg-white hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 transition flex items-center justify-center gap-1.5">
                                 <i class="fas fa-check-square text-indigo-500"></i> Select All
                             </button>
                         </div>
                         <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
-                            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Bulk Actions</span>
+                            <span class="text-[11px] font-bold text-slate-500">Bulk Actions</span>
                             <div class="flex flex-wrap items-center gap-2">
-                                <button id="published-bulk-unpublish-btn" class="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-xs transition flex items-center gap-1.5">
+                                <button id="published-bulk-unpublish-btn" class="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5">
                                     <i class="fas fa-arrow-rotate-left"></i> Move to Draft
                                 </button>
-                                <button id="published-bulk-delete-btn" class="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold px-3.5 py-1.5 rounded-lg text-xs shadow-xs transition flex items-center gap-1.5">
+                                <button id="published-bulk-delete-btn" class="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5">
                                     <i class="fas fa-trash"></i> Bulk Delete
                                 </button>
                             </div>
@@ -1016,29 +975,23 @@
                     </div>
                     <div id="published-results-table" class="space-y-2"></div>
                 </div>
-
             </section>
 
             <!-- 5. Generate Class Report Cards & Live Preview (Admin Only) -->
             <section id="report-cards-page" class="page-content hidden" data-role-scope="admin-only">
-                <div class="card p-4 sm:p-6 shadow-sm mb-6 border-t-4 border-indigo-500 rounded-2xl">
+                <div class="card p-3 sm:p-4 shadow-xs rounded-xl border border-slate-200">
                     <!-- Top Bar: Title & Primary Export Actions (PDF & Excel) -->
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5 border-b pb-4">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <span class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 inline-flex items-center justify-center font-bold text-sm">
-                                    <i class="fas fa-id-card"></i>
-                                </span>
-                                <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Report Cards &amp; Marksheets</h2>
-                            </div>
-                            <p class="text-xs text-slate-500 font-medium mt-1">Live interactive preview with exact 1:1 matching PDF &amp; Excel download options</p>
-                        </div>
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3 pb-2.5 border-b border-slate-100">
+                        <h2 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fas fa-id-card text-indigo-600"></i>
+                            <span>Report Cards &amp; Marksheets</span>
+                        </h2>
                         <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                            <button type="button" id="report-download-pdf-btn" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white bg-rose-600 hover:bg-rose-700 shadow-xs hover:shadow transition cursor-pointer">
+                            <button type="button" id="report-download-pdf-btn" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs text-white bg-rose-600 hover:bg-rose-700 transition cursor-pointer">
                                 <i class="fas fa-file-pdf"></i>
                                 <span>Download PDF</span>
                             </button>
-                            <button type="button" id="report-download-excel-btn" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs hover:shadow transition cursor-pointer">
+                            <button type="button" id="report-download-excel-btn" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-700 transition cursor-pointer">
                                 <i class="fas fa-file-excel"></i>
                                 <span>Export Excel</span>
                             </button>
@@ -1046,23 +999,23 @@
                     </div>
 
                     <!-- Filter Strip & Model Selector -->
-                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3 sm:p-4 mb-4 space-y-3">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 sm:p-3 mb-3 space-y-2.5">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                             <div>
-                                <label for="report-academic-year" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Academic Year</label>
-                                <select id="report-academic-year" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:border-indigo-500 outline-none shadow-2xs"></select>
+                                <label for="report-academic-year" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Academic Year</label>
+                                <select id="report-academic-year" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
                             </div>
                             <div>
-                                <label for="report-class-select" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Select Class</label>
-                                <select id="report-class-select" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:border-indigo-500 outline-none shadow-2xs"></select>
+                                <label for="report-class-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Select Class</label>
+                                <select id="report-class-select" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
                             </div>
                             <div>
-                                <label for="report-exam-select" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Select Exam</label>
-                                <select id="report-exam-select" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:border-indigo-500 outline-none shadow-2xs"></select>
+                                <label for="report-exam-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Select Exam</label>
+                                <select id="report-exam-select" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
                             </div>
                             <div>
-                                <label for="report-order-select" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Order / Sorting</label>
-                                <select id="report-order-select" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:border-indigo-500 outline-none shadow-2xs">
+                                <label for="report-order-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Order / Sorting</label>
+                                <select id="report-order-select" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none">
                                     <option value="rank">Rank Order (High to Low)</option>
                                     <option value="admission">Admission No Order</option>
                                     <option value="gender">Boys First, then Girls</option>
@@ -1071,13 +1024,12 @@
                             </div>
                         </div>
 
-                        <!-- Model Selection Dropdown -->
-                        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-3 border-t border-slate-200/80">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
                             <div class="flex items-center gap-2">
-                                <label for="report-model-select" class="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                                <label for="report-model-select" class="text-xs font-bold text-slate-600 flex items-center gap-1.5">
                                     <i class="fas fa-layer-group text-indigo-600"></i> Model View:
                                 </label>
-                                <select id="report-model-select" class="p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 focus:border-indigo-500 outline-none shadow-2xs cursor-pointer min-w-[210px]">
+                                <select id="report-model-select" class="p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:border-indigo-500 outline-none cursor-pointer min-w-[200px]">
                                     <option value="consolidated" selected>Consolidated Marksheet</option>
                                     <option value="individual">Individual Report Cards</option>
                                 </select>
@@ -1086,136 +1038,102 @@
                         </div>
                     </div>
 
-                    <!-- On-Screen Interactive Preview Container (Exact PDF Design) -->
-                    <div id="report-preview-canvas" class="mt-4">
-                        <!-- Populated dynamically matching exact PDF design -->
-                    </div>
-
+                    <!-- On-Screen Interactive Preview Container -->
+                    <div id="report-preview-canvas" class="mt-2"></div>
                 </div>
             </section>
 
-            <!-- 5. Settings & Setup -->
+            <!-- 6. Settings & Setup -->
             <section id="settings-page" class="page-content hidden">
-                <div class="card p-5 sm:p-6 shadow-sm mb-6">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 border-b pb-3">
-                        <div>
-                            <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Settings & Setup</h2>
-                            <p class="text-xs text-slate-500 font-medium mt-0.5">Unified administration hub for publish controls, exam structures, and grading rules.</p>
-                        </div>
-                    </div>
-
-                    <!-- Active Section Indicator (Controlled via Navigation Menu) -->
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-5 bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl">
-                        <div class="flex items-center gap-2.5 text-xs text-slate-700">
-                            <span class="text-slate-400 font-semibold flex items-center gap-1.5"><i class="fas fa-sliders-h text-indigo-500"></i> Active Section:</span>
-                            <span id="current-settings-subtab-badge" class="font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">Publish Controls</span>
-                        </div>
-                        <div class="text-[11px] text-slate-400 font-medium flex items-center gap-1.5">
-                            <i class="fas fa-bars text-slate-300"></i>
-                            <span>Switch settings tabs anytime from the navigation menu</span>
-                        </div>
-                    </div>
-
+                <div class="space-y-3">
                     <!-- Sub-Panel 1: Publish Controls -->
-                    <div id="subpanel-publish" class="settings-subpanel space-y-6" data-role-scope="admin-only">
-                        <!-- Main Publish Control Card -->
-                        <div class="card p-5 sm:p-6 shadow-sm border border-slate-200">
-                            <div class="border-b pb-4 mb-5">
-                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                    <div>
-                                        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                            <i class="fas fa-bullhorn text-indigo-600"></i>
-                                            Publish Schedule & Controls
-                                        </h3>
-                                        <p class="text-xs text-slate-500 mt-0.5">Publish examination results to the student portal either immediately or on a scheduled date.</p>
-                                    </div>
-                                    <div id="publish-live-status-badge" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 self-start sm:self-auto border border-slate-200">
-                                        <span class="w-2 h-2 rounded-full bg-slate-400"></span>
-                                        <span>Status: No schedule</span>
-                                    </div>
+                    <div id="subpanel-publish" class="settings-subpanel space-y-3" data-role-scope="admin-only">
+                        <div class="card p-3 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-100">
+                                <h3 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                                    <i class="fas fa-bullhorn text-indigo-600"></i>
+                                    <span>Publish Controls</span>
+                                </h3>
+                                <div id="publish-live-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 self-start sm:self-auto border border-slate-200">
+                                    <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                                    <span>Status: No schedule</span>
                                 </div>
                             </div>
                             
-                            <form id="publish-control-form" class="space-y-5" onsubmit="return false;">
-                                <!-- Form Fields Grid -->
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <form id="publish-control-form" class="space-y-3.5" onsubmit="return false;">
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div>
-                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">Academic Year <span class="text-red-500">*</span></label>
-                                        <select id="publish-academic-year" class="w-full p-2.5 border rounded-xl bg-white text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition shadow-xs"></select>
+                                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">Academic Year <span class="text-red-500">*</span></label>
+                                        <select id="publish-academic-year" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">Select Exam <span class="text-red-500">*</span></label>
-                                        <select id="publish-exam-select" class="w-full p-2.5 border rounded-xl bg-white text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition shadow-xs"></select>
+                                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">Select Exam <span class="text-red-500">*</span></label>
+                                        <select id="publish-exam-select" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
                                     </div>
                                     <div>
-                                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">Exam Name (Display) <span class="text-red-500">*</span></label>
-                                        <input type="text" id="publish-title" class="w-full p-2.5 border rounded-xl bg-white text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition shadow-xs" placeholder="e.g. Annual Examination 2024">
+                                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">Exam Name (Display) <span class="text-red-500">*</span></label>
+                                        <input type="text" id="publish-title" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="e.g. Annual Examination 2024">
                                     </div>
                                 </div>
 
                                 <!-- Publish Mode Selection -->
-                                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2.5">Publish Mode</label>
-                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <label id="mode-card-now" class="cursor-pointer border-2 border-indigo-600 bg-white rounded-xl p-3.5 flex items-start gap-3 transition shadow-xs hover:border-indigo-600">
-                                            <input type="radio" name="publish-action" value="publish_now" checked class="mt-1 text-indigo-600 focus:ring-indigo-500">
+                                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-2">Publish Mode</label>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        <label id="mode-card-now" class="cursor-pointer border-2 border-indigo-600 bg-white rounded-xl p-2.5 flex items-start gap-2.5 transition hover:border-indigo-600">
+                                            <input type="radio" name="publish-action" value="publish_now" checked class="mt-0.5 text-indigo-600 focus:ring-indigo-500">
                                             <div class="flex-1">
-                                                <div class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                                <div class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
                                                     <i class="fas fa-bolt text-amber-500"></i> Publish Now
                                                 </div>
-                                                <div class="text-xs text-slate-500 mt-0.5">Make results visible in the Student Portal immediately.</div>
+                                                <div class="text-[11px] text-slate-500 mt-0.5">Make results visible immediately.</div>
                                             </div>
                                         </label>
-                                        <label id="mode-card-schedule" class="cursor-pointer border-2 border-slate-200 bg-white rounded-xl p-3.5 flex items-start gap-3 transition shadow-xs hover:border-indigo-400">
-                                            <input type="radio" name="publish-action" value="auto_publish" class="mt-1 text-indigo-600 focus:ring-indigo-500">
+                                        <label id="mode-card-schedule" class="cursor-pointer border-2 border-slate-200 bg-white rounded-xl p-2.5 flex items-start gap-2.5 transition hover:border-indigo-400">
+                                            <input type="radio" name="publish-action" value="auto_publish" class="mt-0.5 text-indigo-600 focus:ring-indigo-500">
                                             <div class="flex-1">
-                                                <div class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                                <div class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
                                                     <i class="fas fa-clock text-indigo-600"></i> Auto Publish by Time
                                                 </div>
-                                                <div class="text-xs text-slate-500 mt-0.5">Schedule results to automatically publish at a designated date and time.</div>
+                                                <div class="text-[11px] text-slate-500 mt-0.5">Schedule automatic publication.</div>
                                             </div>
                                         </label>
                                     </div>
 
                                     <!-- Scheduled Date & Time Container -->
-                                    <div id="publish-schedule-datetime-container" class="hidden mt-4 pt-4 border-t border-slate-200">
+                                    <div id="publish-schedule-datetime-container" class="hidden mt-3 pt-3 border-t border-slate-200">
                                         <div class="max-w-md">
-                                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">Scheduled Date & Time <span class="text-red-500">*</span></label>
-                                            <input type="datetime-local" id="publish-at-input" class="w-full p-2.5 border rounded-xl bg-white text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-xs">
-                                            <p class="text-xs text-slate-500 mt-1">Students will see a countdown until this scheduled time is reached.</p>
+                                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">Scheduled Date & Time <span class="text-red-500">*</span></label>
+                                            <input type="datetime-local" id="publish-at-input" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                            <p class="text-[11px] text-slate-500 mt-1">Students will see a countdown until this scheduled time.</p>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Block Class Access Section (Before Save/Publish) -->
-                                <div class="bg-amber-50/50 p-4 rounded-xl border border-amber-200">
-                                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 mb-3 border-b border-amber-200/70">
-                                        <div>
-                                            <h4 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                                <i class="fas fa-ban text-amber-600"></i> Block Class Access
-                                            </h4>
-                                            <p class="text-xs text-slate-600 mt-0.5">Checked classes will be blocked from viewing results. Unchecked classes will be published.</p>
-                                        </div>
+                                <!-- Block Class Access Section -->
+                                <div class="bg-amber-50/50 p-3 rounded-xl border border-amber-200">
+                                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-amber-200/70">
+                                        <h4 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                            <i class="fas fa-ban text-amber-600"></i> Block Class Access
+                                        </h4>
                                         <div class="flex items-center gap-2 text-xs">
                                             <button type="button" id="select-all-blocked-btn" class="text-indigo-600 hover:text-indigo-800 font-bold px-2 py-1 rounded bg-white border border-indigo-200 hover:bg-indigo-50 transition">Select All</button>
                                             <button type="button" id="clear-all-blocked-btn" class="text-slate-600 hover:text-slate-800 font-bold px-2 py-1 rounded bg-white border border-slate-200 hover:bg-slate-50 transition">Clear All</button>
                                         </div>
                                     </div>
-                                    <div id="blocked-classes-list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-                                        <!-- Checkboxes populated dynamically -->
-                                    </div>
+                                    <div id="blocked-classes-list" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2"></div>
                                 </div>
 
                                 <!-- Action Buttons & Status -->
-                                <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                                <div class="flex flex-col sm:flex-row items-center justify-between gap-2.5 pt-1">
                                     <div id="publish-live-status" class="text-xs font-semibold text-slate-600">
                                         Select year, exam, and choose publish mode.
                                     </div>
                                     <div class="flex items-center gap-2 w-full sm:w-auto">
-                                        <button type="button" id="cancel-publish-edit-btn" class="hidden px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold text-xs transition">
+                                        <button type="button" id="cancel-publish-edit-btn" class="hidden px-3.5 py-2 rounded-lg border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold text-xs transition">
                                             Cancel Edit
                                         </button>
-                                        <button type="button" id="run-publish-action-btn" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm py-2.5 px-6 rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2">
+                                        <button type="button" id="run-publish-action-btn" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm py-2 px-5 rounded-lg shadow-xs transition flex items-center justify-center gap-2">
                                             <i class="fas fa-bolt"></i>
                                             <span id="run-publish-btn-label">Publish Now</span>
                                         </button>
@@ -1225,38 +1143,32 @@
                         </div>
 
                         <!-- Published Exam Records Table Card -->
-                        <div class="card p-5 sm:p-6 shadow-sm border border-slate-200">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-200">
-                                <div>
-                                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                                        <i class="fas fa-table-list text-indigo-600"></i>
-                                        Published Exam Records & History
-                                    </h3>
-                                    <p class="text-xs text-slate-500 mt-0.5">List of all published results arranged chronologically (newest at the top).</p>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <select id="publish-history-year-filter" class="p-2 border rounded-lg bg-white text-xs font-semibold text-slate-700">
-                                        <option value="">All Academic Years</option>
-                                    </select>
-                                </div>
+                        <div class="card p-3 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-100">
+                                <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                    <i class="fas fa-table-list text-indigo-600"></i>
+                                    <span>Published Exam Records</span>
+                                </h3>
+                                <select id="publish-history-year-filter" class="p-1.5 border rounded-lg bg-white text-xs font-semibold text-slate-700">
+                                    <option value="">All Academic Years</option>
+                                </select>
                             </div>
 
-                            <!-- Responsive History Table -->
-                            <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-xs">
+                            <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
                                 <table class="w-full text-left text-xs text-slate-700">
                                     <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                                         <tr>
-                                            <th class="py-3 px-4">Academic Year</th>
-                                            <th class="py-3 px-4">Exam & Display Name</th>
-                                            <th class="py-3 px-4">Publish Status</th>
-                                            <th class="py-3 px-4">Live Results & Sync</th>
-                                            <th class="py-3 px-4">Class Scope & Blocked</th>
-                                            <th class="py-3 px-4 text-center">Actions</th>
+                                            <th class="py-2.5 px-3">Academic Year</th>
+                                            <th class="py-2.5 px-3">Exam &amp; Display Name</th>
+                                            <th class="py-2.5 px-3">Publish Status</th>
+                                            <th class="py-2.5 px-3">Live Results &amp; Sync</th>
+                                            <th class="py-2.5 px-3">Class Scope &amp; Blocked</th>
+                                            <th class="py-2.5 px-3 text-center">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody id="published-history-table-body" class="divide-y divide-slate-100 font-medium">
                                         <tr>
-                                            <td colspan="6" class="p-6 text-center text-slate-400">Loading published records...</td>
+                                            <td colspan="6" class="p-5 text-center text-slate-400">Loading published records...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1265,37 +1177,30 @@
                     </div>
 
                     <!-- Sub-Panel 2: Subjects & Exams -->
-                    <div id="subpanel-subjects" class="settings-subpanel hidden space-y-6">
-                        <div class="card p-5 shadow-sm border border-slate-200">
+                    <div id="subpanel-subjects" class="settings-subpanel hidden space-y-3">
+                        <div class="card p-3 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
                             <!-- Header & Action Row -->
-                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 mb-4 border-b border-slate-200">
-                                <div>
-                                    <div class="flex items-center gap-2.5">
-                                        <span class="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 font-bold text-sm">
-                                            <i class="fas fa-sliders-h"></i>
-                                        </span>
-                                        <div>
-                                            <h3 class="text-base font-bold text-slate-800 leading-tight">Curriculum & Examination Setup</h3>
-                                            <p class="text-xs text-slate-500">Configure class subjects or define custom examinations for the active academic year.</p>
-                                        </div>
-                                    </div>
-                                </div>
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2.5 mb-3 border-b border-slate-100">
+                                <h3 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                                    <i class="fas fa-sliders-h text-indigo-600"></i>
+                                    <span>Subjects &amp; Exams Setup</span>
+                                </h3>
 
-                                <button type="button" id="open-carryforward-modal-btn" data-role-scope="admin-only" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200/90 shadow-xs transition cursor-pointer self-start md:self-auto">
+                                <button type="button" id="open-carryforward-modal-btn" data-role-scope="admin-only" class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition cursor-pointer self-start md:self-auto">
                                     <i class="fas fa-history text-amber-600"></i>
-                                    <span>Carry Forward Previous Year Subjects</span>
+                                    <span>Carry Forward Previous Year</span>
                                 </button>
                             </div>
 
                             <!-- Segmented Switcher Controls -->
-                            <div class="mb-5">
-                                <div class="inline-flex p-1 bg-slate-100 rounded-xl border border-slate-200/80 max-w-full overflow-x-auto">
-                                    <label id="mode-tab-subjects" class="setup-mode-tab flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold cursor-pointer transition select-none bg-white text-indigo-700 shadow-xs">
+                            <div class="mb-3">
+                                <div class="inline-flex p-1 bg-slate-100 rounded-lg border border-slate-200 max-w-full overflow-x-auto">
+                                    <label id="mode-tab-subjects" class="setup-mode-tab flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer transition select-none bg-white text-indigo-700 shadow-2xs">
                                         <input type="radio" name="setup-mode" value="subjects" class="setup-mode-radio sr-only" checked>
                                         <i class="fas fa-book-open"></i>
                                         <span>Configure Subjects</span>
                                     </label>
-                                    <label id="mode-tab-exams" class="setup-mode-tab flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold cursor-pointer transition select-none text-slate-600 hover:text-slate-900">
+                                    <label id="mode-tab-exams" class="setup-mode-tab flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer transition select-none text-slate-600 hover:text-slate-900">
                                         <input type="radio" name="setup-mode" value="exams" class="setup-mode-radio sr-only">
                                         <i class="fas fa-file-signature"></i>
                                         <span>Configure Custom Exams</span>
@@ -1304,10 +1209,10 @@
                             </div>
 
                             <!-- 1. Subject Configuration Panel -->
-                            <div id="subject-setup-panel" class="grid grid-cols-1 gap-4">
+                            <div id="subject-setup-panel" class="grid grid-cols-1 gap-3">
                                 <div>
-                                    <label class="block text-sm font-semibold mb-1 text-slate-700">Select Class</label>
-                                    <select id="subject-class-select" class="w-full p-2.5 border rounded-lg bg-white text-sm font-medium"></select>
+                                    <label class="block text-xs font-semibold mb-1 text-slate-700">Select Class</label>
+                                    <select id="subject-class-select" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-medium"></select>
                                 </div>
                                 <div class="border rounded-xl overflow-hidden">
                                     <table class="w-full text-sm">
@@ -1321,32 +1226,25 @@
                                         </thead>
                                         <tbody id="subject-rows-body"></tbody>
                                     </table>
-                                    <div class="p-3 border-t bg-slate-50 flex flex-wrap justify-between items-center gap-2">
-                                        <button type="button" id="subject-add-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-bold px-3 py-2 rounded-lg transition">
+                                    <div class="p-2.5 border-t bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                                        <button type="button" id="subject-add-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg transition">
                                             <i class="fas fa-plus mr-1"></i> Add Subject Row
                                         </button>
-                                        <button type="button" id="save-subject-schema-btn" class="btn-primary py-2 px-5 rounded-lg font-bold text-xs sm:text-sm">
-                                            <i class="fas fa-save mr-1.5"></i> Save Subjects for Class
+                                        <button type="button" id="save-subject-schema-btn" class="btn-primary py-1.5 px-4 rounded-lg font-bold text-xs sm:text-sm">
+                                            <i class="fas fa-save mr-1.5"></i> Save Subjects
                                         </button>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- 2. Custom Exam Configuration Panel -->
-                            <div id="exam-setup-panel" class="hidden grid grid-cols-1 gap-4">
+                            <div id="exam-setup-panel" class="hidden grid grid-cols-1 gap-3">
                                 <div>
-                                    <label class="block text-sm font-semibold mb-1 text-slate-700">Select Class</label>
-                                    <select id="exam-config-class-select" class="w-full p-2.5 border rounded-lg bg-white text-sm font-medium"></select>
-                                    <div class="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-600">
-                                        <div class="font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                                            <i class="fas fa-info-circle text-indigo-600"></i> Default System Exams (Included for all classes):
-                                        </div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <span class="bg-white border px-2 py-0.5 rounded text-[11px] font-semibold text-slate-700">First Terminal</span>
-                                            <span class="bg-white border px-2 py-0.5 rounded text-[11px] font-semibold text-slate-700">Half-Yearly</span>
-                                            <span class="bg-white border px-2 py-0.5 rounded text-[11px] font-semibold text-slate-700">Annual</span>
-                                        </div>
-                                        <p class="mt-1.5 text-[11px] text-slate-500">The 3 default exams encompass all subjects. Add extra custom exams below (such as Class Test, Monthly Assessment) for this class.</p>
+                                    <label class="block text-xs font-semibold mb-1 text-slate-700">Select Class</label>
+                                    <select id="exam-config-class-select" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-medium"></select>
+                                    <div class="mt-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs text-slate-600 flex flex-wrap items-center gap-2">
+                                        <span class="font-bold text-slate-700">Default Exams:</span>
+                                        <span>First Terminal · Half-Yearly · Annual</span>
                                     </div>
                                 </div>
                                 <div class="border rounded-xl overflow-hidden">
@@ -1360,12 +1258,12 @@
                                         </thead>
                                         <tbody id="exam-config-rows-body"></tbody>
                                     </table>
-                                    <div class="p-3 border-t bg-slate-50 flex flex-wrap justify-between items-center gap-2">
-                                        <button type="button" id="exam-config-add-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-bold px-3 py-2 rounded-lg transition">
+                                    <div class="p-2.5 border-t bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                                        <button type="button" id="exam-config-add-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg transition">
                                             <i class="fas fa-plus mr-1"></i> Add Custom Exam
                                         </button>
-                                        <button type="button" id="save-exam-config-btn" class="btn-primary py-2 px-5 rounded-lg font-bold text-xs sm:text-sm">
-                                            <i class="fas fa-save mr-1.5"></i> Save Exams for Class
+                                        <button type="button" id="save-exam-config-btn" class="btn-primary py-1.5 px-4 rounded-lg font-bold text-xs sm:text-sm">
+                                            <i class="fas fa-save mr-1.5"></i> Save Exams
                                         </button>
                                     </div>
                                 </div>
@@ -1373,158 +1271,118 @@
                         </div>
 
                         <!-- 3. Saved Classes, Subjects & Exams Structured Table -->
-                        <div class="card p-5 shadow-sm border border-slate-200">
-                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-                                <div>
-                                    <h3 class="text-base font-bold text-slate-800">Saved Classes, Subjects & Exams</h3>
-                                    <p class="text-xs text-slate-500">Structured overview of all configured classes for the active academic year.</p>
-                                </div>
+                        <div class="card p-3 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
+                            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+                                <h3 class="text-sm font-bold text-slate-800">Saved Classes, Subjects &amp; Exams</h3>
                                 <div class="flex items-center gap-2 w-full sm:w-auto">
                                     <label class="text-xs font-semibold text-slate-600 whitespace-nowrap">Filter Class:</label>
-                                    <select id="schema-list-class-filter" class="p-2 border rounded-lg bg-white text-xs font-medium w-full sm:w-48">
+                                    <select id="schema-list-class-filter" class="p-1.5 border rounded-lg bg-white text-xs font-medium w-full sm:w-44">
                                         <option value="">All Classes</option>
                                     </select>
                                 </div>
                             </div>
 
-                            <!-- Table Container (maintains id="exam-list-container" for backwards compatibility) -->
-                            <div id="exam-list-container" class="overflow-x-auto border rounded-xl bg-white">
-                                <!-- Populated dynamically by renderExamSetup with responsive table -->
-                            </div>
+                            <div id="exam-list-container" class="overflow-x-auto border rounded-xl bg-white"></div>
                         </div>
                     </div>
 
                     <!-- Sub-Panel 3: Grade Rules -->
-                    <div id="subpanel-grades" class="settings-subpanel hidden space-y-6">
-                        <!-- Grade Scale Configuration Card -->
-                        <div class="card p-5 shadow-sm border border-slate-200">
-                            <div class="border-b pb-3 mb-4">
-                                <h3 class="text-lg font-bold text-gray-800">Grade Scale & Rules</h3>
-                                <p class="text-xs text-gray-500">Configure score ranges and letter grades for any total mark scale (e.g. 100, 50, or custom totals).</p>
+                    <div id="subpanel-grades" class="settings-subpanel hidden space-y-3">
+                        <div class="card p-3 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
+                            <div class="border-b border-slate-100 pb-2.5 mb-3">
+                                <h3 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                                    <i class="fas fa-list-check text-indigo-600"></i>
+                                    <span>Grade Scale &amp; Rules</span>
+                                </h3>
                             </div>
 
-                            <!-- Scale Total Selection / Input -->
-                            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Total Marks for this Scale</label>
-                                        <div class="flex items-center gap-2">
-                                            <input type="number" id="grade-scale-total-input" min="1" max="1000" class="w-full p-2.5 border rounded-lg bg-white text-sm font-bold text-slate-800" placeholder="e.g. 100 or 50" value="100">
-                                            <span class="text-xs font-semibold text-slate-500 whitespace-nowrap">Marks</span>
-                                        </div>
-                                    </div>
-                                    <div class="text-xs text-slate-500 bg-white p-2.5 rounded-lg border">
-                                        <span class="font-bold text-slate-700 block mb-0.5">Scale Guidance:</span>
-                                        Set your total score threshold (e.g. 100 or 50). Minimum and maximum score bounds below will automatically apply to this scale.
+                            <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 mb-3">
+                                <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                                    <label for="grade-scale-total-input" class="text-xs font-bold text-slate-700 uppercase tracking-wider whitespace-nowrap">Total Marks Scale:</label>
+                                    <div class="flex items-center gap-2 sm:w-44">
+                                        <input type="number" id="grade-scale-total-input" min="1" max="1000" class="w-full p-2 border rounded-lg bg-white text-sm font-bold text-slate-800" placeholder="e.g. 100 or 50" value="100">
+                                        <span class="text-xs font-semibold text-slate-500 whitespace-nowrap">Marks</span>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Grade Rules Rows Table -->
-                            <div class="border rounded-xl overflow-hidden mb-4">
+                            <div class="border rounded-xl overflow-hidden">
                                 <div class="bg-slate-100 p-2.5 text-xs font-bold text-slate-700 grid grid-cols-12 gap-2 border-b">
                                     <div class="col-span-4 sm:col-span-3">Grade Label</div>
                                     <div class="col-span-3 sm:col-span-4">Min Mark</div>
                                     <div class="col-span-3 sm:col-span-4">Max Mark</div>
                                     <div class="col-span-2 sm:col-span-1 text-center">Action</div>
                                 </div>
-                                <div id="grade-rules-rows" class="p-3 space-y-2 bg-white"></div>
-                                <div class="p-3 border-t bg-slate-50 flex flex-wrap justify-between items-center gap-2">
-                                    <button type="button" id="add-grade-rule-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold px-3 py-2 rounded-lg text-xs transition">
+                                <div id="grade-rules-rows" class="p-2.5 space-y-2 bg-white"></div>
+                                <div class="p-2.5 border-t bg-slate-50 flex flex-wrap justify-between items-center gap-2">
+                                    <button type="button" id="add-grade-rule-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold px-3 py-1.5 rounded-lg text-xs transition">
                                         <i class="fas fa-plus mr-1"></i> Add Grade Row
                                     </button>
-                                    <button type="button" id="save-grade-rules-btn" class="btn-primary py-2 px-5 rounded-lg font-bold text-xs sm:text-sm">
+                                    <button type="button" id="save-grade-rules-btn" class="btn-primary py-1.5 px-4 rounded-lg font-bold text-xs sm:text-sm">
                                         <i class="fas fa-save mr-1.5"></i> Save Grade Scale
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Saved Grade Scales List (50, 100, and any custom sets) -->
-                        <div class="card p-5 shadow-sm border border-slate-200">
-                            <div class="border-b pb-3 mb-4">
-                                <h3 class="text-base font-bold text-slate-800">Saved Grade Scales</h3>
-                                <p class="text-xs text-slate-500">Active grading scales in the system. Click on any scale to load and edit its ranges above.</p>
+                        <div class="card p-3 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
+                            <div class="border-b border-slate-100 pb-2 mb-3">
+                                <h3 class="text-sm font-bold text-slate-800">Saved Grade Scales</h3>
                             </div>
-                            <div id="saved-grade-scales-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <!-- Dynamically populated cards for 100, 50, and custom scales -->
-                            </div>
+                            <div id="saved-grade-scales-container" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
                         </div>
                     </div>
-
                 </div>
             </section>
 
-            <!-- 6. Class Promotion & Academic Advancement (Admin Only) -->
+            <!-- 7. Class Promotion & Academic Advancement (Admin Only) -->
             <section id="promotion-page" class="page-content hidden" data-role-scope="admin-only">
-                <div class="card p-5 sm:p-6 shadow-sm border border-slate-200 rounded-2xl mb-6">
-                    <!-- Top Banner & Action Controls -->
-                    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-5 mb-5 border-b border-slate-200">
-                        <div>
-                            <div class="flex items-center gap-2.5">
-                                <span class="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-bold text-sm shadow-xs">
-                                    <i class="fas fa-graduation-cap"></i>
-                                </span>
-                                <div>
-                                    <h3 class="text-base sm:text-lg font-bold text-slate-800 leading-tight">Class Promotion &amp; Academic Advancement</h3>
-                                    <p class="text-xs text-slate-500">Configure annual student progression and academic year advancement. Final year students graduate into Alumni status.</p>
-                                </div>
-                            </div>
-                        </div>
+                <div class="card p-3 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
+                    <!-- Compact Top Header & Action Controls -->
+                    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-2.5 pb-3 mb-3 border-b border-slate-100">
+                        <h3 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2 shrink-0">
+                            <i class="fas fa-graduation-cap text-indigo-600"></i>
+                            <span>Class Promotion</span>
+                        </h3>
 
-                        <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                            <!-- Direct Promotion Bypass Toggle Switch -->
-                            <label for="promotion-direct-bypass-toggle" class="flex items-center gap-2.5 bg-amber-50/90 hover:bg-amber-100/90 border border-amber-200 hover:border-amber-300 px-3 py-1.5 rounded-xl shadow-2xs transition cursor-pointer select-none group">
+                        <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                            <label for="promotion-direct-bypass-toggle" class="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-lg transition cursor-pointer select-none group">
                                 <div class="promotion-toggle-switch">
                                     <input type="checkbox" id="promotion-direct-bypass-toggle">
                                     <span class="promotion-toggle-slider"></span>
                                 </div>
                                 <div class="flex items-center gap-1.5">
-                                    <i class="fas fa-bolt text-amber-600 group-hover:scale-110 transition-transform"></i>
-                                    <span class="text-xs font-bold text-amber-950">Direct Promotion (Bypass Exam Marks)</span>
-                                    <span id="promotion-direct-status-badge" class="ml-1 text-[10px] font-black uppercase px-1.5 py-0.5 rounded-md bg-amber-200/60 text-amber-800 border border-amber-300/60">OFF</span>
+                                    <i class="fas fa-bolt text-amber-600 text-xs"></i>
+                                    <span class="text-xs font-bold text-amber-950">Direct Promotion</span>
+                                    <span id="promotion-direct-status-badge" class="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-200/60 text-amber-800">OFF</span>
                                 </div>
                             </label>
 
-                            <!-- Current Academic Year -->
-                            <div class="bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl flex items-center gap-2">
-                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Current Year:</span>
-                                <span id="promotion-current-year-badge" class="text-xs font-extrabold text-indigo-700 bg-white px-2 py-0.5 rounded-lg border border-slate-200 shadow-2xs">--</span>
+                            <div class="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg">
+                                <label for="promotion-target-year" class="text-xs font-bold text-indigo-900 whitespace-nowrap">To Year:</label>
+                                <select id="promotion-target-year" class="p-1 border border-indigo-200 rounded bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none min-w-[130px]"></select>
                             </div>
 
-                            <!-- Target Academic Year Select -->
-                            <div class="flex items-center gap-2 bg-indigo-50/70 border border-indigo-200 px-3 py-1.5 rounded-xl">
-                                <label for="promotion-target-year" class="text-xs font-bold text-indigo-900 whitespace-nowrap">
-                                    <i class="fas fa-arrow-right mr-1 text-indigo-600"></i> Promote To Year:
-                                </label>
-                                <select id="promotion-target-year" class="p-1 border border-indigo-200 rounded-lg bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none min-w-[140px] shadow-2xs"></select>
-                            </div>
-
-                            <!-- Run Auto Promotion Action Button -->
-                            <button id="run-auto-promotion-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-xl font-bold text-xs shadow-sm transition flex items-center justify-center gap-2 cursor-pointer ml-auto lg:ml-0">
+                            <button id="run-auto-promotion-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-3.5 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ml-auto lg:ml-0">
                                 <i class="fas fa-check-double"></i>
                                 <span>Run Auto Promotion</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Single Consolidated Promotion Review Section -->
-                    <div class="space-y-4">
-                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                            <div>
-                                <h4 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                                    <i class="fas fa-users-cog text-indigo-600"></i> Review Eligible Promotions &amp; Target Classes
-                                </h4>
-                                <p class="text-xs text-slate-500">Target classes are automatically assigned by sequence or custom setting. You can change any target class before running promotion.</p>
-                            </div>
+                    <!-- Consolidated Promotion Review Section -->
+                    <div class="space-y-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <h4 class="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5">
+                                <i class="fas fa-users-cog text-indigo-600"></i> Eligible Classes &amp; Targets
+                            </h4>
                             <button id="preview-promotion-btn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 py-1.5 px-3 rounded-lg font-bold text-xs transition flex items-center gap-1.5">
-                                <i class="fas fa-sync-alt"></i> Refresh Candidates
+                                <i class="fas fa-sync-alt"></i> Refresh
                             </button>
                         </div>
 
-                        <!-- Dynamically populated cards with statistics and editable target class dropdown -->
-                        <div id="promotion-preview-list" class="space-y-3">
-                            <div class="text-center py-6 text-xs text-slate-400 italic">Loading promotion candidate classes...</div>
+                        <div id="promotion-preview-list" class="space-y-2.5">
+                            <div class="text-center py-5 text-xs text-slate-400">Loading promotion candidate classes...</div>
                         </div>
                     </div>
                 </div>
