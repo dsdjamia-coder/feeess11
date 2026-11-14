@@ -25,15 +25,16 @@ A comprehensive, production-grade institutional web platform engineered for mode
    - [Method 3: Multi-Admin Accounts Management](#method-3-multi-admin-accounts-management)
    - [Method 4: Promoting Staff via RBAC (`actLikeSuperAdmin`)](#method-4-promoting-staff-via-rbac-actlikesuperadmin)
 4. [Role-Based Access Control (RBAC) & Duty Scoping](#role-based-access-control-rbac--duty-scoping)
-5. [Firestore Database Schema & Document Architecture](#firestore-database-schema--document-architecture)
-6. [Firebase Security Hardening & App Check Enforcement](#firebase-security-hardening--app-check-enforcement)
-7. [Getting Started & Local Development](#getting-started--local-development)
-8. [Official Print Engine & Export Specifications](#official-print-engine--export-specifications)
-9. [Emergency Rollback & Disaster Recovery Runbook](#emergency-rollback--disaster-recovery-runbook)
-10. [User Acceptance Testing (UAT) Checklist](#user-acceptance-testing-uat-checklist)
-11. [Bug Triage Framework & Historical Fixes](#bug-triage-framework--historical-fixes)
-12. [Developer Reference & Guidelines](#developer-reference--guidelines)
-13. [License & Institutional Information](#license--institutional-information)
+5. [Firestore Database Schema & Document Architecture (English + Malayalam)](#firestore-database-schema--document-architecture-english--malayalam)
+6. [Firebase Migration & New Database Setup Guide (English + Malayalam)](#firebase-migration--new-database-setup-guide-english--malayalam)
+7. [Firebase Security Hardening, App Check & Vercel Deployment](#firebase-security-hardening-app-check--vercel-deployment)
+8. [Getting Started & Local Development](#getting-started--local-development)
+9. [Official Print Engine & Export Specifications](#official-print-engine--export-specifications)
+10. [Emergency Rollback & Disaster Recovery Runbook](#emergency-rollback--disaster-recovery-runbook)
+11. [User Acceptance Testing (UAT) Checklist](#user-acceptance-testing-uat-checklist)
+12. [Bug Triage Framework & Historical Fixes](#bug-triage-framework--historical-fixes)
+13. [Developer Reference & Guidelines](#developer-reference--guidelines)
+14. [License & Institutional Information](#license--institutional-information)
 
 ---
 
@@ -44,8 +45,8 @@ The system is designed as a modular **Multi-Page Application (MPA)** optimized f
 - **Frontend Core**: Vanilla JavaScript (ES Modules) & TypeScript Definitions.
 - **Styling & Layout**: Tailwind CSS v4 (`@tailwindcss/vite`), FontAwesome 6, Google Fonts (*Plus Jakarta Sans*).
 - **Build & Bundler**: Vite 8 with TypeScript type-checking (`tsc && vite build`).
-- **Cloud Database**: Google Cloud Firestore (Multi-tenant path scoping with custom database ID support).
-- **Authentication**: Firebase Authentication (Email/Password, Anonymous Session) + Document-level Emergency Fallback.
+- **Cloud Database**: Google Cloud Firestore (Multi-tenant path scoping with optional custom database ID support).
+- **Authentication**: Firebase Authentication (Email/Password for Admin & Staff; Anonymous Auth for Student Portal sessions) + Directory Category Auth (SHA-256 hash).
 - **PWA & Offline Support**: Web App Manifest (`manifest.json`), Service Worker (`sw.js`) with asset caching.
 - **Document & PDF Generation**: jsPDF, jsPDF-AutoTable, and Native Publication-Grade CSS Print Engine (`@media print`).
 - **Image Processing**: Client-side interactive canvas image cropper (`InteractiveCropper`) with automated downscaling.
@@ -70,10 +71,9 @@ The public-facing digital gateway for parents, prospective students, and communi
 ### 2. Official Hub & Staff Gateway (`official.html`, `official-dashboard.html`)
 A unified authentication and navigation terminal for all institution staff, teachers, clerks, and administrators:
 - **Multi-Source Authentication**:
-  1. Super Admin email/password via Firebase Authentication.
-  2. Legacy / Emergency Super Admin credential matching via Firestore `adminAuth` document.
-  3. Staff accounts via username/email/staff ID and hashed passwords.
-  4. Public directory authentication via category auth credentials.
+  1. Super Admin email/password verified strictly via **Firebase Authentication** + Firestore `settings/adminAuth`.
+  2. Staff accounts verified via **Firebase Authentication** (`email` or `{username}@school.internal`) + Firestore `staffAccess` permissions.
+  3. Public directory category users authenticated via SHA-256 hashed category credentials.
 - **Official Lockdown System**: When active, restricts system access strictly to Super Admins. Non-admin staff attempting access are blocked with security alerts.
 - **Central Navigation Dashboard (`official-dashboard.html`)**:
   - Interactive portal cards with real-time badges for Fee Collection, Students, Worksheets, Results, Attendance, Activities, Academic Planning, and System Administration.
@@ -231,17 +231,19 @@ When deploying the application to a new Firebase project:
    - Click **Add User**.
 
 2. **Step 2: Create Firestore `adminAuth` Document**
-   - Navigate to **Build > Firestore Database**.
-   - Browse to your institution base path:
+   - Navigate to **Build > Firestore Database** (select your configured database ID, or `(default)`).
+   - Browse to your institution settings path:
      ```
      institutions/school/settings/adminAuth
      ```
-     *(Note: Replace `school` if you modified `INSTITUTION_ID` in `config/app-config.js`).*
+     *(Note: Replace `school` if you modified `INSTITUTION_ID` in `config/app-config.js`. Never store a `password` field in Firestore — authentication is handled solely by Firebase Authentication.)*
    - Create the document `adminAuth` with the following fields:
      ```json
      {
        "email": "admin@institute.com",
-       "password": "yourSuperSecretPassword123",
+       "adminsIndex": {
+         "admin@institute.com": true
+       },
        "admins": [
          {
            "name": "Primary Super Admin",
@@ -254,31 +256,39 @@ When deploying the application to a new Firebase project:
      }
      ```
 3. **Step 3: Log In**
-   - Navigate to `official.html` or `index.html` on your web app.
-   - Enter `admin@institute.com` and your password.
-   - The system validates via Firebase Authentication (or falls back to the document credentials) and initializes the `AppSession` as `admin`.
+   - Navigate to `index.html` (click **Login**) or `official.html` on your web app.
+   - Enter `admin@institute.com` and your Firebase Auth password.
+   - On first login to a fresh database (even before `settings/config` exists), the system verifies via **Firebase Authentication**, confirms `settings/adminAuth`, automatically initializes `settings/config.adminProfile`, and opens the Admin session.
 
 ---
 
 ### Method 2: Managing Credentials in Admin Console (`admin.html`)
 Once logged in as Super Admin, you can change login credentials directly from the user interface:
-1. Navigate to **`admin.html`** and click the **Security / Credentials** tab.
-2. Locate the **Update Admin Credentials** card.
+1. Navigate to **`admin.html`** and click the **Security Settings** tab.
+2. Locate the **Update Super Admin Credentials** card.
 3. Enter:
    - **Current Password**: For re-authentication.
-   - **New Admin Email**: (Optional, if changing login email).
-   - **New Password**: (Minimum 6 characters).
-4. Click **Update Admin Credentials**.
-5. The application re-authenticates with Firebase Auth, updates the user credentials in Google Auth, and synchronizes the Firestore `adminAuth` document automatically.
+   - **New Email**: (Optional, if changing login email).
+   - **New Password**: (Optional, minimum 6 characters).
+4. Click **Update Login Credentials**.
+5. The application re-authenticates with Firebase Auth, updates the credentials in Firebase Auth, and synchronizes `settings/adminAuth` and `settings/config.adminProfile` automatically (without writing any password to Firestore).
 
 ---
 
 ### Method 3: Multi-Admin Accounts Management
+*(Note: By default `SINGLE_ADMIN_MODE = true` is enabled in `config/app-config.js` so only one Super Admin operates. To enable multi-admin support, set `SINGLE_ADMIN_MODE = false` in `config/app-config.js`.)*
+
 To grant Super Admin access to multiple trusted officials without sharing a single password:
 1. Open the Firestore document: `institutions/{INSTITUTION_ID}/settings/adminAuth`.
-2. Add new administrator entries to the `admins` array:
+2. Add each administrator email to **both** `adminsIndex` (required by `firestore.rules`) and the `admins` array:
    ```json
    {
+     "email": "admin@institute.com",
+     "adminsIndex": {
+       "admin@institute.com": true,
+       "director@institute.com": true,
+       "secretary@institute.com": true
+     },
      "admins": [
        {
          "name": "Academic Director",
@@ -340,59 +350,207 @@ When a teacher is assigned specific classes (e.g., `Class 3`, `Class 5`):
 
 ---
 
-## Firestore Database Schema & Document Architecture
+## Firestore Database Schema & Document Architecture (English + Malayalam)
 
-All institutional data resides under the base path:
+All institutional data resides under a single multi-tenant root path defined in `config/app-config.js`:
 ```
 institutions/{INSTITUTION_ID}/
 ```
-*(Default: `institutions/school/`)*
+*(Default: `institutions/school/` — സ്ഥാപനത്തിലെ എല്ലാ ഡാറ്റയും `institutions/school/` എന്ന പാത്തിന് കീഴിലുള്ള subcollections-ലാണ് സൂക്ഷിച്ചിരിക്കുന്നത്.)*
 
-### Key Collections & Documents:
+### 1. Settings Collection (`institutions/school/settings/{docId}`)
+| Document ID | Purpose (English) | ഉപയോഗം (Malayalam) | Access Rule |
+| :--- | :--- | :--- | :--- |
+| **`adminAuth`** | Super Admin email (`email`), `adminsIndex`, and `admins` array (**never store passwords**) | സൂപ്പർ അഡ്മിൻ ഇമെയിൽ വിവരങ്ങൾ (**പാസ്‌വേഡ് സേവ് ചെയ്യരുത്**) | Admin only (`isAdmin`) |
+| **`config`** | Institution name, logo, phone, address, `adminProfile`, student edit/photo flags | സ്ഥാപനത്തിന്റെ പേര്, ലോഗോ, `adminProfile`, പ്രധാന ക്രമീകരണങ്ങൾ | Public Read / Admin Write |
+| **`content`** | Homepage about text, announcements/notices, gallery URLs, directory categories | ഹോം പേജ് വിവരങ്ങൾ, നോട്ടീസുകൾ, ഗാലറി | Public Read / Admin Write |
+| **`academicYears`** | Academic years list, active year, months, calendar settings | അക്കാദമിക് വർഷങ്ങളുടെ വിവരങ്ങൾ | Public Read / Admin Write |
+| **`sessionControl`** | Official Portal lock status (`isLocked`) | ഒഫീഷ്യൽ പോർട്ടൽ ലോക്ക് സ്റ്റാറ്റസ് | Public Read / Admin Write |
+| **`sessionRegistry`** | Active device login heartbeat registry | ലോഗിൻ ചെയ്ത ഉപകരണങ്ങളുടെ സെഷൻ വിവരങ്ങൾ | Signed-in Read/Write |
+| **`receiptSequence`** | Atomic fee receipt number counter (`lastReceiptNo`) | തനത് രസീത് നമ്പർ ജനറേറ്റ് ചെയ്യാനുള്ള കൗണ്ടർ | Collector / Admin |
+| **`categoryAuthConfig`** | Login configuration for Public Directory categories | പബ്ലിക് ഡയറക്ടറി കാറ്റഗറി ലോഗിൻ ക്രമീകരണം | Public Read / Admin Write |
+| **`pageAccess`** | Category & entry-level portal page permissions | ഡയറക്ടറി ഉപയോക്താക്കളുടെ പേജ് അനുമതികൾ | Public Read / Admin Write |
+| **`resultCenter`** | Result publishing & marksheet display configuration | റിസൾട്ട് സെന്റർ ക്രമീകരണങ്ങൾ | Result Operator / Admin |
+| **`attendanceConfig`** & **`timetableStructure`** | Working days, sessions, period timings | ഹാജർ & ടൈംടേബിൾ ക്രമീകരണങ്ങൾ | Attendance / Admin |
+| **`yearPlanConfig`** & **`academicPlanningConfig`** | Year plan & syllabus tracker settings | അക്കാദമിക് പ്ലാനിംഗ് ക്രമീകരണങ്ങൾ | Academic Plan / Admin |
+| **`activityConfig`** & **`taskDefinitions`** | Co-curricular & Ibadah task definitions | ആക്ടിവിറ്റി & ടാസ്ക് ക്രമീകരണങ്ങൾ | Activity / Admin |
+| **`evaluationConfig_{id}`** | Classroom evaluation templates & rubrics | ക്ലാസ്‌റൂം ഇവാലുവേഷൻ ക്രമീകരണങ്ങൾ | Evaluation / Admin |
 
-- **`settings/adminAuth`**: Super Administrator credentials, email, emergency password, and `admins` list.
-- **`settings/config`**: Institutional profile (name, phone, address, tagline, logo URL, active academic year).
-- **`settings/academicYears`**: List of created academic years, session months, and calendar types.
-- **`settings/sessionControl`**: Official Lock toggle status (`isLocked: true/false`).
-- **`students/{studentId}`**: Student master records (admission no, name, class, division, parent contact, fees profile).
-- **`staff/{staffId}`**: Staff member directory (name, designation, phone, duty classes, photo).
-- **`staffAccess/{staffId}`**: Granular permission switches (`collection`, `worksheet`, `student`, `result`, `attendance`, `academicPlan`, `studentActivity`, `actLikeSuperAdmin`).
-- **`collections/{receiptNo}`**: Real-time fee collection transactions (student ID, amount, payment mode, months, timestamp).
-- **`counters/receiptSeq`**: Atomic transaction counter for sequential, zero-collision receipt number generation.
-- **`yearPlans/{academicYear}__{class}`**: Annual syllabus portions and daily lesson execution checklists.
-- **`timetables/{academicYear}__{class}`**: Class weekly routine timetable periods, timeslots, and working day configurations.
-- **`examTimetables/{academicYear}__{class}__{examTitle}`**: Examination schedules, hall allotments, and invigilator duties.
-- **`classSubjects/{academicYear}__{class}`**: Official subject configurations, weekly period allocations, and assigned instructors.
-- **`attendance/{academicYear}__{class}__{month}`**: Monthly session-wise student attendance records.
-- **`activities/{activityId}`**: House competitions, student scores, points, and achievement awards.
-- **`resultSchemas/{academicYear}__{class}__{examTitle}`**: Examination grading rules, max marks, and grade boundaries.
-- **`examResults/{academicYear}__{class}__{examTitle}`**: Computed student exam marks, rankings, grades, and pass/fail statuses.
-- **`notices/{noticeId}`**: Public notice board announcements and circulars.
-- **`auditLogs/{logId}`**: Automated security and transaction audit log entries (limited queries with descending timestamp indices).
+### 2. Core Top-Level Subcollections under `institutions/school/`
+- **`students/{studentId}`**: Master student profiles (name, admission no, class, division, guardian contacts, photo, status, academicYear). *(List restricted to Staff/Admin; single-doc `get` for active Student Portal session).*
+- **`studentAuthLookup/{admKey}`**: Minimal lookup index (`adm_{adm}`, `{class}_{adm}`) containing `studentId`, `name`, `class`, `adm`, and `phones` used during Student Portal login verification.
+- **`studentGroups/{groupId}`**: Sibling billing groups (`memberIds`, group discount fee rate).
+- **`staff/{staffId}`**: Staff profiles displayed in Admin & Public Directory (`name`, `type`, `role`, `phone`, `email`, `username`, `dutyClasses`, `isActive`, `showPublic`, `photo`) — **no plaintext passwords**.
+- **`staffAccess/{emailOrUsername}`**: Role & permission flags (`canCollect`, `canAccessWorksheet`, `canManageResults`, `canAccessAttendance`, `canAccessAcademicPlan`, `canAccessActivity`, `canAccessEvaluation`, `canAccessAdmin`, `actLikeSuperAdmin`, `isActive`) read by Firestore Security Rules and portals.
+- **`payments/{paymentId}`**: Fee payment receipts (`studentId`, `amount`, `paymentDate`, `paymentMode`, `receiptNo`, `academicYear`, `feeItems`, `timestamp`).
+- **`donations/{donationId}`**: Institutional donations & receipts (Admin/Collector only).
+- **`systemNotifications/{notifId}`**: Broadcast alerts/notifications for students & staff (Admin/Staff write).
+- **`studentNotificationState/{studentId}`**: Read receipts (`readIds`, `lastMarkedAllReadAt`) per student.
+- **`studentPhotoSubmissions/{studentId}`**: Student-submitted profile photos awaiting approval or synced.
+- **`collectorPreferences/{collectorKey}`**: Saved fee counter preferences per collector.
+- **`attendance/{docId}`**: Daily/monthly session-wise attendance logs.
+- **`timetables/{docId}`**, **`classSubjects/{docId}`**, **`yearPlans/{docId}`**, **`syllabusDailyLogs/{docId}`**, **`examTimetables/{docId}`**: Academic scheduling, syllabus tracking, and exam schedules.
+- **`activities/{docId}`**, **`ibadah/{docId}`**, **`taskCompletions/{docId}`**, **`studentCustomBadges/{docId}`**, **`studentBonusPoints/{docId}`**, **`rewardSettings/{docId}`**, **`prayerSettings/{docId}`**: Student activity, Ibadah, points, badges, and rewards.
+- **`evaluations/{docId}`**, **`impositions/{docId}`**: Classroom evaluations and discipline/imposition tracking.
+- **`worksheets/{docId}`**, **`worksheetTemplates/{docId}`**: Saved classroom worksheets and reusable column templates.
+- **`publicDirectory/{docId}`**, **`directoryAuth/{docId}`**, **`pageAccessOverrides/{docId}`**: Custom public directory categories and access overrides.
+- **`resultSchemas/{docId}`**, **`examResults/{docId}`**, **`promotionDecisions/{docId}`**: Exam schemas, marks, grades, rankings, and annual promotion logs.
+- **`transferCertificates/{docId}`**: Transfer Certificate (TC) records.
+- **`auditLogs/{docId}`**: Append-only security and operation audit trail (Admin read-only).
+
+### 3. Year-Scoped Nested Subcollections
+- **`academicYears/{yearId}/classes/{docId}`**: Classes configured per academic year.
+- **`academicYears/{yearId}/enrollments/{docId}`**: Year-wise student enrollments.
+- **`academicYears/{yearId}/feeItems/{docId}`**: Fee items & monthly structures per academic year.
+- **`academicYears/{yearId}/payments/{docId}`** & **`years/{yearId}/payments/{docId}`**: Year-partitioned fee payment records.
+- **`academicYears/{yearId}/results/{docId}`**: Year-partitioned exam results.
 
 ---
 
-## Firebase Security Hardening & App Check Enforcement
+## Firebase Migration & New Database Setup Guide (English + Malayalam)
 
-To protect sensitive institutional records, student PII, and financial ledgers, the following security measures are strictly enforced:
+Follow this exact step-by-step guide whenever you switch this application to a **new Firebase project** or a **different Firestore database**.
 
-### 1. Firestore Security Rules
-- Configured in `firestore.rules`.
-- Disallows unauthenticated reads/writes across financial, staff, and student collections.
-- Blocks client-side privilege escalation and anonymous deletion of fee records.
+*നിലവിലുള്ള ഈ ആപ്ലിക്കേഷൻ പുതിയൊരു Firebase പ്രോജക്റ്റിലേക്കോ മറ്റൊരു Firestore ഡാറ്റാബേസിലേക്കോ മാറ്റുമ്പോൾ താഴെ പറയുന്ന ഘട്ടങ്ങൾ കൃത്യമായി പാലിക്കുക:*
 
-### 2. App Check Enforcement
-Client bootstrap is configured in `config/firebase-config.js`.
+### Step 1: Create & Enable Services in the New Firebase Project
+*(പുതിയ Firebase പ്രോജക്റ്റിൽ സൗകര്യങ്ങൾ ഓൺ ആക്കുക)*
+
+1. Go to [Firebase Console](https://console.firebase.google.com) -> **Add project** (or select your target project).
+2. Register a **Web App** (`</>` icon) in **Project Settings -> General -> Your apps** and copy the `firebaseConfig` object (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`).
+3. **Firebase Authentication (Build -> Authentication -> Sign-in method):**
+   - Enable **Email/Password** (Required for Super Admin and Staff login / അഡ്മിൻ, സ്റ്റാഫ് ലോഗിനുകൾക്ക് നിർബന്ധം).
+   - Enable **Anonymous** (Required for Student Portal & Directory logins to authenticate Firestore reads / സ്റ്റുഡന്റ് പോർട്ടൽ പ്രവർത്തിക്കാൻ **Anonymous** നിർബന്ധമായും Enable ചെയ്യണം).
+4. **Cloud Firestore (Build -> Firestore Database -> Create database):**
+   - Choose your region (e.g., `asia-south1` Mumbai or nearest region) and start in **Production mode**.
+   - **Important (`(default)` vs Named Database):**
+     - Standard Firebase projects create a database named `(default)`. If you use `(default)`, do **not** set `firestoreDatabaseId` (or remove it from `config/firebase-config.js`).
+     - If your project uses a **custom named Firestore database** (like `ai-studio-...`), include `firestoreDatabaseId: "YOUR_DATABASE_ID"` in `firebaseConfig`!
+     - *(സാധാരണ പുതിയ ഫയർബേസ് പ്രോജക്റ്റുകളിൽ `(default)` ഡാറ്റാബേസ് ആണ് ഉണ്ടാവുക; അപ്പോൾ `firestoreDatabaseId` നൽകേണ്ടതില്ല. പ്രത്യേകം പേരുള്ള Named Database ആണെങ്കിൽ മാത്രം `firestoreDatabaseId` നൽകുക.)*
+5. **Cloud Storage (Build -> Storage -> Get started):** Enable Storage if uploading photos/files.
+
+---
+
+### Step 2: Exact Project Files to Update
+*(കോഡിൽ മാറ്റം വരുത്തേണ്ട കൃത്യമായ ഫയലുകൾ)*
+
+| File | What to Edit | എന്താണ് മാറ്റേണ്ടത് |
+| :--- | :--- | :--- |
+| **`config/firebase-config.js`** | Replace `const firebaseConfig = { ... }` with your new project's credentials. Keep or remove `firestoreDatabaseId` depending on whether you use a named DB or `(default)`. | പുതിയ പ്രോജക്റ്റിന്റെ `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId` എന്നിവ നൽകുക (`(default)` ഡാറ്റാബേസ് ആണെങ്കിൽ `firestoreDatabaseId` ഒഴിവാക്കുക). |
+| **`firebase-applet-config.json`** | Update `projectId`, `appId`, `apiKey`, `authDomain`, `storageBucket`, `messagingSenderId`, and `firestoreDatabaseId` (set `"(default)"` or your named DB ID). | Firebase Rules/CLI ഡിപ്ലോയ്മെന്റിനായി ഈ ഫയലും പുതിയ പ്രോജക്റ്റ് വിവരങ്ങളിലേക്ക് മാറ്റുക. |
+| **`.firebaserc`** | Update `"default": "your-new-project-id"`. | Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ ശരിയായ പ്രോജക്റ്റ് തിരഞ്ഞെടുക്കാൻ പ്രോജക്റ്റ് ID അപ്‌ഡേറ്റ് ചെയ്യുക. |
+| **`config/app-config.js`** *(Optional)* | Change `INSTITUTION_ID` only if you want a separate path instead of `institutions/school`. | മറ്റൊരു സ്ഥാപനത്തിനായി പുതിയൊരു പാത്ത് വേണമെങ്കിൽ മാത്രം `INSTITUTION_ID` മാറ്റുക. |
+
+> **Warning:** After changing `projectId` in `config/firebase-config.js`, `window.AppSession.syncFirebaseProject()` automatically clears stale browser sessions from the old Firebase project to prevent cross-project data collisions.
+
+---
+
+### Step 3: Publish Security Rules & Authorized Domains
+*(Security Rules പബ്ലിഷ് ചെയ്യലും ഡൊമെയ്ൻ അനുമതി നൽകലും)*
+
+1. **Firestore Security Rules:**
+   - Open **`firestore.rules`** from this repository and copy its entire contents.
+   - Go to **Firebase Console -> Firestore Database -> Rules** (make sure the correct database is selected if using a named DB), paste the rules, and click **Publish**.
+   - *(ഈ പ്രോജക്റ്റിലെ `firestore.rules` പൂർണ്ണമായി കോപ്പി ചെയ്ത് പുതിയ പ്രോജക്റ്റിലെ Firestore -> Rules-ൽ പേസ്റ്റ് ചെയ്ത് Publish ചെയ്യുക. Test Mode തുറന്നിടരുത്!)*
+2. **Storage Security Rules:**
+   - Open **`storage.rules`** from this repository, copy its contents into **Firebase Console -> Storage -> Rules**, and click **Publish**.
+3. **Authorized Domains:**
+   - Go to **Firebase Console -> Authentication -> Settings -> Authorized domains**.
+   - Ensure `localhost` (for local testing) and your live **Vercel domain** (e.g., `your-app.vercel.app` and any custom domain) are listed.
+
+---
+
+### Step 4: Bootstrap Super Admin on the New Firebase Project
+*(പുതിയ പ്രോജക്റ്റിൽ ആദ്യ Super Admin സജ്ജീകരിക്കൽ)*
+
+1. In **Firebase Console -> Authentication -> Users**, click **Add user** and create your Super Admin email and password.
+2. In **Firebase Console -> Firestore Database**, create the document at:
+   `institutions/school/settings/adminAuth`
+   with:
+   ```json
+   {
+     "email": "your-admin@gmail.com",
+     "adminsIndex": {
+       "your-admin@gmail.com": true
+     },
+     "admins": [
+       {
+         "name": "Super Admin",
+         "email": "your-admin@gmail.com",
+         "role": "super_admin",
+         "isActive": true
+       }
+     ]
+   }
+   ```
+3. Open your app, click **Login**, enter `your-admin@gmail.com` in Step 1, and sign in with your Firebase Auth password in Step 2. The app automatically bootstraps `settings/config.adminProfile`!
+
+---
+
+### Step 5: Migrate Existing Data & Re-sync Auth Indexes
+*(പഴയ ഡാറ്റ പുതിയ ഫയർബേസിലേക്ക് മാറ്റുന്ന വിധം)*
+
+If you are moving an existing institution's data from an old Firebase project to a new one:
+
+1. **Export Backup from Old Firebase:**
+   - Before switching config files, log in to the **old** Admin Panel -> **Security Settings -> Institutional Backup & Data Recovery Center** and click **Export JSON Backup** to download the full database snapshot.
+2. **Switch Config & Restore to New Firebase:**
+   - Complete Steps 1–4 for the new Firebase project and log in as Super Admin on the new project.
+   - Open **Admin Panel -> Security Settings -> Restore from Backup**, upload your JSON backup file, review the diff preview, and execute the restore.
+3. **Clean Any Legacy Plaintext Passwords:**
+   - In **Admin Panel -> Security Settings**, click **Clean Legacy Passwords** so no old `password` fields remain in Firestore `staff`, `staffAccess`, or `settings/adminAuth`.
+4. **Re-provision Staff Firebase Authentication Accounts (CRITICAL!):**
+   - JSON backups restore Firestore documents (`staff`, `staffAccess`) **but do NOT copy Firebase Authentication users** between separate Firebase projects.
+   - Open **Admin Panel -> Staff Management**, click the key/credentials icon on each portal-enabled staff member, and save their Username/Email + Password so their account is created in the new project's **Firebase Authentication**.
+   - *(JSON ബാക്കപ്പ് വഴി Firestore ഡാറ്റ മാത്രമേ മാറുകയുള്ളൂ; പുതിയ ഫയർബേസ് പ്രോജക്റ്റിലെ Firebase Authentication-ലേക്ക് സ്റ്റാഫ് യൂസർമാർ തനിയെ വരില്ല. അതിനാൽ ഓരോ സ്റ്റാഫിനും Admin Panel വഴി Credentials ഒന്നുകൂടി Save ചെയ്ത് Auth അക്കൗണ്ട് നിർമ്മിക്കണം.)*
+5. **Rebuild Student Auth Lookup (`studentAuthLookup`):**
+   - After restoring students, ensure the `studentAuthLookup` index is synchronized (via Admin Student Lookup sync / saving student records) so Student Portal admission-number logins work immediately.
+
+---
+
+### Step 6: Build & Deploy to Vercel
+*(Vercel-ൽ പ്രൊഡക്ഷൻ പബ്ലിഷ് ചെയ്യുന്ന വിധം)*
+
+1. Run local verification before pushing:
+   ```bash
+   npm run lint
+   npm run build
+   ```
+2. Push your updated `config/firebase-config.js` (and `firebase-applet-config.json` / `.firebaserc`) to GitHub.
+3. Vercel automatically uses `vercel.json`:
+   - Framework: `vite`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+   - Clean URLs (`cleanUrls: true`) + HTTP Security Headers + `sw.js` `no-cache` headers.
+4. Once live on Vercel, verify:
+   - Unauthenticated `GET` to `institutions/school/settings/adminAuth` returns `PERMISSION_DENIED` (`403`).
+   - Super Admin login, Staff login, and Student Portal login all work on the live domain.
+
+---
+
+## Firebase Security Hardening, App Check & Vercel Deployment
+
+To protect sensitive institutional records, student PII, and financial ledgers in production, the following security measures are strictly enforced:
+
+### 1. Firestore & Storage Security Rules
+- Configured in `firestore.rules` and `storage.rules`.
+- `settings/adminAuth` is isolated strictly to verified Admins (`isAdmin(institutionId)`).
+- `students` `list` queries and `staffAccess` `list` queries are restricted to Staff/Admin; Student Portal sessions are capped to single-document `get` and limited `payments` queries (`limit <= 150`).
+- Plaintext passwords are never stored in Firestore; Admin/Staff authentication uses Firebase Auth exclusively.
+- `systemNotifications` writes require Admin/Staff; `auditLogs` creation requires non-anonymous authenticated users; `storage.rules` closes catch-all paths with `allow read, write: if false;`.
+
+### 2. App Check Enforcement (Optional / Recommended for High-Traffic Production)
+Client bootstrap is already prepared in `config/firebase-config.js` (`window.__APP_CHECK_SITE_KEY`):
 1. Open **Firebase Console > Build > App Check**.
-2. Register **reCAPTCHA v3** for the production web domain.
+2. Register **reCAPTCHA v3** for your production Vercel domain.
 3. Inject the site key into `window.__APP_CHECK_SITE_KEY` at deployment time.
 4. Enable enforcement for **Cloud Firestore** and **Cloud Storage**.
 
-### 3. Authorized Domains Lock
+### 3. Vercel Hosting & Authorized Domains Lock
 In **Firebase Console > Authentication > Settings > Authorized Domains**, strictly permit:
-- Production domain (`feee050.web.app` or custom domain)
+- Production domain (e.g., `your-institution.vercel.app` or your custom domain)
 - `localhost` (exclusively for local development)
-- Authorized staging/preview domains. Remove all obsolete or unverified hosts.
+- Remove any obsolete or unverified staging hosts.
 
 ---
 
@@ -568,7 +726,7 @@ Before clearing any production release, complete the following verification step
 ## Developer Reference & Guidelines
 
 For the complete development workflow instructions, approval protocol, and safe editing rules, refer to:
-👉 [**DEVELOPER_GUIDELINES.md**](file:///c:/sanjide/feee%20web%20app/feee050/DEVELOPER_GUIDELINES.md)
+👉 [**DEVELOPER_GUIDELINES.md**](./DEVELOPER_GUIDELINES.md)
 
 ---
 
