@@ -86,6 +86,87 @@ service cloud.firestore {
       return data.keys().hasOnly(allowed);
     }
 
+    function institutionConfigRef(institutionId) {
+      return /databases/$(database)/documents/institutions/$(institutionId)/settings/config;
+    }
+
+    function institutionConfigData(institutionId) {
+      return get(institutionConfigRef(institutionId)).data;
+    }
+
+    function studentPhotoUploadEnabled(institutionId) {
+      return exists(institutionConfigRef(institutionId))
+        && institutionConfigData(institutionId).allowStudentPhotoUpload == true;
+    }
+
+    function studentDetailsEditEnabled(institutionId) {
+      return exists(institutionConfigRef(institutionId))
+        && institutionConfigData(institutionId).allowStudentDetailsEdit == true;
+    }
+
+    function validOptionalPhotoString(val) {
+      return val is string && val.size() <= 400000;
+    }
+
+    function validStudentPhotoProfileMap(changedKeys) {
+      return !('profile' in changedKeys)
+        || (
+          request.resource.data.profile is map
+          && (
+            (('profile' in resource.data && resource.data.profile is map)
+              && request.resource.data.profile.diff(resource.data.profile).affectedKeys().hasOnly(['photo']))
+            || ((!('profile' in resource.data) || !(resource.data.profile is map))
+              && request.resource.data.profile.keys().hasOnly(['photo']))
+          )
+          && (!('photo' in request.resource.data.profile) || validOptionalPhotoString(request.resource.data.profile.photo))
+        );
+    }
+
+    function isAllowedStudentPhotoUpdate(institutionId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return isSignedIn()
+        && studentPhotoUploadEnabled(institutionId)
+        && changed.hasOnly(['photo', 'profile', 'updatedAt'])
+        && (!('photo' in changed) || validOptionalPhotoString(request.resource.data.photo))
+        && (!('updatedAt' in changed) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string)
+        && validStudentPhotoProfileMap(changed);
+    }
+
+    function validStudentDetailsProfileMap(changedKeys) {
+      let allowedProfileKeys = ['name', 'gender', 'dob', 'adhaar', 'aadhaar', 'father', 'mother', 'mobile', 'phone', 'motherMobile', 'address'];
+      return !('profile' in changedKeys)
+        || (
+          request.resource.data.profile is map
+          && (
+            (('profile' in resource.data && resource.data.profile is map)
+              && request.resource.data.profile.diff(resource.data.profile).affectedKeys().hasOnly(allowedProfileKeys))
+            || ((!('profile' in resource.data) || !(resource.data.profile is map))
+              && request.resource.data.profile.keys().hasOnly(allowedProfileKeys))
+          )
+        );
+    }
+
+    function isAllowedStudentDetailsUpdate(institutionId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let allowedKeys = ['name', 'gender', 'dob', 'adhaar', 'aadhaar', 'father', 'mother', 'mobile', 'phone', 'motherMobile', 'address', 'profile', 'updatedAt'];
+      return isSignedIn()
+        && studentDetailsEditEnabled(institutionId)
+        && changed.hasOnly(allowedKeys)
+        && (!('name' in changed) || (request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 80))
+        && (!('gender' in changed) || (request.resource.data.gender is string && request.resource.data.gender.size() <= 20))
+        && (!('dob' in changed) || (request.resource.data.dob is string && request.resource.data.dob.size() <= 30))
+        && (!('adhaar' in changed) || (request.resource.data.adhaar is string && request.resource.data.adhaar.size() <= 20))
+        && (!('aadhaar' in changed) || (request.resource.data.aadhaar is string && request.resource.data.aadhaar.size() <= 20))
+        && (!('father' in changed) || (request.resource.data.father is string && request.resource.data.father.size() <= 80))
+        && (!('mother' in changed) || (request.resource.data.mother is string && request.resource.data.mother.size() <= 80))
+        && (!('mobile' in changed) || (request.resource.data.mobile is string && request.resource.data.mobile.size() <= 20))
+        && (!('phone' in changed) || (request.resource.data.phone is string && request.resource.data.phone.size() <= 20))
+        && (!('motherMobile' in changed) || (request.resource.data.motherMobile is string && request.resource.data.motherMobile.size() <= 20))
+        && (!('address' in changed) || (request.resource.data.address is string && request.resource.data.address.size() <= 300))
+        && (!('updatedAt' in changed) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string)
+        && validStudentDetailsProfileMap(changed);
+    }
+
     function validSessionRegistryWrite() {
       return (
           hasOnlyKeys(request.resource.data, ['lastHeartbeatAt', 'updatedAt', 'createdAt', 'sessionId', 'userAgent'])
@@ -154,7 +235,11 @@ service cloud.firestore {
       allow list: if isSignedIn();
       // Allow single document read (get) for authenticated users or active student portal sessions
       allow get: if isSignedIn();
-      allow write: if isAdmin(institutionId) || isCollector(institutionId);
+      allow create, delete: if isAdmin(institutionId) || isCollector(institutionId);
+      allow update: if isAdmin(institutionId)
+        || isCollector(institutionId)
+        || isAllowedStudentPhotoUpdate(institutionId)
+        || isAllowedStudentDetailsUpdate(institutionId);
     }
 
     // 6. Student Groups
@@ -305,7 +390,18 @@ service cloud.firestore {
     }
 
     match /institutions/{institutionId}/studentPhotoSubmissions/{docId} {
-      allow read, write: if isAdmin(institutionId) || isCollector(institutionId);
+      allow read: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
+      allow create, update: if isAdmin(institutionId)
+        || isCollector(institutionId)
+        || (
+          isSignedIn()
+          && studentPhotoUploadEnabled(institutionId)
+          && exists(/databases/$(database)/documents/institutions/$(institutionId)/students/$(docId))
+          && hasOnlyKeys(request.resource.data, ['photo', 'updatedAt'])
+          && validOptionalPhotoString(request.resource.data.photo)
+          && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp)
+        );
+      allow delete: if isAdmin(institutionId) || isCollector(institutionId);
     }
 
     match /institutions/{institutionId}/collectorPreferences/{docId} {

@@ -12779,146 +12779,8 @@ window.deleteConcession = async (studentId) => {
     await logAuditEvent({ category: 'fee', action: 'concession.remove', entityType: 'student', entityId: studentId, message: 'Concession removed.' });
 };
 
-// --- Student 360 Profile Dossier Helpers & Controllers ---
-const resolveStu360PaymentYear = (payment, student, fallbackYear) => {
-    const explicitYear = sanitizeAcademicYearLabel(payment?.academicYear || '');
-    if (explicitYear) return explicitYear;
-
-    if (payment?.itemKey) {
-        const matchedFeeItem = (feeItems || []).find((f) => f.key === payment.itemKey && f.academicYear);
-        if (matchedFeeItem?.academicYear) {
-            const itemYr = sanitizeAcademicYearLabel(matchedFeeItem.academicYear);
-            if (itemYr) return itemYr;
-        }
-    }
-
-    const rawDate = payment?.paymentDate || payment?.dateStr || payment?.timestamp || payment?.createdAt;
-    if (rawDate) {
-        let d = null;
-        if (typeof rawDate?.toDate === 'function') d = rawDate.toDate();
-        else d = new Date(rawDate);
-        if (d && !isNaN(d.getTime())) {
-            const y = d.getFullYear();
-            const m = d.getMonth();
-            const startY = m >= 4 ? y : y - 1;
-            return `${startY}-${startY + 1}`;
-        }
-    }
-
-    return sanitizeAcademicYearLabel(student?.academicYear || fallbackYear || getActiveAcademicYearLabel()) || getActiveAcademicYearLabel();
-};
-
-const getStu360StudentPayments = (student, groupsList) => {
-    const studentGroupIds = new Set(
-        (groupsList || [])
-            .filter((g) => Array.isArray(g.memberIds) && g.memberIds.includes(student.id))
-            .map((g) => g.id)
-    );
-    return (allPayments || []).filter((p) => {
-        if (p.studentId === student.id || (student.adm && p.admissionNo === student.adm)) return true;
-        if (p.billingGroupId && studentGroupIds.has(p.billingGroupId) && (!p.studentId || p.studentId === student.id)) return true;
-        return false;
-    });
-};
-
-const computeStu360YearFeeLedger = (student, yr, yearEntry, stuPayments, groupsList, isAlumStudent, defaultExpandedYear) => {
-    const activeLabel = getActiveAcademicYearLabel();
-    const rawEntryClass = yearEntry?.class && yearEntry.class !== '--' && String(yearEntry.class).toUpperCase() !== 'ALUMNI'
-        ? yearEntry.class
-        : '';
-    const yearClass = rawEntryClass
-        || (isAlumStudent && yr === defaultExpandedYear ? (student.completedClass || student.promotedFrom || '') : '')
-        || (yr === (student.academicYear || activeLabel) ? (student.class || '') : '');
-
-    const stuGroupForYear = (groupsList || []).find((g) => {
-        const grpYear = g.academicYear || currentAcademicYear || yr;
-        return grpYear === yr && Array.isArray(g.memberIds) && g.memberIds.includes(student.id);
-    });
-
-    const effectiveMonthlyFee = getStudentEffectiveMonthlyFee(student, yr);
-    const yearPayments = stuPayments.filter((p) => resolveStu360PaymentYear(p, student, yr) === yr);
-    const matchedPaymentKeys = new Set();
-
-    const yearItems = (feeItems || []).filter((f) => {
-        if (f.academicYear) return f.academicYear === yr;
-        return yr === (student.academicYear || activeLabel) || yearPayments.some((p) => p.itemKey === f.key);
-    });
-
-    const ledgerRows = [];
-
-    yearItems.forEach((item) => {
-        const isMonth = item.type === 'month' || item.type === 'monthly';
-        const payment = yearPayments.find((p) => p.itemKey === item.key)
-            || (stuGroupForYear && isMonth
-                ? (allPayments || []).find((p) => p.billingGroupId === stuGroupForYear.id && p.itemKey === item.key && resolveStu360PaymentYear(p, student, yr) === yr)
-                : null);
-
-        let itemAmount = 0;
-        if (isMonth) {
-            itemAmount = effectiveMonthlyFee;
-        } else {
-            if (item.isVisible === false && !payment) return;
-            if (item.scope === 'class-wise') {
-                itemAmount = item.classValues ? Number(item.classValues[yearClass] || 0) : 0;
-            } else if (item.scope === 'specific') {
-                itemAmount = item.targetClass === yearClass ? Number(item.amount || 0) : 0;
-            } else {
-                itemAmount = Number(item.amount || 0);
-            }
-            if (itemAmount <= 0 && !payment) return;
-            if (itemAmount <= 0 && payment) itemAmount = Number(payment.amount) || 0;
-        }
-
-        const isPaid = Boolean(payment);
-        let paidAmt = 0;
-        if (isPaid) {
-            matchedPaymentKeys.add(payment.id || `${payment.itemKey}_${payment.receiptNo || ''}`);
-            if (isMonth && stuGroupForYear) {
-                paidAmt = itemAmount;
-            } else {
-                paidAmt = Number(payment.amount) > 0 ? Number(payment.amount) : itemAmount;
-            }
-        }
-
-        const rowName = (isMonth && stuGroupForYear)
-            ? `${item.name || item.key} (Family Sibling Rate)`
-            : (item.name || item.key);
-
-        ledgerRows.push({
-            name: rowName,
-            amount: itemAmount,
-            paid: paidAmt,
-            isPaid,
-            isGroup: Boolean(isMonth && stuGroupForYear),
-            receiptNo: payment?.receiptNo || null,
-            date: payment?.paymentDate || payment?.dateStr || payment?.createdAt || null
-        });
-    });
-
-    yearPayments.forEach((p) => {
-        const pKey = p.id || `${p.itemKey}_${p.receiptNo || ''}`;
-        if (matchedPaymentKeys.has(pKey)) return;
-        const amt = Number(p.amount) || 0;
-        if (amt <= 0 && !p.itemKey) return;
-        ledgerRows.push({
-            name: p.itemName || p.itemKey || 'Recorded Payment',
-            amount: amt,
-            paid: amt,
-            isPaid: true,
-            isGroup: Boolean(p.billingGroupId),
-            receiptNo: p.receiptNo || null,
-            date: p.paymentDate || p.dateStr || p.createdAt || null
-        });
-    });
-
-    const totalAssigned = ledgerRows.reduce((sum, r) => sum + r.amount, 0);
-    const totalPaid = ledgerRows.filter((r) => r.isPaid).reduce((sum, r) => sum + r.paid, 0);
-    const balance = Math.max(0, totalAssigned - totalPaid);
-
-    return { rows: ledgerRows, totalAssigned, totalPaid, balance, yearClass };
-};
-
-const buildStudent360YearModels = (student, examResultsList = []) => {
+// --- Student Profile Dossier Helpers & Controllers ---
+const buildStudent360YearModels = (student) => {
     const activeLabel = getActiveAcademicYearLabel();
     const isAlumStudent = normalizeStudentStatus(student.status) === 'Alumni'
         || student.isAlumni === true
@@ -12951,43 +12813,11 @@ const buildStudent360YearModels = (student, examResultsList = []) => {
         };
     }
 
-    const groupsList = (typeof allStudentGroups !== 'undefined' && Array.isArray(allStudentGroups) && allStudentGroups.length > 0)
-        ? allStudentGroups
-        : (studentGroups || []);
-    const stuPayments = getStu360StudentPayments(student, groupsList);
-
-    stuPayments.forEach((p) => {
-        const py = resolveStu360PaymentYear(p, student, activeLabel);
-        if (py && !historyMap[py]) {
-            historyMap[py] = {
-                class: (py === student.academicYear ? student.class : '--') || '--',
-                status: py === activeLabel ? (student.status || 'Active') : 'Recorded',
-                decision: 'Payment Recorded',
-                updatedAt: p.paymentDate || p.createdAt || null
-            };
-        }
-    });
-
-    (examResultsList || []).forEach((row) => {
-        const ey = sanitizeAcademicYearLabel(row.academicYear || '') || String(row.academicYear || '').trim();
-        if (!ey) return;
-        if (!historyMap[ey]) {
-            historyMap[ey] = {
-                class: row.classLabel || '--',
-                status: ey === activeLabel ? (student.status || 'Active') : 'Recorded',
-                decision: 'Appeared in Exams',
-                updatedAt: row.updatedAt || null
-            };
-        } else if ((!historyMap[ey].class || historyMap[ey].class === '--') && row.classLabel) {
-            historyMap[ey].class = row.classLabel;
-        }
-    });
-
     let recordedYears = Object.keys(historyMap);
     if (!recordedYears.length) {
         const fallbackYr = sanitizeAcademicYearLabel(student.academicYear || activeLabel) || activeLabel;
         historyMap[fallbackYr] = {
-            class: isAlumStudent ? (student.completedClass || 'Alumni') : (student.class || '--'),
+            class: isAlumStudent ? (student.completedClass || student.promotedFrom || 'Alumni') : (student.class || '--'),
             status: student.status || 'Active',
             decision: isAlumStudent ? 'graduated' : 'Active Enrollment',
             updatedAt: student.updatedAt || null
@@ -13008,91 +12838,23 @@ const buildStudent360YearModels = (student, examResultsList = []) => {
 
     return recordedYears.map((yr) => {
         const entry = historyMap[yr] || {};
-        const feeLedger = computeStu360YearFeeLedger(student, yr, entry, stuPayments, groupsList, isAlumStudent, defaultExpandedYear);
-        const yearExams = (examResultsList || [])
-            .filter((r) => (sanitizeAcademicYearLabel(r.academicYear || '') || String(r.academicYear || '').trim()) === yr)
-            .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+        const rawEntryClass = entry?.class && entry.class !== '--' && String(entry.class).toUpperCase() !== 'ALUMNI'
+            ? entry.class
+            : '';
+        const yearClass = rawEntryClass
+            || (isAlumStudent && yr === defaultExpandedYear ? (student.completedClass || student.promotedFrom || student.finalClass || '') : '')
+            || (yr === (student.academicYear || activeLabel) ? (student.class || '') : '');
         const isCurrent = yr === activeLabel;
         const isExpanded = yr === defaultExpandedYear;
         return {
             year: yr,
             entry,
-            feeLedger,
-            yearExams,
             isCurrent,
             isExpanded,
             isAlumStudent,
-            displayClass: feeLedger.yearClass || entry.class || '--'
+            displayClass: yearClass || entry.class || '--'
         };
     });
-};
-
-const renderStu360FeeTableHtml = (rows, emptyMsg = 'No fee items configured for this academic session.') => {
-    if (!rows.length) {
-        return `<div class="text-xs text-slate-400 py-3 px-3 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200">${escapeHtml(emptyMsg)}</div>`;
-    }
-    const trHtml = rows.map((row) => {
-        const dateStr = row.date ? new Date(row.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
-        const statusBadge = row.isPaid
-            ? `<span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">PAID${row.isGroup ? ' (FAMILY GROUP)' : ''}</span>`
-            : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">PENDING</span>`;
-        return `
-            <tr class="hover:bg-slate-50 transition">
-                <td class="p-2.5 font-sans font-semibold text-slate-800">
-                    ${escapeHtml(row.name)}
-                    ${dateStr ? `<div class="text-[10px] text-slate-400 font-normal">Paid on: ${escapeHtml(dateStr)}${row.receiptNo ? ` • Rec #${escapeHtml(String(row.receiptNo))}` : ''}</div>` : ''}
-                </td>
-                <td class="p-2.5 text-right font-semibold text-slate-700">₹${row.amount.toLocaleString('en-IN')}</td>
-                <td class="p-2.5 text-right font-bold ${row.paid > 0 ? 'text-emerald-700' : 'text-slate-400'}">₹${row.paid.toLocaleString('en-IN')}</td>
-                <td class="p-2.5 text-center font-sans">${statusBadge}</td>
-            </tr>
-        `;
-    }).join('');
-    return `
-        <div class="overflow-x-auto rounded-lg border border-slate-200">
-            <table class="w-full text-left text-xs">
-                <thead class="bg-slate-50 text-slate-600 font-bold text-[11px] border-b border-slate-200">
-                    <tr>
-                        <th class="p-2.5">Fee Head</th>
-                        <th class="p-2.5 text-right">Amount</th>
-                        <th class="p-2.5 text-right">Paid</th>
-                        <th class="p-2.5 text-center">Status</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100 font-mono tabular-nums bg-white">${trHtml}</tbody>
-            </table>
-        </div>
-    `;
-};
-
-const renderStu360ExamCardsHtml = (results, emptyMsg = 'No published examination results found for this academic year.') => {
-    if (!results.length) {
-        return `<div class="text-xs text-slate-400 py-3 px-3 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200">${escapeHtml(emptyMsg)}</div>`;
-    }
-    return results.map((row) => {
-        const isPass = (row.totals?.passStatus || row.passStatus || row.status || '').toUpperCase() === 'PASS';
-        const obtained = row.totals?.obtained ?? '--';
-        const max = row.totals?.maximum ?? '--';
-        const pct = row.totals?.percentage !== undefined ? `${row.totals.percentage}%` : '--';
-        const examTitle = (row.examType || row.examLabel || 'Annual Examination').toUpperCase();
-        return `
-            <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-                <div class="flex items-center justify-between flex-wrap gap-2">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2 py-0.5 rounded text-[11px] font-black bg-purple-100 text-purple-900 border border-purple-200">${escapeHtml(examTitle)}</span>
-                        <span class="text-xs text-slate-600 font-semibold">Class ${escapeHtml(row.classLabel || '--')}</span>
-                    </div>
-                    <span class="px-2 py-0.5 rounded text-[11px] font-black ${isPass ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'}">
-                        ${isPass ? '<i class="fas fa-check-circle mr-1"></i>PASS' : '<i class="fas fa-times-circle mr-1"></i>FAIL'}
-                    </span>
-                </div>
-                <div class="flex items-center justify-between text-xs pt-1.5 border-t border-slate-200 text-slate-600 font-medium">
-                    <span>Score: <b class="text-slate-900 font-mono tabular-nums">${escapeHtml(String(obtained))} / ${escapeHtml(String(max))}</b> (${escapeHtml(String(pct))})</span>
-                    <span>Rank: <b class="text-indigo-700 font-mono tabular-nums">${escapeHtml(String(row.rank || '--'))}</b></span>
-                </div>
-            </div>
-        `;
-    }).join('');
 };
 
 const renderStu360AccordionShell = ({ year, isExpanded, isCurrent, badgeText, headerSubHtml, rightSummaryHtml, bodyHtml }) => {
@@ -13108,9 +12870,7 @@ const renderStu360AccordionShell = ({ year, isExpanded, isCurrent, badgeText, he
                     ${yearPill}
                     ${headerSubHtml || ''}
                 </div>
-                <div class="flex items-center gap-2 flex-wrap text-[11px] font-semibold">
-                    ${rightSummaryHtml || ''}
-                </div>
+                ${rightSummaryHtml ? `<div class="flex items-center gap-2 flex-wrap text-[11px] font-semibold">${rightSummaryHtml}</div>` : ''}
             </button>
             <div class="stu360-year-body border-t border-slate-200 p-3.5 sm:p-4 space-y-3.5 ${isExpanded ? '' : 'hidden'}">
                 ${bodyHtml}
@@ -13119,165 +12879,65 @@ const renderStu360AccordionShell = ({ year, isExpanded, isCurrent, badgeText, he
     `;
 };
 
-const renderStudent360AllYearViews = (student, yearModels, examsLoaded = true) => {
+const renderStudent360AcademicHistory = (student) => {
     const timelineContainer = document.getElementById('stu360-timeline-container');
-    const feesContainer = document.getElementById('stu360-fees-years-container');
-    const examsContainer = document.getElementById('stu360-exams-container');
-    const totalEl = document.getElementById('stu360-fee-total');
-    const paidEl = document.getElementById('stu360-fee-paid');
-    const balanceEl = document.getElementById('stu360-fee-balance');
+    if (!timelineContainer) return;
 
-    const overallAssigned = yearModels.reduce((sum, m) => sum + m.feeLedger.totalAssigned, 0);
-    const overallPaid = yearModels.reduce((sum, m) => sum + m.feeLedger.totalPaid, 0);
-    const overallBalance = Math.max(0, overallAssigned - overallPaid);
-
-    if (totalEl) totalEl.textContent = '₹' + overallAssigned.toLocaleString('en-IN');
-    if (paidEl) paidEl.textContent = '₹' + overallPaid.toLocaleString('en-IN');
-    if (balanceEl) balanceEl.textContent = '₹' + overallBalance.toLocaleString('en-IN');
-
-    // 1. Academic & Promotions Accordion (Session/Promotion Info + Exam Results per Year; Fees live in Fees & Ledger tab)
-    if (timelineContainer) {
-        timelineContainer.innerHTML = yearModels.map((model) => {
-            const { year, entry, yearExams, isCurrent, isExpanded, displayClass } = model;
-            const entryStatus = normalizeStudentStatus(entry.status || 'Active');
-            const formattedDate = entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Recorded';
-            const decision = String(entry.decision || 'Enrolled').toLowerCase();
-            let decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">${escapeHtml(decision.toUpperCase())}</span>`;
-            if (decision.includes('promot')) {
-                decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"><i class="fas fa-arrow-up mr-1"></i>PROMOTED</span>`;
-            } else if (decision.includes('graduat') || decision === 'alumni') {
-                decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200"><i class="fas fa-graduation-cap mr-1"></i>ALUMNI</span>`;
-            } else if (decision.includes('retain')) {
-                decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200"><i class="fas fa-repeat mr-1"></i>RETAINED</span>`;
-            }
-
-            const phaseLabel = isCurrent ? 'Current' : (isUpcomingAcademicYearLabel(year, getActiveAcademicYearLabel()) ? 'Upcoming' : 'Past');
-            const headerSubHtml = `
-                <span class="text-xs font-bold text-slate-700">• ${escapeHtml(displayClass ? `Class ${displayClass}` : '--')}</span>
-                ${decisionBadge}
-            `;
-            const examBadgeCount = examsLoaded ? `${yearExams.length} Exam${yearExams.length === 1 ? '' : 's'}` : 'Loading exams...';
-            const passCount = examsLoaded
-                ? yearExams.filter((r) => (r.totals?.passStatus || r.passStatus || r.status || '').toUpperCase() === 'PASS').length
-                : 0;
-            const rightSummaryHtml = `
-                <span class="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">${escapeHtml(examBadgeCount)}</span>
-                ${examsLoaded && yearExams.length ? `<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">${passCount} Pass</span>` : ''}
-            `;
-
-            const examsInnerHtml = examsLoaded
-                ? renderStu360ExamCardsHtml(yearExams, `No published examination results for ${year}.`)
-                : '<div class="text-xs text-slate-400 py-2 text-center"><i class="fas fa-spinner fa-spin mr-1"></i> Loading examination records...</div>';
-
-            const bodyHtml = `
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs">
-                    <div>
-                        <span class="text-slate-500 block text-[10px] font-bold uppercase">Enrolled Class</span>
-                        <span class="font-extrabold text-slate-900">${escapeHtml(displayClass || '--')}</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-500 block text-[10px] font-bold uppercase">Session Status</span>
-                        <span class="font-bold text-slate-800">${escapeHtml(entryStatus)}</span>
-                    </div>
-                    <div>
-                        <span class="text-slate-500 block text-[10px] font-bold uppercase">Promotion / Decision</span>
-                        <div class="mt-0.5">${decisionBadge}</div>
-                    </div>
-                    <div>
-                        <span class="text-slate-500 block text-[10px] font-bold uppercase">Updated</span>
-                        <span class="font-medium text-slate-600">${escapeHtml(formattedDate)}</span>
-                    </div>
-                </div>
-
-                <div class="space-y-2">
-                    <h5 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <i class="fas fa-square-poll-vertical text-purple-600"></i> Examination Results (${escapeHtml(year)})
-                    </h5>
-                    <div class="space-y-2">${examsInnerHtml}</div>
-                </div>
-            `;
-
-            return renderStu360AccordionShell({
-                year,
-                isExpanded,
-                isCurrent,
-                badgeText: phaseLabel,
-                headerSubHtml,
-                rightSummaryHtml,
-                bodyHtml
-            });
-        }).join('');
-    }
-
-    // 2. Fees & Ledger Tab Year-wise Accordion
-    if (feesContainer) {
-        feesContainer.innerHTML = yearModels.map((model) => {
-            const { year, feeLedger, isCurrent, isExpanded, displayClass } = model;
-            const phaseLabel = isCurrent ? 'Current' : (isUpcomingAcademicYearLabel(year, getActiveAcademicYearLabel()) ? 'Upcoming' : 'Past');
-            const headerSubHtml = `<span class="text-xs font-bold text-slate-600">• ${escapeHtml(displayClass ? `Class ${displayClass}` : '--')}</span>`;
-            const rightSummaryHtml = `
-                <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-mono tabular-nums">Fee ₹${feeLedger.totalAssigned.toLocaleString('en-IN')}</span>
-                <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono tabular-nums">Paid ₹${feeLedger.totalPaid.toLocaleString('en-IN')}</span>
-                <span class="px-2 py-0.5 rounded ${feeLedger.balance > 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-slate-100 text-slate-600 border-slate-200'} border font-mono tabular-nums">Bal ₹${feeLedger.balance.toLocaleString('en-IN')}</span>
-            `;
-            return renderStu360AccordionShell({
-                year,
-                isExpanded,
-                isCurrent,
-                badgeText: phaseLabel,
-                headerSubHtml,
-                rightSummaryHtml,
-                bodyHtml: renderStu360FeeTableHtml(feeLedger.rows, `No fee items configured for ${year}.`)
-            });
-        }).join('');
-    }
-
-    // 3. Exam History Tab Year-wise Accordion
-    if (examsContainer) {
-        if (!examsLoaded) {
-            examsContainer.innerHTML = '<div class="text-xs text-slate-400 py-4 text-center"><i class="fas fa-spinner fa-spin mr-1"></i> Loading examination records...</div>';
-        } else {
-            examsContainer.innerHTML = yearModels.map((model) => {
-                const { year, yearExams, isCurrent, isExpanded, displayClass } = model;
-                const phaseLabel = isCurrent ? 'Current' : (isUpcomingAcademicYearLabel(year, getActiveAcademicYearLabel()) ? 'Upcoming' : 'Past');
-                const passCount = yearExams.filter((r) => (r.totals?.passStatus || r.passStatus || r.status || '').toUpperCase() === 'PASS').length;
-                const headerSubHtml = `<span class="text-xs font-bold text-slate-600">• ${escapeHtml(displayClass ? `Class ${displayClass}` : '--')}</span>`;
-                const rightSummaryHtml = `
-                    <span class="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">${yearExams.length} Exam${yearExams.length === 1 ? '' : 's'}</span>
-                    ${yearExams.length ? `<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">${passCount} Pass</span>` : ''}
-                `;
-                return renderStu360AccordionShell({
-                    year,
-                    isExpanded,
-                    isCurrent,
-                    badgeText: phaseLabel,
-                    headerSubHtml,
-                    rightSummaryHtml,
-                    bodyHtml: `<div class="space-y-2">${renderStu360ExamCardsHtml(yearExams, `No published examination results found for ${year}.`)}</div>`
-                });
-            }).join('');
+    const yearModels = buildStudent360YearModels(student);
+    timelineContainer.innerHTML = yearModels.map((model) => {
+        const { year, entry, isCurrent, isExpanded, displayClass } = model;
+        const entryStatus = normalizeStudentStatus(entry.status || 'Active');
+        const formattedDate = entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Recorded';
+        const decision = String(entry.decision || 'Enrolled').toLowerCase();
+        let decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">${escapeHtml(decision.toUpperCase())}</span>`;
+        if (decision.includes('promot')) {
+            decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"><i class="fas fa-arrow-up mr-1"></i>PROMOTED</span>`;
+        } else if (decision.includes('graduat') || decision === 'alumni') {
+            decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200"><i class="fas fa-graduation-cap mr-1"></i>ALUMNI</span>`;
+        } else if (decision.includes('retain')) {
+            decisionBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200"><i class="fas fa-repeat mr-1"></i>RETAINED</span>`;
         }
-    }
-};
 
-const loadAndRenderStudent360History = async (student) => {
-    const initialModels = buildStudent360YearModels(student, []);
-    renderStudent360AllYearViews(student, initialModels, false);
+        const phaseLabel = isCurrent ? 'Current' : (isUpcomingAcademicYearLabel(year, getActiveAcademicYearLabel()) ? 'Upcoming' : 'Past');
+        const classDisplayText = displayClass && displayClass !== '--' && String(displayClass).toUpperCase() !== 'ALUMNI'
+            ? `Class ${displayClass}`
+            : (displayClass || '--');
+        const headerSubHtml = `
+            <span class="text-xs font-bold text-slate-700">• ${escapeHtml(classDisplayText)}</span>
+            ${decisionBadge}
+        `;
 
-    try {
-        let results = [];
-        if (Array.isArray(examResultsCache) && examResultsCache.length) {
-            results = examResultsCache.filter((r) => r.studentId === student.id || (student.adm && r.admissionNo === student.adm));
-        } else {
-            const snap = await getDocs(query(collection(db, `${BASE_PATH}/examResults`), where('studentId', '==', student.id)));
-            results = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        }
-        const fullModels = buildStudent360YearModels(student, results);
-        renderStudent360AllYearViews(student, fullModels, true);
-    } catch (err) {
-        console.warn('Failed to load student exam history:', err);
-        renderStudent360AllYearViews(student, initialModels, true);
-    }
+        const bodyHtml = `
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+                <div>
+                    <span class="text-slate-500 block text-[10px] font-bold uppercase">Enrolled Class</span>
+                    <span class="font-extrabold text-slate-900">${escapeHtml(displayClass || '--')}</span>
+                </div>
+                <div>
+                    <span class="text-slate-500 block text-[10px] font-bold uppercase">Session Status</span>
+                    <span class="font-bold text-slate-800">${escapeHtml(entryStatus)}</span>
+                </div>
+                <div>
+                    <span class="text-slate-500 block text-[10px] font-bold uppercase">Promotion / Decision</span>
+                    <div class="mt-0.5">${decisionBadge}</div>
+                </div>
+                <div>
+                    <span class="text-slate-500 block text-[10px] font-bold uppercase">Updated</span>
+                    <span class="font-medium text-slate-600">${escapeHtml(formattedDate)}</span>
+                </div>
+            </div>
+        `;
+
+        return renderStu360AccordionShell({
+            year,
+            isExpanded,
+            isCurrent,
+            badgeText: phaseLabel,
+            headerSubHtml,
+            rightSummaryHtml: '',
+            bodyHtml
+        });
+    }).join('');
 };
 
 // --- Student Full Profile Details Modal Controller ---
@@ -13303,8 +12963,8 @@ const openStudentDetailsModal = (studentId) => {
         else p.classList.add('hidden');
     });
 
-    // Populate Year-Wise Accordion Dossier Tabs (Academic+Fees+Exams, Fees Ledger, Exam History)
-    loadAndRenderStudent360History(student);
+    // Populate Year-Wise Academic & Promotions Timeline
+    renderStudent360AcademicHistory(student);
 
     // Photo & Initials fallback
     const photoImg = document.getElementById('view-stu-photo');

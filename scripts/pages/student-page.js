@@ -3595,6 +3595,10 @@ const studentPwa = registerPortalForPwa('student', {
 
             document.getElementById('student-crop-save-btn')?.addEventListener('click', async () => {
                 if (!studentInteractiveCropper) return;
+                if (!studentPortalPerms.allowPhotoUpload) {
+                    alert('Photo upload is currently disabled by administrator.');
+                    return;
+                }
                 const base64 = studentInteractiveCropper.getCroppedBase64(50, 400);
 
                 document.getElementById('student-crop-modal')?.classList.add('hidden');
@@ -3605,22 +3609,17 @@ const studentPwa = registerPortalForPwa('student', {
                 const progressCtrl = startAvatarCircularProgress();
 
                 try {
-                    progressCtrl.setProgress(35);
-                    // Save under student document in 'students' collection
-                    const studentDocRef = doc(db, `${BASE_PATH}/students`, studentId);
-                    const studentSnap = await getDoc(studentDocRef);
-                    progressCtrl.setProgress(65);
-                    if (studentSnap.exists()) {
-                        const stData = studentSnap.data();
-                        const updatedProfile = { ...(stData.profile || {}), photo: base64 };
-                        await setDoc(studentDocRef, {
-                            photo: base64,
-                            profile: updatedProfile
-                        }, { merge: true });
+                    if (!auth.currentUser) {
+                        await signInAnonymously(auth);
                     }
+                    progressCtrl.setProgress(35);
+                    const studentDocRef = doc(db, `${BASE_PATH}/students`, studentId);
+                    await setDoc(studentDocRef, {
+                        photo: base64,
+                        profile: { photo: base64 }
+                    }, { merge: true });
 
-                    progressCtrl.setProgress(88);
-                    // Also save under studentPhotoSubmissions/{studentId} for redundancy
+                    progressCtrl.setProgress(85);
                     await setDoc(doc(db, `${BASE_PATH}/studentPhotoSubmissions`, studentId), {
                         photo: base64,
                         updatedAt: Date.now()
@@ -3640,7 +3639,7 @@ const studentPwa = registerPortalForPwa('student', {
                     if (topRemoveBtn) topRemoveBtn.classList.remove('hidden');
                     if (studentProfile) {
                         studentProfile.photo = base64;
-                        if (studentProfile.profile) studentProfile.profile.photo = base64;
+                        studentProfile.profile = { ...(studentProfile.profile || {}), photo: base64 };
                     }
                     restoreTopEditModalIfWasOpen();
                 } catch (err) {
@@ -4105,8 +4104,9 @@ const studentPwa = registerPortalForPwa('student', {
                     alert('Photo upload is currently disabled by administrator.');
                     return;
                 }
-                const prof = currentSt.profile || {};
-                updateModalPhotoPreview(currentSt.photo || prof.photo || '');
+                const liveSt = studentProfile || currentSt;
+                const prof = liveSt.profile || {};
+                updateModalPhotoPreview(liveSt.photo || prof.photo || '');
 
                 topModal.classList.remove('hidden');
                 topModal.classList.add('flex');
@@ -4137,6 +4137,10 @@ const studentPwa = registerPortalForPwa('student', {
             });
 
             saveBtn?.addEventListener('click', async () => {
+                if (!studentPortalPerms.allowPhotoUpload) {
+                    alert('Photo upload is currently disabled by administrator.');
+                    return;
+                }
                 const newPhoto = photoValInput?.value || '';
 
                 saveBtn.disabled = true;
@@ -4145,17 +4149,15 @@ const studentPwa = registerPortalForPwa('student', {
                 const progressCtrl = startAvatarCircularProgress();
 
                 try {
+                    if (!auth.currentUser) {
+                        await signInAnonymously(auth);
+                    }
                     progressCtrl.setProgress(35);
                     const studentRef = doc(db, `${BASE_PATH}/students`, studentId);
-                    const currentProf = currentSt.profile || {};
-                    const updatedProf = {
-                        ...currentProf,
-                        photo: newPhoto
-                    };
 
                     await setDoc(studentRef, {
                         photo: newPhoto,
-                        profile: updatedProf
+                        profile: { photo: newPhoto }
                     }, { merge: true });
 
                     progressCtrl.setProgress(80);
@@ -4164,11 +4166,12 @@ const studentPwa = registerPortalForPwa('student', {
                         updatedAt: Date.now()
                     }, { merge: true });
 
-                    currentSt.photo = newPhoto;
-                    currentSt.profile = updatedProf;
+                    const liveSt = studentProfile || currentSt;
+                    liveSt.photo = newPhoto;
+                    liveSt.profile = { ...(liveSt.profile || {}), photo: newPhoto };
 
                     await progressCtrl.complete();
-                    renderStudentComprehensiveProfile(currentSt);
+                    renderStudentComprehensiveProfile(liveSt);
                 } catch (err) {
                     progressCtrl.fail();
                     console.error('Failed to update photo:', err);
@@ -4327,17 +4330,18 @@ const studentPwa = registerPortalForPwa('student', {
                         errorEl.textContent = '';
                     }
 
-                    const prof = currentSt.profile || {};
+                    const liveSt = studentProfile || currentSt;
+                    const prof = liveSt.profile || {};
                     let curVal = '';
-                    if (field === 'name') curVal = currentSt.name || prof.name || '';
-                    else if (field === 'dob') curVal = currentSt.dob || prof.dob || '';
-                    else if (field === 'gender') curVal = currentSt.gender || prof.gender || 'Male';
-                    else if (field === 'adhaar') curVal = currentSt.adhaar || prof.adhaar || currentSt.aadhaar || prof.aadhaar || '';
-                    else if (field === 'father') curVal = currentSt.father || prof.father || '';
-                    else if (field === 'mobile') curVal = currentSt.mobile || prof.mobile || currentSt.phone || prof.phone || '';
-                    else if (field === 'mother') curVal = currentSt.mother || prof.mother || '';
-                    else if (field === 'motherMobile') curVal = currentSt.motherMobile || prof.motherMobile || '';
-                    else if (field === 'address') curVal = currentSt.address || prof.address || '';
+                    if (field === 'name') curVal = liveSt.name || prof.name || '';
+                    else if (field === 'dob') curVal = liveSt.dob || prof.dob || '';
+                    else if (field === 'gender') curVal = liveSt.gender || prof.gender || 'Male';
+                    else if (field === 'adhaar') curVal = liveSt.adhaar || prof.adhaar || liveSt.aadhaar || prof.aadhaar || '';
+                    else if (field === 'father') curVal = liveSt.father || prof.father || '';
+                    else if (field === 'mobile') curVal = liveSt.mobile || prof.mobile || liveSt.phone || prof.phone || '';
+                    else if (field === 'mother') curVal = liveSt.mother || prof.mother || '';
+                    else if (field === 'motherMobile') curVal = liveSt.motherMobile || prof.motherMobile || '';
+                    else if (field === 'address') curVal = liveSt.address || prof.address || '';
 
                     if (titleEl) titleEl.innerHTML = `<i class="fas fa-pencil-alt text-blue-600"></i> Edit ${escapeHtml(label)}`;
                     if (labelEl) labelEl.textContent = label;
@@ -4407,6 +4411,10 @@ const studentPwa = registerPortalForPwa('student', {
             });
 
             saveBtn?.addEventListener('click', async () => {
+                if (!studentPortalPerms.allowDetailsEdit) {
+                    alert('Details editing is currently disabled by administrator.');
+                    return;
+                }
                 const inputEl = document.getElementById('quick-edit-input');
                 if (!inputEl) return;
                 let newVal = inputEl.value.trim();
@@ -4446,35 +4454,31 @@ const studentPwa = registerPortalForPwa('student', {
                 saveBtn.textContent = 'Saving...';
 
                 try {
-                    const studentRef = doc(db, `${BASE_PATH}/students`, studentId);
-                    const currentProf = currentSt.profile || {};
-                    const updatedProf = { ...currentProf, [activeField]: newVal };
-                    const updateData = { [activeField]: newVal, profile: updatedProf };
-
-                    if (activeField === 'name') {
-                        updateData.name = newVal;
-                        updatedProf.name = newVal;
+                    if (!auth.currentUser) {
+                        await signInAnonymously(auth);
                     }
+                    const studentRef = doc(db, `${BASE_PATH}/students`, studentId);
+                    const profilePatch = { [activeField]: newVal };
+                    const updateData = { [activeField]: newVal, profile: profilePatch };
+
                     if (activeField === 'adhaar') {
                         updateData.aadhaar = newVal;
-                        updatedProf.adhaar = newVal;
-                        updatedProf.aadhaar = newVal;
+                        profilePatch.aadhaar = newVal;
                     }
                     if (activeField === 'mobile') {
                         updateData.phone = newVal;
-                        updatedProf.mobile = newVal;
-                        updatedProf.phone = newVal;
+                        profilePatch.phone = newVal;
                     }
 
                     await setDoc(studentRef, updateData, { merge: true });
 
-                    currentSt[activeField] = newVal;
-                    currentSt.profile = updatedProf;
-                    if (activeField === 'name') currentSt.name = newVal;
-                    if (activeField === 'adhaar') currentSt.aadhaar = newVal;
-                    if (activeField === 'mobile') currentSt.phone = newVal;
+                    const liveSt = studentProfile || currentSt;
+                    liveSt[activeField] = newVal;
+                    liveSt.profile = { ...(liveSt.profile || {}), ...profilePatch };
+                    if (activeField === 'adhaar') liveSt.aadhaar = newVal;
+                    if (activeField === 'mobile') liveSt.phone = newVal;
 
-                    renderStudentComprehensiveProfile(currentSt);
+                    renderStudentComprehensiveProfile(liveSt);
                     closeModal();
                     alert(`${activeLabel} updated successfully!`);
                 } catch (err) {
@@ -4551,11 +4555,16 @@ const studentPwa = registerPortalForPwa('student', {
             bindLiveSanitizers();
 
             editBtn.addEventListener('click', () => {
+                if (!studentPortalPerms.allowDetailsEdit) {
+                    alert('Details editing is currently disabled by administrator.');
+                    return;
+                }
                 if (errorEl) {
                     errorEl.classList.add('hidden');
                     errorEl.textContent = '';
                 }
-                const prof = currentSt.profile || {};
+                const liveSt = studentProfile || currentSt;
+                const prof = liveSt.profile || {};
                 const nameInput = document.getElementById('st-edit-name');
                 const genderInput = document.getElementById('st-edit-gender');
                 const dobInput = document.getElementById('st-edit-dob');
@@ -4566,15 +4575,15 @@ const studentPwa = registerPortalForPwa('student', {
                 const motherPhoneInput = document.getElementById('st-edit-mother-phone');
                 const addressInput = document.getElementById('st-edit-address');
 
-                if (nameInput) nameInput.value = currentSt.name || prof.name || '';
-                if (genderInput) genderInput.value = currentSt.gender || prof.gender || 'Male';
-                if (dobInput) dobInput.value = currentSt.dob || prof.dob || '';
-                if (adhaarInput) adhaarInput.value = currentSt.adhaar || prof.adhaar || currentSt.aadhaar || prof.aadhaar || '';
-                if (fatherInput) fatherInput.value = currentSt.father || prof.father || '';
-                if (motherInput) motherInput.value = currentSt.mother || prof.mother || '';
-                if (fatherPhoneInput) fatherPhoneInput.value = currentSt.mobile || prof.mobile || currentSt.phone || prof.phone || '';
-                if (motherPhoneInput) motherPhoneInput.value = currentSt.motherMobile || prof.motherMobile || '';
-                const addr = currentSt.address || prof.address || '';
+                if (nameInput) nameInput.value = liveSt.name || prof.name || '';
+                if (genderInput) genderInput.value = liveSt.gender || prof.gender || 'Male';
+                if (dobInput) dobInput.value = liveSt.dob || prof.dob || '';
+                if (adhaarInput) adhaarInput.value = liveSt.adhaar || prof.adhaar || liveSt.aadhaar || prof.aadhaar || '';
+                if (fatherInput) fatherInput.value = liveSt.father || prof.father || '';
+                if (motherInput) motherInput.value = liveSt.mother || prof.mother || '';
+                if (fatherPhoneInput) fatherPhoneInput.value = liveSt.mobile || prof.mobile || liveSt.phone || prof.phone || '';
+                if (motherPhoneInput) motherPhoneInput.value = liveSt.motherMobile || prof.motherMobile || '';
+                const addr = liveSt.address || prof.address || '';
                 if (addressInput) addressInput.value = addr;
                 if (addressCounterEl) addressCounterEl.textContent = `${addr.length} / 250`;
 
@@ -4586,6 +4595,10 @@ const studentPwa = registerPortalForPwa('student', {
             cancelBtn?.addEventListener('click', closeModal);
 
             saveBtn?.addEventListener('click', async () => {
+                if (!studentPortalPerms.allowDetailsEdit) {
+                    alert('Details editing is currently disabled by administrator.');
+                    return;
+                }
                 if (errorEl) {
                     errorEl.classList.add('hidden');
                     errorEl.textContent = '';
@@ -4648,17 +4661,20 @@ const studentPwa = registerPortalForPwa('student', {
                 saveBtn.textContent = 'Saving...';
 
                 try {
+                    if (!auth.currentUser) {
+                        await signInAnonymously(auth);
+                    }
                     const studentRef = doc(db, `${BASE_PATH}/students`, studentId);
-                    const currentProfile = currentSt.profile || {};
-                    const updatedProfile = {
-                        ...currentProfile,
+                    const profilePatch = {
                         name: newName,
                         gender: newGender,
                         dob: newDob,
                         adhaar: newAdhaar,
+                        aadhaar: newAdhaar,
                         father: newFather,
                         mother: newMother,
                         mobile: newFatherPhone,
+                        phone: newFatherPhone,
                         motherMobile: newMotherPhone,
                         address: newAddress
                     };
@@ -4668,26 +4684,31 @@ const studentPwa = registerPortalForPwa('student', {
                         gender: newGender,
                         dob: newDob,
                         adhaar: newAdhaar,
+                        aadhaar: newAdhaar,
                         father: newFather,
                         mother: newMother,
                         mobile: newFatherPhone,
+                        phone: newFatherPhone,
                         motherMobile: newMotherPhone,
                         address: newAddress,
-                        profile: updatedProfile
+                        profile: profilePatch
                     }, { merge: true });
 
-                    currentSt.name = newName;
-                    currentSt.gender = newGender;
-                    currentSt.dob = newDob;
-                    currentSt.adhaar = newAdhaar;
-                    currentSt.father = newFather;
-                    currentSt.mother = newMother;
-                    currentSt.mobile = newFatherPhone;
-                    currentSt.motherMobile = newMotherPhone;
-                    currentSt.address = newAddress;
-                    currentSt.profile = updatedProfile;
+                    const liveSt = studentProfile || currentSt;
+                    liveSt.name = newName;
+                    liveSt.gender = newGender;
+                    liveSt.dob = newDob;
+                    liveSt.adhaar = newAdhaar;
+                    liveSt.aadhaar = newAdhaar;
+                    liveSt.father = newFather;
+                    liveSt.mother = newMother;
+                    liveSt.mobile = newFatherPhone;
+                    liveSt.phone = newFatherPhone;
+                    liveSt.motherMobile = newMotherPhone;
+                    liveSt.address = newAddress;
+                    liveSt.profile = { ...(liveSt.profile || {}), ...profilePatch };
 
-                    renderStudentComprehensiveProfile(currentSt);
+                    renderStudentComprehensiveProfile(liveSt);
                     closeModal();
                     alert('Student details updated successfully!');
                 } catch (err) {

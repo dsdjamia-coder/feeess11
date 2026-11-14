@@ -3527,12 +3527,6 @@
                 <button type="button" class="stu360-tab-btn px-3.5 py-2.5 font-bold text-xs border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap" data-stu-pane="stu360-pane-academic">
                     <i class="fas fa-graduation-cap"></i> Academic &amp; Promotions
                 </button>
-                <button type="button" class="stu360-tab-btn px-3.5 py-2.5 font-bold text-xs border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap" data-stu-pane="stu360-pane-fees">
-                    <i class="fas fa-receipt"></i> Fees &amp; Ledger
-                </button>
-                <button type="button" class="stu360-tab-btn px-3.5 py-2.5 font-bold text-xs border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap" data-stu-pane="stu360-pane-exams">
-                    <i class="fas fa-poll-h"></i> Exam History
-                </button>
             </div>
 
             <!-- Modal Scrollable Content -->
@@ -3675,57 +3669,12 @@
                     <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200">
                         <div class="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-2.5 mb-3.5">
                             <h4 class="text-xs font-bold text-slate-900 flex items-center gap-2">
-                                <i class="fas fa-layer-group text-indigo-600"></i> Academic Progression, Promotions &amp; Exam Records
+                                <i class="fas fa-layer-group text-indigo-600"></i> Academic Progression &amp; Promotions
                             </h4>
                             <span class="text-[11px] text-slate-500 font-medium">Click any academic year to expand or collapse details</span>
                         </div>
                         <div id="stu360-timeline-container" class="space-y-3">
                             <div class="text-xs text-slate-400 py-3">Loading session history...</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pane 3: Fees & Ledger -->
-                <div id="stu360-pane-fees" class="stu360-pane hidden space-y-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div class="p-3.5 bg-white border border-slate-200 rounded-xl">
-                            <span class="text-[11px] font-medium text-slate-500 block">Overall Assigned Fee (All Years)</span>
-                            <span id="stu360-fee-total" class="text-lg font-extrabold text-slate-900 mt-0.5 block font-mono tabular-nums">₹0</span>
-                        </div>
-                        <div class="p-3.5 bg-white border border-slate-200 rounded-xl">
-                            <span class="text-[11px] font-medium text-slate-500 block">Overall Paid (All Years)</span>
-                            <span id="stu360-fee-paid" class="text-lg font-extrabold text-emerald-700 mt-0.5 block font-mono tabular-nums">₹0</span>
-                        </div>
-                        <div class="p-3.5 bg-white border border-slate-200 rounded-xl">
-                            <span class="text-[11px] font-medium text-slate-500 block">Overall Balance (All Years)</span>
-                            <span id="stu360-fee-balance" class="text-lg font-extrabold text-rose-700 mt-0.5 block font-mono tabular-nums">₹0</span>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200">
-                        <div class="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-2.5 mb-3.5">
-                            <h4 class="text-xs font-bold text-slate-900 flex items-center gap-2">
-                                <i class="fas fa-file-invoice-dollar text-emerald-600"></i> Year-Wise Fee Heads &amp; Payments Breakdown
-                            </h4>
-                            <span class="text-[11px] text-slate-500 font-medium">Click any academic year to view fee ledger</span>
-                        </div>
-                        <div id="stu360-fees-years-container" class="space-y-3">
-                            <div class="text-xs text-slate-400 py-3 text-center">Loading fee records...</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pane 4: Exam History -->
-                <div id="stu360-pane-exams" class="stu360-pane hidden space-y-4">
-                    <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200">
-                        <div class="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-2.5 mb-3.5">
-                            <h4 class="text-xs font-bold text-slate-900 flex items-center gap-2">
-                                <i class="fas fa-square-poll-vertical text-purple-600"></i> Published Examination Results by Academic Year
-                            </h4>
-                            <span class="text-[11px] text-slate-500 font-medium">Click any academic year to expand exam results</span>
-                        </div>
-                        <div id="stu360-exams-container" class="space-y-3">
-                            <div class="text-xs text-slate-400 py-3 text-center">Loading examination records...</div>
                         </div>
                     </div>
                 </div>
