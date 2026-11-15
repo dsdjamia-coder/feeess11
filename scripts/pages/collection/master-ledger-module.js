@@ -551,9 +551,9 @@ const renderLedgerTable = (options = {}) => {
         <table class="min-w-full text-xs text-left border-collapse border border-slate-200 bg-white shadow-sm master-ledger-sticky-table">
             <thead class="bg-slate-50 text-[11px] font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 sticky top-0 z-30 shadow-xs">
                 <tr>
-                    <th class="px-2.5 py-3.5 text-center border-r border-slate-200 w-12 sticky left-0 bg-slate-50 z-35">NO</th>
-                    <th class="px-2.5 py-3.5 text-center border-r border-slate-200 w-16 sticky left-12 bg-slate-50 z-35">CLASS</th>
-                    <th class="px-3.5 py-3.5 border-r border-slate-200 min-w-[220px] sticky left-28 bg-slate-50 z-35">STUDENT NAME</th>
+                    <th class="px-2.5 py-3.5 text-center border-r border-slate-200 w-[48px] min-w-[48px] max-w-[48px] sticky left-0 bg-slate-50 z-40">NO</th>
+                    <th class="px-2.5 py-3.5 text-center border-r border-slate-200 w-[64px] min-w-[64px] max-w-[64px] sticky left-[48px] bg-slate-50 z-40">CLASS</th>
+                    <th class="px-3.5 py-3.5 border-r border-slate-300 min-w-[220px] sticky left-[112px] bg-slate-50 z-40">STUDENT NAME</th>
                     <th class="px-3.5 py-3.5 border-r border-slate-200 min-w-[190px]">GUARDIAN & CONTACT</th>
                     <th class="px-3 py-3.5 text-center border-r border-slate-200 min-w-[130px] text-slate-800 bg-slate-100/70">FEE SETUP</th>
                     <th class="px-3 py-3.5 text-center border-r border-slate-200 min-w-[125px] text-rose-900 bg-rose-50/70">TOTAL DUE</th>
@@ -567,12 +567,12 @@ const renderLedgerTable = (options = {}) => {
                     `).join('')}
                 </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100 font-medium">
+            <tbody class="font-medium">
     `;
 
     visibleList.forEach((unit, idx) => {
         const serialNo = ledgerPageOffset + idx + 1;
-        const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40';
+        const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50';
         const isRowAllSelected = ledgerAcademicMonths.every(m => selectedLedgerCells.has(`${unit.id}__${m}`));
 
         // Student Names markup with numbering and gender badges
@@ -645,17 +645,17 @@ const renderLedgerTable = (options = {}) => {
         html += `
             <tr class="${rowBg} hover:bg-blue-50/40 transition-colors">
                 <!-- NO -->
-                <td class="px-2.5 py-3 text-center font-bold text-slate-500 border-r border-slate-200 sticky left-0 ${rowBg} z-20">
+                <td class="px-2.5 py-3 text-center font-bold text-slate-500 border-r border-slate-200 sticky left-0 w-[48px] min-w-[48px] max-w-[48px] bg-white z-20">
                     ${serialNo}
                 </td>
 
                 <!-- CLASS -->
-                <td class="px-2.5 py-3 text-center font-black border-r border-slate-200 sticky left-12 ${rowBg} z-20">
+                <td class="px-2.5 py-3 text-center font-black border-r border-slate-200 sticky left-[48px] w-[64px] min-w-[64px] max-w-[64px] bg-white z-20">
                     ${classesHtml}
                 </td>
 
                 <!-- STUDENT NAME -->
-                <td class="px-3.5 py-3 border-r border-slate-200 sticky left-28 ${rowBg} z-20">
+                <td class="px-3.5 py-3 border-r border-slate-300 sticky left-[112px] bg-white z-20">
                     <div class="flex items-center justify-between gap-2">
                         <div class="space-y-0.5 min-w-0">
                             ${studentNamesHtml}
