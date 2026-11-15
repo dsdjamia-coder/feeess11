@@ -6748,6 +6748,7 @@ const renderCollectorWiseMonthlyPage = () => {
         container.innerHTML = buildEmptyState('No collector-wise monthly data available.', 'fa-users');
         return;
     }
+    const currentMK = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
     container.innerHTML = monthKeys.map((monthKey) => {
         const monthPayments = groupedByMonth[monthKey];
         const collectorRows = Object.values(monthPayments.reduce((acc, payment) => {
@@ -6768,15 +6769,25 @@ const renderCollectorWiseMonthlyPage = () => {
         }, {})).sort((a, b) => (b.monthlyDefaultTotal + b.monthlyOthersTotal) - (a.monthlyDefaultTotal + a.monthlyOthersTotal));
         const monthTotalDefault = collectorRows.reduce((sum, row) => sum + row.monthlyDefaultTotal, 0);
         const monthTotalOthers = collectorRows.reduce((sum, row) => sum + row.monthlyOthersTotal, 0);
+        const monthGrandTotal = monthTotalDefault + monthTotalOthers;
+        const isExpanded = monthKey === currentMK;
         return `
-            <div class="bg-white border border-gray-200 rounded-xl p-2.5 sm:p-4">
-                <div class="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 border-b pb-2 mb-2 sm:pb-3 sm:mb-3">
-                    <h3 class="font-bold text-sm sm:text-base text-gray-800">${formatMonthLabel(monthKey)}</h3>
-                    <div class="text-[11px] sm:text-xs text-gray-500 font-semibold tabular-nums">Default: ${formatCurrency(monthTotalDefault)} • Others: ${formatCurrency(monthTotalOthers)}</div>
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 sm:p-4">
+                <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-2 sm:gap-3 cursor-pointer collector-month-header" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}">
+                    <div>
+                        <h3 class="font-bold text-sm sm:text-base text-gray-800">${formatMonthLabel(monthKey)}</h3>
+                        <p class="text-[11px] sm:text-xs text-gray-500 font-medium mt-0.5">${collectorRows.length} ${collectorRows.length === 1 ? 'collector' : 'collectors'}</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-bold tabular-nums">
+                        <span class="bg-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-gray-200 text-gray-700">Default: ${formatCurrency(monthTotalDefault)}</span>
+                        <span class="bg-amber-50 text-amber-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-amber-200">Others: ${formatCurrency(monthTotalOthers)}</span>
+                        <span class="bg-indigo-50 text-indigo-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-indigo-200">Total: ${formatCurrency(monthGrandTotal)}</span>
+                        <i class="fas fa-chevron-down collector-month-toggle-icon text-gray-400 ${isExpanded ? 'rotate-180' : ''} transition ml-auto sm:ml-1"></i>
+                    </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-xs sm:text-sm text-left whitespace-nowrap tabular-nums">
-                        <thead class="bg-gray-50">
+                <div class="collector-month-details overflow-x-auto mt-2.5 pt-2.5 sm:mt-4 sm:pt-4 border-t border-gray-200 ${isExpanded ? '' : 'hidden'}">
+                    <table class="w-full text-xs sm:text-sm text-left whitespace-nowrap tabular-nums bg-white rounded-lg overflow-hidden">
+                        <thead class="bg-gray-100">
                             <tr>
                                 <th class="p-1.5 sm:p-2">Collector</th>
                                 <th class="p-1.5 sm:p-2 text-right">Default Fee Total</th>
@@ -6800,6 +6811,31 @@ const renderCollectorWiseMonthlyPage = () => {
         `;
     }).join('');
 };
+
+const toggleCollectorMonthCard = (headerEl) => {
+    if (!headerEl) return;
+    const detailsEl = headerEl.nextElementSibling;
+    const iconEl = headerEl.querySelector('.collector-month-toggle-icon');
+    if (!detailsEl) return;
+    const willExpand = detailsEl.classList.contains('hidden');
+    detailsEl.classList.toggle('hidden', !willExpand);
+    headerEl.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+    iconEl?.classList.toggle('rotate-180', willExpand);
+};
+
+document.getElementById('collector-wise-monthly-container')?.addEventListener('click', (e) => {
+    const headerEl = e.target.closest('.collector-month-header');
+    if (headerEl) toggleCollectorMonthCard(headerEl);
+});
+
+document.getElementById('collector-wise-monthly-container')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const headerEl = e.target.closest('.collector-month-header');
+    if (headerEl) {
+        e.preventDefault();
+        toggleCollectorMonthCard(headerEl);
+    }
+});
 
 window.prepareHistoryData = prepareHistoryData;
 window.updateDashboardMetrics = updateDashboardMetrics;
