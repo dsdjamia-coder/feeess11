@@ -2,7 +2,7 @@
 <html lang="en" data-session-guard="collection">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' blob: data: https://*.firebaseapp.com https://unpkg.com;">
     <meta name="referrer" content="no-referrer">
     <title>Fee Collection - Institution Tracer</title>
@@ -51,28 +51,84 @@
       box-sizing: border-box;
     }
 
-    /* Immersive Fullscreen / Landscape Spreadsheet Mode */
+    /* Immersive Fullscreen / Mobile Landscape Spreadsheet Mode */
+    body.collection-fullscreen-lock {
+      overflow: hidden !important;
+      height: 100dvh !important;
+      overscroll-behavior: none !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100dvh !important;
+      min-height: 0 !important;
+      max-width: 100% !important;
+      max-height: 100dvh !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      z-index: 9000 !important;
+      background: #f3f4f6 !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode.spreadsheet-css-rotated {
+      top: 0 !important;
+      left: var(--fs-rot-h, 100dvw) !important;
+      right: auto !important;
+      bottom: auto !important;
+      width: var(--fs-rot-w, 100dvh) !important;
+      height: var(--fs-rot-h, 100dvw) !important;
+      max-width: none !important;
+      max-height: none !important;
+      transform-origin: top left !important;
+      transform: rotate(90deg) !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode.spreadsheet-css-rotated .modal-overlay {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      padding: 8px !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode.spreadsheet-css-rotated .modal-box {
+      max-height: 92% !important;
+    }
+
     #collection-app.spreadsheet-fullscreen-mode .collection-sticky-header,
     #collection-app.spreadsheet-fullscreen-mode #side-drawer,
+    #collection-app.spreadsheet-fullscreen-mode #drawer-overlay,
     #collection-app.spreadsheet-fullscreen-mode #collection-bottom-nav,
     #collection-app.spreadsheet-fullscreen-mode .collection-bottom-nav,
     #collection-app.spreadsheet-fullscreen-mode #collection-more-sheet {
       display: none !important;
     }
 
-    #collection-app.spreadsheet-fullscreen-mode .collection-main-wrapper {
+    #collection-app.spreadsheet-fullscreen-mode .collection-main-wrapper,
+    #collection-app.spreadsheet-fullscreen-mode:not(.sidebar-collapsed) .collection-main-wrapper,
+    #collection-app.spreadsheet-fullscreen-mode.sidebar-collapsed .collection-main-wrapper {
+      margin: 0 !important;
       margin-left: 0 !important;
       width: 100% !important;
       max-width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
       padding: 0 !important;
+      transition: none !important;
+      box-sizing: border-box !important;
     }
 
     #collection-app.spreadsheet-fullscreen-mode #app {
       width: 100% !important;
       max-width: 100% !important;
-      height: 100vh !important;
-      height: 100dvh !important;
-      padding: 6px 10px !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      min-height: 0 !important;
+      padding: 6px 8px !important;
       margin: 0 !important;
       display: flex !important;
       flex-direction: column !important;
@@ -80,29 +136,19 @@
       box-sizing: border-box !important;
     }
 
-    #collection-app.spreadsheet-fullscreen-mode #page-content {
+    #collection-app.spreadsheet-fullscreen-mode #page-content,
+    #collection-app.spreadsheet-fullscreen-mode .page-content:not(.hidden),
+    #collection-app.spreadsheet-fullscreen-mode #subview-master-ledger {
       display: flex !important;
       flex-direction: column !important;
       height: 100% !important;
       max-height: 100% !important;
       width: 100% !important;
       max-width: 100% !important;
-      flex: 1 !important;
+      flex: 1 1 0 !important;
       overflow: hidden !important;
       min-width: 0 !important;
-      box-sizing: border-box !important;
-    }
-
-    #collection-app.spreadsheet-fullscreen-mode .page-content:not(.hidden) {
-      display: flex !important;
-      flex-direction: column !important;
-      height: 100% !important;
-      max-height: 100% !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      flex: 1 !important;
-      overflow: hidden !important;
-      min-width: 0 !important;
+      min-height: 0 !important;
       box-sizing: border-box !important;
     }
 
@@ -113,30 +159,43 @@
       max-height: none !important;
       overflow: visible !important;
       margin-bottom: 6px !important;
-      padding: 8px 12px !important;
+      padding: 6px 10px !important;
       width: 100% !important;
       max-width: 100% !important;
+      border-radius: 12px !important;
       box-sizing: border-box !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode #ledger-toolbar-row1 {
+      flex-direction: row !important;
+      flex-wrap: wrap !important;
+      align-items: center !important;
+      gap: 6px 8px !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode:not(.spreadsheet-fs-filters-open) #ledger-toolbar-row1 {
+      padding-bottom: 0 !important;
+      border-bottom: 0 !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode:not(.spreadsheet-fs-filters-open) #ledger-toolbar-filters-grid {
+      display: none !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode #ledger-fullscreen-filters-btn {
+      display: inline-flex !important;
     }
 
     #collection-app.spreadsheet-fullscreen-mode #master-ledger-table-container {
       flex: 1 1 0 !important;
       width: 100% !important;
       max-width: 100% !important;
-      height: 100% !important;
+      height: auto !important;
       min-height: 0 !important;
       max-height: none !important;
       overflow: auto !important;
       border-radius: 12px !important;
       box-sizing: border-box !important;
-    }
-
-    #collection-app.spreadsheet-fullscreen-mode .exit-fullscreen-btn {
-      display: inline-flex !important;
-    }
-
-    #collection-app.spreadsheet-fullscreen-mode .mobile-rotate-suggestion {
-      display: none !important;
     }
 
     /* Collapsible Navigation Styling */
@@ -968,26 +1027,10 @@
             <!-- 3. Fee Register (Full Width Spreadsheet) -->
             <section id="master-ledger-page" class="page-content hidden w-full max-w-full min-w-0">
                 <div id="subview-master-ledger">
-                    <!-- Mobile Rotate & Fullscreen Suggestion Banner -->
-                    <div class="mobile-rotate-suggestion lg:hidden flex items-center justify-between gap-2 p-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 text-blue-900 rounded-xl text-xs font-semibold mb-2.5 shadow-2xs">
-                        <div class="flex items-center gap-2 min-w-0">
-                            <i class="fas fa-mobile-screen-button text-indigo-600 text-sm animate-pulse shrink-0 transform rotate-90"></i>
-                            <span class="truncate text-[11px]">Rotate device or use Fullscreen for wide register</span>
-                        </div>
-                        <div class="flex items-center gap-1.5 shrink-0">
-                            <button type="button" class="quick-fullscreen-btn px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold shadow-xs cursor-pointer" data-target="master-ledger-page">
-                                <i class="fas fa-expand mr-0.5"></i> Fullscreen
-                            </button>
-                            <button type="button" class="dismiss-rotate-tip-btn text-slate-400 hover:text-slate-600 p-1 text-xs cursor-pointer" title="Dismiss">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                    </div>
-
                     <!-- Toolbar and Filter Bar: Organized Row 1 (Search + Actions) & Row 2 (Compact Filter Grid) -->
                     <div id="master-ledger-toolbar-card" class="card p-3 sm:p-4 mb-3 sm:mb-4 shadow-sm bg-white rounded-2xl border border-slate-200 w-full max-w-full min-w-0 box-border">
                         <!-- Row 1: Search Bar & Primary Actions -->
-                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100 min-w-0">
+                        <div id="ledger-toolbar-row1" class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100 min-w-0">
                             <!-- Search Bar -->
                             <div class="relative flex-1 min-w-0">
                                 <input type="text" id="ledger-search-input" placeholder="Search students by name, admission no, or phone..." class="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition">
@@ -1018,14 +1061,17 @@
                                 <button type="button" class="info-tooltip-btn text-slate-400 hover:text-red-600 cursor-pointer text-xs p-1 focus:outline-none transition inline-flex items-center shrink-0" data-info="Generate an edge-to-edge printable tabular fee register report formatted for institutional archiving." title="Generate an edge-to-edge printable tabular fee register report formatted for institutional archiving.">
                                     <i class="fas fa-info-circle"></i>
                                 </button>
-                                <button type="button" class="exit-fullscreen-btn hidden px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow transition items-center gap-1.5 text-xs shrink-0 cursor-pointer" title="Exit Fullscreen">
-                                    <i class="fas fa-compress"></i> Exit Fullscreen
+                                <button type="button" id="ledger-fullscreen-filters-btn" class="hidden px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold rounded-xl shadow-2xs transition items-center gap-1.5 text-xs shrink-0 cursor-pointer" title="Show / Hide Filters" aria-expanded="false">
+                                    <i class="fas fa-sliders"></i> <span>Filters</span>
+                                </button>
+                                <button type="button" id="ledger-fullscreen-toggle-btn" class="fullscreen-toggle-btn px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow transition inline-flex items-center gap-1.5 text-xs shrink-0 cursor-pointer" data-target="master-ledger-page" title="Toggle Fullscreen Landscape View">
+                                    <i class="fas fa-expand"></i> <span>Fullscreen</span>
                                 </button>
                             </div>
                         </div>
 
                         <!-- Row 2: 8 Filters in Clean Responsive Grid (2 cols on mobile, 3 on sm/md, 4 on lg/xl, 8 on 2xl) -->
-                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-8 gap-2 pt-2.5 min-w-0">
+                        <div id="ledger-toolbar-filters-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-8 gap-2 pt-2.5 min-w-0">
                             <div class="min-w-0">
                                 <select id="ledger-view-mode" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-blue-200 rounded-xl text-xs font-black text-blue-700 bg-blue-50/50 hover:bg-blue-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="GROUPED" selected>View: Family Units</option>

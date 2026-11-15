@@ -702,6 +702,36 @@ document.getElementById('back-to-official-btn')?.addEventListener('click', (e) =
 // ============================================================
 // SPREADSHEET FULLSCREEN & MOBILE LANDSCAPE CONTROLLER
 // ============================================================
+let nativeFullscreenActive = false;
+
+export function syncSpreadsheetFullscreenViewport() {
+    const appEl = document.getElementById('collection-app');
+    if (!appEl) return;
+
+    const isFullscreen = appEl.classList.contains('spreadsheet-fullscreen-mode');
+    if (!isFullscreen) {
+        appEl.classList.remove('spreadsheet-css-rotated', 'spreadsheet-fs-filters-open');
+        appEl.style.removeProperty('--fs-rot-w');
+        appEl.style.removeProperty('--fs-rot-h');
+        document.body?.classList.remove('collection-fullscreen-lock');
+        return;
+    }
+
+    document.body?.classList.add('collection-fullscreen-lock');
+    const vw = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);
+    const vh = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
+
+    if (vw > 0 && vh > vw) {
+        appEl.style.setProperty('--fs-rot-w', `${vh}px`);
+        appEl.style.setProperty('--fs-rot-h', `${vw}px`);
+        appEl.classList.add('spreadsheet-css-rotated');
+    } else {
+        appEl.classList.remove('spreadsheet-css-rotated');
+        appEl.style.removeProperty('--fs-rot-w');
+        appEl.style.removeProperty('--fs-rot-h');
+    }
+}
+
 export function toggleSpreadsheetFullscreen(targetPageId) {
     const appEl = document.getElementById('collection-app');
     if (!appEl) return;
@@ -712,49 +742,61 @@ export function toggleSpreadsheetFullscreen(targetPageId) {
     }
 }
 
-export function enterSpreadsheetFullscreen(targetPageId) {
+export function enterSpreadsheetFullscreen(_targetPageId) {
     const appEl = document.getElementById('collection-app');
     if (!appEl) return;
     appEl.classList.add('spreadsheet-fullscreen-mode');
+    appEl.classList.remove('spreadsheet-fs-filters-open');
 
-    // Request native browser fullscreen where available
+    updateFullscreenButtons(true);
+    syncFullscreenFiltersToggleState(false);
+    syncSpreadsheetFullscreenViewport();
+
+    const tryLockLandscape = () => {
+        try {
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape')
+                    .then(() => setTimeout(syncSpreadsheetFullscreenViewport, 80))
+                    .catch(() => syncSpreadsheetFullscreenViewport());
+            }
+        } catch (_) {}
+    };
+
     try {
         const root = document.documentElement;
         if (root.requestFullscreen) {
-            root.requestFullscreen().catch(() => {});
+            root.requestFullscreen()
+                .then(() => {
+                    nativeFullscreenActive = true;
+                    tryLockLandscape();
+                    setTimeout(syncSpreadsheetFullscreenViewport, 120);
+                })
+                .catch(() => {
+                    tryLockLandscape();
+                    syncSpreadsheetFullscreenViewport();
+                });
         } else if (root.webkitRequestFullscreen) {
             root.webkitRequestFullscreen();
+            nativeFullscreenActive = true;
+            tryLockLandscape();
+            setTimeout(syncSpreadsheetFullscreenViewport, 120);
+        } else {
+            tryLockLandscape();
         }
-    } catch (_) {}
-
-    // Lock screen orientation to landscape on mobile devices
-    try {
-        if (screen.orientation && screen.orientation.lock) {
-            screen.orientation.lock('landscape').catch(() => {});
-        }
-    } catch (_) {}
-
-    updateFullscreenButtons(true);
-
-    let floatingExitBtn = document.getElementById('floating-exit-fullscreen-btn');
-    if (!floatingExitBtn) {
-        floatingExitBtn = document.createElement('button');
-        floatingExitBtn.id = 'floating-exit-fullscreen-btn';
-        floatingExitBtn.type = 'button';
-        floatingExitBtn.className = 'fixed bottom-4 right-4 z-40 px-3.5 py-2 bg-slate-900/90 hover:bg-slate-900 text-white font-black text-xs rounded-xl shadow-2xl flex items-center gap-1.5 cursor-pointer transition border border-white/20 backdrop-blur';
-        floatingExitBtn.innerHTML = '<i class="fas fa-compress"></i> <span>Exit Fullscreen</span>';
-        floatingExitBtn.onclick = () => exitSpreadsheetFullscreen();
-        document.body.appendChild(floatingExitBtn);
-    } else {
-        floatingExitBtn.classList.remove('hidden');
+    } catch (_) {
+        tryLockLandscape();
     }
 }
 
 export function exitSpreadsheetFullscreen() {
     const appEl = document.getElementById('collection-app');
     if (appEl) {
-        appEl.classList.remove('spreadsheet-fullscreen-mode');
+        appEl.classList.remove('spreadsheet-fullscreen-mode', 'spreadsheet-css-rotated', 'spreadsheet-fs-filters-open');
+        appEl.style.removeProperty('--fs-rot-w');
+        appEl.style.removeProperty('--fs-rot-h');
     }
+    document.body?.classList.remove('collection-fullscreen-lock');
+    nativeFullscreenActive = false;
 
     try {
         if (document.fullscreenElement) {
@@ -771,11 +813,19 @@ export function exitSpreadsheetFullscreen() {
     } catch (_) {}
 
     updateFullscreenButtons(false);
+    syncFullscreenFiltersToggleState(false);
+}
 
-    const floatingExitBtn = document.getElementById('floating-exit-fullscreen-btn');
-    if (floatingExitBtn) {
-        floatingExitBtn.classList.add('hidden');
-    }
+function syncFullscreenFiltersToggleState(isOpen) {
+    const filterBtn = document.getElementById('ledger-fullscreen-filters-btn');
+    if (!filterBtn) return;
+    filterBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    filterBtn.classList.toggle('bg-blue-600', isOpen);
+    filterBtn.classList.toggle('text-white', isOpen);
+    filterBtn.classList.toggle('border-blue-600', isOpen);
+    filterBtn.classList.toggle('bg-slate-100', !isOpen);
+    filterBtn.classList.toggle('text-slate-700', !isOpen);
+    filterBtn.classList.toggle('border-slate-200', !isOpen);
 }
 
 function updateFullscreenButtons(isFullscreen) {
@@ -784,24 +834,36 @@ function updateFullscreenButtons(isFullscreen) {
             btn.innerHTML = '<i class="fas fa-compress"></i> <span>Exit</span>';
             btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
             btn.classList.add('bg-rose-600', 'hover:bg-rose-700');
+            btn.title = 'Exit Fullscreen';
         } else {
             btn.innerHTML = '<i class="fas fa-expand"></i> <span>Fullscreen</span>';
             btn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
             btn.classList.remove('bg-rose-600', 'hover:bg-rose-700');
+            btn.title = 'Toggle Fullscreen Landscape View';
         }
     });
 }
 
-// Global Fullscreen and Keyboard Event Listeners
+// Global Fullscreen, Orientation and Keyboard Event Listeners
 document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) {
+    if (!document.fullscreenElement && nativeFullscreenActive) {
+        nativeFullscreenActive = false;
         exitSpreadsheetFullscreen();
+    } else {
+        setTimeout(syncSpreadsheetFullscreenViewport, 80);
     }
 });
 document.addEventListener('webkitfullscreenchange', () => {
-    if (!document.webkitFullscreenElement) {
+    if (!document.webkitFullscreenElement && nativeFullscreenActive) {
+        nativeFullscreenActive = false;
         exitSpreadsheetFullscreen();
+    } else {
+        setTimeout(syncSpreadsheetFullscreenViewport, 80);
     }
+});
+window.addEventListener('resize', syncSpreadsheetFullscreenViewport);
+window.addEventListener('orientationchange', () => {
+    setTimeout(syncSpreadsheetFullscreenViewport, 100);
 });
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -813,21 +875,19 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-    const exitFsBtn = e.target.closest('.exit-fullscreen-btn');
-    if (exitFsBtn) {
-        exitSpreadsheetFullscreen();
+    const fsFiltersBtn = e.target.closest('#ledger-fullscreen-filters-btn');
+    if (fsFiltersBtn) {
+        const appEl = document.getElementById('collection-app');
+        if (appEl && appEl.classList.contains('spreadsheet-fullscreen-mode')) {
+            const isOpen = appEl.classList.toggle('spreadsheet-fs-filters-open');
+            syncFullscreenFiltersToggleState(isOpen);
+        }
         return;
     }
-    const fsBtn = e.target.closest('.fullscreen-toggle-btn, .quick-fullscreen-btn');
+    const fsBtn = e.target.closest('.fullscreen-toggle-btn');
     if (fsBtn) {
         const targetPage = fsBtn.dataset.target || 'master-ledger-page';
         toggleSpreadsheetFullscreen(targetPage);
-        return;
-    }
-    const dismissTipBtn = e.target.closest('.dismiss-rotate-tip-btn');
-    if (dismissTipBtn) {
-        const tipContainer = dismissTipBtn.closest('.mobile-rotate-suggestion');
-        if (tipContainer) tipContainer.style.display = 'none';
         return;
     }
 });

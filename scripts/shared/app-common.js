@@ -334,14 +334,40 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         let activeIndex = -1;
         const getOptionItems = () => Array.from(list.querySelectorAll('.smart-select-option'));
 
+        const toLocalRect = (domRect, rotatedRoot) => {
+            if (!rotatedRoot) {
+                return {
+                    left: domRect.left,
+                    right: domRect.right,
+                    top: domRect.top,
+                    bottom: domRect.bottom,
+                    width: domRect.width,
+                    height: domRect.height
+                };
+            }
+            const rRect = rotatedRoot.getBoundingClientRect();
+            return {
+                left: domRect.top - rRect.top,
+                right: domRect.bottom - rRect.top,
+                top: rRect.right - domRect.right,
+                bottom: rRect.right - domRect.left,
+                width: domRect.height,
+                height: domRect.width
+            };
+        };
+
         const getSmartSelectBounds = () => {
+            const rotatedRoot = input.closest('.spreadsheet-css-rotated');
+            const spaceWidth = rotatedRoot
+                ? Math.max(160, rotatedRoot.clientWidth || window.innerHeight || 0)
+                : Math.max(160, window.innerWidth || 0);
             const vpLeft = 8;
-            const vpRight = Math.max(vpLeft + 120, window.innerWidth - 8);
+            const vpRight = Math.max(vpLeft + 120, spaceWidth - 8);
             let boundLeft = vpLeft;
             let boundRight = vpRight;
             const container = input.closest('.modal-box, .card, #app, main');
             if (container) {
-                const cRect = container.getBoundingClientRect();
+                const cRect = toLocalRect(container.getBoundingClientRect(), rotatedRoot);
                 if (cRect.width > 0) {
                     boundLeft = Math.max(vpLeft, cRect.left + 8);
                     boundRight = Math.min(vpRight, cRect.right - 8);
@@ -352,16 +378,19 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
                 boundRight = vpRight;
             }
             const maxAllowedWidth = Math.max(80, Math.min(260, boundRight - boundLeft));
-            return { boundLeft, boundRight, maxAllowedWidth };
+            return { rotatedRoot, boundLeft, boundRight, maxAllowedWidth };
         };
 
         const positionFloatingList = () => {
             if (!isFloating) return;
-            const rect = input.getBoundingClientRect();
-            const spaceBelow = window.innerHeight - rect.bottom;
+            const { rotatedRoot, boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
+            const rect = toLocalRect(input.getBoundingClientRect(), rotatedRoot);
+            const spaceHeight = rotatedRoot
+                ? Math.max(160, rotatedRoot.clientHeight || window.innerWidth || 0)
+                : Math.max(160, window.innerHeight || 0);
+            const spaceBelow = spaceHeight - rect.bottom;
             const maxListHeight = 220;
             const openUpwards = spaceBelow < 180 && rect.top > spaceBelow;
-            const { boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
             const explicitMin = Number(select.dataset.smartMinWidth || 0);
             const minWidth = Math.min(maxAllowedWidth, Math.max(rect.width, explicitMin));
 
@@ -373,7 +402,8 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             list.style.left = `${boundLeft}px`;
             list.style.zIndex = '10020';
 
-            const measuredWidth = Math.ceil(list.getBoundingClientRect().width || rect.width);
+            const measuredRect = toLocalRect(list.getBoundingClientRect(), rotatedRoot);
+            const measuredWidth = Math.ceil(measuredRect.width || rect.width);
             const width = Math.max(minWidth, Math.min(measuredWidth, maxAllowedWidth));
 
             let left = rect.left;
@@ -397,15 +427,15 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
 
         const positionStaticList = () => {
             if (isFloating) return;
-            const rect = input.getBoundingClientRect();
-            const { boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
+            const { rotatedRoot, boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
+            const rect = toLocalRect(input.getBoundingClientRect(), rotatedRoot);
             list.style.left = '0px';
             list.style.right = 'auto';
             list.style.minWidth = '100%';
             list.style.width = 'max-content';
             list.style.maxWidth = `${maxAllowedWidth}px`;
 
-            const listRect = list.getBoundingClientRect();
+            const listRect = toLocalRect(list.getBoundingClientRect(), rotatedRoot);
             if (listRect.right > boundRight && (rect.right - listRect.width) >= boundLeft) {
                 list.style.left = 'auto';
                 list.style.right = '0px';
