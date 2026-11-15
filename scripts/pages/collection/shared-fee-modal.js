@@ -111,6 +111,122 @@ export const resolveCanonicalItem = (rawKey, rawMonth, fallbackName, fallbackTyp
 };
 window.resolveCanonicalItem = resolveCanonicalItem;
 
+const roundMoney = (value) => {
+    const num = Number(value || 0);
+    return Number.isFinite(num) ? Math.round(num * 100) / 100 : 0;
+};
+
+// Resolve true total paid amount for single or grouped/mirror payment records
+const resolveModalPaymentAmount = (p, fallbackFee = 0) => {
+    if (!p) return roundMoney(fallbackFee);
+    const isGrouped = Boolean(
+        p.billingGroupId ||
+        p.isGroupPrimary ||
+        p.isGroupMirror ||
+        (Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 1)
+    );
+    const gm = Number(p.groupMonthAmount ?? p.groupCoveredAmount ?? 0);
+    if (isGrouped && Number.isFinite(gm) && gm > 0) {
+        return roundMoney(gm);
+    }
+    if (p.isGroupMirror) {
+        const gp = Number(p.groupPaidAmount ?? 0);
+        if (Number.isFinite(gp) && gp > 0) return roundMoney(gp);
+    }
+    const amt = Number(p.amount);
+    if (Number.isFinite(amt) && amt >= 0) {
+        if (amt === 0 && Number(p.groupPaidAmount || 0) > 0) {
+            return roundMoney(p.groupPaidAmount);
+        }
+        return roundMoney(amt);
+    }
+    return roundMoney(fallbackFee);
+};
+
+// Locate all sibling payment docs belonging to the same grouped item in a transaction
+const findSiblingGroupPayments = (basePayment, relatedList = []) => {
+    if (!basePayment) return [];
+    const byId = new Map();
+    const pool = [
+        ...(Array.isArray(relatedList) ? relatedList : []),
+        ...(Array.isArray(window.allPayments) ? window.allPayments : []),
+        ...(Array.isArray(window.MasterLedger?.ledgerPayments) ? window.MasterLedger.ledgerPayments : [])
+    ];
+    const baseTxn = String(basePayment.transactionId || '').trim();
+    const baseKey = String(basePayment.itemKey || '').trim().toLowerCase();
+    const baseYear = String(basePayment.academicYear || '').trim();
+    const isGrouped = Boolean(
+        basePayment.isGroupPrimary ||
+        basePayment.isGroupMirror ||
+        basePayment.billingGroupId ||
+        (Array.isArray(basePayment.targetGroupMemberIds) && basePayment.targetGroupMemberIds.length > 1)
+    );
+
+    if (basePayment.id) {
+        byId.set(basePayment.id, basePayment);
+    }
+
+    if (Array.isArray(relatedList) && relatedList.length > 0) {
+        relatedList.forEach(p => {
+            if (!p?.id) return;
+            const pKey = String(p.itemKey || '').trim().toLowerCase();
+            if (!baseKey || !pKey || pKey === baseKey) {
+                byId.set(p.id, { ...(byId.get(p.id) || {}), ...p });
+            }
+        });
+    }
+
+    if (isGrouped && baseTxn) {
+        pool.forEach(p => {
+            if (!p?.id) return;
+            if (String(p.transactionId || '').trim() !== baseTxn) return;
+            const pKey = String(p.itemKey || '').trim().toLowerCase();
+            if (baseKey && pKey && pKey !== baseKey) return;
+            const pYear = String(p.academicYear || '').trim();
+            if (baseYear && pYear && pYear !== baseYear) return;
+            byId.set(p.id, { ...(byId.get(p.id) || {}), ...p });
+        });
+    }
+
+    return Array.from(byId.values());
+};
+
+// Proportionally distribute an edited total amount across item inputs while keeping exact sum
+const distributeAmountAcrossBulkInputs = (targetTotal, itemInputs = []) => {
+    if (!itemInputs || itemInputs.length === 0) return;
+    const total = Math.max(0, roundMoney(targetTotal));
+    let weights = itemInputs.map(inp => Math.max(0, Number(inp.value || 0)));
+    let weightSum = weights.reduce((s, w) => s + w, 0);
+    if (weightSum <= 0) {
+        weights = itemInputs.map(inp => Math.max(0, Number(inp.dataset.defaultAmount || 0)));
+        weightSum = weights.reduce((s, w) => s + w, 0);
+    }
+    if (weightSum <= 0) {
+        weights = itemInputs.map(() => 1);
+        weightSum = itemInputs.length;
+    }
+
+    const useWholeRupees = Number.isInteger(total);
+    const scale = useWholeRupees ? 1 : 100;
+    const targetUnits = Math.round(total * scale);
+    const rawUnits = weights.map(w => (targetUnits * w) / weightSum);
+    const baseUnits = rawUnits.map(u => Math.floor(u));
+    let remainder = targetUnits - baseUnits.reduce((s, u) => s + u, 0);
+
+    const order = rawUnits
+        .map((u, idx) => ({ idx, frac: u - baseUnits[idx] }))
+        .sort((a, b) => (b.frac - a.frac) || (b.idx - a.idx));
+
+    for (let i = 0; i < remainder; i++) {
+        const slot = order[i % order.length];
+        baseUnits[slot.idx] += 1;
+    }
+
+    itemInputs.forEach((inp, idx) => {
+        inp.value = scale === 1 ? baseUnits[idx] : roundMoney(baseUnits[idx] / scale);
+    });
+};
+
 /**
  * Open Shared Fee Entry/Edit Modal
  * @param {Object} options
@@ -264,8 +380,13 @@ export const openFeeEntryEditModal = (options = {}) => {
             classTag.textContent = `Class: ${uniqueClasses.join(', ') || '-'}`;
         }
     } else {
+        const includedList = Array.isArray(options.includedStudents) && options.includedStudents.length > 0
+            ? options.includedStudents
+            : null;
         if (namesEl) {
-            if (unit) {
+            if (includedList) {
+                namesEl.textContent = includedList.map((s, i) => `${includedList.length > 1 ? `${i + 1}. ` : ''}${s.name} (${s.class || '-'})`).join(', ');
+            } else if (unit) {
                 namesEl.textContent = unit.students.map((s, i) => `${unit.isGroup ? `${i + 1}. ` : ''}${s.name} (${s.class || s.studentClass || '-'})`).join(', ');
             } else if (student) {
                 namesEl.textContent = `${student.name} (Adm: ${student.adm || '-'})`;
@@ -274,10 +395,15 @@ export const openFeeEntryEditModal = (options = {}) => {
             }
         }
         if (guardianEl) {
-            guardianEl.textContent = unit?.guardian || student?.guardian || '--';
+            guardianEl.textContent = unit?.guardian || student?.guardian || existingPayment?.guardianName || includedList?.[0]?.guardian || '--';
         }
         if (classTag) {
-            classTag.textContent = unit ? `Class: ${unit.classes?.join(', ')}` : `Class: ${student?.class || '-'}`;
+            if (includedList) {
+                const clsTxt = [...new Set(includedList.map(s => s.class).filter(Boolean))].join(', ');
+                classTag.textContent = `Class: ${clsTxt || '-'}`;
+            } else {
+                classTag.textContent = unit ? `Class: ${unit.classes?.join(', ')}` : `Class: ${student?.class || '-'}`;
+            }
         }
     }
 
@@ -291,7 +417,9 @@ export const openFeeEntryEditModal = (options = {}) => {
         if (multiCountEl) multiCountEl.textContent = `${options.bulkItems.length} Selected`;
 
         multiListEl.innerHTML = options.bulkItems.map((item, idx) => {
-            const itemAmt = Number(isBulkEdit ? (item.payment?.amount ?? item.amount ?? 200) : (item.amount ?? 200));
+            const itemAmt = Number(isBulkEdit
+                ? (item.amount ?? resolveModalPaymentAmount(item.payment, 200))
+                : (item.amount ?? 200));
             return `
                 <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white border border-blue-200/80 shadow-2xs">
                     <div class="min-w-0 flex-1">
@@ -300,7 +428,7 @@ export const openFeeEntryEditModal = (options = {}) => {
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
                         <span class="text-[10px] font-bold text-slate-400">₹</span>
-                        <input type="number" class="bulk-item-amount-input w-20 px-2 py-1 text-right text-xs font-mono font-bold border border-slate-200 rounded-md focus:border-blue-500 outline-none" data-bulk-idx="${idx}" value="${itemAmt}">
+                        <input type="number" min="0" step="1" class="bulk-item-amount-input w-20 px-2 py-1 text-right text-xs font-mono font-bold border border-slate-200 rounded-md focus:border-blue-500 outline-none" data-bulk-idx="${idx}" data-default-amount="${itemAmt}" value="${itemAmt}">
                     </div>
                 </div>
             `;
@@ -312,7 +440,7 @@ export const openFeeEntryEditModal = (options = {}) => {
                 sum += Number(inp.value || 0);
             });
             const amtEl = document.getElementById('ledger-pay-amount');
-            if (amtEl) amtEl.value = sum;
+            if (amtEl) amtEl.value = roundMoney(sum);
         };
 
         multiListEl.querySelectorAll('.bulk-item-amount-input').forEach(inp => {
@@ -328,69 +456,184 @@ export const openFeeEntryEditModal = (options = {}) => {
     const studentsListEl = document.getElementById('ledger-pay-group-students-list');
     const countBadgeEl = document.getElementById('ledger-group-selected-count');
     const toggleAllBtn = document.getElementById('ledger-group-toggle-all-btn');
+    let groupDefaultCalculatedAmount = null;
 
     if (isGroup && unit?.students && unit.students.length > 0 && !isEdit) {
         if (scopeWrap) scopeWrap.classList.remove('hidden');
 
-        // Total fee & per-student calculation
-        const totalFee = Number(unit.fee || (200 * unit.students.length));
-        const defaultPerStudent = Math.round(totalFee / unit.students.length);
+        // Ensure group rate banner sits cleanly inside scopeWrap above the list
+        let rateBannerEl = document.getElementById('ledger-pay-group-rate-banner');
+        if (!rateBannerEl && scopeWrap && studentsListEl) {
+            rateBannerEl = document.createElement('div');
+            rateBannerEl.id = 'ledger-pay-group-rate-banner';
+            scopeWrap.insertBefore(rateBannerEl, studentsListEl);
+        }
+
+        const baseDefaultFee = Number(unit?.defaultFee || options?.defaultFee || window.defaultFee || 200);
+        const groupCollectiveFee = Number(unit.fee > 0 ? unit.fee : (baseDefaultFee * unit.students.length));
+
+        // Resolve already-paid members for this month/item & academic year
+        const candidatePayments = Array.isArray(window.MasterLedger?.ledgerPayments) && window.MasterLedger.ledgerPayments.length > 0
+            ? window.MasterLedger.ledgerPayments
+            : (Array.isArray(window.allPayments) ? window.allPayments : []);
+
+        const monthLower = String(effectiveMonth || '').trim().toLowerCase();
+        const monthPrefix = monthLower.replace(/^month[-_]/, '').slice(0, 3);
+        const matchesModalItem = (payment) => {
+            if (!payment) return false;
+            const pYear = String(payment.academicYear || '').trim();
+            if (pYear && effectiveYear && pYear !== effectiveYear) return false;
+            if (typeof window.isFeeItemMatch === 'function') {
+                if (window.isFeeItemMatch(payment.itemKey, { key: effectiveItemKey, type: canonicalItem.type || 'month', name: effectiveItemName })) {
+                    return true;
+                }
+            }
+            const pKey = String(payment.itemKey || '').trim().toLowerCase();
+            if (!pKey) return false;
+            if (pKey === effectiveItemKey.toLowerCase() || pKey === monthLower) return true;
+            if (monthPrefix.length === 3 && pKey.replace(/^month[-_]/, '').slice(0, 3) === monthPrefix) return true;
+            return false;
+        };
+
+        const paidMemberMap = new Map();
+        unit.students.forEach((s) => {
+            const matchedPay = candidatePayments.find((p) => {
+                if (!matchesModalItem(p)) return false;
+                if (p.studentId === s.id || (s.adm && p.admissionNo === s.adm)) return true;
+                if (unit.groupId && p.billingGroupId === unit.groupId) {
+                    if (Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 0) {
+                        return p.targetGroupMemberIds.includes(s.id);
+                    }
+                    return true;
+                }
+                return false;
+            });
+            if (matchedPay) {
+                paidMemberMap.set(s.id, matchedPay);
+            }
+        });
 
         let listHtml = '';
         unit.students.forEach((s, idx) => {
-            const studentFee = Number(s.fee || defaultPerStudent);
-            listHtml += `
-                <label class="flex items-center justify-between p-2 rounded-lg bg-white border border-amber-200/80 hover:bg-amber-100/40 cursor-pointer transition select-none group-student-row">
-                    <div class="flex items-center gap-2">
-                        <input type="checkbox" class="ledger-group-student-cb w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
-                            data-student-id="${escapeHtml(s.id)}"
-                            data-student-name="${escapeHtml(s.name)}"
-                            data-student-class="${escapeHtml(s.class || s.studentClass || '-')}"
-                            data-student-adm="${escapeHtml(s.adm || '')}"
-                            data-student-fee="${studentFee}"
-                            checked>
-                        <div>
-                            <div class="font-bold text-slate-800 text-xs">${idx + 1}. ${escapeHtml(s.name)}</div>
-                            <div class="text-[10px] text-slate-500">
-                                Class: <span class="font-semibold text-slate-700">${escapeHtml(s.class || s.studentClass || '-')}</span>
-                                ${s.adm ? ` | Adm: <span class="font-mono">${escapeHtml(s.adm)}</span>` : ''}
+            const hasConc = s.concessionFee !== undefined && s.concessionFee !== null && s.concessionFee !== '';
+            const memberIndivFee = hasConc ? Math.max(0, Number(s.concessionFee) || 0) : baseDefaultFee;
+            const paidRec = paidMemberMap.get(s.id);
+            const isAlreadyPaid = Boolean(paidRec);
+
+            if (isAlreadyPaid) {
+                const rcptTxt = paidRec.receiptNo ? `#${escapeHtml(String(paidRec.receiptNo))}` : 'Paid';
+                const paidAmt = Math.round(resolveModalPaymentAmount(paidRec, memberIndivFee));
+                const isSharedGrp = Boolean(paidRec.isGroupPrimary || paidRec.isGroupMirror || paidRec.billingGroupId || (Array.isArray(paidRec.targetGroupMemberIds) && paidRec.targetGroupMemberIds.length > 1));
+                listHtml += `
+                    <label class="flex items-center justify-between gap-2 p-2 rounded-lg bg-emerald-50/90 border border-emerald-300 cursor-not-allowed select-none opacity-90 group-student-row">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <input type="checkbox" class="ledger-group-student-cb w-4 h-4 text-emerald-600 rounded border-emerald-300 cursor-not-allowed flex-shrink-0"
+                                data-student-id="${escapeHtml(s.id)}"
+                                data-student-name="${escapeHtml(s.name)}"
+                                data-student-class="${escapeHtml(s.class || s.studentClass || '-')}"
+                                data-student-adm="${escapeHtml(s.adm || '')}"
+                                data-student-fee="${memberIndivFee}"
+                                data-already-paid="true"
+                                disabled>
+                            <div class="min-w-0">
+                                <div class="font-bold text-emerald-900 text-xs truncate">✓ ${idx + 1}. ${escapeHtml(s.name)}</div>
+                                <div class="text-[10px] text-emerald-700">
+                                    Class: <span class="font-semibold">${escapeHtml(s.class || s.studentClass || '-')}</span>
+                                    ${s.adm ? ` | Adm: <span class="font-mono">${escapeHtml(s.adm)}</span>` : ''}
+                                    <span> | ${hasConc ? 'Conc' : 'Indiv'}: ₹${memberIndivFee}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="text-right">
-                        <span class="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-xs border border-emerald-200/60">₹${studentFee}</span>
-                    </div>
-                </label>
-            `;
+                        <div class="text-right shrink-0">
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px] border border-emerald-300 font-mono">
+                                <i class="fas fa-check text-[8px]"></i> Paid ₹${paidAmt}${isSharedGrp ? ' (Grp)' : ''} · ${rcptTxt}
+                            </span>
+                        </div>
+                    </label>
+                `;
+            } else {
+                listHtml += `
+                    <label class="flex items-center justify-between gap-2 p-2 rounded-lg bg-white border border-amber-200/80 hover:bg-amber-100/40 cursor-pointer transition select-none group-student-row">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <input type="checkbox" class="ledger-group-student-cb w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+                                data-student-id="${escapeHtml(s.id)}"
+                                data-student-name="${escapeHtml(s.name)}"
+                                data-student-class="${escapeHtml(s.class || s.studentClass || '-')}"
+                                data-student-adm="${escapeHtml(s.adm || '')}"
+                                data-student-fee="${memberIndivFee}"
+                                data-already-paid="false"
+                                checked>
+                            <div class="min-w-0">
+                                <div class="font-bold text-slate-800 text-xs truncate">${idx + 1}. ${escapeHtml(s.name)}</div>
+                                <div class="text-[10px] text-slate-500">
+                                    Class: <span class="font-semibold text-slate-700">${escapeHtml(s.class || s.studentClass || '-')}</span>
+                                    ${s.adm ? ` | Adm: <span class="font-mono">${escapeHtml(s.adm)}</span>` : ''}
+                                    ${hasConc ? ` | <span class="text-amber-700 font-bold">Concession</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-bold text-[11px] font-mono border border-slate-200">₹${memberIndivFee}</span>
+                            <span class="text-[10px] font-bold text-red-600">Due</span>
+                        </div>
+                    </label>
+                `;
+            }
         });
         if (studentsListEl) studentsListEl.innerHTML = listHtml;
 
         const updateGroupSelectionState = () => {
-            const cbs = Array.from(document.querySelectorAll('.ledger-group-student-cb'));
-            const checkedCbs = cbs.filter(cb => cb.checked);
+            const selectableCbs = Array.from(document.querySelectorAll('.ledger-group-student-cb:not([data-already-paid="true"])'));
+            const checkedCbs = selectableCbs.filter(cb => cb.checked);
+            const totalMembersCount = unit.students.length;
+            const alreadyPaidCount = paidMemberMap.size;
+            const isFullCollectiveGroup = alreadyPaidCount === 0 && checkedCbs.length === totalMembersCount;
+
             let dynamicTotal = 0;
-            checkedCbs.forEach(cb => {
-                dynamicTotal += Number(cb.dataset.studentFee || defaultPerStudent);
-            });
+            if (isFullCollectiveGroup) {
+                dynamicTotal = groupCollectiveFee;
+            } else {
+                checkedCbs.forEach(cb => {
+                    dynamicTotal += Number(cb.dataset.studentFee || baseDefaultFee);
+                });
+            }
+            groupDefaultCalculatedAmount = dynamicTotal;
 
             const amtEl = document.getElementById('ledger-pay-amount');
             if (amtEl) amtEl.value = dynamicTotal;
 
+            if (rateBannerEl) {
+                if (isFullCollectiveGroup) {
+                    rateBannerEl.className = 'text-[10.5px] font-bold text-emerald-800 bg-emerald-100/80 border border-emerald-300 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2';
+                    rateBannerEl.innerHTML = `<span><i class="fas fa-users mr-1"></i>Group Rate Active (All ${totalMembersCount} members)</span><span class="font-mono font-extrabold text-emerald-900">₹${groupCollectiveFee}/mo</span>`;
+                } else if (checkedCbs.length > 0) {
+                    const reasonTag = alreadyPaidCount > 0
+                        ? `${alreadyPaidCount} paid · Collecting ${checkedCbs.length} due`
+                        : `Individual Rate (${checkedCbs.length} of ${totalMembersCount})`;
+                    rateBannerEl.className = 'text-[10.5px] font-bold text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2';
+                    rateBannerEl.innerHTML = `<span><i class="fas fa-user-check mr-1"></i>${reasonTag}</span><span class="font-mono font-extrabold text-blue-900">₹${dynamicTotal}</span>`;
+                } else {
+                    rateBannerEl.className = 'text-[10.5px] font-bold text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2';
+                    rateBannerEl.innerHTML = `<span><i class="fas fa-exclamation-circle mr-1"></i>Select at least 1 due member</span><span class="font-mono font-bold">₹0</span>`;
+                }
+            }
+
             if (countBadgeEl) {
-                if (checkedCbs.length === cbs.length) {
-                    countBadgeEl.textContent = `All Selected (${cbs.length})`;
+                if (isFullCollectiveGroup) {
+                    countBadgeEl.textContent = `All Selected (${totalMembersCount})`;
                     countBadgeEl.className = 'text-[10px] font-bold text-emerald-800 bg-emerald-100/90 px-1.5 py-0.5 rounded';
                 } else if (checkedCbs.length === 0) {
                     countBadgeEl.textContent = 'None Selected (0)';
                     countBadgeEl.className = 'text-[10px] font-bold text-rose-800 bg-rose-100/90 px-1.5 py-0.5 rounded';
                 } else {
-                    countBadgeEl.textContent = `${checkedCbs.length} of ${cbs.length} Selected`;
+                    countBadgeEl.textContent = `${checkedCbs.length} of ${totalMembersCount} Selected`;
                     countBadgeEl.className = 'text-[10px] font-bold text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded';
                 }
             }
 
             if (toggleAllBtn) {
-                toggleAllBtn.textContent = checkedCbs.length === cbs.length ? 'Deselect All' : 'Select All';
+                const allSelectableChecked = selectableCbs.length > 0 && checkedCbs.length === selectableCbs.length;
+                toggleAllBtn.textContent = allSelectableChecked ? 'Deselect All' : 'Select All';
             }
 
             const confirmBtn = document.getElementById('ledger-pay-confirm-btn');
@@ -400,20 +643,25 @@ export const openFeeEntryEditModal = (options = {}) => {
             }
         };
 
-        document.querySelectorAll('.ledger-group-student-cb').forEach(cb => {
+        document.querySelectorAll('.ledger-group-student-cb:not([data-already-paid="true"])').forEach(cb => {
             cb.addEventListener('change', updateGroupSelectionState);
         });
 
         if (toggleAllBtn) {
             toggleAllBtn.onclick = () => {
-                const cbs = Array.from(document.querySelectorAll('.ledger-group-student-cb'));
-                const allChecked = cbs.every(cb => cb.checked);
-                cbs.forEach(cb => { cb.checked = !allChecked; });
+                const selectableCbs = Array.from(document.querySelectorAll('.ledger-group-student-cb:not([data-already-paid="true"])'));
+                const allChecked = selectableCbs.length > 0 && selectableCbs.every(cb => cb.checked);
+                selectableCbs.forEach(cb => { cb.checked = !allChecked; });
                 updateGroupSelectionState();
             };
         }
+
+        // Apply initial accurate total (group fee or unpaid members sum)
+        updateGroupSelectionState();
     } else {
         if (scopeWrap) scopeWrap.classList.add('hidden');
+        const rateBannerEl = document.getElementById('ledger-pay-group-rate-banner');
+        if (rateBannerEl) rateBannerEl.remove();
     }
 
     // Receipt requirement indicator (Mandatory with red star vs Optional)
@@ -436,8 +684,10 @@ export const openFeeEntryEditModal = (options = {}) => {
 
     // Amount, Receipt, Date, Mode
     const defaultFeeAmount = isBulk
-        ? options.bulkItems.reduce((acc, item) => acc + Number(isBulkEdit ? (item.payment?.amount ?? item.amount ?? 200) : (item.amount ?? 200)), 0)
-        : (isEdit ? (existingPayment?.amount || 0) : (options.defaultAmount || unit?.fee || 200));
+        ? roundMoney(options.bulkItems.reduce((acc, item) => acc + Number(isBulkEdit ? (item.amount ?? resolveModalPaymentAmount(item.payment, 200)) : (item.amount ?? 200)), 0))
+        : (isEdit
+            ? resolveModalPaymentAmount(existingPayment, 0)
+            : (groupDefaultCalculatedAmount !== null ? groupDefaultCalculatedAmount : (options.defaultAmount ?? unit?.fee ?? 200)));
 
     const calculatedNextReceipt = getGlobalNextReceiptNumber();
     const nextReceipt = (isEdit || isBulkEdit)
@@ -455,11 +705,13 @@ export const openFeeEntryEditModal = (options = {}) => {
     const amtInput = document.getElementById('ledger-pay-amount');
     if (amtInput) {
         amtInput.value = defaultFeeAmount;
-        if (isBulk) {
-            amtInput.addEventListener('input', () => {
-                // Allow user to override total or individual inputs
-            }, { once: true });
-        }
+        amtInput.oninput = isBulk
+            ? () => {
+                const container = document.getElementById('ledger-pay-multi-items-list');
+                const itemInputs = container ? Array.from(container.querySelectorAll('.bulk-item-amount-input')) : [];
+                distributeAmountAcrossBulkInputs(amtInput.value, itemInputs);
+            }
+            : null;
     }
 
     const rcptInput = document.getElementById('ledger-pay-receipt');
@@ -528,6 +780,7 @@ export const closeFeeEntryEditModal = () => {
 const applyInstantCellUpdate = (targetCell, paymentData) => {
     if (!targetCell || !paymentData) return;
 
+    const paidAmtDisplay = Math.round(resolveModalPaymentAmount(paymentData, 0));
     const receiptDisplay = paymentData.receiptNo ? `R:${escapeHtml(paymentData.receiptNo)}` : 'Paid';
     const dateDisplay = paymentData.paymentDate
         ? new Date(paymentData.paymentDate).toLocaleDateString('en-GB')
@@ -538,14 +791,15 @@ const applyInstantCellUpdate = (targetCell, paymentData) => {
         targetCell.className = "p-1.5 text-center bg-emerald-50/70 border-r border-slate-200 cursor-pointer hover:bg-emerald-100/90 transition group";
         targetCell.dataset.feeAction = "view-receipt";
         targetCell.dataset.paymentId = paymentData.id || '';
-        targetCell.setAttribute('title', `Paid: ${receiptDisplay} on ${dateDisplay}`);
+        targetCell.setAttribute('title', `Paid ₹${paidAmtDisplay} (${receiptDisplay}) on ${dateDisplay}`);
         targetCell.innerHTML = `
             <div class="flex flex-col items-center justify-center gap-0.5">
                 <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200">
                     <i class="fas fa-check text-[8px]"></i> Paid
                 </span>
-                <span class="text-[10px] font-mono font-bold text-emerald-950">${receiptDisplay}</span>
-                <span class="text-[9px] text-emerald-600 font-medium">${dateDisplay}</span>
+                <span class="text-[10px] font-black font-mono tabular-nums text-emerald-900">₹${paidAmtDisplay}</span>
+                <span class="text-[9.5px] font-mono font-bold text-emerald-950">${receiptDisplay}</span>
+                <span class="text-[8.5px] text-emerald-600 font-medium">${dateDisplay}</span>
             </div>
         `;
     }
@@ -554,14 +808,15 @@ const applyInstantCellUpdate = (targetCell, paymentData) => {
         targetCell.className = "px-1.5 py-2 text-center border-r border-slate-200 bg-emerald-50/60 fee-cell-interactive cursor-pointer hover:bg-emerald-100 transition";
         targetCell.dataset.ledgerAction = "view-receipt";
         targetCell.dataset.paymentId = paymentData.id || '';
-        targetCell.setAttribute('title', `Paid: ${receiptDisplay} on ${dateDisplay}`);
+        targetCell.setAttribute('title', `Paid ₹${paidAmtDisplay} (${receiptDisplay}) on ${dateDisplay}`);
         targetCell.innerHTML = `
-            <div class="flex flex-col items-center justify-center gap-0.5">
-                <div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200">
-                    <i class="fas fa-check text-[8px]"></i> Paid
+            <div class="flex flex-col items-center justify-center">
+                <div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black border border-emerald-200 mb-0.5">
+                    <i class="fas fa-check text-[7px]"></i> Paid
                 </div>
-                <div class="text-[9px] font-mono font-bold text-emerald-850 truncate max-w-[85px] mt-0.5" title="${escapeHtml(paymentData.receiptNo || 'Paid')}">${receiptDisplay}</div>
-                <div class="text-[9px] text-emerald-600 font-medium">${dateDisplay}</div>
+                <div class="text-[10px] font-black font-mono tabular-nums text-emerald-900">₹${paidAmtDisplay}</div>
+                <div class="text-[9px] font-mono font-bold text-emerald-850 truncate max-w-[85px]" title="${escapeHtml(paymentData.receiptNo || 'Paid')}">${receiptDisplay}</div>
+                <div class="text-[8.5px] text-emerald-600 font-medium leading-tight">${dateDisplay}</div>
             </div>
         `;
     }
@@ -658,119 +913,267 @@ export const submitFeeEntryPayment = async () => {
 
             bulkItems.forEach((bItem, idx) => {
                 const inpEl = itemAmountInputs.find(el => Number(el.dataset.bulkIdx) === idx);
-                const itemAmt = inpEl ? Number(inpEl.value || 0) : Number(bItem.amount || 200);
+                const parsedItemAmt = inpEl ? Number(inpEl.value) : Number(bItem.amount ?? 200);
+                const finalAmt = (Number.isFinite(parsedItemAmt) && parsedItemAmt >= 0)
+                    ? roundMoney(parsedItemAmt)
+                    : roundMoney(bItem.amount ?? 200);
                 const itemAcademicYear = bItem.academicYear || academicYear;
                 const itemCleanYear = String(itemAcademicYear).replace(/[^\w-]/g, '_');
 
                 if (isBulkEdit && (bItem.payment?.id || bItem.paymentId)) {
                     const pId = bItem.payment?.id || bItem.paymentId;
-                    const payRef = doc(db, `${BASE_PATH}/payments`, pId);
-                    const finalAmt = itemAmt > 0 ? itemAmt : Number(bItem.payment?.amount || 200);
-                    const updatePayload = {
-                        amount: finalAmt,
-                        groupPaidAmount: finalAmt,
-                        receiptNo: receiptNo,
-                        paymentDate: paymentDate,
-                        paymentMode: mode,
-                        description: description,
-                        updatedAt: new Date().toISOString()
-                    };
-                    batch.set(payRef, updatePayload, { merge: true });
-                    if (itemAcademicYear) {
-                        batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, pId), updatePayload, { merge: true });
-                        batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, pId), updatePayload, { merge: true });
+                    const basePay = bItem.payment || { id: pId, itemKey: bItem.itemKey, academicYear: itemAcademicYear };
+                    const siblingDocs = findSiblingGroupPayments(basePay, []);
+                    if (siblingDocs.length > 1) {
+                        const primarySib = siblingDocs.find(p => p.isGroupPrimary)
+                            || siblingDocs.find(p => Number(p.amount || 0) > 0)
+                            || siblingDocs.find(p => p.id === pId)
+                            || siblingDocs[0];
+                        siblingDocs.forEach((sib) => {
+                            const isPrim = sib.id === primarySib.id;
+                            const updatePayload = {
+                                amount: isPrim ? finalAmt : 0,
+                                groupMonthAmount: finalAmt,
+                                groupPaidAmount: finalAmt,
+                                groupCoveredAmount: finalAmt,
+                                receiptNo: receiptNo,
+                                paymentDate: paymentDate,
+                                paymentMode: mode,
+                                description: description,
+                                updatedAt: new Date().toISOString()
+                            };
+                            batch.set(doc(db, `${BASE_PATH}/payments`, sib.id), updatePayload, { merge: true });
+                            if (itemAcademicYear) {
+                                batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, sib.id), updatePayload, { merge: true });
+                                batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, sib.id), updatePayload, { merge: true });
+                            }
+                            const rec = { ...sib, ...updatePayload };
+                            savedPaymentRecords.push({
+                                record: rec,
+                                cell: (sib.id === pId || isPrim) ? bItem.targetCellElement : null
+                            });
+                        });
+                    } else {
+                        const payRef = doc(db, `${BASE_PATH}/payments`, pId);
+                        const updatePayload = {
+                            amount: finalAmt,
+                            groupMonthAmount: finalAmt,
+                            groupPaidAmount: finalAmt,
+                            receiptNo: receiptNo,
+                            paymentDate: paymentDate,
+                            paymentMode: mode,
+                            description: description,
+                            updatedAt: new Date().toISOString()
+                        };
+                        batch.set(payRef, updatePayload, { merge: true });
+                        if (itemAcademicYear) {
+                            batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, pId), updatePayload, { merge: true });
+                            batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, pId), updatePayload, { merge: true });
+                        }
+                        const rec = {
+                            ...(bItem.payment || {}),
+                            id: pId,
+                            ...updatePayload
+                        };
+                        savedPaymentRecords.push({ record: rec, cell: bItem.targetCellElement });
                     }
-                    const rec = {
-                        ...(bItem.payment || {}),
-                        id: pId,
-                        ...updatePayload
-                    };
-                    savedPaymentRecords.push({ record: rec, cell: bItem.targetCellElement });
                 } else if (isBulkAdd) {
-                    const payRef = doc(collection(db, `${BASE_PATH}/payments`));
                     const canonicalItem = resolveCanonicalItem(bItem.itemKey, bItem.month, bItem.itemName, bItem.itemType || 'month', itemAcademicYear);
-                    const finalAmt = itemAmt > 0 ? itemAmt : Number(bItem.amount || 200);
-                    const paymentPayload = {
-                        studentId: bItem.studentId,
-                        studentName: bItem.studentName || 'Student',
-                        studentClass: bItem.studentClass || '-',
-                        classLabel: bItem.studentClass || '-',
-                        studentAdm: bItem.studentAdm || '',
-                        guardianName: bItem.guardian || '',
-                        amount: finalAmt,
-                        groupPaidAmount: finalAmt,
-                        receiptNo: receiptNo,
-                        itemKey: canonicalItem.key,
-                        itemName: canonicalItem.name || bItem.itemName || (bItem.month ? `${bItem.month} Tuition Fee` : 'Tuition Fee'),
-                        itemType: canonicalItem.type || bItem.itemType || 'month',
-                        paymentMode: mode,
-                        paymentDate: paymentDate,
-                        description: description,
-                        timestamp: Date.now(),
-                        transactionId: sharedTxnId,
-                        collectedBy: collectorKey,
-                        collectedByName: collectorDisplayName,
-                        academicYear: itemAcademicYear,
-                        status: 'FULL'
-                    };
-                    if (bItem.billingGroupId) {
-                        paymentPayload.billingGroupId = bItem.billingGroupId;
+                    const collectStudents = Array.isArray(bItem.collectStudents) && bItem.collectStudents.length > 0
+                        ? bItem.collectStudents
+                        : null;
+
+                    if (bItem.unit?.isGroup && collectStudents && collectStudents.length > 1) {
+                        const targetGroupMemberIds = collectStudents.map(s => s.id);
+                        collectStudents.forEach((stu, sIdx) => {
+                            const isPrimary = sIdx === 0;
+                            const payRef = doc(collection(db, `${BASE_PATH}/payments`));
+                            const sClass = (itemAcademicYear && stu.academicYears?.[itemAcademicYear]?.class) || stu.class || stu.studentClass || bItem.studentClass || '-';
+                            const paymentPayload = {
+                                studentId: stu.id,
+                                studentName: stu.name || 'Student',
+                                studentClass: sClass,
+                                classLabel: sClass,
+                                studentAdm: stu.adm || '',
+                                guardianName: bItem.guardian || bItem.unit?.guardian || '',
+                                amount: isPrimary ? finalAmt : 0,
+                                groupMonthAmount: finalAmt,
+                                groupPaidAmount: finalAmt,
+                                groupCoveredAmount: finalAmt,
+                                isGroupPrimary: isPrimary,
+                                isGroupMirror: !isPrimary,
+                                targetGroupMemberIds: targetGroupMemberIds,
+                                billingGroupId: bItem.billingGroupId || null,
+                                receiptNo: receiptNo,
+                                itemKey: canonicalItem.key,
+                                itemName: canonicalItem.name || bItem.itemName || (bItem.month ? `${bItem.month} Tuition Fee` : 'Tuition Fee'),
+                                itemType: canonicalItem.type || bItem.itemType || 'month',
+                                paymentMode: mode,
+                                paymentDate: paymentDate,
+                                description: description,
+                                timestamp: Date.now(),
+                                transactionId: sharedTxnId,
+                                collectedBy: collectorKey,
+                                collectedByName: collectorDisplayName,
+                                academicYear: itemAcademicYear,
+                                status: 'FULL'
+                            };
+                            batch.set(payRef, paymentPayload);
+                            batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, payRef.id), paymentPayload);
+                            batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, payRef.id), paymentPayload);
+                            savedPaymentRecords.push({
+                                record: { id: payRef.id, ...paymentPayload },
+                                cell: isPrimary ? bItem.targetCellElement : null
+                            });
+                        });
+                    } else {
+                        const payRef = doc(collection(db, `${BASE_PATH}/payments`));
+                        const paymentPayload = {
+                            studentId: bItem.studentId,
+                            studentName: bItem.studentName || 'Student',
+                            studentClass: bItem.studentClass || '-',
+                            classLabel: bItem.studentClass || '-',
+                            studentAdm: bItem.studentAdm || '',
+                            guardianName: bItem.guardian || '',
+                            amount: finalAmt,
+                            groupMonthAmount: finalAmt,
+                            groupPaidAmount: finalAmt,
+                            billingGroupId: bItem.billingGroupId || null,
+                            receiptNo: receiptNo,
+                            itemKey: canonicalItem.key,
+                            itemName: canonicalItem.name || bItem.itemName || (bItem.month ? `${bItem.month} Tuition Fee` : 'Tuition Fee'),
+                            itemType: canonicalItem.type || bItem.itemType || 'month',
+                            paymentMode: mode,
+                            paymentDate: paymentDate,
+                            description: description,
+                            timestamp: Date.now(),
+                            transactionId: sharedTxnId,
+                            collectedBy: collectorKey,
+                            collectedByName: collectorDisplayName,
+                            academicYear: itemAcademicYear,
+                            status: 'FULL'
+                        };
+                        batch.set(payRef, paymentPayload);
+                        batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, payRef.id), paymentPayload);
+                        batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, payRef.id), paymentPayload);
+                        const rec = { id: payRef.id, ...paymentPayload };
+                        savedPaymentRecords.push({ record: rec, cell: bItem.targetCellElement });
                     }
-                    batch.set(payRef, paymentPayload);
-                    batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, payRef.id), paymentPayload);
-                    batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, payRef.id), paymentPayload);
-                    const rec = { id: payRef.id, ...paymentPayload };
-                    savedPaymentRecords.push({ record: rec, cell: bItem.targetCellElement });
                 }
             });
             savedPaymentRecord = savedPaymentRecords[0]?.record || null;
         } else if (isEdit && existingPaymentId) {
-            // EDIT EXISTING PAYMENT
+            // EDIT EXISTING PAYMENT (Atomic primary + sibling mirror sync for group records)
             const canonicalEditItem = resolveCanonicalItem(itemKey, month, itemName, 'month', academicYear);
-            const payRef = doc(db, `${BASE_PATH}/payments`, existingPaymentId);
-            const updatePayload = {
-                studentId: studentId,
-                amount: amount,
-                groupPaidAmount: amount,
-                receiptNo: receiptNo,
-                paymentDate: paymentDate,
-                paymentMode: mode,
-                description: description,
-                itemKey: canonicalEditItem.key,
-                itemName: canonicalEditItem.name,
-                updatedAt: new Date().toISOString()
-            };
-            batch.set(payRef, updatePayload, { merge: true });
-            if (academicYear) {
-                batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, existingPaymentId), updatePayload, { merge: true });
-                batch.set(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, existingPaymentId), updatePayload, { merge: true });
-            }
-
-            savedPaymentRecord = {
-                ...(activeModalOptions?.payment || {}),
+            const basePayment = activeModalOptions?.payment || {
                 id: existingPaymentId,
-                transactionId: existingTxnId || activeModalOptions?.payment?.transactionId || existingPaymentId,
-                studentId: studentId,
-                studentName: studentName,
-                studentClass: studentClass,
-                classLabel: studentClass,
-                studentAdm: studentAdm,
+                transactionId: existingTxnId,
+                studentId,
+                studentName,
+                studentClass,
+                studentAdm,
                 itemKey: canonicalEditItem.key,
                 itemName: canonicalEditItem.name,
-                academicYear: academicYear,
-                collectedBy: activeModalOptions?.payment?.collectedBy || collectorKey,
-                collectedByName: activeModalOptions?.payment?.collectedByName || collectorDisplayName,
-                ...updatePayload
+                academicYear
             };
-            savedPaymentRecords.push({ record: savedPaymentRecord, cell: activeModalOptions?.targetCellElement });
+            const siblingDocs = findSiblingGroupPayments(basePayment, activeModalOptions?.relatedPayments || []);
+            const isGroupEdit = siblingDocs.length > 1 || Boolean(
+                basePayment.isGroupPrimary ||
+                basePayment.isGroupMirror ||
+                basePayment.billingGroupId ||
+                (Array.isArray(basePayment.targetGroupMemberIds) && basePayment.targetGroupMemberIds.length > 1)
+            );
+
+            if (isGroupEdit && siblingDocs.length > 1) {
+                const primarySib = siblingDocs.find(p => p.isGroupPrimary)
+                    || siblingDocs.find(p => Number(p.amount || 0) > 0)
+                    || siblingDocs.find(p => p.id === existingPaymentId)
+                    || siblingDocs[0];
+
+                siblingDocs.forEach((sib) => {
+                    const isPrim = sib.id === primarySib.id;
+                    const updatePayload = {
+                        amount: isPrim ? amount : 0,
+                        groupMonthAmount: amount,
+                        groupPaidAmount: amount,
+                        groupCoveredAmount: amount,
+                        receiptNo: receiptNo,
+                        paymentDate: paymentDate,
+                        paymentMode: mode,
+                        description: description,
+                        itemKey: canonicalEditItem.key,
+                        itemName: canonicalEditItem.name,
+                        updatedAt: new Date().toISOString()
+                    };
+                    batch.set(doc(db, `${BASE_PATH}/payments`, sib.id), updatePayload, { merge: true });
+                    if (academicYear) {
+                        batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, sib.id), updatePayload, { merge: true });
+                        batch.set(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, sib.id), updatePayload, { merge: true });
+                    }
+                    const rec = {
+                        ...sib,
+                        transactionId: sib.transactionId || existingTxnId || basePayment.transactionId || existingPaymentId,
+                        academicYear: sib.academicYear || academicYear,
+                        collectedBy: sib.collectedBy || collectorKey,
+                        collectedByName: sib.collectedByName || collectorDisplayName,
+                        ...updatePayload
+                    };
+                    savedPaymentRecords.push({
+                        record: rec,
+                        cell: (sib.id === existingPaymentId || isPrim) ? activeModalOptions?.targetCellElement : null
+                    });
+                    if (isPrim) savedPaymentRecord = rec;
+                });
+                if (!savedPaymentRecord) savedPaymentRecord = savedPaymentRecords[0]?.record || null;
+            } else {
+                const payRef = doc(db, `${BASE_PATH}/payments`, existingPaymentId);
+                const updatePayload = {
+                    studentId: studentId,
+                    amount: amount,
+                    groupMonthAmount: amount,
+                    groupPaidAmount: amount,
+                    receiptNo: receiptNo,
+                    paymentDate: paymentDate,
+                    paymentMode: mode,
+                    description: description,
+                    itemKey: canonicalEditItem.key,
+                    itemName: canonicalEditItem.name,
+                    updatedAt: new Date().toISOString()
+                };
+                batch.set(payRef, updatePayload, { merge: true });
+                if (academicYear) {
+                    batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, existingPaymentId), updatePayload, { merge: true });
+                    batch.set(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, existingPaymentId), updatePayload, { merge: true });
+                }
+
+                savedPaymentRecord = {
+                    ...(activeModalOptions?.payment || {}),
+                    id: existingPaymentId,
+                    transactionId: existingTxnId || activeModalOptions?.payment?.transactionId || existingPaymentId,
+                    studentId: studentId,
+                    studentName: studentName,
+                    studentClass: studentClass,
+                    classLabel: studentClass,
+                    studentAdm: studentAdm,
+                    itemKey: canonicalEditItem.key,
+                    itemName: canonicalEditItem.name,
+                    academicYear: academicYear,
+                    collectedBy: activeModalOptions?.payment?.collectedBy || collectorKey,
+                    collectedByName: activeModalOptions?.payment?.collectedByName || collectorDisplayName,
+                    ...updatePayload
+                };
+                savedPaymentRecords.push({ record: savedPaymentRecord, cell: activeModalOptions?.targetCellElement });
+            }
         } else {
-            // NEW PAYMENT ENTRY (Supports selecting individual child or all children from group)
+            // NEW PAYMENT ENTRY (Supports selecting individual child, partial subset, or full group)
             const unit = activeModalOptions?.unit || null;
-            const checkedStudentCbs = unit?.isGroup ? Array.from(document.querySelectorAll('.ledger-group-student-cb:checked')) : [];
+            const checkedStudentCbs = unit?.isGroup
+                ? Array.from(document.querySelectorAll('.ledger-group-student-cb:checked:not(:disabled):not([data-already-paid="true"])'))
+                : [];
             const isGroup = Boolean(unit?.isGroup);
 
             if (isGroup && checkedStudentCbs.length === 0) {
-                showToast('Please select at least one student from the group.', 'error');
+                showToast('Please select at least one unpaid student from the group.', 'error');
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fas fa-check mr-1"></i> Record Payment';
@@ -781,18 +1184,26 @@ export const submitFeeEntryPayment = async () => {
 
             const canonicalItem = resolveCanonicalItem(itemKey, month, itemName, 'month', academicYear);
             const newTxnId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+            const totalUnitMembers = isGroup && Array.isArray(unit?.students) ? unit.students.length : 1;
+            const alreadyPaidCount = isGroup
+                ? document.querySelectorAll('.ledger-group-student-cb[data-already-paid="true"]').length
+                : 0;
 
             if (isGroup && checkedStudentCbs.length > 1) {
-                // Record a group-linked payment per selected student (exact same structure as Fee Entry tab)
-                const billingGroupId = unit.groupId || null;
+                // Single Family Billing Entity / Subset Model (matches Fee Entry tab — primary gets amount, mirrors get 0)
+                const isAllGroupMembers = alreadyPaidCount === 0 && checkedStudentCbs.length === totalUnitMembers;
+                const billingGroupId = isAllGroupMembers ? (unit.groupId || null) : null;
                 const splitStudents = checkedStudentCbs.map(cb => ({
                     id: cb.dataset.studentId || studentId,
                     name: cb.dataset.studentName || studentName,
                     class: cb.dataset.studentClass || studentClass,
                     adm: cb.dataset.studentAdm || studentAdm
                 }));
+                const targetGroupMemberIds = splitStudents.map(s => s.id);
 
                 splitStudents.forEach((stu, idx) => {
+                    const isPrimary = idx === 0;
+                    const studentAmt = isPrimary ? amount : 0;
                     const payRef = doc(collection(db, `${BASE_PATH}/payments`));
                     const paymentPayload = {
                         studentId: stu.id,
@@ -801,9 +1212,14 @@ export const submitFeeEntryPayment = async () => {
                         classLabel: stu.class,
                         studentAdm: stu.adm,
                         guardianName: unit?.guardian || document.getElementById('ledger-pay-guardian')?.textContent || '',
-                        amount: amount,
+                        amount: studentAmt,
+                        groupMonthAmount: amount,
                         groupPaidAmount: amount,
                         groupCoveredAmount: amount,
+                        isGroupPrimary: isPrimary,
+                        isGroupMirror: !isPrimary,
+                        targetGroupMemberIds: targetGroupMemberIds,
+                        billingGroupId: billingGroupId,
                         receiptNo: receiptNo,
                         itemKey: canonicalItem.key,
                         itemName: canonicalItem.name || itemName,
@@ -818,16 +1234,13 @@ export const submitFeeEntryPayment = async () => {
                         academicYear: academicYear,
                         status: 'FULL'
                     };
-                    if (billingGroupId) {
-                        paymentPayload.billingGroupId = billingGroupId;
-                    }
                     batch.set(payRef, paymentPayload);
                     batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, payRef.id), paymentPayload);
                     batch.set(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, payRef.id), paymentPayload);
                     const rec = { id: payRef.id, ...paymentPayload };
                     savedPaymentRecords.push({
                         record: rec,
-                        cell: idx === 0 ? activeModalOptions?.targetCellElement : null
+                        cell: isPrimary ? activeModalOptions?.targetCellElement : null
                     });
                 });
                 savedPaymentRecord = savedPaymentRecords[0]?.record || null;
@@ -837,7 +1250,6 @@ export const submitFeeEntryPayment = async () => {
                 let effectiveStudentName = studentName;
                 let effectiveStudentClass = studentClass;
                 let effectiveStudentAdm = studentAdm;
-                let billingGroupId = null;
 
                 if (isGroup && checkedStudentCbs.length === 1) {
                     const singleCb = checkedStudentCbs[0];
@@ -845,9 +1257,9 @@ export const submitFeeEntryPayment = async () => {
                     effectiveStudentName = singleCb.dataset.studentName || studentName;
                     effectiveStudentClass = singleCb.dataset.studentClass || studentClass;
                     effectiveStudentAdm = singleCb.dataset.studentAdm || studentAdm;
-                    billingGroupId = unit.groupId || null;
                 }
 
+                // Single student / single checked member of a group -> billingGroupId stays null so siblings stay due
                 const paymentPayload = {
                     studentId: effectiveStudentId,
                     studentName: effectiveStudentName,
@@ -856,7 +1268,9 @@ export const submitFeeEntryPayment = async () => {
                     studentAdm: effectiveStudentAdm,
                     guardianName: unit?.guardian || document.getElementById('ledger-pay-guardian')?.textContent || '',
                     amount: amount,
+                    groupMonthAmount: amount,
                     groupPaidAmount: amount,
+                    billingGroupId: null,
                     receiptNo: receiptNo,
                     itemKey: canonicalItem.key,
                     itemName: canonicalItem.name || itemName,
@@ -871,10 +1285,6 @@ export const submitFeeEntryPayment = async () => {
                     academicYear: academicYear,
                     status: 'FULL'
                 };
-
-                if (billingGroupId) {
-                    paymentPayload.billingGroupId = billingGroupId;
-                }
 
                 batch.set(payRef, paymentPayload);
                 batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, payRef.id), paymentPayload);

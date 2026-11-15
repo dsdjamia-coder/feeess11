@@ -149,6 +149,70 @@ const getNextReceiptNumber = () => {
     return maxRcpt + 1;
 };
 
+// Resolve exact paid amount for a payment record (respects overrides/concessions & group mirror records)
+const resolveLedgerPaymentAmount = (p, fallbackFee = 200) => {
+    if (!p) return Number(fallbackFee || 0);
+    const isGroupedRec = Boolean(
+        p.billingGroupId ||
+        p.isGroupPrimary ||
+        p.isGroupMirror ||
+        (Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 1)
+    );
+    const gm = Number(p.groupMonthAmount ?? p.groupCoveredAmount ?? 0);
+    if (isGroupedRec && Number.isFinite(gm) && gm > 0) {
+        return gm;
+    }
+    if (p.isGroupMirror) {
+        const gp = Number(p.groupPaidAmount ?? 0);
+        if (Number.isFinite(gp) && gp > 0) return gp;
+    }
+    const amt = Number(p.amount);
+    if (Number.isFinite(amt) && amt >= 0) {
+        if (amt === 0 && Number(p.groupPaidAmount || 0) > 0) {
+            return Number(p.groupPaidAmount);
+        }
+        return amt;
+    }
+    return Number(fallbackFee || 0);
+};
+
+// Prefer primary records over mirror records when matching a student+month payment
+const findPreferredLedgerPayment = (predicate) => {
+    let fallbackMirror = null;
+    for (let i = 0; i < ledgerPayments.length; i++) {
+        const p = ledgerPayments[i];
+        if (!predicate(p)) continue;
+        if (!p.isGroupMirror) return p;
+        if (!fallbackMirror) fallbackMirror = p;
+    }
+    return fallbackMirror;
+};
+
+// Sum distinct member payments once per shared transaction/group so partial+remaining payments add accurately
+const resolveGroupPaidTotalAmount = (paidMemberEntries = [], fallbackGroupFee = 200) => {
+    if (!Array.isArray(paidMemberEntries) || paidMemberEntries.length === 0) {
+        return Number(fallbackGroupFee || 0);
+    }
+    const seenKeys = new Set();
+    let total = 0;
+    paidMemberEntries.forEach(({ member, payment }) => {
+        if (!payment) return;
+        const isGroupScoped = Boolean(
+            payment.billingGroupId ||
+            payment.isGroupPrimary ||
+            payment.isGroupMirror ||
+            (Array.isArray(payment.targetGroupMemberIds) && payment.targetGroupMemberIds.length > 1)
+        );
+        const dedupKey = isGroupScoped
+            ? `${payment.transactionId || payment.receiptNo || payment.id}__${String(payment.itemKey || '').toLowerCase()}__${payment.billingGroupId || 'subset'}`
+            : `${payment.id || `${payment.transactionId || payment.receiptNo}__${member?.id || payment.studentId}`}`;
+        if (seenKeys.has(dedupKey)) return;
+        seenKeys.add(dedupKey);
+        total += resolveLedgerPaymentAmount(payment, fallbackGroupFee);
+    });
+    return Math.round(total * 100) / 100;
+};
+
 // Group resolving logic
 const buildLedgerUnits = () => {
     const studentMap = new Map();
@@ -177,18 +241,24 @@ const buildLedgerUnits = () => {
 
             const monthStatus = {};
             ledgerAcademicMonths.forEach(month => {
-                const matchedPayment = ledgerPayments.find(p => {
+                const matchedPayment = findPreferredLedgerPayment(p => {
                     if (ledgerAcademicYear && p.academicYear && p.academicYear !== ledgerAcademicYear) return false;
-                    const isSelfPay = (p.studentId === s.id || (s.adm && p.admissionNo === s.adm)) && isMonthMatch(p.itemKey, month);
-                    const isGroupPay = isGroupMember && p.billingGroupId === grp.id && isMonthMatch(p.itemKey, month);
-                    const isSiblingPay = isGroupMember && Array.isArray(grp.memberIds) && grp.memberIds.includes(p.studentId) && isMonthMatch(p.itemKey, month);
-                    return isSelfPay || isGroupPay || isSiblingPay;
+                    if (!isMonthMatch(p.itemKey, month)) return false;
+                    const isSelfPay = p.studentId === s.id || (s.adm && p.admissionNo === s.adm);
+                    if (isSelfPay) return true;
+                    if (isGroupMember && p.billingGroupId === grp.id) {
+                        if (Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 0) {
+                            return p.targetGroupMemberIds.includes(s.id);
+                        }
+                        return true;
+                    }
+                    return false;
                 });
 
                 if (matchedPayment) {
                     monthStatus[month] = {
                         isPaid: true,
-                        amount: Number(matchedPayment.amount || indFee),
+                        amount: resolveLedgerPaymentAmount(matchedPayment, indFee),
                         receipt: matchedPayment.receiptNo || 'Paid',
                         date: matchedPayment.paymentDate || (matchedPayment.timestamp ? new Date(matchedPayment.timestamp).toLocaleDateString('en-GB') : '-'),
                         paymentId: matchedPayment.id || null
@@ -214,6 +284,7 @@ const buildLedgerUnits = () => {
                 groupId: grp?.id || null,
                 groupName,
                 groupFee,
+                defaultFee: ledgerDefaultFee,
                 students: [s],
                 classes: [sClass],
                 guardian: s.guardian || s.father || grp?.guardianName || 'Guardian',
@@ -247,27 +318,73 @@ const buildLedgerUnits = () => {
                 const guardianName = group.guardianName || primary.guardian || primary.father || 'Guardian';
                 const contactPhone = group.phone || primary.phone || primary.mobile || '';
 
-                // Calculate month payments for group
+                // Calculate month payments per group member accurately (handles full group & partial individual payments)
                 const monthStatus = {};
                 ledgerAcademicMonths.forEach(month => {
-                    const matchedPayment = ledgerPayments.find(p => {
-                        if (ledgerAcademicYear && p.academicYear && p.academicYear !== ledgerAcademicYear) return false;
-                        const isGroupPay = p.billingGroupId === group.id && isMonthMatch(p.itemKey, month);
-                        const isMemberPay = memberIds.includes(p.studentId) && isMonthMatch(p.itemKey, month);
-                        return isGroupPay || isMemberPay;
+                    const paidMemberEntries = [];
+                    const unpaidMembers = [];
+
+                    members.forEach(member => {
+                        const matchedPayment = findPreferredLedgerPayment(p => {
+                            if (ledgerAcademicYear && p.academicYear && p.academicYear !== ledgerAcademicYear) return false;
+                            if (!isMonthMatch(p.itemKey, month)) return false;
+                            if (p.studentId === member.id || (member.adm && p.admissionNo === member.adm)) return true;
+                            if (p.billingGroupId === group.id) {
+                                if (Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 0) {
+                                    return p.targetGroupMemberIds.includes(member.id);
+                                }
+                                return true;
+                            }
+                            return false;
+                        });
+                        if (matchedPayment) {
+                            paidMemberEntries.push({ member, payment: matchedPayment });
+                        } else {
+                            unpaidMembers.push(member);
+                        }
                     });
 
-                    if (matchedPayment) {
+                    if (unpaidMembers.length === 0 && paidMemberEntries.length > 0) {
+                        const primaryEntry = paidMemberEntries.find(e => !e.payment?.isGroupMirror) || paidMemberEntries[0];
+                        const firstPay = primaryEntry.payment;
                         monthStatus[month] = {
                             isPaid: true,
-                            amount: Number(matchedPayment.amount || groupFee),
-                            receipt: matchedPayment.receiptNo || 'Paid',
-                            date: matchedPayment.paymentDate || (matchedPayment.timestamp ? new Date(matchedPayment.timestamp).toLocaleDateString('en-GB') : '-'),
-                            paymentId: matchedPayment.id || null
+                            isPartial: false,
+                            paidMemberIds: paidMemberEntries.map(e => e.member.id),
+                            unpaidMemberIds: [],
+                            paidCount: paidMemberEntries.length,
+                            totalCount: members.length,
+                            amount: resolveGroupPaidTotalAmount(paidMemberEntries, groupFee),
+                            receipt: firstPay.receiptNo || 'Paid',
+                            date: firstPay.paymentDate || (firstPay.timestamp ? new Date(firstPay.timestamp).toLocaleDateString('en-GB') : '-'),
+                            paymentId: firstPay.id || null
+                        };
+                    } else if (paidMemberEntries.length > 0 && unpaidMembers.length > 0) {
+                        const unpaidIndivSum = unpaidMembers.reduce((sum, m) => {
+                            const hasConc = m.concessionFee !== undefined && m.concessionFee !== null && m.concessionFee !== '';
+                            return sum + (hasConc ? Number(m.concessionFee) : ledgerDefaultFee);
+                        }, 0);
+                        const firstPay = paidMemberEntries[0].payment;
+                        monthStatus[month] = {
+                            isPaid: false,
+                            isPartial: true,
+                            paidMemberIds: paidMemberEntries.map(e => e.member.id),
+                            unpaidMemberIds: unpaidMembers.map(m => m.id),
+                            paidCount: paidMemberEntries.length,
+                            totalCount: members.length,
+                            due: unpaidIndivSum,
+                            receipt: firstPay.receiptNo || '',
+                            date: firstPay.paymentDate || '',
+                            paymentId: firstPay.id || null
                         };
                     } else {
                         monthStatus[month] = {
                             isPaid: false,
+                            isPartial: false,
+                            paidMemberIds: [],
+                            unpaidMemberIds: members.map(m => m.id),
+                            paidCount: 0,
+                            totalCount: members.length,
                             due: groupFee,
                             receipt: '',
                             date: ''
@@ -277,7 +394,7 @@ const buildLedgerUnits = () => {
 
                 const unpaidMonths = ledgerAcademicMonths.filter(m => !monthStatus[m]?.isPaid);
                 const unpaidMonthsCount = unpaidMonths.length;
-                const totalDue = unpaidMonthsCount * groupFee;
+                const totalDue = unpaidMonths.reduce((sum, m) => sum + Number(monthStatus[m]?.due ?? groupFee), 0);
 
                 units.push({
                     id: `group_${group.id}`,
@@ -285,6 +402,7 @@ const buildLedgerUnits = () => {
                     isGroupMember: false,
                     groupId: group.id,
                     groupName: group.name || 'Family Group',
+                    defaultFee: ledgerDefaultFee,
                     students: members,
                     classes: members.map(m => ((filters.academicYear || ledgerAcademicYear) && m.academicYears?.[filters.academicYear || ledgerAcademicYear]?.class) || m.class || m.studentClass || '-'),
                     guardian: guardianName,
@@ -310,7 +428,7 @@ const buildLedgerUnits = () => {
 
                 const monthStatus = {};
                 ledgerAcademicMonths.forEach(month => {
-                    const matchedPayment = ledgerPayments.find(p => {
+                    const matchedPayment = findPreferredLedgerPayment(p => {
                         if (ledgerAcademicYear && p.academicYear && p.academicYear !== ledgerAcademicYear) return false;
                         return (p.studentId === s.id || (s.adm && p.admissionNo === s.adm)) && isMonthMatch(p.itemKey, month);
                     });
@@ -318,7 +436,7 @@ const buildLedgerUnits = () => {
                     if (matchedPayment) {
                         monthStatus[month] = {
                             isPaid: true,
-                            amount: Number(matchedPayment.amount || indFee),
+                            amount: resolveLedgerPaymentAmount(matchedPayment, indFee),
                             receipt: matchedPayment.receiptNo || 'Paid',
                             date: matchedPayment.paymentDate || (matchedPayment.timestamp ? new Date(matchedPayment.timestamp).toLocaleDateString('en-GB') : '-'),
                             paymentId: matchedPayment.id || null
@@ -695,9 +813,10 @@ const renderLedgerTable = (options = {}) => {
                     const selRing = isSelected ? 'ring-2 ring-blue-500 ring-inset bg-blue-50/70' : '';
 
                     if (st.isPaid) {
+                        const paidAmtDisplay = Math.round(Number(st.amount ?? unit.fee ?? 0));
                         return `
                             <td class="px-1.5 py-2 text-center border-r border-slate-200 bg-emerald-50/50 fee-cell-interactive cursor-pointer hover:bg-emerald-100 transition relative ${selRing}"
-                                data-ledger-action="view-receipt" data-payment-id="${st.paymentId || ''}" data-unit-id="${unit.id}" data-month="${month}" title="Click to view receipt or tick checkbox to bulk edit">
+                                data-ledger-action="view-receipt" data-payment-id="${st.paymentId || ''}" data-unit-id="${unit.id}" data-month="${month}" title="Paid ₹${paidAmtDisplay} (${escapeHtml(st.receipt || 'Paid')}) • Click to view receipt or tick checkbox to bulk edit">
                                 <div class="flex items-center justify-between mb-0.5 px-0.5">
                                     <input type="checkbox" class="ledger-cell-select-cb w-3.5 h-3.5 rounded border-emerald-400 text-amber-600 focus:ring-amber-500 cursor-pointer"
                                         data-sel-key="${escapeHtml(selKey)}"
@@ -712,8 +831,34 @@ const renderLedgerTable = (options = {}) => {
                                     </div>
                                 </div>
                                 <div class="flex flex-col items-center justify-center">
+                                    <div class="text-[10px] font-black font-mono tabular-nums text-emerald-900">₹${paidAmtDisplay}</div>
                                     <div class="text-[9px] font-mono font-bold text-emerald-850 truncate max-w-[85px]" title="${escapeHtml(st.receipt)}">${st.receipt ? `R:${escapeHtml(st.receipt)}` : 'Paid'}</div>
-                                    <div class="text-[9px] text-emerald-600 font-medium">${escapeHtml(st.date)}</div>
+                                    <div class="text-[8.5px] text-emerald-600 font-medium leading-tight">${escapeHtml(st.date)}</div>
+                                </div>
+                            </td>
+                        `;
+                    }
+
+                    if (st.isPartial) {
+                        const dueFeeAttr = Number(st.due ?? unit.fee ?? ledgerDefaultFee);
+                        return `
+                            <td class="px-1.5 py-2 text-center border-r border-slate-200 bg-amber-50/70 fee-cell-interactive cursor-pointer hover:bg-amber-100/70 transition relative ${selRing}"
+                                data-ledger-action="pay-fee" data-unit-id="${unit.id}" data-month="${month}" data-fee="${dueFeeAttr}" title="Partial payment (${st.paidCount}/${st.totalCount} paid). Click to collect remaining dues">
+                                <div class="flex items-center justify-between mb-1 px-0.5">
+                                    <input type="checkbox" class="ledger-cell-select-cb w-3.5 h-3.5 rounded border-amber-400 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                        data-sel-key="${escapeHtml(selKey)}"
+                                        data-unit-id="${escapeHtml(unit.id)}"
+                                        data-month="${escapeHtml(month)}"
+                                        data-sel-type="pay"
+                                        data-fee="${dueFeeAttr}"
+                                        ${isSelected ? 'checked' : ''}
+                                        title="Select to collect remaining dues">
+                                    <span class="text-[9px] font-black text-amber-700">${st.paidCount}/${st.totalCount} Paid</span>
+                                </div>
+                                <div class="flex flex-col items-center justify-center">
+                                    <button type="button" class="ledger-quick-pay-btn w-full py-0.5 bg-amber-500 hover:bg-amber-600 text-white rounded-md font-bold text-[10px] transition shadow-2xs">
+                                        Collect
+                                    </button>
                                 </div>
                             </td>
                         `;
@@ -986,37 +1131,50 @@ const openLedgerBulkActionModal = (actionType = 'pay') => {
         const primaryStudent = unit.students[0] || {};
 
         if (actionType === 'pay') {
+            const monthState = unit.monthStatus?.[sel.month];
+            const unpaidIds = Array.isArray(monthState?.unpaidMemberIds) ? monthState.unpaidMemberIds : null;
+            const collectStudents = (unit.isGroup && unpaidIds && unpaidIds.length > 0)
+                ? unit.students.filter(s => unpaidIds.includes(s.id))
+                : unit.students;
+            const collectNames = collectStudents.map(s => s.name).join(', ');
+            const collectClasses = collectStudents.map(s => ((filters.academicYear || ledgerAcademicYear) && s.academicYears?.[filters.academicYear || ledgerAcademicYear]?.class) || s.class || s.studentClass || '-').join(', ');
+            const targetPrimary = collectStudents[0] || primaryStudent;
+
             bulkItems.push({
                 unitId: unit.id,
-                studentId: primaryStudent.id || unit.id,
-                studentName: unit.isGroup ? `${studentNames} (Group)` : studentNames,
-                studentClass: studentClasses,
-                studentAdm: unit.students.map(s => s.adm).filter(Boolean).join(', '),
+                unit: unit,
+                collectStudents: collectStudents,
+                isPartialGroup: Boolean(unit.isGroup && monthState?.isPartial),
+                studentId: targetPrimary.id || unit.id,
+                studentName: unit.isGroup ? `${collectNames} (${monthState?.isPartial ? 'Due Members' : 'Group'})` : collectNames,
+                studentClass: collectClasses || studentClasses,
+                studentAdm: collectStudents.map(s => s.adm).filter(Boolean).join(', '),
                 guardian: unit.guardian || '',
-                billingGroupId: unit.isGroup ? unit.groupId : null,
+                billingGroupId: (unit.isGroup && !monthState?.isPartial && collectStudents.length === unit.students.length) ? unit.groupId : null,
                 month: sel.month,
                 itemKey: sel.month.toLowerCase(),
-                itemName: unit.isGroup ? `${sel.month} Tuition Fee (Family Group)` : `${sel.month} Tuition Fee`,
+                itemName: unit.isGroup ? `${sel.month} Tuition Fee (${monthState?.isPartial ? 'Remaining Group Members' : 'Family Group'})` : `${sel.month} Tuition Fee`,
                 itemType: 'month',
-                amount: Number(unit.fee || sel.fee || ledgerDefaultFee || 200),
+                amount: Number(sel.fee ?? (monthState?.isPartial ? monthState.due : unit.fee) ?? ledgerDefaultFee ?? 200),
                 academicYear: ledgerAcademicYear,
                 targetCellElement: cellEl
             });
         } else if (actionType === 'edit') {
             const mIds = unit.students.map(s => s.id);
-            const payment = ledgerPayments.find(p => (sel.paymentId && p.id === sel.paymentId) || ((p.billingGroupId === unit.groupId || mIds.includes(p.studentId)) && isMonthMatch(p.itemKey, sel.month)));
+            const payment = findPreferredLedgerPayment(p => (sel.paymentId && p.id === sel.paymentId) || ((p.billingGroupId === unit.groupId || mIds.includes(p.studentId)) && isMonthMatch(p.itemKey, sel.month)));
             if (payment) {
                 bulkItems.push({
                     paymentId: payment.id,
                     payment: payment,
+                    unit: unit,
                     studentId: payment.studentId || primaryStudent.id,
-                    studentName: payment.studentName || studentNames,
+                    studentName: unit.isGroup ? `${studentNames} (Group)` : (payment.studentName || studentNames),
                     studentClass: payment.studentClass || studentClasses,
                     guardian: unit.guardian || payment.guardianName || '',
                     month: sel.month,
                     itemKey: payment.itemKey || sel.month.toLowerCase(),
                     itemName: payment.itemName || `${sel.month} Tuition Fee`,
-                    amount: Number(payment.amount || unit.fee || 200),
+                    amount: resolveLedgerPaymentAmount(payment, unit.fee || 200),
                     academicYear: payment.academicYear || ledgerAcademicYear,
                     targetCellElement: cellEl
                 });
@@ -1043,6 +1201,10 @@ const openLedgerBulkActionModal = (actionType = 'pay') => {
 // Open Quick Pay Modal for recording new payment in Master Ledger
 export const openQuickPayModal = (unit, month, targetCellElement = null) => {
     if (!unit) return;
+    const monthState = unit.monthStatus?.[month];
+    const effectiveDefault = unit.isGroup && monthState?.isPartial && Number.isFinite(Number(monthState.due))
+        ? Number(monthState.due)
+        : unit.fee;
     openFeeEntryEditModal({
         source: 'master-ledger',
         mode: 'add',
@@ -1050,7 +1212,8 @@ export const openQuickPayModal = (unit, month, targetCellElement = null) => {
         month: month,
         itemKey: month.toLowerCase(),
         itemName: `${month} Tuition Fee`,
-        defaultAmount: unit.fee,
+        defaultAmount: effectiveDefault,
+        defaultFee: ledgerDefaultFee,
         targetCellElement: targetCellElement,
         academicYear: ledgerAcademicYear
     });

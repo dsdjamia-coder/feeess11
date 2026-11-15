@@ -2610,9 +2610,19 @@ const buildSelectedItemsForCurrentStudent = () => {
 const getStudentBillingGroup = (studentId = '') => studentGroups.find((g) => Array.isArray(g.memberIds) && g.memberIds.includes(studentId));
 
 const roundMoney = (value = 0) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-const getPaymentBillingKey = (payment = {}) => payment.billingGroupId && getPaymentItemType(payment) === 'month'
-    ? `${getPaymentGroupKey(payment)}__${payment.itemKey || ''}__${payment.academicYear || ''}__${payment.billingGroupId}`
-    : `${getPaymentGroupKey(payment)}__${payment.studentId || ''}__${payment.itemKey || ''}__${payment.academicYear || ''}`;
+const getPaymentBillingKey = (payment = {}) => {
+    const isGroupedMonthly = getPaymentItemType(payment) === 'month' && (
+        Boolean(payment.billingGroupId)
+        || Boolean(payment.isGroupPrimary)
+        || Boolean(payment.isGroupMirror)
+        || (Array.isArray(payment.targetGroupMemberIds) && payment.targetGroupMemberIds.length > 1)
+    );
+    if (isGroupedMonthly) {
+        const groupToken = payment.billingGroupId || (Array.isArray(payment.targetGroupMemberIds) ? [...payment.targetGroupMemberIds].sort().join(',') : 'grp');
+        return `${getPaymentGroupKey(payment)}__${payment.itemKey || ''}__${payment.academicYear || ''}__${groupToken}`;
+    }
+    return `${getPaymentGroupKey(payment)}__${payment.studentId || ''}__${payment.itemKey || ''}__${payment.academicYear || ''}`;
+};
 const getCurrentEffectiveMonthlyFee = () => {
     const st = getStudentById(selectedStudentId);
     if (!st) return defaultFee;
@@ -2656,13 +2666,25 @@ const getCurrentEffectiveMonthlyFee = () => {
 };
 
 const getMonthlyReportPaymentAmount = (payment = {}) => {
-    if (getPaymentItemType(payment) !== 'month' || !payment.billingGroupId) return roundMoney(payment.amount || 0);
+    const isGroupedMonthly = getPaymentItemType(payment) === 'month' && (
+        Boolean(payment.billingGroupId)
+        || Boolean(payment.isGroupPrimary)
+        || Boolean(payment.isGroupMirror)
+        || (Array.isArray(payment.targetGroupMemberIds) && payment.targetGroupMemberIds.length > 1)
+    );
+    if (!isGroupedMonthly) return roundMoney(payment.amount || 0);
     if (payment.groupMonthAmount !== undefined && payment.groupMonthAmount !== null && Number(payment.groupMonthAmount) > 0) {
         return roundMoney(payment.groupMonthAmount);
     }
-    const billingGroup = studentGroups.find((group) => group.id === payment.billingGroupId);
-    const groupFee = Number(billingGroup?.fee || 0);
-    return roundMoney(groupFee > 0 ? groupFee : payment.amount || 0);
+    if (!payment.isGroupMirror && Number(payment.amount || 0) > 0) {
+        return roundMoney(payment.amount);
+    }
+    if (payment.billingGroupId) {
+        const billingGroup = studentGroups.find((group) => group.id === payment.billingGroupId);
+        const groupFee = Number(billingGroup?.fee || 0);
+        if (groupFee > 0) return roundMoney(groupFee);
+    }
+    return roundMoney(payment.amount || 0);
 };
 const sumReportPaymentsOnce = (payments = [], predicate = () => true) => {
     const seenBillingKeys = new Set();
@@ -2961,10 +2983,15 @@ const syncFeeItemCardsGroupState = (options = {}) => {
                 const customInput = card?.querySelector('.custom-fee-amount-input');
                 const customCfg = getSelectedMembersCustomFeeConfig(currentItemObj, selectedGroupMemberIds, selectedFeeAcademicYear);
                 if (customInput) {
-                    customInput.dataset.locked = customCfg.amountLocked ? 'true' : 'false';
-                    customInput.readOnly = customCfg.amountLocked;
-                    customInput.classList.remove('hidden');
-                    if (customCfg.amountLocked) {
+                    customInput.dataset.locked = 'false';
+                    customInput.dataset.defaultAmount = customCfg.defaultAmount !== '' ? String(customCfg.defaultAmount) : '';
+                    customInput.readOnly = false;
+                    customInput.classList.remove('hidden', 'bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                    customInput.classList.add('bg-white');
+                    if ((pending?.manualEdited || customInput.dataset.manualEdited === 'true') && Number.isFinite(Number(pending?.amount))) {
+                        customInput.value = pending.amount;
+                        customInput.dataset.manualEdited = 'true';
+                    } else if (customCfg.defaultAmount !== '') {
                         customInput.value = customCfg.defaultAmount;
                     } else if (Number.isFinite(Number(pending?.amount))) {
                         customInput.value = pending.amount;
@@ -2975,17 +3002,25 @@ const syncFeeItemCardsGroupState = (options = {}) => {
                 const monthInput = card?.querySelector('.month-fee-amount-input');
                 if (monthWrap) monthWrap.classList.remove('hidden');
                 if (monthInput) {
-                    monthInput.value = getCurrentEffectiveMonthlyFee();
+                    if ((pending?.manualEdited || monthInput.dataset.manualEdited === 'true') && Number.isFinite(Number(pending?.amount))) {
+                        monthInput.value = pending.amount;
+                        monthInput.dataset.manualEdited = 'true';
+                    } else {
+                        monthInput.value = getCurrentEffectiveMonthlyFee();
+                    }
                 }
             }
         } else if (itemType === 'custom') {
             const customInput = card?.querySelector('.custom-fee-amount-input');
             const customCfg = getSelectedMembersCustomFeeConfig(currentItemObj, selectedGroupMemberIds, selectedFeeAcademicYear);
             if (customInput) {
-                customInput.dataset.locked = customCfg.amountLocked ? 'true' : 'false';
-                customInput.readOnly = customCfg.amountLocked;
+                customInput.dataset.locked = 'false';
+                customInput.dataset.defaultAmount = customCfg.defaultAmount !== '' ? String(customCfg.defaultAmount) : '';
+                customInput.readOnly = false;
                 customInput.classList.add('hidden');
-                if (customCfg.amountLocked) customInput.value = customCfg.defaultAmount;
+                if (customInput.dataset.manualEdited !== 'true' && customCfg.defaultAmount !== '') {
+                    customInput.value = customCfg.defaultAmount;
+                }
             }
         }
     });
@@ -3126,12 +3161,25 @@ const onGroupMemberSelectionChanged = () => {
     const effectiveFee = getCurrentEffectiveMonthlyFee();
     if (pendingFeeSelectionsByYear[selectedFeeAcademicYear]) {
         Object.entries(pendingFeeSelectionsByYear[selectedFeeAcademicYear]).forEach(([key, sel]) => {
-            if (sel?.checked && sel.type === 'month') {
-                const cb = document.querySelector(`.fee-item-checkbox[data-item-key="${key}"]`);
-                if (cb && !cb.disabled) {
+            if (!sel?.checked) return;
+            const cb = document.querySelector(`.fee-item-checkbox[data-item-key="${key}"]`);
+            if (!cb || cb.disabled) return;
+            if (sel.type === 'month') {
+                const monthInput = document.querySelector(`.month-fee-amount-input[data-item-key="${key}"]`);
+                if (monthInput && monthInput.dataset.manualEdited !== 'true') {
                     sel.amount = effectiveFee;
-                    const monthInput = document.querySelector(`.month-fee-amount-input[data-item-key="${key}"]`);
-                    if (monthInput) monthInput.value = effectiveFee;
+                    monthInput.value = effectiveFee;
+                }
+            } else if (sel.type === 'custom') {
+                const card = cb.closest('.fee-month-item-card');
+                const customInput = card?.querySelector('.custom-fee-amount-input');
+                const itemObj = feeItems.find(i => i.key === key);
+                if (customInput && customInput.dataset.manualEdited !== 'true' && itemObj) {
+                    const customCfg = getSelectedMembersCustomFeeConfig(itemObj, selectedGroupMemberIds, selectedFeeAcademicYear);
+                    if (customCfg.defaultAmount !== '') {
+                        sel.amount = Number(customCfg.defaultAmount);
+                        customInput.value = customCfg.defaultAmount;
+                    }
                 }
             }
         });
@@ -3202,7 +3250,7 @@ const addCurrentStudentToMultiQueue = () => {
     const selected = buildSelectedItemsForCurrentStudent();
     if (!selected.length) return alert('Please select at least one fee item.');
     const st = getStudentById(selectedStudentId);
-    const total = selected.reduce((sum, item) => sum + Number(item.itemType === 'month' ? getCurrentEffectiveMonthlyFee() : (item.amount || 0)), 0);
+    const total = roundMoney(calculateEntryTotalForStudent(selected, selectedStudentId));
     multiEntryQueue.push({ studentId: selectedStudentId, studentName: st?.name || 'Student', classLabel: st?.class || '', items: selected, total });
     resetStudentSelection();
     document.getElementById('total-amount').value = 0;
@@ -3609,19 +3657,24 @@ const captureCurrentYearFeeSelections = () => {
         const card = cb.closest('.fee-month-item-card') || cb.closest('.relative');
         const isMonth = (cb.dataset.itemType || 'month') === 'month';
         let itemAmount = 0;
+        let isManualEdited = false;
         if (isMonth) {
             const monthInput = card?.querySelector('.month-fee-amount-input');
             const parsedVal = parseFloat(monthInput?.value);
             itemAmount = Number.isFinite(parsedVal) && parsedVal >= 0 ? parsedVal : getCurrentEffectiveMonthlyFee();
+            isManualEdited = monthInput?.dataset.manualEdited === 'true';
         } else {
             const customInput = card?.querySelector('.custom-fee-amount-input');
-            itemAmount = Number(customInput?.value || 0);
+            const parsedVal = parseFloat(customInput?.value);
+            itemAmount = Number.isFinite(parsedVal) && parsedVal >= 0 ? parsedVal : 0;
+            isManualEdited = customInput?.dataset.manualEdited === 'true';
         }
 
         yearSelections[cb.dataset.itemKey] = {
             checked: cb.checked,
             type: cb.dataset.itemType || 'month',
-            amount: Math.max(0, itemAmount)
+            amount: Math.max(0, roundMoney(itemAmount)),
+            manualEdited: isManualEdited
         };
     });
     pendingFeeSelectionsByYear[selectedFeeAcademicYear] = yearSelections;
@@ -3712,11 +3765,9 @@ const populateFeeItemSelection = () => {
 
     const renderFeeOption = (item) => {
         let defaultAmt = '';
-        let amountLocked = false;
         if (item.type === 'custom' && st) {
             const customCfg = getSelectedMembersCustomFeeConfig(item, selectedGroupMemberIds, selectedFeeAcademicYear);
             defaultAmt = customCfg.defaultAmount;
-            amountLocked = customCfg.amountLocked;
         }
 
         const itemYear = item.academicYear || '--';
@@ -3737,11 +3788,13 @@ const populateFeeItemSelection = () => {
                 <div class="relative">
                     <span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-green-700">₹</span>
                     <input type="number" step="any" min="0" data-item-key="${item.key}"
-                           class="month-fee-amount-input w-full p-1 pl-5 text-xs font-bold border border-green-300 rounded-md shadow-sm text-center bg-white text-green-900 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                           class="month-fee-amount-input w-full p-1 pl-5 text-xs font-bold border border-green-300 rounded-md shadow-sm text-center bg-white text-green-900 focus:ring-1 focus:ring-green-500 focus:outline-none tabular-nums"
                            placeholder="Amount">
                 </div>
             </div>` : `
-            <input type="number" data-locked="${amountLocked ? 'true' : 'false'}" ${amountLocked ? 'readonly' : ''} class="custom-fee-amount-input hidden w-full mt-1 sm:mt-1.5 p-1 sm:p-1.5 text-xs font-medium border rounded-md shadow-sm text-center ${amountLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50'}" placeholder="₹ Amount" value="${defaultAmt}">
+            <div class="custom-amount-wrapper">
+                <input type="number" step="any" min="0" data-locked="false" data-default-amount="${defaultAmt}" class="custom-fee-amount-input hidden w-full mt-1 sm:mt-1.5 p-1 sm:p-1.5 text-xs font-bold border border-amber-300 rounded-md shadow-sm text-center bg-white text-slate-900 focus:ring-1 focus:ring-emerald-500 focus:outline-none tabular-nums" placeholder="₹ Amount" value="${defaultAmt}">
+            </div>
             `}
         </div>`;
     };
@@ -3795,12 +3848,16 @@ const populateFeeItemSelection = () => {
                         if (customInput) {
                             customInput.classList.remove('hidden');
                             if (Number.isFinite(Number(pending.amount))) customInput.value = pending.amount;
+                            if (pending.manualEdited) customInput.dataset.manualEdited = 'true';
                         }
                     } else {
                         const monthWrap = cb.closest('.fee-month-item-card')?.querySelector('.month-amount-wrapper');
                         const monthInput = cb.closest('.fee-month-item-card')?.querySelector('.month-fee-amount-input');
                         if (monthWrap) monthWrap.classList.remove('hidden');
-                        if (monthInput) monthInput.value = Number.isFinite(Number(pending.amount)) ? pending.amount : getCurrentEffectiveMonthlyFee();
+                        if (monthInput) {
+                            monthInput.value = Number.isFinite(Number(pending.amount)) ? pending.amount : getCurrentEffectiveMonthlyFee();
+                            if (pending.manualEdited) monthInput.dataset.manualEdited = 'true';
+                        }
                     }
                 }
             });
@@ -3816,6 +3873,7 @@ const populateFeeItemSelection = () => {
 
 document.getElementById('fee-item-selection-container')?.addEventListener('input', e => {
     if(e.target.classList.contains('custom-fee-amount-input') || e.target.classList.contains('month-fee-amount-input')) {
+        e.target.dataset.manualEdited = 'true';
         updateTotalAmount();
     }
 });
@@ -3839,17 +3897,23 @@ document.getElementById('fee-item-selection-container')?.addEventListener('chang
             const input = card?.querySelector('.custom-fee-amount-input');
             if(input) {
                 const itemObj = feeItems.find(i => i.key === itemKey);
+                let resolvedDefault = input.dataset.defaultAmount || '';
                 if (itemObj) {
                     const customCfg = getSelectedMembersCustomFeeConfig(itemObj, selectedGroupMemberIds, selectedFeeAcademicYear);
-                    input.dataset.locked = customCfg.amountLocked ? 'true' : 'false';
-                    input.readOnly = customCfg.amountLocked;
-                    if (cb.checked && customCfg.amountLocked) {
-                        input.value = customCfg.defaultAmount;
-                    }
+                    input.dataset.locked = 'false';
+                    input.readOnly = false;
+                    resolvedDefault = customCfg.defaultAmount !== '' ? String(customCfg.defaultAmount) : '';
+                    input.dataset.defaultAmount = resolvedDefault;
                 }
-                const isLocked = input.dataset.locked === 'true';
                 input.classList.toggle('hidden', !cb.checked);
-                if(!cb.checked && !isLocked) input.value = '';
+                if (cb.checked) {
+                    if ((!input.value || Number(input.value) === 0) && resolvedDefault !== '' && input.dataset.manualEdited !== 'true') {
+                        input.value = resolvedDefault;
+                    }
+                } else {
+                    input.dataset.manualEdited = '';
+                    input.value = resolvedDefault;
+                }
             }
         } else {
             const monthWrap = card?.querySelector('.month-amount-wrapper');
@@ -3861,6 +3925,7 @@ document.getElementById('fee-item-selection-container')?.addEventListener('chang
                         monthInput.value = getCurrentEffectiveMonthlyFee();
                     }
                 } else {
+                    monthInput.dataset.manualEdited = '';
                     monthInput.value = '';
                 }
             }
@@ -3876,34 +3941,67 @@ if (totalAmountInput && totalAmountInput.dataset.listenerAttached !== 'true') {
         const rawTotal = parseFloat(e.target.value);
         const desiredTotal = Number.isFinite(rawTotal) && rawTotal >= 0 ? rawTotal : 0;
 
-        const activeMonthInputs = Array.from(document.querySelectorAll('.fee-item-checkbox:checked'))
-            .filter(cb => (cb.dataset.itemType || 'month') === 'month' && !cb.disabled)
+        const checkedEnabledCbs = Array.from(document.querySelectorAll('.fee-item-checkbox:checked'))
+            .filter(cb => !cb.disabled);
+
+        const activeMonthInputs = checkedEnabledCbs
+            .filter(cb => (cb.dataset.itemType || 'month') === 'month')
             .map(cb => cb.closest('.fee-month-item-card')?.querySelector('.month-fee-amount-input'))
             .filter(Boolean);
 
-        let customTotal = 0;
-        document.querySelectorAll('.fee-item-checkbox:checked').forEach(cb => {
-            if (cb.dataset.itemType === 'custom' && !cb.disabled) {
-                const card = cb.closest('.fee-month-item-card');
-                const cInput = card?.querySelector('.custom-fee-amount-input');
-                customTotal += Number(cInput?.value || 0);
-            }
-        });
+        const activeCustomInputs = checkedEnabledCbs
+            .filter(cb => cb.dataset.itemType === 'custom')
+            .map(cb => cb.closest('.fee-month-item-card')?.querySelector('.custom-fee-amount-input'))
+            .filter(Boolean);
 
-        if (activeMonthInputs.length > 0) {
-            const remainingForMonths = Math.max(0, desiredTotal - customTotal);
-            const perMonth = roundMoney(remainingForMonths / activeMonthInputs.length);
-            activeMonthInputs.forEach((input, index) => {
-                const isLast = index === activeMonthInputs.length - 1;
-                const monthAmt = isLast 
-                    ? roundMoney(remainingForMonths - (perMonth * (activeMonthInputs.length - 1)))
-                    : perMonth;
-                input.value = Math.max(0, monthAmt);
+        if (activeMonthInputs.length === 0 && activeCustomInputs.length === 0) return;
+
+        const distributeIntoInputs = (inputs, totalToDistribute) => {
+            if (!inputs.length) return;
+            const targetTotal = Math.max(0, roundMoney(totalToDistribute));
+            const currentSum = inputs.reduce((s, inp) => s + Math.max(0, Number(inp.value || 0)), 0);
+            const allEqualOrZero = currentSum <= 0 || inputs.every(inp => Math.abs(Number(inp.value || 0) - Number(inputs[0].value || 0)) < 0.01);
+
+            let runningSum = 0;
+            inputs.forEach((inp, idx) => {
+                const isLast = idx === inputs.length - 1;
+                let amt = 0;
+                if (isLast) {
+                    amt = roundMoney(Math.max(0, targetTotal - runningSum));
+                } else if (allEqualOrZero) {
+                    amt = roundMoney(targetTotal / inputs.length);
+                    runningSum = roundMoney(runningSum + amt);
+                } else {
+                    const weight = Math.max(0, Number(inp.value || 0)) / currentSum;
+                    amt = roundMoney(targetTotal * weight);
+                    runningSum = roundMoney(runningSum + amt);
+                }
+                inp.value = Math.max(0, amt);
+                inp.dataset.manualEdited = 'true';
             });
-            captureCurrentYearFeeSelections();
-            renderGroupedStudentsPanel();
-            checkReceiptMandatory();
+        };
+
+        const customTotal = roundMoney(activeCustomInputs.reduce((sum, inp) => sum + Math.max(0, Number(inp.value || 0)), 0));
+
+        if (activeMonthInputs.length > 0 && activeCustomInputs.length === 0) {
+            distributeIntoInputs(activeMonthInputs, desiredTotal);
+        } else if (activeMonthInputs.length === 0 && activeCustomInputs.length > 0) {
+            distributeIntoInputs(activeCustomInputs, desiredTotal);
+        } else {
+            if (desiredTotal >= customTotal) {
+                distributeIntoInputs(activeMonthInputs, desiredTotal - customTotal);
+            } else {
+                activeMonthInputs.forEach(inp => {
+                    inp.value = 0;
+                    inp.dataset.manualEdited = 'true';
+                });
+                distributeIntoInputs(activeCustomInputs, desiredTotal);
+            }
         }
+
+        captureCurrentYearFeeSelections();
+        renderGroupedStudentsPanel();
+        checkReceiptMandatory();
     });
 }
 document.getElementById('fee-year-prev-btn')?.addEventListener('click', () => {
@@ -3976,11 +4074,18 @@ const startEditingPayment = (studentId, txnId) => {
         const paymentYear = payment.academicYear || selectedFeeAcademicYear || '';
         if (!pendingFeeSelectionsByYear[paymentYear]) pendingFeeSelectionsByYear[paymentYear] = {};
         const feeItem = feeItems.find((item) => item.key === payment.itemKey);
-        pendingFeeSelectionsByYear[paymentYear][payment.itemKey] = {
-            checked: true,
-            type: feeItem?.type || 'custom',
-            amount: Number(payment.amount || 0)
-        };
+        const itemType = feeItem?.type || getPaymentItemType(payment) || 'custom';
+        const isMirrorZero = Boolean(payment.isGroupMirror) || (Number(payment.amount || 0) === 0 && Number(payment.groupMonthAmount || 0) > 0);
+        const trueItemAmt = itemType === 'month' ? getMonthlyReportPaymentAmount(payment) : Number(payment.amount || 0);
+        const existingSel = pendingFeeSelectionsByYear[paymentYear][payment.itemKey];
+        if (!existingSel || (!isMirrorZero && trueItemAmt > 0) || existingSel.amount === 0) {
+            pendingFeeSelectionsByYear[paymentYear][payment.itemKey] = {
+                checked: true,
+                type: itemType,
+                amount: trueItemAmt,
+                manualEdited: true
+            };
+        }
     });
 
     const firstPaymentYear = grp[0].academicYear || '';
@@ -3992,7 +4097,8 @@ const startEditingPayment = (studentId, txnId) => {
     editingPaymentGroup = { txnId, itemKeys: new Set(grp.map((p) => `${p.itemKey}__${p.academicYear || ''}`)) };
 
     document.getElementById('entry-receipt').value = grp[0].receiptNo || ''; document.getElementById('entry-date').value = grp[0].paymentDate;
-    document.getElementById('entry-description').value = grp[0].description || ''; document.getElementById('total-amount').value = grp.reduce((s,p)=>s+p.amount, 0);
+    document.getElementById('entry-description').value = grp[0].description || '';
+    document.getElementById('total-amount').value = sumReportPaymentsOnce(grp);
     const modeEl = document.getElementById('entry-payment-mode');
     if (modeEl) modeEl.value = grp[0].paymentMode || 'Cash';
 
@@ -4039,19 +4145,26 @@ const startEditingPayment = (studentId, txnId) => {
 
         if (isPaidHere) {
             labelEl.classList.add('fee-item-editing-yellow');
-            const matchedPayment = grp.find((p) => p.itemKey === cb.dataset.itemKey && (p.academicYear || '') === (selectedFeeAcademicYear || ''));
+            const sameItemPays = grp.filter((p) => p.itemKey === cb.dataset.itemKey && (p.academicYear || '') === (selectedFeeAcademicYear || ''));
+            const matchedPayment = sameItemPays.find((p) => !p.isGroupMirror && Number(p.amount || 0) > 0) || sameItemPays[0];
             const card = cb.closest('.fee-month-item-card') || cb.closest('.relative');
             if (cb.dataset.itemType === 'custom') {
                 const input = card?.querySelector('.custom-fee-amount-input');
                 if (input) {
-                    input.value = matchedPayment?.amount || '';
-                    input.classList.remove('hidden');
+                    const customSum = roundMoney(sameItemPays.reduce((s, p) => s + Number(p.amount || 0), 0));
+                    input.value = sameItemPays.length > 1 ? customSum : (matchedPayment?.amount ?? '');
+                    input.dataset.manualEdited = 'true';
+                    input.readOnly = false;
+                    input.classList.remove('hidden', 'bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
                 }
             } else {
                 const monthWrap = card?.querySelector('.month-amount-wrapper');
                 const monthInput = card?.querySelector('.month-fee-amount-input');
                 if (monthWrap) monthWrap.classList.remove('hidden');
-                if (monthInput) monthInput.value = matchedPayment?.groupMonthAmount || matchedPayment?.amount || '';
+                if (monthInput) {
+                    monthInput.value = matchedPayment ? getMonthlyReportPaymentAmount(matchedPayment) : '';
+                    monthInput.dataset.manualEdited = 'true';
+                }
             }
         } else if (isPaidElsewhere) {
             if (isGroupedStudent && groupState?.isLockedByCheckedPaid) {
@@ -4128,8 +4241,9 @@ const processPaymentSubmit = async (isUpdate) => {
     const desc = document.getElementById('entry-description').value.trim();
     const paymentMode = document.getElementById('entry-payment-mode')?.value || 'Cash';
     const visibleTotal = parseFloat(document.getElementById('total-amount').value || 0);
-    const tot = isMultiEntryMode() ? allEntries.reduce((sum, e) => sum + Number(e.total || 0), 0) : visibleTotal;
-    if(!dt || isNaN(tot)) return alert("Please check the date and amount.");
+    const computedEntriesTotal = roundMoney(allEntries.reduce((sum, e) => sum + Number(e.total || 0), 0));
+    const tot = isMultiEntryMode() ? computedEntriesTotal : (Number.isFinite(visibleTotal) && visibleTotal >= 0 ? roundMoney(visibleTotal) : computedEntriesTotal);
+    if(!dt || isNaN(tot) || tot < 0) return alert("Please check the date and amount.");
 
     const confirmBtn = document.getElementById('confirm-ok');
     document.getElementById('confirm-title').textContent = isUpdate ? 'Update Payment' : 'Confirm Payment';
@@ -4232,7 +4346,7 @@ const processPaymentSubmit = async (isUpdate) => {
                 // Write custom fee items (individually per checked group member)
                 customCbs.forEach((item) => {
                     const itemYear = item.year || common.academicYear;
-                    const enteredCustomTotal = Number(item.amount || 0);
+                    const enteredCustomTotal = roundMoney(Math.max(0, Number(item.amount || 0)));
                     if (targets.length === 1) {
                         const singleId = targets[0];
                         const singleClass = students.find((student) => student.id === singleId)?.class || studentClass;
@@ -4249,15 +4363,23 @@ const processPaymentSubmit = async (isUpdate) => {
                         const feeObj = feeItems.find(i => i.key === item.itemKey);
                         const customCfg = feeObj ? getSelectedMembersCustomFeeConfig(feeObj, new Set(targets), itemYear) : { amountLocked: false, perMemberAmounts: {} };
                         const configuredSum = Object.values(customCfg.perMemberAmounts || {}).reduce((s, v) => s + Number(v || 0), 0);
-                        const useConfiguredShares = customCfg.amountLocked && Math.abs(configuredSum - enteredCustomTotal) < 0.01;
                         const evenShare = roundMoney(enteredCustomTotal / targets.length);
+                        let runningAssigned = 0;
 
                         targets.forEach((memberId, idx) => {
                             const memberClass = students.find((student) => student.id === memberId)?.class || studentClass;
-                            const isFirst = idx === 0;
-                            const memberAmt = useConfiguredShares
-                                ? Number(customCfg.perMemberAmounts[memberId] || 0)
-                                : (isFirst ? roundMoney(enteredCustomTotal - (evenShare * (targets.length - 1))) : evenShare);
+                            const isLast = idx === targets.length - 1;
+                            let memberAmt = 0;
+                            if (isLast) {
+                                memberAmt = roundMoney(Math.max(0, enteredCustomTotal - runningAssigned));
+                            } else if (configuredSum > 0) {
+                                const weight = Number(customCfg.perMemberAmounts[memberId] || 0) / configuredSum;
+                                memberAmt = roundMoney(enteredCustomTotal * weight);
+                                runningAssigned = roundMoney(runningAssigned + memberAmt);
+                            } else {
+                                memberAmt = evenShare;
+                                runningAssigned = roundMoney(runningAssigned + memberAmt);
+                            }
                             queuePaymentWrite(batch, {
                                 ...common,
                                 academicYear: itemYear,
@@ -4276,7 +4398,7 @@ const processPaymentSubmit = async (isUpdate) => {
 
                     monthlyCbs.forEach((item) => {
                         const itemYear = item.year || common.academicYear;
-                        const itemMonthAmount = Number(item.amount || 0);
+                        const itemMonthAmount = roundMoney(Math.max(0, Number(item.amount || 0)));
 
                         if (targets.length === 1) {
                             // Single student payment ONLY - unchecked siblings remain unpaid without arrears!
@@ -4290,6 +4412,7 @@ const processPaymentSubmit = async (isUpdate) => {
                                 itemKey: item.itemKey,
                                 amount: itemMonthAmount,
                                 groupMonthAmount: itemMonthAmount,
+                                groupPaidAmount: itemMonthAmount,
                                 billingGroupId: null
                             });
                         } else {
@@ -4299,8 +4422,8 @@ const processPaymentSubmit = async (isUpdate) => {
                             if (groupedItemKey && writtenGroupedMonthlyItems.has(groupedItemKey)) return;
                             if (groupedItemKey) writtenGroupedMonthlyItems.add(groupedItemKey);
 
-                            // Primary student receives full unified group fee (e.g. ₹500).
-                            // Sibling members receive non-additive records (amount: 0) with groupMonthAmount: 500
+                            // Primary student receives full unified group fee (e.g. ₹500 or custom ₹450).
+                            // Sibling members receive non-additive records (amount: 0) with groupMonthAmount
                             // to prevent revenue multiplication while ensuring all siblings register as settled.
                             targets.forEach((id, idx) => {
                                 const isPrimary = idx === 0;
@@ -4314,6 +4437,7 @@ const processPaymentSubmit = async (isUpdate) => {
                                     itemKey: item.itemKey,
                                     amount: studentAmt,
                                     groupMonthAmount: itemMonthAmount,
+                                    groupPaidAmount: itemMonthAmount,
                                     billingGroupId,
                                     isGroupPrimary: isPrimary,
                                     isGroupMirror: !isPrimary,
@@ -5759,21 +5883,186 @@ window.renderFeeTable = () => {
 };
 
 
+// Shared Transaction & Group Receipt Reconstruction Helpers
+const getMergedKnownPayments = () => {
+    const map = new Map();
+    (allPayments || []).forEach(p => { if (p?.id) map.set(p.id, p); });
+    const ledgerList = window.MasterLedger?.ledgerPayments;
+    if (Array.isArray(ledgerList)) {
+        ledgerList.forEach(p => {
+            if (p?.id && !map.has(p.id)) map.set(p.id, p);
+        });
+    }
+    return [...map.values()];
+};
+
+const resolveTransactionReceiptDetails = (paymentOrId) => {
+    const allKnown = getMergedKnownPayments();
+    const clickedPayment = typeof paymentOrId === 'string'
+        ? allKnown.find(p => p.id === paymentOrId)
+        : paymentOrId;
+    if (!clickedPayment) return null;
+
+    const txnId = clickedPayment.transactionId || '';
+    const hasReceiptNo = clickedPayment.receiptNo !== undefined && clickedPayment.receiptNo !== null && String(clickedPayment.receiptNo).trim() !== '';
+    const collectorKey = clickedPayment.collectedBy || '';
+
+    let txnPayments = [];
+    if (txnId) {
+        txnPayments = allKnown.filter(p => p.transactionId === txnId);
+    } else if (hasReceiptNo) {
+        txnPayments = allKnown.filter(p =>
+            Number(p.receiptNo) === Number(clickedPayment.receiptNo)
+            && (p.collectedBy || '') === collectorKey
+            && (p.paymentDate || '') === (clickedPayment.paymentDate || '')
+        );
+    }
+    if (!txnPayments.length) {
+        txnPayments = [clickedPayment];
+    }
+
+    // Collect all unique students across transaction docs and targetGroupMemberIds
+    const studentsMap = new Map();
+    const addStudentEntry = (sid, fallbackPay = null) => {
+        if (!sid) return;
+        const stObj = getStudentById(sid);
+        if (!studentsMap.has(sid)) {
+            studentsMap.set(sid, {
+                id: sid,
+                name: stObj?.name || fallbackPay?.studentName || 'Student',
+                class: stObj?.class || stObj?.studentClass || fallbackPay?.studentClass || fallbackPay?.classLabel || '-',
+                adm: stObj?.adm || fallbackPay?.studentAdm || '-',
+                guardian: stObj?.guardian || stObj?.father || fallbackPay?.guardianName || ''
+            });
+        }
+    };
+
+    // Sort primary records first so primary student appears first
+    const orderedPayments = [...txnPayments].sort((a, b) => (a.isGroupMirror ? 1 : 0) - (b.isGroupMirror ? 1 : 0));
+    orderedPayments.forEach((p) => {
+        addStudentEntry(p.studentId, p);
+        if (Array.isArray(p.targetGroupMemberIds)) {
+            p.targetGroupMemberIds.forEach(mid => addStudentEntry(mid, p));
+        }
+    });
+
+    // If full billingGroupId exists on an item with no explicit targetGroupMemberIds, include group members
+    orderedPayments.forEach((p) => {
+        if (p.billingGroupId && (!Array.isArray(p.targetGroupMemberIds) || p.targetGroupMemberIds.length === 0)) {
+            const grp = studentGroups.find(g => g.id === p.billingGroupId);
+            if (grp && Array.isArray(grp.memberIds)) {
+                grp.memberIds.forEach(mid => addStudentEntry(mid, p));
+            }
+        }
+    });
+
+    // Group items cleanly so sibling mirrors of the same group fee collapse into 1 item line with exact paid amount
+    const itemsMap = new Map();
+    orderedPayments.forEach((p) => {
+        const itemObj = feeItems.find(fi => fi.key === p.itemKey);
+        const itemType = itemObj?.type || getPaymentItemType(p);
+        const itemName = itemObj?.name || p.itemName || normalizeFeeItemName(p.itemKey) || 'Tuition Fee';
+        const isGroupedMonthly = itemType === 'month' && (
+            Boolean(p.billingGroupId)
+            || Boolean(p.isGroupPrimary)
+            || Boolean(p.isGroupMirror)
+            || (Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 1)
+        );
+        const groupKey = isGroupedMonthly
+            ? `${p.itemKey || ''}__${p.academicYear || ''}__${p.billingGroupId || (p.targetGroupMemberIds || []).join(',')}`
+            : `${p.itemKey || ''}__${p.academicYear || ''}__${p.studentId || p.id}`;
+
+        const resolvedAmt = isGroupedMonthly ? getMonthlyReportPaymentAmount(p) : roundMoney(p.amount || 0);
+
+        if (!itemsMap.has(groupKey)) {
+            const memberNames = [];
+            if (isGroupedMonthly && Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 0) {
+                p.targetGroupMemberIds.forEach(mid => {
+                    const m = studentsMap.get(mid) || getStudentById(mid);
+                    if (m?.name) memberNames.push(m.name);
+                });
+            } else {
+                const st = studentsMap.get(p.studentId) || getStudentById(p.studentId);
+                if (st?.name) memberNames.push(st.name);
+            }
+            itemsMap.set(groupKey, {
+                key: groupKey,
+                itemKey: p.itemKey,
+                itemName: normalizeFeeItemName(itemName),
+                itemType,
+                academicYear: p.academicYear || '',
+                amount: resolvedAmt,
+                isGroupItem: isGroupedMonthly,
+                isFullGroup: Boolean(p.billingGroupId),
+                memberNames,
+                primaryPayment: !p.isGroupMirror ? p : null,
+                payments: [p]
+            });
+        } else {
+            const existing = itemsMap.get(groupKey);
+            existing.payments.push(p);
+            if (!p.isGroupMirror && !existing.primaryPayment) {
+                existing.primaryPayment = p;
+            }
+            if (resolvedAmt > existing.amount) {
+                existing.amount = resolvedAmt;
+            }
+            const st = studentsMap.get(p.studentId) || getStudentById(p.studentId);
+            if (st?.name && !existing.memberNames.includes(st.name)) {
+                existing.memberNames.push(st.name);
+            }
+        }
+    });
+
+    const items = [...itemsMap.values()].map(entry => ({
+        ...entry,
+        primaryPayment: entry.primaryPayment || entry.payments[0]
+    }));
+    const grandTotal = roundMoney(items.reduce((sum, item) => sum + Number(item.amount || 0), 0));
+    const clickedItemEntry = items.find(entry => entry.payments.some(p => p.id === clickedPayment.id)) || items[0];
+
+    return {
+        clickedPayment,
+        primaryPayment: clickedItemEntry?.primaryPayment || orderedPayments.find(p => !p.isGroupMirror) || clickedPayment,
+        txnPayments: orderedPayments,
+        students: [...studentsMap.values()],
+        items,
+        grandTotal,
+        clickedItemEntry
+    };
+};
+
 // Printable Receipt Slip Generator
 export const printPaymentReceiptSlip = (paymentId) => {
-    const payment = allPayments.find(p => p.id === paymentId) ||
-                    (Array.isArray(window.MasterLedger?.ledgerPayments) ? window.MasterLedger.ledgerPayments.find(p => p.id === paymentId) : null);
-    if (!payment) {
+    const details = resolveTransactionReceiptDetails(paymentId);
+    if (!details) {
         showToast('Receipt details not found for printing.', 'error');
         return;
     }
-    const student = getStudentById(payment.studentId) || { name: payment.studentName || 'Student', class: payment.studentClass || payment.classLabel || '-', adm: payment.studentAdm || '-' };
-    const collectorName = getStaffName(payment.collectedBy, payment.collectedByName);
+    const { clickedPayment, students: includedStudents, items, grandTotal } = details;
+    const collectorName = getStaffName(clickedPayment.collectedBy, clickedPayment.collectedByName);
     const instName = document.getElementById('header-title')?.textContent?.trim() || 'Institution Name';
     const place = document.getElementById('header-place')?.textContent?.trim() || '';
     const regNo = document.getElementById('header-regno')?.textContent?.trim() || '';
 
-    const printWindow = window.open('', '_blank', 'width=520,height=680');
+    const studentsSectionHtml = includedStudents.map((stu, idx) => `
+        <div class="student-line">
+            <span class="bold">${includedStudents.length > 1 ? `${idx + 1}. ` : ''}${escapeHtml(stu.name)}</span>
+            <span class="muted">Class: ${escapeHtml(stu.class)} • Adm: ${escapeHtml(stu.adm)}</span>
+        </div>
+    `).join('');
+
+    const itemRowsHtml = items.map((item) => `
+        <div class="row" style="align-items:flex-start; gap:8px;">
+            <div>
+                <div class="bold">${escapeHtml(item.itemName)}${item.academicYear ? ` <span class="muted">(${escapeHtml(item.academicYear)})</span>` : ''}</div>
+                ${includedStudents.length > 1 && item.memberNames.length > 0 ? `<div class="muted" style="font-size:10px;">${escapeHtml(item.memberNames.join(', '))}</div>` : ''}
+            </div>
+            <span class="bold" style="white-space:nowrap;">₹${Number(item.amount || 0).toFixed(2)}</span>
+        </div>
+    `).join('');
+
+    const printWindow = window.open('', '_blank', 'width=520,height=720');
     if (!printWindow) {
         window.print();
         return;
@@ -5783,18 +6072,20 @@ export const printPaymentReceiptSlip = (paymentId) => {
         <html>
         <head>
             <meta charset="utf-8">
-            <title>Fee Receipt - #${escapeHtml(payment.receiptNo || 'Slip')}</title>
+            <title>Fee Receipt - #${escapeHtml(clickedPayment.receiptNo || 'Slip')}</title>
             <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; padding: 24px; max-width: 380px; margin: auto; color: #0f172a; line-height: 1.4; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif; padding: 24px; max-width: 400px; margin: auto; color: #0f172a; line-height: 1.4; }
                 .center { text-align: center; }
                 .bold { font-weight: 700; }
-                .border-b { border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px; margin-bottom: 12px; }
-                .border-t { border-top: 1px dashed #cbd5e1; padding-top: 12px; margin-top: 12px; }
+                .muted { color: #64748b; font-size: 11px; }
+                .border-b { border-bottom: 1px dashed #cbd5e1; padding-bottom: 10px; margin-bottom: 10px; }
+                .border-t { border-top: 1px dashed #cbd5e1; padding-top: 10px; margin-top: 10px; }
                 .row { display: flex; justify-content: space-between; margin: 6px 0; font-size: 12px; }
+                .student-line { display: flex; justify-content: space-between; gap: 8px; margin: 4px 0; font-size: 11.5px; }
                 .title { font-size: 15px; font-weight: 800; text-transform: uppercase; margin-bottom: 3px; }
                 .subtitle { font-size: 11px; color: #64748b; margin-bottom: 8px; }
                 .amt-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center; margin: 12px 0; }
-                .amt { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+                .amt { font-size: 20px; font-weight: 800; color: #166534; }
                 .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; background: #dcfce7; color: #166534; font-size: 10px; font-weight: 800; }
                 @media print { body { padding: 0; max-width: 100%; } }
             </style>
@@ -5805,21 +6096,23 @@ export const printPaymentReceiptSlip = (paymentId) => {
                 <div class="subtitle">${escapeHtml(place)} ${regNo ? `• Reg: ${escapeHtml(regNo)}` : ''}</div>
                 <div class="badge">OFFICIAL FEE RECEIPT</div>
             </div>
-            <div class="row"><span>Receipt No:</span><span class="bold">#${escapeHtml(payment.receiptNo || 'AUTO')}</span></div>
-            <div class="row"><span>Date:</span><span>${escapeHtml(payment.paymentDate || new Date().toLocaleDateString('en-GB'))}</span></div>
-            <div class="row"><span>Student Name:</span><span class="bold">${escapeHtml(student.name || payment.studentName || '-')}</span></div>
-            <div class="row"><span>Class:</span><span>${escapeHtml(student.class || payment.studentClass || '-')}</span></div>
-            <div class="row"><span>Admission No:</span><span>${escapeHtml(student.adm || payment.studentAdm || '-')}</span></div>
+            <div class="row"><span>Receipt No:</span><span class="bold">#${escapeHtml(clickedPayment.receiptNo || 'AUTO')}</span></div>
+            <div class="row"><span>Date:</span><span>${escapeHtml(clickedPayment.paymentDate ? new Date(clickedPayment.paymentDate).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB'))}</span></div>
+            <div class="border-t">
+                <div class="muted" style="font-weight:700; text-transform:uppercase; font-size:10px; margin-bottom:4px;">Students (${includedStudents.length})</div>
+                ${studentsSectionHtml}
+            </div>
             <div class="border-t border-b">
                 <div class="row bold"><span>Description / Item</span><span>Amount</span></div>
-                <div class="row"><span>${escapeHtml(payment.itemName || normalizeFeeItemName(payment.itemKey) || 'Tuition Fee')}</span><span class="bold">₹${Number(payment.amount||0).toFixed(2)}</span></div>
+                ${itemRowsHtml}
             </div>
             <div class="amt-box">
                 <div style="font-size: 11px; color: #64748b; font-weight: 600;">TOTAL AMOUNT PAID</div>
-                <div class="amt">₹${Number(payment.amount||0).toFixed(2)}</div>
+                <div class="amt">₹${grandTotal.toFixed(2)}</div>
             </div>
-            <div class="row"><span>Payment Mode:</span><span class="bold">${escapeHtml(payment.paymentMode || 'Cash')}</span></div>
+            <div class="row"><span>Payment Mode:</span><span class="bold">${escapeHtml(clickedPayment.paymentMode || 'Cash')}</span></div>
             <div class="row"><span>Collected By:</span><span>${escapeHtml(collectorName || 'Staff')}</span></div>
+            ${clickedPayment.description ? `<div class="row"><span>Note:</span><span style="text-align:right; max-width:220px;">${escapeHtml(clickedPayment.description)}</span></div>` : ''}
             <div class="center border-t" style="margin-top: 16px; font-size: 10px; color: #94a3b8;">
                 Verified Transaction Record • Thank You!
             </div>
@@ -5838,9 +6131,8 @@ let lastReceiptActiveCell = null;
 window.openPaymentReceiptDetailModal = (paymentId, targetCellElement = null) => {
     if (!paymentId) return;
     lastReceiptActiveCell = targetCellElement || null;
-    const payment = allPayments.find(p => p.id === paymentId) ||
-                    (Array.isArray(window.MasterLedger?.ledgerPayments) ? window.MasterLedger.ledgerPayments.find(p => p.id === paymentId) : null);
-    if (!payment) {
+    const details = resolveTransactionReceiptDetails(paymentId);
+    if (!details) {
         showToast('Receipt details not found.', 'error');
         return;
     }
@@ -5848,38 +6140,104 @@ window.openPaymentReceiptDetailModal = (paymentId, targetCellElement = null) => 
     const modal = document.getElementById('payment-receipt-view-modal');
     if (!modal) return;
 
-    const student = getStudentById(payment.studentId) || { name: payment.studentName || 'Student', class: payment.studentClass || payment.classLabel || '-', adm: payment.studentAdm || '-' };
-    const collectorName = getStaffName(payment.collectedBy, payment.collectedByName);
+    const { clickedPayment, primaryPayment, students: includedStudents, items, grandTotal, clickedItemEntry } = details;
+    const collectorName = getStaffName(clickedPayment.collectedBy, clickedPayment.collectedByName);
+    const primaryStudent = includedStudents[0] || { name: clickedPayment.studentName || 'Student', class: '-', adm: '-', guardian: '' };
 
     const paymentIdInput = document.getElementById('receipt-view-payment-id');
-    if (paymentIdInput) paymentIdInput.value = payment.id || '';
+    if (paymentIdInput) paymentIdInput.value = primaryPayment?.id || clickedPayment.id || '';
 
     const studentIdInput = document.getElementById('receipt-view-student-id');
-    if (studentIdInput) studentIdInput.value = payment.studentId || '';
+    if (studentIdInput) studentIdInput.value = primaryPayment?.studentId || clickedPayment.studentId || '';
 
     const txnIdInput = document.getElementById('receipt-view-txn-id');
-    if (txnIdInput) txnIdInput.value = getPaymentGroupKey(payment) || payment.transactionId || '';
+    if (txnIdInput) txnIdInput.value = getPaymentGroupKey(clickedPayment) || clickedPayment.transactionId || '';
 
     const rcptEl = document.getElementById('receipt-view-no');
-    if (rcptEl) rcptEl.textContent = payment.receiptNo ? `#${payment.receiptNo}` : 'AUTO / N/A';
-
-    const nameEl = document.getElementById('receipt-view-name');
-    if (nameEl) nameEl.textContent = student.name || payment.studentName || 'Student';
-
-    const metaEl = document.getElementById('receipt-view-meta');
-    if (metaEl) metaEl.textContent = `Class: ${student.class || payment.studentClass || '-'} | Adm: ${student.adm || payment.studentAdm || '-'} | Guardian: ${student.guardian || payment.guardianName || '--'}`;
-
-    const itemEl = document.getElementById('receipt-view-item');
-    if (itemEl) itemEl.textContent = payment.itemName || normalizeFeeItemName(payment.itemKey) || 'Fee Payment';
+    if (rcptEl) rcptEl.textContent = clickedPayment.receiptNo ? `#${clickedPayment.receiptNo}` : 'AUTO / N/A';
 
     const amtEl = document.getElementById('receipt-view-amount');
-    if (amtEl) amtEl.textContent = `₹${Number(payment.amount || 0).toFixed(0)}`;
+    if (amtEl) amtEl.textContent = `₹${grandTotal.toFixed(0)}`;
+
+    const cellNoteEl = document.getElementById('receipt-view-cell-amount-note');
+    if (cellNoteEl) {
+        if (items.length > 1 && clickedItemEntry) {
+            cellNoteEl.textContent = `Selected Item: ${clickedItemEntry.itemName} (₹${Number(clickedItemEntry.amount || 0).toFixed(0)}) · Combined Receipt (${items.length} Items)`;
+            cellNoteEl.classList.remove('hidden');
+        } else {
+            cellNoteEl.textContent = '';
+            cellNoteEl.classList.add('hidden');
+        }
+    }
+
+    const groupBadgeEl = document.getElementById('receipt-view-group-badge');
+    if (groupBadgeEl) {
+        if (includedStudents.length > 1) {
+            groupBadgeEl.textContent = `Group · ${includedStudents.length} Students`;
+            groupBadgeEl.classList.remove('hidden');
+        } else {
+            groupBadgeEl.classList.add('hidden');
+        }
+    }
+
+    const nameEl = document.getElementById('receipt-view-name');
+    if (nameEl) {
+        nameEl.textContent = includedStudents.length > 1
+            ? `${primaryStudent.name} + ${includedStudents.length - 1} more`
+            : primaryStudent.name;
+    }
+
+    const metaEl = document.getElementById('receipt-view-meta');
+    if (metaEl) {
+        metaEl.textContent = includedStudents.length > 1
+            ? `Guardian: ${primaryStudent.guardian || '--'} | ${includedStudents.length} students covered in this receipt`
+            : `Class: ${primaryStudent.class || '-'} | Adm: ${primaryStudent.adm || '-'} | Guardian: ${primaryStudent.guardian || '--'}`;
+    }
+
+    const studentsListEl = document.getElementById('receipt-view-students-list');
+    if (studentsListEl) {
+        studentsListEl.innerHTML = includedStudents.map((stu, idx) => `
+            <div class="flex items-center justify-between gap-2 text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                <div class="font-bold text-slate-800 truncate">${includedStudents.length > 1 ? `${idx + 1}. ` : ''}${escapeHtml(stu.name)}</div>
+                <div class="text-[10.5px] text-slate-600 font-medium shrink-0 tabular-nums">
+                    Cls: <b>${escapeHtml(stu.class || '-')}</b> · Adm: <span class="font-mono">${escapeHtml(stu.adm || '-')}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    const itemEl = document.getElementById('receipt-view-item');
+    if (itemEl) {
+        itemEl.textContent = items.length === 1
+            ? items[0].itemName
+            : `${items.length} Fee Items`;
+    }
+
+    const itemsListEl = document.getElementById('receipt-view-items-list');
+    if (itemsListEl) {
+        itemsListEl.innerHTML = items.map((item) => {
+            const isHighlighted = items.length > 1 && clickedItemEntry && item.key === clickedItemEntry.key;
+            return `
+                <div class="flex items-center justify-between gap-2 px-2.5 py-2 ${isHighlighted ? 'bg-blue-50/70' : 'bg-white'}">
+                    <div class="min-w-0">
+                        <div class="font-bold text-slate-800 text-xs flex items-center gap-1.5 flex-wrap">
+                            <span>${escapeHtml(item.itemName)}</span>
+                            ${item.academicYear ? `<span class="text-[10px] font-medium text-slate-500">${escapeHtml(item.academicYear)}</span>` : ''}
+                            ${item.isGroupItem ? `<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">Group</span>` : ''}
+                        </div>
+                        ${includedStudents.length > 1 && item.memberNames.length > 0 ? `<div class="text-[10px] text-slate-500 truncate mt-0.5">${escapeHtml(item.memberNames.join(', '))}</div>` : ''}
+                    </div>
+                    <div class="font-mono tabular-nums font-extrabold text-slate-900 text-xs shrink-0">₹${Number(item.amount || 0).toFixed(0)}</div>
+                </div>
+            `;
+        }).join('');
+    }
 
     const dateEl = document.getElementById('receipt-view-date');
-    if (dateEl) dateEl.textContent = payment.paymentDate ? new Date(payment.paymentDate).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
+    if (dateEl) dateEl.textContent = clickedPayment.paymentDate ? new Date(clickedPayment.paymentDate).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB');
 
     const modeEl = document.getElementById('receipt-view-mode');
-    if (modeEl) modeEl.textContent = payment.paymentMode || 'Cash';
+    if (modeEl) modeEl.textContent = clickedPayment.paymentMode || 'Cash';
 
     const collEl = document.getElementById('receipt-view-collector');
     if (collEl) collEl.textContent = collectorName || 'Staff';
@@ -5887,8 +6245,8 @@ window.openPaymentReceiptDetailModal = (paymentId, targetCellElement = null) => 
     const descWrap = document.getElementById('receipt-view-desc-wrap');
     const descEl = document.getElementById('receipt-view-desc');
     if (descWrap && descEl) {
-        if (payment.description) {
-            descEl.textContent = payment.description;
+        if (clickedPayment.description) {
+            descEl.textContent = clickedPayment.description;
             descWrap.classList.remove('hidden');
         } else {
             descEl.textContent = '';
@@ -5924,16 +6282,23 @@ document.getElementById('receipt-view-edit-btn')?.addEventListener('click', () =
     const txnId = document.getElementById('receipt-view-txn-id')?.value;
     closePaymentReceiptDetailModal();
 
-    let payment = allPayments.find(p => paymentId && p.id === paymentId) ||
-                  (Array.isArray(window.MasterLedger?.ledgerPayments) ? window.MasterLedger.ledgerPayments.find(p => p.id === paymentId) : null);
-    if (!payment && studentId && txnId) {
-        payment = allPayments.find(p => p.studentId === studentId && (getPaymentGroupKey(p) === txnId || p.transactionId === txnId));
+    const details = paymentId ? resolveTransactionReceiptDetails(paymentId) : null;
+    if (details && details.items.length > 1 && studentId && txnId) {
+        startEditingPayment(studentId, txnId);
+        return;
     }
+
+    const payment = details?.primaryPayment
+        || allPayments.find(p => paymentId && p.id === paymentId)
+        || (Array.isArray(window.MasterLedger?.ledgerPayments) ? window.MasterLedger.ledgerPayments.find(p => p.id === paymentId) : null)
+        || (studentId && txnId ? allPayments.find(p => p.studentId === studentId && (getPaymentGroupKey(p) === txnId || p.transactionId === txnId)) : null);
 
     if (payment) {
         openFeeEntryEditModal({
             mode: 'edit',
             payment: payment,
+            relatedPayments: details?.clickedItemEntry?.payments || details?.txnPayments || [payment],
+            includedStudents: details?.students || [],
             targetCellElement: lastReceiptActiveCell,
             academicYear: payment.academicYear || selectedFeeAcademicYear || currentWorkingAcademicYear
         });
@@ -6713,8 +7078,15 @@ const showPaymentHistoryBreakdown = (txnId = '', fallbackStudentId = '') => {
             const rawItemName = feeItem?.name || p.itemName || normalizeFeeItemName(p.itemKey) || p.itemKey;
             const cleanItemName = normalizeFeeItemName(rawItemName);
             const itemType = getPaymentItemType(p);
-            const isSharedGroup = Boolean(p.billingGroupId && itemType === 'month');
-            const displayAmount = roundMoney(p.amount || 0);
+            const isGroupedMonthly = itemType === 'month' && (
+                Boolean(p.billingGroupId)
+                || Boolean(p.isGroupPrimary)
+                || Boolean(p.isGroupMirror)
+                || (Array.isArray(p.targetGroupMemberIds) && p.targetGroupMemberIds.length > 1)
+            );
+            const sharedGroupAmt = getMonthlyReportPaymentAmount(p);
+            const isMirrorRow = Boolean(isGroupedMonthly && (p.isGroupMirror || Number(p.amount || 0) === 0));
+            const displayAmount = isGroupedMonthly ? sharedGroupAmt : roundMoney(p.amount || 0);
 
             return `
                 <tr class="border-b border-slate-100 hover:bg-slate-50/70 transition">
@@ -6722,11 +7094,11 @@ const showPaymentHistoryBreakdown = (txnId = '', fallbackStudentId = '') => {
                         <div class="flex items-center gap-1.5 flex-wrap">
                             <span class="font-bold text-slate-800">${escapeHtml(cleanItemName)}</span>
                             <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${itemType === 'month' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-purple-50 text-purple-700 border border-purple-200'}">${itemType === 'month' ? 'Monthly' : 'Custom'}</span>
-                            ${isSharedGroup ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Group rate applied"><i class="fas fa-users text-[8px] mr-0.5"></i>Group Rate</span>` : ''}
+                            ${isGroupedMonthly ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Shared under combined group receipt"><i class="fas fa-users text-[8px] mr-0.5"></i>${isMirrorRow ? 'Included (Shared)' : 'Group Primary'}</span>` : ''}
                         </div>
                     </td>
                     <td class="py-2.5 px-2 text-center text-slate-500 font-medium whitespace-nowrap">${escapeHtml(p.academicYear || '-')}</td>
-                    <td class="py-2.5 px-3 text-right font-black text-slate-900 font-mono">₹${displayAmount.toFixed(0)}</td>
+                    <td class="py-2.5 px-3 text-right font-black ${isMirrorRow ? 'text-emerald-700' : 'text-slate-900'} font-mono tabular-nums">${isMirrorRow ? `₹${displayAmount.toFixed(0)} <span class="text-[9px] font-sans font-semibold text-emerald-600">(shared)</span>` : `₹${displayAmount.toFixed(0)}`}</td>
                 </tr>
             `;
         }).join('');
