@@ -216,6 +216,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 }
 .smart-select-list {
     display: none;
+    min-width: 100%;
+    width: max-content;
+    max-width: min(280px, 92vw);
     max-height: 220px;
     overflow-y: auto;
     z-index: 6000;

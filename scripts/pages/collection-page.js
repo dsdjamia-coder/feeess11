@@ -5688,7 +5688,12 @@ const renderConcessionGroupOverview = () => {
 // --- HISTORY RENDER ---
 const updateHistoryStaffFilter = () => {
     const filterEl = document.getElementById('history-staff-filter');
-    if (!isCurrentAdmin) { filterEl.classList.add('hidden'); return; }
+    if (!filterEl) return;
+    if (!isCurrentAdmin) {
+        filterEl.classList.add('hidden');
+        syncSmartSelectDisplay(filterEl);
+        return;
+    }
     filterEl.classList.remove('hidden');
 
     const uniqueEmails = [...new Set(allPayments.map(p => p.collectedBy))].filter(Boolean);
@@ -5699,6 +5704,7 @@ const updateHistoryStaffFilter = () => {
 
     filterEl.innerHTML = opts;
     if(uniqueEmails.includes(currentVal) || currentVal === 'all') filterEl.value = currentVal;
+    syncSmartSelectDisplay(filterEl);
 };
 
 const prepareHistoryData = () => {

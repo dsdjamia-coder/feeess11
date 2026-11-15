@@ -640,7 +640,7 @@
                         <div class="space-y-4">
                             <div class="grid grid-cols-2 gap-4">
                                 <div><label class="block text-sm font-semibold mb-1 text-gray-700">Class</label><select id="entry-class" data-smart-select="true" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white"><option value="" selected>-- Select Class --</option><option value="all">All Classes</option></select></div>
-                                <div><label class="block text-sm font-semibold mb-1 text-gray-700">Gender</label><select id="entry-gender" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white"><option value="all">All Genders</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
+                                <div><label class="block text-sm font-semibold mb-1 text-gray-700">Gender</label><select id="entry-gender" data-smart-select="true" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white"><option value="all">All Genders</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
                             </div>
                             <div>
                                 <label class="block text-sm font-semibold mb-1 text-gray-700 flex items-center gap-1.5">
@@ -714,7 +714,7 @@
                                             <i class="fas fa-info-circle"></i>
                                         </button>
                                     </label>
-                                    <select id="entry-payment-mode" class="p-2.5 w-full sm:w-48 font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none text-sm">
+                                    <select id="entry-payment-mode" data-smart-select="true" data-smart-wrapper-class="sm:w-48" class="p-2.5 w-full sm:w-48 font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none text-sm">
                                         <option value="Cash" selected>Cash</option>
                                         <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
                                         <option value="Bank Transfer">Bank Transfer</option>
@@ -751,7 +751,7 @@
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div>
                                 <label class="block text-sm font-semibold mb-1 text-gray-700">Academic Year <span class="mandatory-star">*</span></label>
-                                <select id="bulk-academic-year" class="w-full p-2.5 border rounded-lg bg-white"></select>
+                                <select id="bulk-academic-year" data-smart-select="true" class="w-full p-2.5 border rounded-lg bg-white"></select>
                             </div>
                             <div>
                                 <label class="block text-sm font-semibold mb-1 text-gray-700">Target Class <span class="mandatory-star">*</span></label>
@@ -1027,18 +1027,18 @@
                         <!-- Row 2: 8 Filters in Clean Responsive Grid (2 cols on mobile, 3 on sm/md, 4 on lg/xl, 8 on 2xl) -->
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-8 gap-2 pt-2.5 min-w-0">
                             <div class="min-w-0">
-                                <select id="ledger-view-mode" class="w-full max-w-full py-1.5 px-2 border border-blue-200 rounded-xl text-xs font-black text-blue-700 bg-blue-50/50 hover:bg-blue-50 outline-none cursor-pointer truncate shadow-2xs">
+                                <select id="ledger-view-mode" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-blue-200 rounded-xl text-xs font-black text-blue-700 bg-blue-50/50 hover:bg-blue-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="GROUPED" selected>View: Family Units</option>
                                     <option value="INDIVIDUAL">View: Individual Students</option>
                                 </select>
                             </div>
                             <div class="min-w-0">
-                                <select id="ledger-academic-year-select" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                <select id="ledger-academic-year-select" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="">-- Academic Year --</option>
                                 </select>
                             </div>
                             <div class="min-w-0">
-                                <select id="ledger-row-limit" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                <select id="ledger-row-limit" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="25" selected>Rows: 25</option>
                                     <option value="50">Rows: 50</option>
                                     <option value="75">Rows: 75</option>
@@ -1053,13 +1053,13 @@
                                 </select>
                             </div>
                             <div class="min-w-0">
-                                <select id="ledger-class-order" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                <select id="ledger-class-order" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="DESC">Class Order: +2 to 1</option>
                                     <option value="ASC">Class Order: 1 to +2</option>
                                 </select>
                             </div>
                             <div class="min-w-0">
-                                <select id="ledger-student-sort" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                <select id="ledger-student-sort" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="DEFAULT">Student Sort: Default</option>
                                     <option value="ADM">Admission No</option>
                                     <option value="A-Z">Name (A - Z)</option>
@@ -1067,14 +1067,14 @@
                                 </select>
                             </div>
                             <div class="min-w-0">
-                                <select id="ledger-gender-mode" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                <select id="ledger-gender-mode" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="MIXED">Gender: Mixed</option>
                                     <option value="CLASS_BOYS_FIRST">Class-wise (Boys then Girls)</option>
                                     <option value="GLOBAL_BOYS_FIRST">Global (All Boys then All Girls)</option>
                                 </select>
                             </div>
                             <div class="col-span-2 sm:col-span-1 2xl:col-span-1 min-w-0">
-                                <select id="ledger-status-filter" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                <select id="ledger-status-filter" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="ALL">Status: All</option>
                                     <option value="PENDING">With Outstanding Dues</option>
                                     <option value="PAID">Fully Paid (Zero Dues)</option>
@@ -1153,7 +1153,7 @@
                         <!-- 1. Academic Year -->
                         <div>
                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Academic Year</label>
-                            <select id="dues-academic-year-select" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs"></select>
+                            <select id="dues-academic-year-select" data-smart-select="true" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs"></select>
                         </div>
 
                         <!-- 2. Class Filter -->
@@ -1168,7 +1168,7 @@
                         <!-- 3. Month Cutoff Scope -->
                         <div>
                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dues Month Scope</label>
-                            <select id="dues-month-cutoff" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
+                            <select id="dues-month-cutoff" data-smart-select="true" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
                                 <option value="current">Up to Current Month (Auto)</option>
                                 <option value="all">All Months (Full Session)</option>
                             </select>
@@ -1177,7 +1177,7 @@
                         <!-- 4. Gender Filter -->
                         <div>
                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Gender</label>
-                            <select id="dues-gender-filter" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
+                            <select id="dues-gender-filter" data-smart-select="true" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
                                 <option value="all">All Genders</option>
                                 <option value="Male">Male</option>
                                 <option value="Female">Female</option>
@@ -1187,7 +1187,7 @@
                         <!-- 5. Minimum Due Amount -->
                         <div>
                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Minimum Due</label>
-                            <select id="dues-min-amount" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
+                            <select id="dues-min-amount" data-smart-select="true" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
                                 <option value="1">All Dues (> 0)</option>
                                 <option value="500">Above 500</option>
                                 <option value="1000">Above 1,000</option>
@@ -1198,7 +1198,7 @@
                         <!-- 6. Rows Per Page -->
                         <div>
                             <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rows Limit</label>
-                            <select id="dues-row-limit" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
+                            <select id="dues-row-limit" data-smart-select="true" class="w-full p-2 rounded-xl text-xs font-bold border border-slate-200 bg-white cursor-pointer truncate shadow-2xs">
                                 <option value="25" selected>Rows: 25</option>
                                 <option value="50">Rows: 50</option>
                                 <option value="100">Rows: 100</option>
@@ -1249,10 +1249,10 @@
                                 <input type="text" id="history-search-input" placeholder="Search history..." class="w-full p-2 pl-8 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:border-blue-500">
                                 <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                             </div>
-                            <select id="history-staff-filter" class="p-2 border border-gray-300 rounded-lg text-sm bg-white hidden w-full sm:w-48 outline-none focus:border-blue-500">
+                            <select id="history-staff-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="sm:w-48" class="p-2 border border-gray-300 rounded-lg text-sm bg-white hidden w-full sm:w-48 outline-none focus:border-blue-500">
                                 <option value="all">All Collections</option>
                             </select>
-                            <select id="history-row-limit" class="p-2 border border-gray-300 rounded-lg text-xs font-bold bg-white text-gray-700 outline-none cursor-pointer focus:border-blue-500">
+                            <select id="history-row-limit" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="sm:w-36" class="p-2 border border-gray-300 rounded-lg text-xs font-bold bg-white text-gray-700 w-full outline-none cursor-pointer focus:border-blue-500">
                                 <option value="25" selected>Rows: 25</option>
                                 <option value="50">Rows: 50</option>
                                 <option value="75">Rows: 75</option>
@@ -1384,7 +1384,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Sort / Order</label>
-                            <select id="stu-info-sort" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <select id="stu-info-sort" data-smart-select="true" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                                 <option value="boys-first">Boys First, then Girls</option>
                                 <option value="girls-first">Girls First, then Boys</option>
                                 <option value="name-asc">Name (A - Z)</option>
@@ -1395,7 +1395,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Gender</label>
-                            <select id="stu-info-gender" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <select id="stu-info-gender" data-smart-select="true" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                                 <option value="all">All Genders</option>
                                 <option value="Male">Male</option>
                                 <option value="Female">Female</option>
@@ -1403,7 +1403,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Rows Limit</label>
-                            <select id="stu-info-row-limit" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-sm font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                            <select id="stu-info-row-limit" data-smart-select="true" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white text-sm font-bold text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
                                 <option value="25" selected>Rows: 25</option>
                                 <option value="50">Rows: 50</option>
                                 <option value="100">Rows: 100</option>
@@ -1529,7 +1529,7 @@
                                         <span>Student Fee Alert Notification Timing</span>
                                         <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none" data-info="Controls when the current month's unpaid fee alert appears in Student Dashboard & Phone Notification Center." title="Controls when the current month's unpaid fee alert appears in Student Dashboard & Phone Notification Center."><i class="fas fa-info-circle"></i></button>
                                     </label>
-                                    <select id="fee-notify-mode" class="w-full p-2.5 border rounded-lg bg-white font-semibold text-sm text-blue-800">
+                                    <select id="fee-notify-mode" data-smart-select="true" class="w-full p-2.5 border rounded-lg bg-white font-semibold text-sm text-blue-800">
                                         <option value="month_start">From Month Start (Day 1 of every month)</option>
                                         <option value="collection_start">From Collection Start Date</option>
                                         <option value="days_before_end">Before Collection End Date (Days Before)</option>
@@ -1574,7 +1574,7 @@
                                 <div><label class="block text-sm font-semibold mb-1">Fee Item Name *</label><input type="text" id="adv-fee-name" class="w-full p-2.5 border rounded-lg bg-white" placeholder="e.g. Admission Fee, Exam Fee"></div>
                                 <div>
                                     <label class="block text-sm font-semibold mb-1">Fee Scope (Category) *</label>
-                                    <select id="adv-fee-scope" class="w-full p-2.5 border rounded-lg font-medium text-blue-700 bg-white">
+                                    <select id="adv-fee-scope" data-smart-select="true" class="w-full p-2.5 border rounded-lg font-medium text-blue-700 bg-white">
                                         <option value="global">Global (Same for all classes)</option>
                                         <option value="class-wise">Class-wise (Different for each class)</option>
                                         <option value="specific">Specific Class Only</option>
@@ -1658,7 +1658,7 @@
                             <!-- Existing Groups Search, Academic Year & Class Filter Bar -->
                             <div class="bg-gray-50 p-2.5 rounded-lg border border-gray-200 shadow-2xs grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
                                 <div class="sm:col-span-4">
-                                    <select id="filter-groups-size" class="w-full py-1.5 px-2.5 text-xs border border-indigo-200 rounded-md bg-white text-indigo-900 font-bold focus:ring-1 focus:ring-indigo-500">
+                                    <select id="filter-groups-size" data-smart-select="true" class="w-full py-1.5 px-2.5 text-xs border border-indigo-200 rounded-md bg-white text-indigo-900 font-bold focus:ring-1 focus:ring-indigo-500">
                                         <option value="all">All Group Sizes</option>
                                     </select>
                                 </div>
@@ -2093,7 +2093,7 @@
                 <div class="grid grid-cols-2 gap-2.5">
                     <div>
                         <label class="block font-bold text-slate-600 mb-1 text-[11px]">Payment Mode</label>
-                        <select id="ledger-pay-mode" class="form-input !mb-0 !py-2 !px-3 text-xs font-bold !rounded-xl">
+                        <select id="ledger-pay-mode" data-smart-select="true" data-smart-floating="true" class="form-input !mb-0 !py-2 !px-3 text-xs font-bold !rounded-xl">
                             <option value="Cash">Cash</option>
                             <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
                             <option value="Bank Transfer">Bank Transfer</option>
@@ -2260,7 +2260,7 @@
                 <label for="report-modal-year-select" class="text-xs font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
                     <i class="fas fa-calendar-alt text-slate-400"></i> Academic Year:
                 </label>
-                <select id="report-modal-year-select" class="text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500 flex-1 max-w-[200px]">
+                <select id="report-modal-year-select" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 max-w-[200px]" class="w-full text-xs font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-500">
                 </select>
             </div>
 
@@ -2578,7 +2578,7 @@
                 <div><label class="block text-sm font-semibold mb-1">Fee Item Name</label><input type="text" id="e-fee-name" class="w-full p-2.5 border rounded-lg bg-gray-50"></div>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Fee Scope</label>
-                    <select id="e-fee-scope" class="w-full p-2.5 border rounded-lg font-medium text-blue-700 bg-gray-50">
+                    <select id="e-fee-scope" data-smart-select="true" data-smart-floating="true" class="w-full p-2.5 border rounded-lg font-medium text-blue-700 bg-gray-50">
                         <option value="global">Global (Same for all classes)</option>
                         <option value="class-wise">Class-wise (Different for each)</option>
                         <option value="specific">Specific Class Only</option>
@@ -2595,7 +2595,7 @@
             </div>
             <div id="e-scope-specific-container" class="mb-4 bg-gray-50 p-3 rounded border hidden">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div><label class="block text-sm font-semibold mb-1">Target Class</label><select id="e-fee-specific-class" data-smart-select="true" class="w-full p-2 border rounded-lg"></select></div>
+                    <div><label class="block text-sm font-semibold mb-1">Target Class</label><select id="e-fee-specific-class" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border rounded-lg"></select></div>
                     <div><label class="block text-sm font-semibold mb-1">Amount (₹)</label><input type="number" id="e-fee-specific-amt" class="w-full p-2 border rounded-lg"></div>
                 </div>
             </div>
@@ -2630,11 +2630,11 @@
                 <label class="block text-sm font-semibold mb-2 text-blue-800">Add Student to Group</label>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                     <div class="sm:col-span-2">
-                        <select id="e-grp-class-filter" data-smart-select="true" class="w-full p-2.5 border rounded-lg bg-white text-sm font-semibold">
+                        <select id="e-grp-class-filter" data-smart-select="true" data-smart-floating="true" class="w-full p-2.5 border rounded-lg bg-white text-sm font-semibold">
                             <option value="">-- Select Class --</option>
                         </select>
                     </div>
-                    <select id="e-grp-gender-filter" class="p-2.5 border rounded-lg bg-white text-sm font-semibold">
+                    <select id="e-grp-gender-filter" data-smart-select="true" data-smart-floating="true" class="w-full p-2.5 border rounded-lg bg-white text-sm font-semibold">
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
                     </select>

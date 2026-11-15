@@ -1,6 +1,6 @@
 import { doc, collection, writeBatch, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db } from '../../../config/firebase-config.js';
-import { BASE_PATH, escapeHtml, formatCurrency, populateClassSelect, compareClassLabelsNatural, openConfirmDialog, enableSmartSelectWindowing } from '../../shared/app-common.js';
+import { BASE_PATH, escapeHtml, formatCurrency, populateClassSelect, compareClassLabelsNatural, openConfirmDialog, enableSmartSelectWindowing, syncSmartSelectDisplay } from '../../shared/app-common.js';
 import { showToast } from '../../shared/toaster.js';
 
 const MONTH_SEQUENCE = [
@@ -161,6 +161,7 @@ export const syncFeeConfigUI = (data = {}) => {
     if (endDaySelect && endVal) endDaySelect.value = String(endVal);
     if (notifyModeSelect && modeVal) {
         notifyModeSelect.value = modeVal;
+        syncSmartSelectDisplay(notifyModeSelect);
         const daysContainer = document.getElementById('fee-notify-days-container');
         if (daysContainer) {
             daysContainer.classList.toggle('hidden', !['days_before_end', 'days_before_month_end'].includes(modeVal));
@@ -477,6 +478,7 @@ const populateExistingGroupSizeFilter = (uniqueGroups = []) => {
     if (curVal && (curVal === 'all' || sortedSizes.includes(Number(curVal)))) {
         sizeSelect.value = curVal;
     }
+    syncSmartSelectDisplay(sizeSelect);
 };
 
 export const populateConcessionClassFilters = () => {
@@ -1128,7 +1130,11 @@ export const initFinanceManagementModule = (stateContext) => {
             document.getElementById('e-fee-key').value = item.key;
             document.getElementById('e-fee-name').value = item.name;
             const itemScope = item.scope || 'global';
-            document.getElementById('e-fee-scope').value = itemScope;
+            const scopeEl = document.getElementById('e-fee-scope');
+            if (scopeEl) {
+                scopeEl.value = itemScope;
+                syncSmartSelectDisplay(scopeEl);
+            }
             document.getElementById('e-fee-receipt-req').checked = !!item.isReceiptMandatory;
 
             renderEditFeeScopeSection(itemScope, item);
@@ -1217,7 +1223,7 @@ export const initFinanceManagementModule = (stateContext) => {
             cont.innerHTML += `
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-4 border-b border-gray-100 mb-2">
                     <select id="grp-cls-${i}" data-smart-select="true" class="grp-cls p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}">${clsOpts}</select>
-                    <select id="grp-gen-${i}" class="grp-gen p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}"><option value="Male">Male</option><option value="Female">Female</option></select>
+                    <select id="grp-gen-${i}" data-smart-select="true" class="grp-gen p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}"><option value="Male">Male</option><option value="Female">Female</option></select>
                     <div class="sm:col-span-3">
                         <input id="grp-stu-${i}" list="grp-stu-options-${i}" class="grp-stu p-2.5 border rounded-lg text-sm font-semibold bg-white w-full" data-idx="${i}" autocomplete="off" placeholder="Select class and gender first...">
                         <datalist id="grp-stu-options-${i}"></datalist>
@@ -1371,6 +1377,7 @@ export const initFinanceManagementModule = (stateContext) => {
                     placeholder: '-- Select Class --'
                 });
             }
+            syncSmartSelectDisplay(document.getElementById('e-grp-gender-filter'));
 
             renderEditGroupMembers();
 

@@ -299,12 +299,16 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         const extraWrapperClass = String(select.dataset.smartWrapperClass || '').trim();
         const wrapper = document.createElement('div');
         wrapper.className = `smart-select-wrapper relative w-full${extraWrapperClass ? ` ${extraWrapperClass}` : ''}`;
+        if (select.classList.contains('hidden')) {
+            wrapper.classList.add('hidden');
+        }
         select.parentNode.insertBefore(wrapper, select);
         wrapper.appendChild(select);
 
         const input = document.createElement('input');
         input.type = 'text';
         input.className = select.className;
+        input.classList.remove('hidden', 'smart-select-native-hidden');
         input.classList.add('smart-select-input', 'pr-8');
         input.placeholder = select.dataset.smartPlaceholder || 'Type or select...';
         input.autocomplete = 'off';
@@ -340,7 +344,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             list.style.position = 'fixed';
             list.style.left = `${left}px`;
             list.style.width = `${width}px`;
-            list.style.zIndex = '9500';
+            list.style.zIndex = '10020';
 
             if (openUpwards) {
                 const topPos = Math.max(8, rect.top - Math.min(maxListHeight, rect.top - 12) - 4);
@@ -349,6 +353,14 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             } else {
                 list.style.top = `${rect.bottom + 4}px`;
                 list.style.maxHeight = `${Math.max(120, Math.min(maxListHeight, spaceBelow - 12))}px`;
+            }
+        };
+
+        const syncVisibilityState = () => {
+            const isHidden = select.classList.contains('hidden');
+            wrapper.classList.toggle('hidden', isHidden);
+            if (isHidden) {
+                list.classList.remove('active');
             }
         };
 
@@ -391,6 +403,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         };
 
         select._syncSmartSelect = () => {
+            syncVisibilityState();
             syncDisabledState();
             syncInputValue();
         };
@@ -414,6 +427,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             // Fallback handled by explicit syncSmartSelectDisplay / change event
         }
 
+        syncVisibilityState();
         syncDisabledState();
         syncInputValue();
         input.addEventListener('focus', () => {
@@ -489,10 +503,11 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
 
         select.addEventListener('change', syncInputValue);
         const observer = new MutationObserver(() => {
+            syncVisibilityState();
             syncDisabledState();
             syncInputValue();
         });
-        observer.observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['value', 'disabled'] });
+        observer.observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['value', 'disabled', 'class'] });
     });
 
     if (typeof document !== 'undefined' && !document.documentElement?.dataset?.smartSelectGlobalBound) {
@@ -1041,6 +1056,8 @@ export const populateAcademicYearSelect = (selectElementOrId, yearsList, current
     } else if (availableValues.length > 0) {
         select.value = availableValues[0];
     }
+
+    syncSmartSelectDisplay(select);
 };
 
 /**
@@ -1301,6 +1318,7 @@ export const populateGenderSelect = (selectElementOrId, { selectedValue = 'all',
     `;
     select.innerHTML = html;
     select.value = selectedValue || 'all';
+    syncSmartSelectDisplay(select);
 };
 
 /**
@@ -1323,6 +1341,7 @@ export const populateRowLimitSelect = (selectElementOrId, { selectedValue = '25'
     ];
     select.innerHTML = limits.map(l => `<option value="${l.val}" ${String(selectedValue) === l.val ? 'selected' : ''}>${l.label}</option>`).join('');
     select.value = String(selectedValue);
+    syncSmartSelectDisplay(select);
 };
 
 /**
