@@ -792,16 +792,16 @@
 
             <!-- 2. Fee Collection (Manual / Bulk / Donation) -->
             <section id="home-page" class="page-content hidden">
-                <!-- Segmented Sub-Tab Switcher -->
-                <div class="max-w-4xl mx-auto mb-2.5 sm:mb-4 bg-slate-100 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex items-center gap-1 sm:gap-1.5 border border-slate-200 overflow-x-auto">
-                    <button type="button" class="fee-collection-subtab-btn active px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 bg-white text-blue-700 shadow-xs cursor-pointer whitespace-nowrap flex-1 sm:flex-initial" data-collection-subtab="entry">
-                        <i class="fas fa-edit"></i> Fee Entry
+                <!-- Top Underline Sub-Tab Navigation -->
+                <div class="collection-subtab-bar max-w-4xl mx-auto mb-2.5 sm:mb-4" role="tablist" aria-label="Fee Collection Views">
+                    <button type="button" role="tab" aria-selected="true" class="collection-subtab-btn fee-collection-subtab-btn active" data-collection-subtab="entry">
+                        <i class="fas fa-edit"></i> <span>Fee Entry</span>
                     </button>
-                    <button type="button" class="fee-collection-subtab-btn px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 text-slate-600 hover:text-slate-900 cursor-pointer whitespace-nowrap flex-1 sm:flex-initial" data-collection-subtab="bulk">
-                        <i class="fas fa-file-excel"></i> Bulk Upload
+                    <button type="button" role="tab" aria-selected="false" class="collection-subtab-btn fee-collection-subtab-btn" data-collection-subtab="bulk">
+                        <i class="fas fa-file-excel"></i> <span>Bulk Upload</span>
                     </button>
-                    <button type="button" class="fee-collection-subtab-btn px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 text-slate-600 hover:text-slate-900 cursor-pointer whitespace-nowrap flex-1 sm:flex-initial" data-collection-subtab="donation">
-                        <i class="fas fa-hand-holding-heart"></i> Donation
+                    <button type="button" role="tab" aria-selected="false" class="collection-subtab-btn fee-collection-subtab-btn" data-collection-subtab="donation">
+                        <i class="fas fa-hand-holding-heart"></i> <span>Donation</span>
                     </button>
                 </div>
 
@@ -1213,17 +1213,23 @@
                             </div>
                         </div>
 
-                        <!-- Row 2: 8 Filters in Clean Responsive Grid (2 cols on mobile, 3 on sm/md, 4 on lg/xl, 8 on 2xl) -->
+                        <!-- Row 2: 8 Filters in Clean Responsive Grid (Academic Year & Class first; Gender & Status share Row 4 on mobile) -->
                         <div id="ledger-toolbar-filters-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-8 gap-1.5 sm:gap-2 pt-2 sm:pt-2.5 min-w-0">
+                            <div class="min-w-0">
+                                <select id="ledger-academic-year-select" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                    <option value="">-- Academic Year --</option>
+                                </select>
+                            </div>
+                            <div class="min-w-0">
+                                <select id="ledger-class-filter" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
+                                    <option value="" selected>-- Select Class --</option>
+                                    <option value="all">All Classes</option>
+                                </select>
+                            </div>
                             <div class="min-w-0">
                                 <select id="ledger-view-mode" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-blue-200 rounded-xl text-xs font-black text-blue-700 bg-blue-50/50 hover:bg-blue-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="GROUPED" selected>View: Family Units</option>
                                     <option value="INDIVIDUAL">View: Individual Students</option>
-                                </select>
-                            </div>
-                            <div class="min-w-0">
-                                <select id="ledger-academic-year-select" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
-                                    <option value="">-- Academic Year --</option>
                                 </select>
                             </div>
                             <div class="min-w-0">
@@ -1233,12 +1239,6 @@
                                     <option value="75">Rows: 75</option>
                                     <option value="100">Rows: 100</option>
                                     <option value="all">Rows: All</option>
-                                </select>
-                            </div>
-                            <div class="min-w-0">
-                                <select id="ledger-class-filter" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
-                                    <option value="" selected>-- Select Class --</option>
-                                    <option value="all">All Classes</option>
                                 </select>
                             </div>
                             <div class="min-w-0">
@@ -1262,7 +1262,7 @@
                                     <option value="GLOBAL_BOYS_FIRST">Global (All Boys then All Girls)</option>
                                 </select>
                             </div>
-                            <div class="col-span-2 sm:col-span-1 2xl:col-span-1 min-w-0">
+                            <div class="min-w-0">
                                 <select id="ledger-status-filter" data-smart-select="true" class="w-full max-w-full py-1.5 px-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 outline-none cursor-pointer truncate shadow-2xs">
                                     <option value="ALL">Status: All</option>
                                     <option value="PENDING">With Outstanding Dues</option>
@@ -1495,13 +1495,13 @@
 
             <!-- 6. Reports & Analytics Page -->
             <section id="monthly-collected-page" class="page-content hidden">
-                <!-- Segmented Sub-Tab Switcher -->
-                <div class="mb-2.5 sm:mb-4 bg-slate-100 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex items-center gap-1 sm:gap-1.5 border border-slate-200 max-w-md">
-                    <button type="button" class="reports-subtab-btn active px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 bg-white text-blue-700 shadow-xs cursor-pointer flex-1 sm:flex-initial whitespace-nowrap" data-reports-subtab="monthly">
-                        <i class="fas fa-chart-bar"></i> Monthly Overview
+                <!-- Top Underline Sub-Tab Navigation -->
+                <div class="collection-subtab-bar mb-2.5 sm:mb-4" role="tablist" aria-label="Reports Views">
+                    <button type="button" role="tab" aria-selected="true" class="collection-subtab-btn reports-subtab-btn active" data-reports-subtab="monthly">
+                        <i class="fas fa-chart-bar"></i> <span>Monthly Overview</span>
                     </button>
-                    <button type="button" id="subtab-btn-collector-wise" class="reports-subtab-btn px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 text-slate-600 hover:text-slate-900 cursor-pointer hidden flex-1 sm:flex-initial whitespace-nowrap" data-reports-subtab="collector">
-                        <i class="fas fa-users"></i> Collector-wise Total
+                    <button type="button" id="subtab-btn-collector-wise" role="tab" aria-selected="false" class="collection-subtab-btn reports-subtab-btn hidden" data-reports-subtab="collector">
+                        <i class="fas fa-users"></i> <span>Collector-wise Total</span>
                     </button>
                 </div>
 
@@ -1654,15 +1654,15 @@
         
             <!-- 8. Fee Settings & Setup -->
             <section id="fee-settings-page" class="page-content hidden">
-                <!-- Segmented Sub-Tab Switcher -->
-                <div class="mb-2.5 sm:mb-4 bg-slate-100 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex items-center gap-1 sm:gap-1.5 border border-slate-200 overflow-x-auto">
-                    <button type="button" class="settings-subtab-btn active px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 bg-white text-blue-700 shadow-xs cursor-pointer whitespace-nowrap flex-1 sm:flex-initial" data-settings-subtab="structure">
+                <!-- Top Underline Sub-Tab Navigation -->
+                <div class="collection-subtab-bar mb-2.5 sm:mb-4" role="tablist" aria-label="Fee Settings Views">
+                    <button type="button" role="tab" aria-selected="true" class="collection-subtab-btn settings-subtab-btn active" data-settings-subtab="structure">
                         <i class="fas fa-receipt"></i> <span>Structure</span>
                     </button>
-                    <button type="button" class="settings-subtab-btn px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 text-slate-600 hover:text-slate-900 cursor-pointer whitespace-nowrap flex-1 sm:flex-initial" data-settings-subtab="groups">
+                    <button type="button" role="tab" aria-selected="false" class="collection-subtab-btn settings-subtab-btn" data-settings-subtab="groups">
                         <i class="fas fa-layer-group"></i> <span>Groups</span>
                     </button>
-                    <button type="button" class="settings-subtab-btn px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1.5 sm:gap-2 text-slate-600 hover:text-slate-900 cursor-pointer whitespace-nowrap flex-1 sm:flex-initial" data-settings-subtab="concessions">
+                    <button type="button" role="tab" aria-selected="false" class="collection-subtab-btn settings-subtab-btn" data-settings-subtab="concessions">
                         <i class="fas fa-hand-holding-usd"></i> <span>Concessions</span>
                     </button>
                 </div>

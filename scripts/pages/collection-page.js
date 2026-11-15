@@ -437,10 +437,7 @@ const switchCollectionSubTab = (subtab = 'entry') => {
     document.querySelectorAll('.fee-collection-subtab-btn').forEach(btn => {
         const isActive = btn.dataset.collectionSubtab === subtab;
         btn.classList.toggle('active', isActive);
-        btn.classList.toggle('bg-white', isActive);
-        btn.classList.toggle('text-blue-700', isActive);
-        btn.classList.toggle('shadow-xs', isActive);
-        btn.classList.toggle('text-slate-600', !isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
     if (subtab === 'entry' && typeof setupFeeEntryUI === 'function') {
@@ -466,10 +463,7 @@ const switchReportsSubTab = (subtab = 'monthly') => {
     document.querySelectorAll('.reports-subtab-btn').forEach(btn => {
         const isActive = btn.dataset.reportsSubtab === subtab;
         btn.classList.toggle('active', isActive);
-        btn.classList.toggle('bg-white', isActive);
-        btn.classList.toggle('text-blue-700', isActive);
-        btn.classList.toggle('shadow-xs', isActive);
-        btn.classList.toggle('text-slate-600', !isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
     if (subtab === 'collector' && typeof renderCollectorWiseMonthlyPage === 'function') {
@@ -494,10 +488,7 @@ const switchSettingsSubTab = (subtab = 'structure') => {
     document.querySelectorAll('.settings-subtab-btn').forEach(btn => {
         const isActive = btn.dataset.settingsSubtab === subtab;
         btn.classList.toggle('active', isActive);
-        btn.classList.toggle('bg-white', isActive);
-        btn.classList.toggle('text-blue-700', isActive);
-        btn.classList.toggle('shadow-xs', isActive);
-        btn.classList.toggle('text-slate-600', !isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
     if (subtab === 'structure' && typeof renderFeeItemsManagement === 'function') {
