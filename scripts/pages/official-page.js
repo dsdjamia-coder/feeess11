@@ -4,6 +4,7 @@ import { BASE_PATH, applyCachedInstitutionLogo, escapeHtml, rememberInstitutionL
 import { appLog } from '../shared/logger.js';
 import { showToast } from '../shared/toaster.js';
 import { collection, doc, getDoc, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 
 let allStudents = [];
 let allStaff = [];
@@ -15,6 +16,8 @@ let categoryAuthConfig = { categories: {} };
 let pageAccessConfig = { categories: {}, overrides: {} };
 let userSession = null;
 let authReady = false;
+let studentsDataLoaded = false;
+let studentsDataPromise = null;
 const OFFICIAL_SESSION_KEY = 'official_portal_session_v1';
 applyCachedInstitutionLogo(['header-logo', 'header-logo-right', 'official-login-modal-logo']);
 
@@ -168,6 +171,9 @@ const setMobileMenuState = (isOpen) => {
 };
 const setTab = async (tab = 'dashboard') => {
   await lazyLoadOfficialTab(tab);
+  if (['students', 'summary', 'worksheet'].includes(tab)) {
+    await ensureOfficialStudentDataLoaded();
+  }
   const requested = document.getElementById(`official-tab-${tab}`) ? tab : 'dashboard';
   const target = document.getElementById(`official-tab-${requested}`) ? requested : 'students';
   document.querySelectorAll('.official-tab').forEach((el) => el.classList.add('hidden'));
@@ -220,16 +226,24 @@ document.addEventListener('click', (e) => {
 });
 
 const summaryStats = () => {
-  const totalStudents = allStudents.length;
-  const boys = allStudents.filter((student) => normalizeText(student.gender) === 'male').length;
-  const girls = allStudents.filter((student) => normalizeText(student.gender) === 'female').length;
-  const classCount = new Set(allStudents.map(getStudentClass)).size;
+  const configStats = normalizeInstitutionalStats(institutionConfig?.stats);
+  const useLiveStudents = studentsDataLoaded && allStudents.length > 0;
+  const totalStudents = useLiveStudents ? allStudents.length : configStats.total;
+  const boys = useLiveStudents
+    ? allStudents.filter((student) => normalizeText(student.gender) === 'male').length
+    : configStats.male;
+  const girls = useLiveStudents
+    ? allStudents.filter((student) => normalizeText(student.gender) === 'female').length
+    : configStats.female;
+  const classCount = useLiveStudents
+    ? new Set(allStudents.map(getStudentClass)).size
+    : (configStats.configuredClassesCount || configStats.activeClassesCount || Object.keys(configStats.byClass || {}).length);
   const teachers = allStaff.filter((staff) => staff.isActive !== false && staff.type === 'Teacher').length;
   const management = allStaff.filter((staff) => staff.isActive !== false && staff.type === 'Management').length;
   const activeStaff = allStaff.filter((staff) => staff.isActive !== false).length;
   const categoryMembers = directoryEntries.length;
-  const groupedStudents = new Set(studentGroups.flatMap((group) => group.memberIds || [])).size;
-  const concessionStudents = allStudents.filter(hasStudentConcession).length;
+  const groupedStudents = useLiveStudents ? new Set(studentGroups.flatMap((group) => group.memberIds || [])).size : 0;
+  const concessionStudents = useLiveStudents ? allStudents.filter(hasStudentConcession).length : 0;
   return { totalStudents, boys, girls, classCount, teachers, management, activeStaff, categoryMembers, groupedStudents, concessionStudents };
 };
 const metricCard = (label, value, tone = 'blue', icon = 'fa-circle-info') => `
@@ -916,20 +930,39 @@ const renderAll = () => {
   renderHome();
 };
 
+const ensureOfficialStudentDataLoaded = async () => {
+  if (studentsDataLoaded) return;
+  if (studentsDataPromise) return studentsDataPromise;
+  studentsDataPromise = (async () => {
+    const [studentsSnap, groupsSnap] = await Promise.all([
+      getDocs(collection(db, `${BASE_PATH}/students`)),
+      getDocs(collection(db, `${BASE_PATH}/studentGroups`))
+    ]);
+    allStudents = studentsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+    studentGroups = groupsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+    studentsDataLoaded = true;
+    renderAll();
+  })();
+  try {
+    await studentsDataPromise;
+  } finally {
+    studentsDataPromise = null;
+  }
+};
+
 const loadData = async () => {
-  const [studentsSnap, staffSnap, groupsSnap, dirSnap, contentSnap, configSnap, authConfigSnap, pageAccessSnap] = await Promise.all([
-    getDocs(collection(db, `${BASE_PATH}/students`)),
+  const [staffSnap, dirSnap, contentSnap, configSnap, authConfigSnap, pageAccessSnap] = await Promise.all([
     getDocs(collection(db, `${BASE_PATH}/staff`)),
-    getDocs(collection(db, `${BASE_PATH}/studentGroups`)),
     getDocs(collection(db, `${BASE_PATH}/publicDirectory`)),
     getDoc(doc(db, `${BASE_PATH}/settings`, 'content')),
     getDoc(doc(db, `${BASE_PATH}/settings`, 'config')),
     getDoc(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig')),
     getDoc(doc(db, `${BASE_PATH}/settings`, 'pageAccess'))
   ]);
-  allStudents = studentsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+  allStudents = [];
+  studentGroups = [];
+  studentsDataLoaded = false;
   allStaff = staffSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-  studentGroups = groupsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
   directoryEntries = dirSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
   const content = contentSnap.exists() ? contentSnap.data() : {};
   directoryCategories = Array.isArray(content.directoryCategories) ? content.directoryCategories : [];

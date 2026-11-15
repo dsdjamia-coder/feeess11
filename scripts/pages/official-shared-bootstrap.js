@@ -4,6 +4,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
     import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, escapeHtml, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
     import { registerPortalForPwa } from '../shared/pwa-install.js';
+    import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 
     // Clean URL Guard: Strip any lingering hash fragment to ensure clean base .html on every refresh
     if (typeof window !== 'undefined' && window.location && window.location.hash) {
@@ -1519,17 +1520,38 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     }
 
     const summaryStats = () => {
-      const totalStudents = allStudents.length;
-      const boys = allStudents.filter((student) => normalizeText(student.gender) === 'male').length;
-      const girls = allStudents.filter((student) => normalizeText(student.gender) === 'female').length;
-      const classCount = new Set(allStudents.map(getStudentClass)).size;
+      const configStats = normalizeInstitutionalStats(institutionConfig?.stats);
+      const useLiveStudents = isWorksheetPage && allStudents.length > 0;
+      const totalStudents = useLiveStudents ? allStudents.length : configStats.total;
+      const boys = useLiveStudents
+        ? allStudents.filter((student) => normalizeText(student.gender) === 'male').length
+        : configStats.male;
+      const girls = useLiveStudents
+        ? allStudents.filter((student) => normalizeText(student.gender) === 'female').length
+        : configStats.female;
+      const classCount = useLiveStudents
+        ? new Set(allStudents.map(getStudentClass)).size
+        : (configStats.configuredClassesCount || configStats.activeClassesCount || Object.keys(configStats.byClass || {}).length);
       const teachers = allStaff.filter((staff) => staff.isActive !== false && staff.type === 'Teacher').length;
       const management = allStaff.filter((staff) => staff.isActive !== false && staff.type === 'Management').length;
       const activeStaff = allStaff.filter((staff) => staff.isActive !== false).length;
       const categoryMembers = directoryEntries.length;
       const groupCount = studentGroups.length;
-      const concessionStudents = allStudents.filter(hasStudentConcession).length;
-      return { totalStudents, boys, girls, classCount, teachers, management, activeStaff, categoryMembers, groupCount, concessionStudents };
+      const concessionStudents = useLiveStudents ? allStudents.filter(hasStudentConcession).length : 0;
+      return {
+        totalStudents,
+        boys,
+        girls,
+        classCount,
+        teachers,
+        management,
+        activeStaff,
+        categoryMembers,
+        groupCount,
+        concessionStudents,
+        hasStats: useLiveStudents || configStats.hasStats,
+        statsAcademicYear: configStats.academicYear || activeAcademicYearId || ''
+      };
     };
 
     const metricCard = (label, value, tone = 'blue', icon = 'fa-circle-info') => `
@@ -1802,7 +1824,33 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             </span>
           </div>
 
-          <!-- Compact 4-Portal Access Grid -->
+          <!-- Institution Strength Summary (Single-Doc Read) -->
+          <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs">
+            <div class="flex items-center justify-between gap-2 mb-2.5">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Institution Strength</span>
+              ${stats.statsAcademicYear ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600">${escapeHtml(stats.statsAcademicYear)}</span>` : ''}
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div class="rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2">
+                <div class="text-[10px] font-bold uppercase text-blue-700">Total Students</div>
+                <div class="text-lg font-black text-blue-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.totalStudents : '-'))}</div>
+              </div>
+              <div class="rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2">
+                <div class="text-[10px] font-bold uppercase text-sky-700">Boys</div>
+                <div class="text-lg font-black text-sky-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.boys : '-'))}</div>
+              </div>
+              <div class="rounded-lg border border-teal-100 bg-teal-50/70 px-3 py-2">
+                <div class="text-[10px] font-bold uppercase text-teal-700">Girls</div>
+                <div class="text-lg font-black text-teal-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.girls : '-'))}</div>
+              </div>
+              <div class="rounded-lg border border-indigo-100 bg-indigo-50/70 px-3 py-2">
+                <div class="text-[10px] font-bold uppercase text-indigo-700">Classes</div>
+                <div class="text-lg font-black text-indigo-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.classCount : '-'))}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Compact Portal Access Grid -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             ${moduleCardsHtml}
           </div>
@@ -7657,9 +7705,49 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       }
     };
 
+    let archivedAcademicYearLabels = new Set();
+
+    const mergeStudentAcademicYears = (studentsList = []) => {
+      if (!Array.isArray(studentsList) || studentsList.length === 0) return false;
+      const existingIds = new Set(academicYears.map((y) => y.id || y.name || y.label).filter(Boolean));
+      let addedAny = false;
+      studentsList.forEach((stu) => {
+        const directYear = String(stu?.academicYear || '').trim();
+        if (directYear && !archivedAcademicYearLabels.has(directYear) && !existingIds.has(directYear)) {
+          existingIds.add(directYear);
+          academicYears.push({
+            id: directYear,
+            name: directYear,
+            label: directYear,
+            isActive: directYear === activeAcademicYearId
+          });
+          addedAny = true;
+        }
+        if (stu?.academicYears && typeof stu.academicYears === 'object') {
+          Object.keys(stu.academicYears).forEach((yrKey) => {
+            const cleanKey = String(yrKey || '').trim();
+            if (cleanKey && !archivedAcademicYearLabels.has(cleanKey) && !existingIds.has(cleanKey)) {
+              existingIds.add(cleanKey);
+              academicYears.push({
+                id: cleanKey,
+                name: cleanKey,
+                label: cleanKey,
+                isActive: cleanKey === activeAcademicYearId
+              });
+              addedAny = true;
+            }
+          });
+        }
+      });
+      if (addedAny) {
+        academicYears.sort((a, b) => compareAcademicYearLabels(b.name || b.id, a.name || a.id));
+      }
+      return addedAny;
+    };
+
     const loadData = async () => {
+      const emptyDocs = { docs: [] };
       const [
-        studentsSnap,
         staffSnap,
         groupsSnap,
         dirSnap,
@@ -7673,21 +7761,20 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         examsSnap,
         marksSnap
       ] = await Promise.all([
-        getDocs(collection(db, `${BASE_PATH}/students`)),
         getDocs(collection(db, `${BASE_PATH}/staff`)),
-        getDocs(collection(db, `${BASE_PATH}/studentGroups`)),
+        isWorksheetPage ? getDocs(collection(db, `${BASE_PATH}/studentGroups`)) : Promise.resolve(emptyDocs),
         getDocs(collection(db, `${BASE_PATH}/publicDirectory`)),
         getDoc(doc(db, `${BASE_PATH}/settings`, 'content')),
         getDoc(doc(db, `${BASE_PATH}/settings`, 'config')),
         getDoc(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig')),
         getDoc(doc(db, `${BASE_PATH}/settings`, 'pageAccess')),
         getDoc(doc(db, `${BASE_PATH}/settings`, 'academicYears')),
-        getDoc(doc(db, `${BASE_PATH}/settings`, 'classes')).catch(() => null),
-        getDocs(collection(db, `${BASE_PATH}/payments`)).catch(() => ({ docs: [] })),
-        getDocs(collection(db, `${BASE_PATH}/resultSchemas`)).catch(() => ({ docs: [] })),
-        getDocs(collection(db, `${BASE_PATH}/examResults`)).catch(() => ({ docs: [] }))
+        isWorksheetPage ? getDoc(doc(db, `${BASE_PATH}/settings`, 'classes')).catch(() => null) : Promise.resolve(null),
+        isWorksheetPage ? getDocs(collection(db, `${BASE_PATH}/payments`)).catch(() => emptyDocs) : Promise.resolve(emptyDocs),
+        isWorksheetPage ? getDocs(collection(db, `${BASE_PATH}/resultSchemas`)).catch(() => emptyDocs) : Promise.resolve(emptyDocs),
+        isWorksheetPage ? getDocs(collection(db, `${BASE_PATH}/examResults`)).catch(() => emptyDocs) : Promise.resolve(emptyDocs)
       ]);
-      allStudents = studentsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      allStudents = [];
       allStaff = staffSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       staffSnapshotAuthoritative = !staffSnap.metadata?.fromCache;
       studentGroups = groupsSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -7711,13 +7798,15 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       categoryAuthConfig = authConfigSnap.exists() ? { categories: {}, ...(authConfigSnap.data() || {}) } : { categories: {} };
       pageAccessConfig = pageAccessSnap.exists() ? { categories: {}, overrides: {}, ...(pageAccessSnap.data() || {}) } : { categories: {}, overrides: {} };
       syncLiveStaffSession({ authoritative: true });
-      await syncWorksheetTemplatesFromFirestore();
+      if (isWorksheetPage) {
+        await syncWorksheetTemplatesFromFirestore();
+      }
       const yearsData = academicYearsSnap.exists() ? (academicYearsSnap.data() || {}) : {};
       const currentYearVal = resolveAuthoritativeCurrentYear(yearsData, '');
       const rawYearsList = Array.isArray(yearsData.years) ? yearsData.years : [];
 
       const normalizedYearMap = new Map();
-      const archivedYearLabels = new Set(
+      archivedAcademicYearLabels = new Set(
         rawYearsList
           .filter((e) => typeof e === 'object' && String(e?.status || '').toLowerCase() === 'archived')
           .map((e) => String(e?.id || e?.label || e?.name || '').trim())
@@ -7728,7 +7817,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         if (!entry) return;
         if (typeof entry === 'string') {
           const val = entry.trim();
-          if (val && !archivedYearLabels.has(val)) {
+          if (val && !archivedAcademicYearLabels.has(val)) {
             normalizedYearMap.set(val, { id: val, name: val, label: val, isActive: val === currentYearVal });
           }
           return;
@@ -7754,32 +7843,6 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           isActive: true
         });
       }
-
-      // Also include any academic years present directly on student records if not archived
-      allStudents.forEach((stu) => {
-        const directYear = String(stu?.academicYear || '').trim();
-        if (directYear && !archivedYearLabels.has(directYear) && !normalizedYearMap.has(directYear)) {
-          normalizedYearMap.set(directYear, {
-            id: directYear,
-            name: directYear,
-            label: directYear,
-            isActive: directYear === currentYearVal
-          });
-        }
-        if (stu?.academicYears && typeof stu.academicYears === 'object') {
-          Object.keys(stu.academicYears).forEach((yrKey) => {
-            const cleanKey = String(yrKey || '').trim();
-            if (cleanKey && !archivedYearLabels.has(cleanKey) && !normalizedYearMap.has(cleanKey)) {
-              normalizedYearMap.set(cleanKey, {
-                id: cleanKey,
-                name: cleanKey,
-                label: cleanKey,
-                isActive: cleanKey === currentYearVal
-              });
-            }
-          });
-        }
-      });
 
       academicYears = Array.from(normalizedYearMap.values()).sort((a, b) =>
         compareAcademicYearLabels(b.name || b.id, a.name || a.id)
@@ -7885,9 +7948,12 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         }, () => {});
       }
 
-      onSnapshot(collection(db, `${BASE_PATH}/students`), (snap) => {
-        allStudents = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        if (isWorksheetPage) {
+      if (isWorksheetPage) {
+        onSnapshot(collection(db, `${BASE_PATH}/students`), (snap) => {
+          allStudents = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+          if (mergeStudentAcademicYears(allStudents)) {
+            syncHeaderActiveYear();
+          }
           buildClassSummary();
           renderStudents();
           if (canUserViewAlumni()) renderAlumniTab();
@@ -7895,17 +7961,15 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             renderExportTab();
             setupExcelEngine();
           }
-        } else {
-          renderDashboard();
-        }
-      }, () => {});
+        }, () => {});
 
-      onSnapshot(doc(db, `${BASE_PATH}/settings`, 'classes'), (snap) => {
-        if (!snap.exists()) return;
-        const cd = snap.data() || {};
-        adminConfiguredClasses = Array.isArray(cd.list) ? cd.list : (Array.isArray(cd.classes) ? cd.classes : []);
-        renderAll();
-      }, () => {});
+        onSnapshot(doc(db, `${BASE_PATH}/settings`, 'classes'), (snap) => {
+          if (!snap.exists()) return;
+          const cd = snap.data() || {};
+          adminConfiguredClasses = Array.isArray(cd.list) ? cd.list : (Array.isArray(cd.classes) ? cd.classes : []);
+          renderAll();
+        }, () => {});
+      }
 
       onSnapshot(doc(db, `${BASE_PATH}/settings`, 'sessionControl'), (snap) => {
         if (!snap.exists()) return;

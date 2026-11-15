@@ -6,6 +6,7 @@ import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '.
 import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
+import { areInstitutionalStatsEqual, normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 
 registerServiceWorker();
 hardenExternalLinks();
@@ -130,6 +131,11 @@ let editingStudentId = null, editingClassName = null, editingStaffId = null;
 let academicYears = [];
 let activeAcademicYear = '';
 let hasLoadedAcademicYearsSnapshot = false;
+let hasLoadedConfigSnapshot = false;
+let hasLoadedStudentsSnapshot = false;
+let latestPublishedStats = null;
+let autoStatsSyncTimer = null;
+let isPublishingStats = false;
 const syncCurrentYearToStorage = (yearLabel = '') => {
     const clean = String(yearLabel || '').trim();
     if (!clean) return;
@@ -1343,6 +1349,42 @@ const getStudyingStudentsForYear = (targetYear = null) => {
     });
 };
 
+const updateStatsSyncBadge = (state = 'ready', timestamp = 0) => {
+    const badge = document.getElementById('stats-sync-status-badge');
+    if (!badge) return;
+    const baseCls = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border';
+    if (state === 'syncing') {
+        badge.className = `${baseCls} bg-blue-50 text-blue-700 border-blue-200`;
+        badge.innerHTML = '<i class="fas fa-spinner fa-spin text-[10px]"></i><span>Syncing Counts...</span>';
+        badge.title = 'Synchronizing latest student counts to website & dashboards';
+        return;
+    }
+    if (state === 'pending') {
+        badge.className = `${baseCls} bg-amber-50 text-amber-700 border-amber-200`;
+        badge.innerHTML = '<i class="fas fa-clock text-[10px]"></i><span>Update Queued</span>';
+        badge.title = 'Student count change detected; syncing automatically';
+        return;
+    }
+    if (state === 'error') {
+        badge.className = `${baseCls} bg-rose-50 text-rose-700 border-rose-200`;
+        badge.innerHTML = '<i class="fas fa-exclamation-triangle text-[10px]"></i><span>Sync Retry Needed</span>';
+        badge.title = 'Click Publish to Website to retry syncing counts';
+        return;
+    }
+    if (state === 'synced') {
+        const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        badge.className = `${baseCls} bg-emerald-50 text-emerald-700 border-emerald-200`;
+        badge.innerHTML = '<i class="fas fa-check-circle text-[10px]"></i><span>Auto-Synced</span>';
+        badge.title = timeStr
+            ? `Website & dashboard student counts are up to date (last synced ${timeStr})`
+            : 'Website & dashboard student counts are up to date';
+        return;
+    }
+    badge.className = `${baseCls} bg-emerald-50 text-emerald-700 border-emerald-200`;
+    badge.innerHTML = '<i class="fas fa-sync-alt text-[10px]"></i><span>Auto-Sync Ready</span>';
+    badge.title = 'Counts automatically synchronize whenever student records change';
+};
+
 const computeInstitutionalStats = (targetYear = null) => {
     const activeYear = targetYear || getActiveAcademicYearLabel();
     const studentsInYear = getStudyingStudentsForYear(activeYear);
@@ -1368,29 +1410,82 @@ const computeInstitutionalStats = (targetYear = null) => {
         if (isFemale) byClass[className].female++;
     });
 
+    const registeredClasses = (typeof getClassesForYear === 'function' ? getClassesForYear(activeYear) : (getClassesForActiveYear() || []))
+        .filter((c) => {
+            const u = String(c || '').trim().toUpperCase();
+            return u && u !== 'ALUMNI' && u !== 'GRADUATED';
+        });
+    const activeClassKeys = Object.keys(byClass);
+    const configuredClassCount = new Set([...registeredClasses, ...activeClassKeys]).size;
+
     return {
         academicYear: activeYear,
         total: studentsInYear.length,
         male: totalMale,
         female: totalFemale,
+        activeClassesCount: activeClassKeys.length,
+        configuredClassesCount: configuredClassCount,
         byClass,
         updatedAt: Date.now()
     };
 };
 
-const publishInstitutionalStats = async (auto = false) => {
-    const statsPayload = computeInstitutionalStats();
+const publishInstitutionalStats = async (auto = false, { force = !auto } = {}) => {
+    const statsPayload = {
+        ...computeInstitutionalStats(),
+        syncMode: auto ? 'auto' : 'manual'
+    };
+
+    if (!force && latestPublishedStats && areInstitutionalStatsEqual(statsPayload, latestPublishedStats)) {
+        updateStatsSyncBadge('synced', latestPublishedStats.updatedAt);
+        return false;
+    }
+
+    if (isPublishingStats && auto) {
+        return false;
+    }
+
+    isPublishingStats = true;
+    updateStatsSyncBadge('syncing');
     try {
         await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), { stats: statsPayload }, { merge: true });
+        latestPublishedStats = normalizeInstitutionalStats(statsPayload);
+        updateStatsSyncBadge('synced', statsPayload.updatedAt);
         if (!auto) {
             showToast(`Published student statistics to website (${statsPayload.total} students).`, 'success');
         }
+        return true;
     } catch (err) {
+        updateStatsSyncBadge('error');
         if (!auto) {
             showToast('Failed to publish statistics: ' + err.message, 'error');
         }
         console.warn('Auto publish stats notice:', err);
+        return false;
+    } finally {
+        isPublishingStats = false;
     }
+};
+
+const scheduleAutoStatsSync = (delayMs = 250) => {
+    if (autoStatsSyncTimer) {
+        clearTimeout(autoStatsSyncTimer);
+        autoStatsSyncTimer = null;
+    }
+    if (!hasLoadedStudentsSnapshot || !hasLoadedConfigSnapshot) {
+        return;
+    }
+    autoStatsSyncTimer = setTimeout(() => {
+        autoStatsSyncTimer = null;
+        if (!hasLoadedStudentsSnapshot || !hasLoadedConfigSnapshot) return;
+        const candidate = computeInstitutionalStats();
+        if (latestPublishedStats && areInstitutionalStatsEqual(candidate, latestPublishedStats)) {
+            updateStatsSyncBadge('synced', latestPublishedStats.updatedAt);
+            return;
+        }
+        updateStatsSyncBadge('pending');
+        publishInstitutionalStats(true, { force: false });
+    }, delayMs);
 };
 
 const renderStudentCountsTab = () => {
@@ -1893,14 +1988,21 @@ const renderDashboard = () => {
     const targetYear = selectedDashboardAcademicYear || activeLabel;
     const isCurrentSession = (targetYear === activeLabel);
 
-    // 1. Scoped Students
+    // 1. Scoped Students (use published summary counts immediately before full students snapshot resolves)
+    const usePublishedSummary = !hasLoadedStudentsSnapshot && isCurrentSession && latestPublishedStats?.hasStats;
     const targetStudents = getStudentsForYear(targetYear);
     const activeStudentsList = targetStudents.filter((s) => normalizeStudentStatus(s.status) === 'Active');
-    const femaleCount = activeStudentsList.filter((s) => normalizeGenderLabel(s?.gender) === 'Female').length;
-    const maleCount = activeStudentsList.filter((s) => normalizeGenderLabel(s?.gender) === 'Male').length;
+    const totalStudentDisplay = usePublishedSummary ? latestPublishedStats.total : activeStudentsList.length;
+    const femaleCount = usePublishedSummary
+        ? latestPublishedStats.female
+        : activeStudentsList.filter((s) => normalizeGenderLabel(s?.gender) === 'Female').length;
+    const maleCount = usePublishedSummary
+        ? latestPublishedStats.male
+        : activeStudentsList.filter((s) => normalizeGenderLabel(s?.gender) === 'Male').length;
 
     // 2. Scoped Classes
     const targetClasses = getClassesForYear(targetYear);
+    const totalClassDisplay = targetClasses.length || (usePublishedSummary ? (latestPublishedStats.configuredClassesCount || latestPublishedStats.activeClassesCount) : 0);
 
     // 3. Scoped Staff
     const targetStaff = getStaffForAcademicYear(targetYear);
@@ -1932,8 +2034,8 @@ const renderDashboard = () => {
 
     // Set KPI Counts
     const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = String(val); };
-    setTxt('dashboard-student-count', activeStudentsList.length);
-    setTxt('dashboard-class-count', targetClasses.length);
+    setTxt('dashboard-student-count', totalStudentDisplay);
+    setTxt('dashboard-class-count', totalClassDisplay);
     setTxt('dashboard-staff-count', targetStaff.length);
     setTxt('dashboard-fee-item-count', targetFeeItems.length);
     setTxt('dashboard-group-count', targetGroups.length);
@@ -2716,6 +2818,7 @@ const refreshAcademicYearScopedData = (forceActive = false) => {
     if(!document.getElementById('student-continuity-page')?.classList.contains('hidden')) renderContinuityPage();
     if(!document.getElementById('manage-groups-page').classList.contains('hidden')) renderStudentGroups();
     if(!document.getElementById('fee-concessions-page').classList.contains('hidden')) renderConcessionsList();
+    if(!document.getElementById('student-counts-page')?.classList.contains('hidden')) renderStudentCountsTab();
 };
 
 const runBatchedWrites = async (operations, chunkSize = 400) => {
@@ -2769,6 +2872,7 @@ const buildStudentCleanupOperations = async (studentIds, { deleteStudents = fals
 const deleteStudentsAndDependencies = async (studentIds) => {
     const operations = await buildStudentCleanupOperations(studentIds, { deleteStudents: true });
     await runBatchedWrites(operations);
+    scheduleAutoStatsSync(150);
 };
 
 // Drawer
@@ -5805,6 +5909,7 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
     let addedCount = 0;
     let mergedCount = 0;
     let skippedCount = 0;
+    const importedLookupRecords = [];
 
     try {
         const targetAcademicYear = getActiveAcademicYearLabel();
@@ -5886,6 +5991,7 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
 
                         batch.set(studentRef, updateData, { merge: true });
                         batch.set(getEnrollmentRef(targetAcademicYear, existingDocId), buildEnrollmentPayload(existingDocId, { ...s.existingMatch, ...cleanPayload, academicYear: targetAcademicYear }), { merge: true });
+                        importedLookupRecords.push({ id: existingDocId, ...s.existingMatch, ...cleanPayload });
                         mergedCount += 1;
                     } else {
                         // Skip existing
@@ -5896,6 +6002,7 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
                     const studentRef = doc(collection(db, `${BASE_PATH}/students`));
                     batch.set(studentRef, cleanPayload);
                     batch.set(getEnrollmentRef(targetAcademicYear, studentRef.id), buildEnrollmentPayload(studentRef.id, cleanPayload), { merge: true });
+                    importedLookupRecords.push({ id: studentRef.id, ...cleanPayload });
                     addedCount += 1;
                 }
             });
@@ -5913,6 +6020,10 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
         }
 
         await syncActiveAcademicYearClasses([selectedBulkClass]);
+        if (importedLookupRecords.length > 0) {
+            await syncAllStudentsLookupIndex(importedLookupRecords);
+        }
+        scheduleAutoStatsSync(150);
         await logAuditEvent({
             category: 'student',
             action: 'student.import',
@@ -17166,10 +17277,20 @@ onAuthStateChanged(auth, async (user) => {
             renderAcademicYears();
             refreshAcademicYearScopedData(shouldForceCurrent);
             renderBackupCategoryCounts();
+            if (shouldForceCurrent) {
+                scheduleAutoStatsSync(300);
+            }
         });
 
         onSnapshot(configRef, (docSnap) => {
             const d = docSnap.exists() ? docSnap.data() : {};
+            latestPublishedStats = normalizeInstitutionalStats(d.stats || {});
+            hasLoadedConfigSnapshot = true;
+            if (latestPublishedStats.hasStats) {
+                updateStatsSyncBadge('synced', latestPublishedStats.updatedAt);
+            } else {
+                updateStatsSyncBadge('ready');
+            }
 
             // --- AUTO GENERATE 12 MONTHS FOR ACADEMIC YEARS ---
             let existingItems = Array.isArray(d.feeItems) ? [...d.feeItems] : [];
@@ -17260,6 +17381,9 @@ onAuthStateChanged(auth, async (user) => {
             renderDashboard();
             if(!document.getElementById('fee-settings-page').classList.contains('hidden')) renderFeeItemsManagement();
             renderBackupCategoryCounts();
+            if (hasLoadedStudentsSnapshot) {
+                scheduleAutoStatsSync(250);
+            }
         });
 
         onSnapshot(doc(db, `${BASE_PATH}/settings`, 'content'), (snap) => {
@@ -17286,16 +17410,14 @@ onAuthStateChanged(auth, async (user) => {
 
         onSnapshot(collection(db, `${BASE_PATH}/students`), (snap) => {
             rawStudents = snap.docs.map(d => ({id: d.id, ...d.data()}));
+            hasLoadedStudentsSnapshot = true;
             refreshAcademicYearScopedData();
             renderAcademicYears();
             renderBackupCategoryCounts();
-            if (rawStudents.length > 0) {
-                syncAllStudentsLookupIndex(rawStudents).catch((e) => console.warn('Background student lookup sync notice:', e));
-                publishInstitutionalStats(true).catch((e) => console.warn('Background stats publish notice:', e));
-            }
+            scheduleAutoStatsSync(250);
         });
 
-        document.getElementById('btn-publish-stats')?.addEventListener('click', () => publishInstitutionalStats(false));
+        document.getElementById('btn-publish-stats')?.addEventListener('click', () => publishInstitutionalStats(false, { force: true }));
 
         document.getElementById('btn-sync-student-lookup')?.addEventListener('click', async () => {
             const btn = document.getElementById('btn-sync-student-lookup');

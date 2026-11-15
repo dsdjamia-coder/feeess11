@@ -1461,11 +1461,15 @@
                                 <p class="text-xs text-slate-500 font-medium">Real-time gender distribution and enrollment counts across all classes.</p>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span id="stats-sync-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Counts automatically synchronize whenever student records change">
+                                <i class="fas fa-sync-alt text-[10px]"></i>
+                                <span>Auto-Sync Ready</span>
+                            </span>
                             <select id="stats-year-select" class="form-input text-xs font-bold py-1.5 px-3 rounded-lg border-slate-300">
                                 <!-- Populated dynamically with academic years -->
                             </select>
-                            <button type="button" id="btn-publish-stats" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3.5 rounded-lg text-xs shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer" title="Publish latest statistics to website homepage">
+                            <button type="button" id="btn-publish-stats" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3.5 rounded-lg text-xs shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer" title="Force sync latest statistics to website & dashboards">
                                 <i class="fas fa-cloud-upload-alt"></i>
                                 <span>Publish to Website</span>
                             </button>
