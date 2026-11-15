@@ -1063,11 +1063,18 @@ const activateResultTab = (tabEl, { updateHash = true } = {}) => {
     const targetId = tabEl.dataset.target;
     const targetSubtab = tabEl.dataset.subtab;
     const targetHref = tabEl.getAttribute('href');
+    const effectiveSubtab = targetId === 'settings-page'
+        ? (targetSubtab || (roleScope === 'admin' ? 'subpanel-publish' : 'subpanel-subjects'))
+        : targetSubtab;
 
     // Sync active class on all matching links across drawer, bottom nav, and more sheet
     document.querySelectorAll('.tab-link, .drawer-link, .bottom-nav-link[data-target], .result-more-tile[data-target]').forEach((link) => {
-        const isMatch = (targetId && link.dataset.target === targetId && (!targetSubtab || link.dataset.subtab === targetSubtab)) ||
-                        (targetHref && link.getAttribute('href') === targetHref);
+        const isSameTarget = Boolean(targetId && link.dataset.target === targetId);
+        const isMatch = isSameTarget
+            ? (targetId === 'settings-page'
+                ? link.dataset.subtab === effectiveSubtab
+                : (!effectiveSubtab || link.dataset.subtab === effectiveSubtab))
+            : Boolean(targetHref && link.getAttribute('href') === targetHref);
         link.classList.toggle('active', !!isMatch);
     });
 
@@ -1077,9 +1084,9 @@ const activateResultTab = (tabEl, { updateHash = true } = {}) => {
     if (moreBtn) moreBtn.classList.toggle('active', isOverflowActive);
 
     document.querySelectorAll('.settings-nav-link').forEach((link) => {
-        if (targetSubtab && link.dataset.subtab === targetSubtab) {
+        if (targetId === 'settings-page' && effectiveSubtab && link.dataset.subtab === effectiveSubtab) {
             link.classList.add('active');
-        } else if (!targetSubtab) {
+        } else if (targetId !== 'settings-page' || !effectiveSubtab) {
             link.classList.remove('active');
             link.style.background = '';
             link.style.color = '';
@@ -1114,15 +1121,16 @@ const activateResultTab = (tabEl, { updateHash = true } = {}) => {
         if (typeof renderPromotionCandidatesUI === 'function') {
             renderPromotionCandidatesUI();
         }
-    } else if (targetId === 'settings-page' && targetSubtab) {
+    } else if (targetId === 'settings-page' && effectiveSubtab) {
         if (typeof activateSettingsSubpanel === 'function') {
-            activateSettingsSubpanel(targetSubtab);
+            activateSettingsSubpanel(effectiveSubtab);
         }
     }
 
     // Toggle full-width layout body class specifically for Marks Entry tab
     if (targetId === 'marks-page') {
         document.body.classList.add('marks-entry-active');
+        setMarksEntryMode(activeMarksEntryMode);
         updateMarksDownloadAndUploadState();
     } else {
         document.body.classList.remove('marks-entry-active');
@@ -3447,6 +3455,77 @@ const bindHeaderSubjectMarkInputs = () => {
     }
 };
 
+let activeMarksEntryMode = 'manual';
+
+const updateMarksManualZeroState = (hasTable = false) => {
+    const emptyEl = document.getElementById('marks-manual-empty-state');
+    if (emptyEl) {
+        emptyEl.classList.toggle('hidden', Boolean(hasTable));
+    }
+};
+
+function setMarksEntryMode(mode = 'manual') {
+    activeMarksEntryMode = mode === 'bulk' ? 'bulk' : 'manual';
+    const isManual = activeMarksEntryMode === 'manual';
+
+    const manualTab = document.getElementById('marks-tab-manual');
+    const bulkTab = document.getElementById('marks-tab-bulk');
+    const manualPanel = document.getElementById('marks-manual-panel');
+    const bulkPanel = document.getElementById('marks-bulk-panel');
+
+    const activeClasses = ['bg-white', 'text-indigo-700', 'shadow-xs', 'border-indigo-100'];
+    const inactiveClasses = ['text-slate-600', 'hover:text-slate-900', 'border-transparent'];
+
+    if (manualTab) {
+        manualTab.setAttribute('aria-selected', isManual ? 'true' : 'false');
+        activeClasses.forEach((cls) => manualTab.classList.toggle(cls, isManual));
+        inactiveClasses.forEach((cls) => manualTab.classList.toggle(cls, !isManual));
+    }
+    if (bulkTab) {
+        bulkTab.setAttribute('aria-selected', !isManual ? 'true' : 'false');
+        activeClasses.forEach((cls) => bulkTab.classList.toggle(cls, !isManual));
+        inactiveClasses.forEach((cls) => bulkTab.classList.toggle(cls, isManual));
+    }
+
+    if (manualPanel) manualPanel.classList.toggle('hidden', !isManual);
+    if (bulkPanel) bulkPanel.classList.toggle('hidden', isManual);
+
+    closeAllMaxPresetMenus();
+
+    if (isManual) {
+        const cont = document.getElementById('marks-entry-container');
+        const hasTable = Boolean(cont && !cont.classList.contains('hidden'));
+        updateMarksManualZeroState(hasTable);
+        if (manualPanel) syncSmartSelectDisplay(manualPanel);
+    } else {
+        updateMarksDownloadAndUploadState();
+    }
+}
+
+const resolveDefaultWorkingDays = (className = '', examId = '', scopedStudents = [], pendingInputs = {}) => {
+    const workingDaysCounts = {};
+    scopedStudents.forEach((student) => {
+        const pendingInput = pendingInputs[student.id];
+        const existingRecord = examResultsCache.find((r) => resultMatchesExam(r, examId) && r.studentId === student.id);
+        const w = (pendingInput && pendingInput.working !== undefined && pendingInput.working !== '')
+            ? pendingInput.working
+            : existingRecord?.attendance?.workingDays;
+        if (w !== undefined && w !== null && String(w).trim() !== '' && Number(w) > 0) {
+            const s = String(w).trim();
+            workingDaysCounts[s] = (workingDaysCounts[s] || 0) + 1;
+        }
+    });
+    let maxCount = 0;
+    let mostCommon = '';
+    Object.entries(workingDaysCounts).forEach(([val, count]) => {
+        if (count > maxCount) {
+            maxCount = count;
+            mostCommon = val;
+        }
+    });
+    return mostCommon;
+};
+
 const loadMarksTable = () => {
     const examId = document.getElementById('entry-exam-select')?.value || '';
     const className = document.getElementById('entry-class-select')?.value || '';
@@ -3454,6 +3533,7 @@ const loadMarksTable = () => {
 
     if(!examId || !className) {
         cont?.classList.add('hidden');
+        updateMarksManualZeroState(false);
         lastLoadedMarksContext = { class: className, exam: examId, academicYear: currentAcademicYear };
         return;
     }
@@ -3496,9 +3576,7 @@ const loadMarksTable = () => {
             currentInputValues[sId] = { marks: sMarks, working: work, present: pres, overridden: isOverridden };
         });
     } else {
-        const toolbarInp = document.getElementById('entry-top-total-attendance');
         const headerInp = document.getElementById('header-col-total-attendance');
-        if (toolbarInp) toolbarInp.value = '';
         if (headerInp) headerInp.value = '';
     }
 
@@ -3510,7 +3588,8 @@ const loadMarksTable = () => {
     entryStudents = sortStudentList(rawFiltered, sortMode, genderMode);
 
     if(!currentExamSchema) {
-        cont.classList.add('hidden');
+        cont?.classList.add('hidden');
+        updateMarksManualZeroState(false);
         alert("Exam configuration or schema not valid.");
         return;
     }
@@ -3526,6 +3605,7 @@ const loadMarksTable = () => {
         document.getElementById('marks-table-head').innerHTML = `<tr><th class="p-3 text-center bg-slate-100 text-slate-600 font-bold text-xs border-b border-slate-200">Information</th></tr>`;
         document.getElementById('marks-table-body').innerHTML = `<tr><td class="p-10 text-center text-slate-400 font-bold bg-white"><i class="fas fa-users-slash text-2xl mb-2 text-slate-300 block"></i>No active students registered in ${escapeHtml(className)} for academic session ${escapeHtml(currentAcademicYear)}.</td></tr>`;
         cont.classList.remove('hidden');
+        updateMarksManualZeroState(true);
         return;
     }
 
@@ -3536,32 +3616,10 @@ const loadMarksTable = () => {
     const studentCountBadge = document.getElementById('entry-student-count-badge');
     if (studentCountBadge) studentCountBadge.textContent = `${entryStudents.length} Students`;
 
-    let activeTopTotalAtt = (document.getElementById('entry-top-total-attendance')?.value || document.getElementById('header-col-total-attendance')?.value || '').trim();
+    let activeTopTotalAtt = (document.getElementById('header-col-total-attendance')?.value || '').trim();
 
     if (!activeTopTotalAtt) {
-        const workingDaysCounts = {};
-        entryStudents.forEach(student => {
-            const pendingInput = currentInputValues[student.id];
-            const existingRecord = examResultsCache.find(r => resultMatchesExam(r, examId) && r.studentId === student.id);
-            const w = (pendingInput && pendingInput.working !== undefined && pendingInput.working !== '')
-                ? pendingInput.working
-                : existingRecord?.attendance?.workingDays;
-            if (w !== undefined && w !== null && String(w).trim() !== '' && Number(w) > 0) {
-                const s = String(w).trim();
-                workingDaysCounts[s] = (workingDaysCounts[s] || 0) + 1;
-            }
-        });
-        let maxCount = 0;
-        let mostCommon = '';
-        Object.entries(workingDaysCounts).forEach(([val, count]) => {
-            if (count > maxCount) {
-                maxCount = count;
-                mostCommon = val;
-            }
-        });
-        if (mostCommon) {
-            activeTopTotalAtt = mostCommon;
-        }
+        activeTopTotalAtt = resolveDefaultWorkingDays(className, examId, entryStudents, currentInputValues);
     }
 
     const resolvedSubjects = getSchemaSubjectRows(currentExamSchema, currentExamContext?.key || '').map((sub) => {
@@ -3672,6 +3730,7 @@ const loadMarksTable = () => {
     });
     document.getElementById('marks-table-body').innerHTML = bodyHtml;
     cont.classList.remove('hidden');
+    updateMarksManualZeroState(true);
     bindHeaderSubjectMarkInputs();
     bindMarksValidationEvents();
     bindMarksKeyboardNavigation();
@@ -3682,9 +3741,7 @@ const loadMarksTable = () => {
 
 const syncTopTotalAttendanceToInputs = (val) => {
     const trimmed = String(val ?? '').trim();
-    const toolbarInp = document.getElementById('entry-top-total-attendance');
     const headerInp = document.getElementById('header-col-total-attendance');
-    if (toolbarInp && toolbarInp.value !== trimmed) toolbarInp.value = trimmed;
     if (headerInp && headerInp.value !== trimmed) headerInp.value = trimmed;
 };
 
@@ -3709,7 +3766,7 @@ const bindAttendanceEvents = () => {
     tableBody.addEventListener('input', (e) => {
         const inp = e.target.closest('.attendance-working');
         if (!inp) return;
-        const currentTop = (document.getElementById('entry-top-total-attendance')?.value || document.getElementById('header-col-total-attendance')?.value || '').trim();
+        const currentTop = (document.getElementById('header-col-total-attendance')?.value || '').trim();
         const myVal = inp.value.trim();
 
         if (currentTop && myVal !== currentTop && myVal !== '') {
@@ -3725,20 +3782,12 @@ const bindAttendanceEvents = () => {
 };
 
 const bindTopTotalAttendanceInputs = () => {
-    const toolbarInp = document.getElementById('entry-top-total-attendance');
     const headerInp = document.getElementById('header-col-total-attendance');
-
-    const onInput = (e) => {
-        syncTopTotalAttendanceToRows(e.target.value);
-    };
-
-    if (toolbarInp && !toolbarInp.dataset.bound) {
-        toolbarInp.dataset.bound = 'true';
-        toolbarInp.addEventListener('input', onInput);
-    }
     if (headerInp && !headerInp.dataset.bound) {
         headerInp.dataset.bound = 'true';
-        headerInp.addEventListener('input', onInput);
+        headerInp.addEventListener('input', (e) => {
+            syncTopTotalAttendanceToRows(e.target.value);
+        });
     }
 };
 
@@ -3900,7 +3949,8 @@ const getBulkTemplateRows = () => {
         .filter((s) => s.class === className && (s.academicYear === currentAcademicYear || !s.academicYear))
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     const subjectRows = getActiveHeaderSubjectRows(currentExamSchema, currentExamContext?.key || '');
-    const currentTopTotal = (document.getElementById('entry-top-total-attendance')?.value || document.getElementById('header-col-total-attendance')?.value || '').trim();
+    const currentTopTotal = (document.getElementById('header-col-total-attendance')?.value || '').trim()
+        || resolveDefaultWorkingDays(className, examId, scopedStudents);
     return scopedStudents.map((student) => {
         const row = {
             student_id: student.id,
@@ -4758,6 +4808,13 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
 };
 
 // Event Listeners for Marks Entry controls & review modal
+document.getElementById('marks-tab-manual')?.addEventListener('click', () => {
+    setMarksEntryMode('manual');
+});
+document.getElementById('marks-tab-bulk')?.addEventListener('click', () => {
+    setMarksEntryMode('bulk');
+});
+
 document.getElementById('entry-exam-select')?.addEventListener('change', () => {
     updateMarksDownloadAndUploadState();
     loadMarksTable();
@@ -8856,13 +8913,19 @@ document.getElementById('visibility-modal-close')?.addEventListener('click', () 
     }
     document.body.classList.remove('modal-scroll-lock');
 });
+const updateSelectToggleBtnLabel = (btn, isDeselectState) => {
+    if (!btn) return;
+    btn.innerHTML = isDeselectState
+        ? '<i class="fas fa-square-minus text-indigo-500"></i> Deselect All'
+        : '<i class="fas fa-check-square text-indigo-500"></i> Select All';
+};
 const bindSelectToggle = (btnId, checkboxClass) => {
     document.getElementById(btnId)?.addEventListener('click', () => {
         const btn = document.getElementById(btnId);
         const boxes = Array.from(document.querySelectorAll(`.${checkboxClass}`));
         const allChecked = boxes.length && boxes.every((box) => box.checked);
         boxes.forEach((box) => { box.checked = !allChecked; });
-        if (btn) btn.textContent = allChecked ? 'Select All' : 'Deselect All';
+        updateSelectToggleBtnLabel(btn, !allChecked && boxes.length > 0);
     });
 };
 bindSelectToggle('published-select-toggle-btn', 'published-select-checkbox');
@@ -8885,15 +8948,13 @@ document.addEventListener('change', (e) => {
         document.querySelectorAll('.draft-select-checkbox').forEach((cb) => {
             cb.checked = isChecked;
         });
-        const toggleBtn = document.getElementById('draft-select-toggle-btn');
-        if (toggleBtn) toggleBtn.textContent = isChecked ? 'Deselect All' : 'Select All';
+        updateSelectToggleBtnLabel(document.getElementById('draft-select-toggle-btn'), isChecked);
     } else if (e.target.id === 'published-table-select-all') {
         const isChecked = e.target.checked;
         document.querySelectorAll('.published-select-checkbox').forEach((cb) => {
             cb.checked = isChecked;
         });
-        const toggleBtn = document.getElementById('published-select-toggle-btn');
-        if (toggleBtn) toggleBtn.textContent = isChecked ? 'Deselect All' : 'Select All';
+        updateSelectToggleBtnLabel(document.getElementById('published-select-toggle-btn'), isChecked);
     }
 });
 
@@ -8984,6 +9045,17 @@ const activateSettingsSubpanel = (subtabId) => {
             link.style.fontWeight = '';
         }
     });
+
+    // Sync active highlight across Mobile More sheet tiles and bottom More trigger
+    const isSettingsVisible = !document.getElementById('settings-page')?.classList.contains('hidden');
+    if (isSettingsVisible) {
+        document.querySelectorAll('.result-more-tile[data-target]').forEach((tile) => {
+            const isMatch = tile.dataset.target === 'settings-page' && tile.dataset.subtab === subtabId;
+            tile.classList.toggle('active', isMatch);
+        });
+        const moreBtn = document.getElementById('btn-result-more');
+        if (moreBtn) moreBtn.classList.add('active');
+    }
 
     // Also sync any subtab buttons if present
     document.querySelectorAll('.settings-subtab-btn').forEach((b) => {
