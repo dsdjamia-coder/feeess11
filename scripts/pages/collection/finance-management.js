@@ -70,44 +70,44 @@ export const renderFeeItemsManagement = () => {
 
     const renderMonthlyItemCard = (item) => {
         const cleanName = (item.name || '').replace(/^default\s*[-:—–]?\s*/i, '').trim();
-        return `<div class="flex items-center gap-3 p-3.5 bg-white border border-slate-200 hover:border-blue-300 rounded-xl shadow-2xs hover:shadow-xs transition drag-item" data-key="${escapeHtml(item.key)}">
-            <span class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 text-xs shadow-2xs"><i class="fas fa-calendar-alt"></i></span>
-            <span class="font-bold text-gray-800 text-sm truncate">${escapeHtml(cleanName)}</span>
+        return `<div class="flex items-center gap-2 sm:gap-3 p-2 sm:p-3.5 bg-white border border-slate-200 hover:border-blue-300 rounded-xl shadow-2xs hover:shadow-xs transition drag-item" data-key="${escapeHtml(item.key)}">
+            <span class="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 text-[11px] sm:text-xs shadow-2xs"><i class="fas fa-calendar-alt"></i></span>
+            <span class="font-bold text-gray-800 text-xs sm:text-sm truncate">${escapeHtml(cleanName)}</span>
         </div>`;
     };
 
     const renderItemCard = (item) => {
         let detailsHtml = '';
         if (item.type === 'custom') {
-            detailsHtml = `<div class="text-xs text-gray-500 mt-1">Scope: <span class="font-semibold text-blue-600 uppercase">${escapeHtml(item.scope || 'GLOBAL')}</span> | Receipt Mandatory: <span class="font-semibold ${item.isReceiptMandatory ? 'text-red-500' : 'text-gray-400'}">${item.isReceiptMandatory ? 'YES' : 'NO'}</span></div>`;
+            detailsHtml = `<div class="text-[11px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Scope: <span class="font-semibold text-blue-600 uppercase">${escapeHtml(item.scope || 'GLOBAL')}</span> | Receipt Mandatory: <span class="font-semibold ${item.isReceiptMandatory ? 'text-red-500' : 'text-gray-400'}">${item.isReceiptMandatory ? 'YES' : 'NO'}</span></div>`;
         }
         const handleHtml = item.type === 'custom'
-            ? `<span class="drag-handle mr-4 text-gray-500 text-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg px-2 py-1 cursor-grab active:cursor-grabbing select-none" title="Drag to reorder"><i class="fas fa-grip-lines"></i></span>`
-            : `<span class="mr-4 text-[10px] font-bold uppercase text-gray-400">Fixed</span>`;
+            ? `<span class="drag-handle mr-2 sm:mr-4 text-gray-500 text-sm sm:text-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg px-1.5 sm:px-2 py-0.5 sm:py-1 cursor-grab active:cursor-grabbing select-none" title="Drag to reorder"><i class="fas fa-grip-lines"></i></span>`
+            : `<span class="mr-2 sm:mr-4 text-[10px] font-bold uppercase text-gray-400">Fixed</span>`;
 
-        return `<div class="flex items-center bg-white border border-gray-200 p-4 rounded-xl shadow-sm drag-item transition hover:shadow-md" data-key="${escapeHtml(item.key)}">
+        return `<div class="flex items-center bg-white border border-gray-200 p-2.5 sm:p-4 rounded-xl shadow-sm drag-item transition hover:shadow-md" data-key="${escapeHtml(item.key)}">
             ${handleHtml}
-            <div class="flex-grow">
-                <span class="font-bold text-gray-800 text-base sm:text-lg">${escapeHtml(item.name)}</span>
+            <div class="flex-grow min-w-0">
+                <span class="font-bold text-gray-800 text-sm sm:text-lg block truncate">${escapeHtml(item.name)}</span>
                 ${detailsHtml}
             </div>
             ${item.type === 'custom' ? `
-                <button type="button" class="text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-bold transition edit-fee mr-2 cursor-pointer" data-key="${escapeHtml(item.key)}"><i class="fas fa-edit"></i></button>
-                <button type="button" class="text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-bold transition del-fee cursor-pointer" data-key="${escapeHtml(item.key)}"><i class="fas fa-trash"></i></button>
-            ` : `<span class="px-3 py-1 bg-gray-100 text-gray-500 rounded-lg text-xs font-bold uppercase tracking-wider">Month</span>`}
+                <button type="button" class="text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition edit-fee mr-1.5 sm:mr-2 cursor-pointer shrink-0" data-key="${escapeHtml(item.key)}"><i class="fas fa-edit"></i></button>
+                <button type="button" class="text-red-600 bg-red-50 hover:bg-red-100 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition del-fee cursor-pointer shrink-0" data-key="${escapeHtml(item.key)}"><i class="fas fa-trash"></i></button>
+            ` : `<span class="px-2 sm:px-3 py-0.5 sm:py-1 bg-gray-100 text-gray-500 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider shrink-0">Month</span>`}
         </div>`;
     };
 
     cont.innerHTML = `
-        <div class="mb-5">
-            <h4 class="text-sm font-bold text-blue-800 mb-2.5 uppercase tracking-wider flex items-center gap-2"><i class="fas fa-calendar-check text-blue-600"></i> Default Months (${escapeHtml(activeYear || '--')})</h4>
-            <div id="fee-items-monthly-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="mb-3.5 sm:mb-5">
+            <h4 class="text-xs sm:text-sm font-bold text-blue-800 mb-2 sm:mb-2.5 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2"><i class="fas fa-calendar-check text-blue-600"></i> Default Months (${escapeHtml(activeYear || '--')})</h4>
+            <div id="fee-items-monthly-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                 ${monthlyItems.map(renderMonthlyItemCard).join('') || '<p class="text-xs text-gray-500 italic col-span-full">Monthly defaults are not available.</p>'}
             </div>
         </div>
         <div>
-            <h4 class="text-sm font-bold text-emerald-800 mb-2.5 uppercase tracking-wider flex items-center gap-2"><i class="fas fa-layer-group text-emerald-600"></i> Other Fee Items (${escapeHtml(activeYear || '--')})</h4>
-            <div id="fee-items-custom-list" class="space-y-3">
+            <h4 class="text-xs sm:text-sm font-bold text-emerald-800 mb-2 sm:mb-2.5 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2"><i class="fas fa-layer-group text-emerald-600"></i> Other Fee Items (${escapeHtml(activeYear || '--')})</h4>
+            <div id="fee-items-custom-list" class="space-y-2 sm:space-y-3">
                 ${customItems.map(renderItemCard).join('') || '<p class="text-xs text-gray-500 italic">No custom fee items added yet.</p>'}
             </div>
         </div>
@@ -362,25 +362,25 @@ export const renderStudentGroups = () => {
 
             return `
                 <tr class="hover:bg-blue-50/40 transition-colors">
-                    <td class="py-2.5 px-3 text-center text-gray-400 font-semibold">${mIdx + 1}</td>
-                    <td class="py-2.5 px-3">
-                        <span class="font-bold text-slate-800 text-xs">${studentName}</span>
+                    <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center text-gray-400 font-semibold tabular-nums">${mIdx + 1}</td>
+                    <td class="py-1.5 sm:py-2.5 px-2 sm:px-3">
+                        <span class="font-bold text-slate-800 text-[11px] sm:text-xs">${studentName}</span>
                     </td>
-                    <td class="py-2.5 px-3 text-center">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[11px] border border-blue-200">
+                    <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center">
+                        <span class="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold text-[10px] sm:text-[11px] border border-blue-200">
                             Class ${studentClass}
                         </span>
                     </td>
-                    <td class="py-2.5 px-3 text-center">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 font-semibold text-[11px] border border-gray-200">
+                    <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center">
+                        <span class="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 font-semibold text-[10px] sm:text-[11px] border border-gray-200 tabular-nums">
                             ${admNo}
                         </span>
                     </td>
-                    <td class="py-2.5 px-3 text-xs">
+                    <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-[11px] sm:text-xs">
                         ${parentDisplayName || parentDisplayPhone ? `
-                            <div class="flex items-center gap-2 flex-wrap">
+                            <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                                 <span class="font-bold text-gray-800">${escapeHtml(parentDisplayName || '-')}</span>
-                                ${parentDisplayPhone ? `<span class="text-gray-500 font-mono text-[11px] inline-flex items-center gap-1"><i class="fas fa-phone text-[10px] text-gray-400"></i>${escapeHtml(parentDisplayPhone)}</span>` : ''}
+                                ${parentDisplayPhone ? `<span class="text-gray-500 font-mono text-[10px] sm:text-[11px] inline-flex items-center gap-1"><i class="fas fa-phone text-[10px] text-gray-400"></i>${escapeHtml(parentDisplayPhone)}</span>` : ''}
                             </div>
                         ` : `<span class="text-gray-400 italic">--</span>`}
                     </td>
@@ -392,25 +392,25 @@ export const renderStudentGroups = () => {
 
         return `
             <div class="bg-white border border-gray-200 rounded-xl shadow-xs overflow-hidden hover:border-blue-300 transition-all">
-                <div class="bg-slate-50 px-3.5 py-2.5 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div class="flex items-center gap-2.5 flex-wrap">
-                        <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-black shadow-2xs">
+                <div class="bg-slate-50 px-2.5 py-2 sm:px-3.5 sm:py-2.5 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
+                    <div class="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+                        <span class="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-[11px] sm:text-xs font-black shadow-2xs">
                             ${gIdx + 1}
                         </span>
-                        <h4 class="font-bold text-sm text-gray-800">Group #${gIdx + 1}</h4>
-                        <span class="inline-flex items-center gap-1 text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                        <h4 class="font-bold text-xs sm:text-sm text-gray-800">Group #${gIdx + 1}</h4>
+                        <span class="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 sm:px-2.5 py-0.5 rounded-full">
                             <i class="fas fa-users text-[10px]"></i> ${(g.memberIds || []).length} Students
                         </span>
-                        <span class="inline-flex items-center gap-1 text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-md shadow-2xs">
+                        <span class="inline-flex items-center gap-1 text-[11px] sm:text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 sm:px-2.5 py-0.5 rounded-md shadow-2xs tabular-nums">
                             ${formatCurrency(feeAmount)}/month
                         </span>
                     </div>
 
                     <div class="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
-                        <button type="button" class="text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md text-xs font-bold transition inline-flex items-center gap-1 edit-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
+                        <button type="button" class="text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition inline-flex items-center gap-1 edit-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
                             <i class="fas fa-edit text-[10px]"></i> Edit
                         </button>
-                        <button type="button" class="text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-md text-xs font-bold transition inline-flex items-center gap-1 del-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
+                        <button type="button" class="text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition inline-flex items-center gap-1 del-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
                             <i class="fas fa-trash-alt text-[10px]"></i> Delete
                         </button>
                     </div>
@@ -420,11 +420,11 @@ export const renderStudentGroups = () => {
                     <table class="w-full text-left border-collapse text-xs">
                         <thead class="bg-gray-50/80 text-gray-600 uppercase font-bold text-[10px] tracking-wider border-b border-gray-200">
                             <tr>
-                                <th class="py-2 px-3 w-10 text-center">#</th>
-                                <th class="py-2 px-3">Student Name</th>
-                                <th class="py-2 px-3 text-center">Class</th>
-                                <th class="py-2 px-3 text-center">Adm No</th>
-                                <th class="py-2 px-3">Parent (Father / Mother)</th>
+                                <th class="py-1.5 sm:py-2 px-2 sm:px-3 w-8 sm:w-10 text-center">#</th>
+                                <th class="py-1.5 sm:py-2 px-2 sm:px-3">Student Name</th>
+                                <th class="py-1.5 sm:py-2 px-2 sm:px-3 text-center">Class</th>
+                                <th class="py-1.5 sm:py-2 px-2 sm:px-3 text-center">Adm No</th>
+                                <th class="py-1.5 sm:py-2 px-2 sm:px-3">Parent (Father / Mother)</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -833,21 +833,21 @@ export const renderConcessionsList = () => {
     cont.innerHTML = fil.map((s) => {
         const hasConc = s.concessionFee !== undefined && s.concessionFee !== null && s.concessionFee !== '';
         return `
-            <div class="p-2.5 bg-white border border-slate-200 rounded-lg shadow-2xs hover:border-blue-200 transition flex items-center justify-between gap-2">
+            <div class="p-2 sm:p-2.5 bg-white border border-slate-200 rounded-lg shadow-2xs hover:border-blue-200 transition flex items-center justify-between gap-2">
                 <div class="min-w-0 flex-1">
                     <span class="font-bold text-xs text-slate-800 break-words leading-tight block">${escapeHtml(s.name || '-')}</span>
-                    <div class="flex items-center gap-1.5 text-[11px] text-slate-500 mt-1">
+                    <div class="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-500 mt-0.5 sm:mt-1">
                         <span class="font-medium text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">Class ${escapeHtml(s.class || '--')}</span>
                         <span>•</span>
                         <span>Adm: ${escapeHtml(s.adm || '-')}</span>
                     </div>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    ${hasConc ? `<span class="bg-emerald-50 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded border border-emerald-200">₹${escapeHtml(String(s.concessionFee))}</span>` : ''}
-                    <button type="button" class="bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-2.5 py-1 rounded-md text-xs transition concession-open-btn cursor-pointer" data-id="${escapeHtml(s.id)}">
+                <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                    ${hasConc ? `<span class="bg-emerald-50 text-emerald-800 text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded border border-emerald-200 tabular-nums">₹${escapeHtml(String(s.concessionFee))}</span>` : ''}
+                    <button type="button" class="bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs transition concession-open-btn cursor-pointer" data-id="${escapeHtml(s.id)}">
                         ${hasConc ? 'Edit' : 'Assign'}
                     </button>
-                    ${hasConc ? `<button type="button" class="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold px-2 py-1 rounded-md text-xs transition concession-delete-btn cursor-pointer" data-id="${escapeHtml(s.id)}"><i class="fas fa-trash-alt text-[10px]"></i></button>` : ''}
+                    ${hasConc ? `<button type="button" class="bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold px-1.5 sm:px-2 py-1 rounded-md text-[11px] sm:text-xs transition concession-delete-btn cursor-pointer" data-id="${escapeHtml(s.id)}"><i class="fas fa-trash-alt text-[10px]"></i></button>` : ''}
                 </div>
             </div>
         `;
@@ -890,18 +890,18 @@ const renderActiveConcessionsList = () => {
 
     cont.innerHTML = filtered.map((s, idx) => `
         <tr class="hover:bg-slate-50 transition">
-            <td class="py-2.5 px-3 text-center text-slate-400 font-semibold">${idx + 1}</td>
-            <td class="py-2.5 px-3">
-                <span class="font-bold text-slate-800 text-xs">${escapeHtml(s.name || '-')}</span>
+            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center text-slate-400 font-semibold tabular-nums">${idx + 1}</td>
+            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3">
+                <span class="font-bold text-slate-800 text-[11px] sm:text-xs">${escapeHtml(s.name || '-')}</span>
             </td>
-            <td class="py-2.5 px-3 text-center">
-                <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">${escapeHtml(s.class || '--')}</span>
+            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center">
+                <span class="px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">${escapeHtml(s.class || '--')}</span>
             </td>
-            <td class="py-2.5 px-3 text-center font-mono font-bold text-slate-700">${escapeHtml(s.adm || '-')}</td>
-            <td class="py-2.5 px-3 text-right font-extrabold text-emerald-700">₹${escapeHtml(String(s.concessionFee))}</td>
-            <td class="py-2.5 px-3 text-center">
-                <button type="button" class="p-1.5 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition concession-open-btn cursor-pointer mr-1" data-id="${escapeHtml(s.id)}" title="Edit Concession"><i class="fas fa-edit"></i></button>
-                <button type="button" class="p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition concession-delete-btn cursor-pointer" data-id="${escapeHtml(s.id)}" title="Remove Concession"><i class="fas fa-trash-alt"></i></button>
+            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center font-mono font-bold text-slate-700 tabular-nums">${escapeHtml(s.adm || '-')}</td>
+            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-right font-extrabold text-emerald-700 tabular-nums">₹${escapeHtml(String(s.concessionFee))}</td>
+            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center whitespace-nowrap">
+                <button type="button" class="p-1 sm:p-1.5 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition concession-open-btn cursor-pointer mr-0.5 sm:mr-1" data-id="${escapeHtml(s.id)}" title="Edit Concession"><i class="fas fa-edit"></i></button>
+                <button type="button" class="p-1 sm:p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition concession-delete-btn cursor-pointer" data-id="${escapeHtml(s.id)}" title="Remove Concession"><i class="fas fa-trash-alt"></i></button>
             </td>
         </tr>
     `).join('');

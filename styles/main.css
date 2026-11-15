@@ -3046,3 +3046,93 @@ body:not(.worksheet-fullscreen-mode) .worksheet-sticky-header {
         transition: none !important;
     }
 }
+
+/* =====================================================================
+   COLLECTION PORTAL MOBILE COMPACT LAYOUT (< 640px ONLY)
+   Strictly scoped to Collection Portal; desktop/laptop & Fee Register sticky grid untouched
+===================================================================== */
+@media (max-width: 639px) {
+    body.collection-shell #collection-app {
+        padding-bottom: 68px;
+    }
+
+    body.collection-shell .collection-bottom-nav,
+    body.collection-shell #collection-bottom-nav {
+        left: 6px !important;
+        right: 6px !important;
+        bottom: calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+        padding: 4px 4px 5px !important;
+        border-radius: 16px !important;
+        gap: 2px !important;
+    }
+
+    body.collection-shell .collection-bottom-nav-link {
+        min-height: 42px;
+        padding: 3px 2px;
+        border-radius: 12px;
+        gap: 1px;
+    }
+
+    body.collection-shell .collection-bottom-nav-link i {
+        font-size: 14px;
+    }
+
+    body.collection-shell .collection-bottom-nav-link span {
+        font-size: 9.5px;
+    }
+
+    /* Compact Analytics Insight Cards (2x2 Grid on Mobile) */
+    body.collection-shell #collection-app .insight-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    body.collection-shell #collection-app .insight-card {
+        border-radius: 12px;
+        padding: 10px 11px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+
+    body.collection-shell #collection-app .insight-label {
+        font-size: 10px;
+        letter-spacing: 0.05em;
+        margin-bottom: 2px;
+    }
+
+    body.collection-shell #collection-app .insight-value {
+        font-size: 1.05rem;
+        line-height: 1.2;
+        font-variant-numeric: tabular-nums;
+    }
+
+    body.collection-shell #collection-app .insight-subvalue {
+        margin-top: 2px;
+        font-size: 10px;
+        line-height: 1.25;
+    }
+
+    /* Compact Bulk Drop Zone */
+    body.collection-shell #collection-app #bulk-drop-zone {
+        padding: 16px 12px;
+        border-radius: 12px;
+    }
+
+    /* Compact Form Controls Inside Collection Portal Panels */
+    body.collection-shell #collection-app :is(#fee-entry-card, #donation-page, #bulk-upload-page, #fee-dues-page, #history-page, #monthly-collected-page, #students-page, #fee-settings-page) input:not([type="checkbox"]):not([type="radio"]),
+    body.collection-shell #collection-app :is(#fee-entry-card, #donation-page, #bulk-upload-page, #fee-dues-page, #history-page, #monthly-collected-page, #students-page, #fee-settings-page) select,
+    body.collection-shell #collection-app :is(#fee-entry-card, #donation-page, #bulk-upload-page, #fee-dues-page, #history-page, #monthly-collected-page, #students-page, #fee-settings-page) .smart-select-trigger {
+        min-height: 36px;
+        font-size: 12px;
+    }
+
+    /* Compact Tables Across Collection Tabs (Excluding Fee Register Sticky Grid) */
+    body.collection-shell #collection-app :is(#dash-students-class-table, #dues-table-container, #history-content-container, #monthly-collected-container, #collector-wise-monthly-container, #stu-info-container, #student-groups-list, #fee-concessions-page) table {
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    body.collection-shell #collection-app :is(#dash-students-class-table, #dues-table-container, #history-content-container, #monthly-collected-container, #collector-wise-monthly-container, #stu-info-container, #student-groups-list, #fee-concessions-page) :is(th, td) {
+        padding: 6px 8px;
+    }
+}
+

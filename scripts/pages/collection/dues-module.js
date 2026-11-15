@@ -492,20 +492,20 @@ export const renderFeeDues = () => {
 
     // Unified responsive table HTML for all screen sizes (mobile & desktop)
     let tableHtml = `
-        <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs custom-scroll">
-            <table class="w-full text-left border-collapse text-xs whitespace-nowrap">
+        <div class="overflow-x-auto rounded-xl sm:rounded-2xl border border-slate-200 bg-white shadow-xs custom-scroll">
+            <table class="w-full text-left border-collapse text-xs whitespace-nowrap tabular-nums">
                 <thead>
                     <tr class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-                        <th class="py-3 px-3 w-12 text-center">#</th>
-                        <th class="py-3 px-3 w-20 text-center">Adm No</th>
-                        <th class="py-3 px-3 min-w-[180px]">Student Details</th>
-                        <th class="py-3 px-3 w-20 text-center">Class</th>
-                        <th class="py-3 px-3 min-w-[180px]">Guardian &amp; Phone</th>
-                        <th class="py-3 px-3 min-w-[160px]">Unpaid Months (${escapeHtml(targetYear)})</th>
-                        <th class="py-3 px-3 text-right min-w-[100px]">Current Due</th>
-                        <th class="py-3 px-3 text-right min-w-[100px]">Past Dues</th>
-                        <th class="py-3 px-3 text-right min-w-[110px]">Total Due</th>
-                        <th class="py-3 px-3 text-center w-28">Actions</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 w-10 sm:w-12 text-center">#</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 w-16 sm:w-20 text-center">Adm No</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 min-w-[155px] sm:min-w-[180px]">Student Details</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 w-16 sm:w-20 text-center">Class</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 min-w-[155px] sm:min-w-[180px]">Guardian &amp; Phone</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 min-w-[140px] sm:min-w-[160px]">Unpaid Months (${escapeHtml(targetYear)})</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 text-right min-w-[90px] sm:min-w-[100px]">Current Due</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 text-right min-w-[90px] sm:min-w-[100px]">Past Dues</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 text-right min-w-[95px] sm:min-w-[110px]">Total Due</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 text-center w-24 sm:w-28">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -543,9 +543,9 @@ export const renderFeeDues = () => {
 
         tableHtml += `
             <tr class="hover:bg-slate-50/70 transition">
-                <td class="py-2.5 px-3 text-center text-slate-500 font-bold">${rowNum}</td>
-                <td class="py-2.5 px-3 text-center font-mono font-bold text-slate-700">${escapeHtml(item.adm)}</td>
-                <td class="py-2.5 px-3">
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3 text-center text-slate-500 font-bold">${rowNum}</td>
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3 text-center font-mono font-bold text-slate-700">${escapeHtml(item.adm)}</td>
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3">
                     <div class="font-extrabold text-slate-800 flex items-center flex-wrap gap-1">
                         <span>${escapeHtml(item.name)}</span>
                         ${genderIcon}
@@ -553,34 +553,34 @@ export const renderFeeDues = () => {
                         ${concessionBadge}
                     </div>
                 </td>
-                <td class="py-2.5 px-3 text-center font-black text-indigo-700 bg-indigo-50/30">${escapeHtml(item.class || '-')}</td>
-                <td class="py-2.5 px-3">
-                    <div class="text-slate-700 font-semibold truncate max-w-[150px]">${escapeHtml(item.guardian)}</div>
-                    <div class="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3 text-center font-black text-indigo-700 bg-indigo-50/30">${escapeHtml(item.class || '-')}</td>
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3">
+                    <div class="text-slate-700 font-semibold truncate max-w-[140px] sm:max-w-[150px]">${escapeHtml(item.guardian)}</div>
+                    <div class="flex items-center gap-1.5 sm:gap-2 mt-0.5 sm:mt-1 text-[11px] text-slate-500">
                         <span class="font-medium">${escapeHtml(item.phone || '--')}</span>
                         ${cleanPhone ? `
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <a href="${waLink}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 transition active:scale-95 shadow-2xs" title="Send WhatsApp Reminder">
-                                    <i class="fab fa-whatsapp text-sm"></i>
+                            <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                                <a href="${waLink}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 transition active:scale-95 shadow-2xs" title="Send WhatsApp Reminder">
+                                    <i class="fab fa-whatsapp text-xs sm:text-sm"></i>
                                 </a>
-                                <a href="tel:${cleanPhone}" class="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 transition active:scale-95 shadow-2xs" title="Call Guardian">
-                                    <i class="fas fa-phone text-xs"></i>
+                                <a href="tel:${cleanPhone}" class="inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 transition active:scale-95 shadow-2xs" title="Call Guardian">
+                                    <i class="fas fa-phone text-[11px] sm:text-xs"></i>
                                 </a>
                             </div>
                         ` : ''}
                     </div>
                 </td>
-                <td class="py-2.5 px-3">
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3">
                     <div class="flex flex-wrap items-center">${unpaidPills}</div>
                 </td>
-                <td class="py-2.5 px-3 text-right font-bold text-slate-800">${formatAmount(item.currentYearTotalDue)}</td>
-                <td class="py-2.5 px-3 text-right font-bold text-amber-700">
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3 text-right font-bold text-slate-800">${formatAmount(item.currentYearTotalDue)}</td>
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3 text-right font-bold text-amber-700">
                     <div>${formatAmount(item.pastYearsDue)}</div>
                     ${item.pastYearsBreakdown.length ? `<div class="mt-0.5 flex flex-wrap justify-end">${pastBreakdownHtml}</div>` : ''}
                 </td>
-                <td class="py-2.5 px-3 text-right font-black text-rose-700 text-sm">${formatAmount(item.grandTotalDue)}</td>
-                <td class="py-2.5 px-3 text-center">
-                    <button type="button" class="dues-quick-pay-btn px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer inline-flex items-center gap-1" data-id="${escapeHtml(item.id)}">
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3 text-right font-black text-rose-700 text-xs sm:text-sm">${formatAmount(item.grandTotalDue)}</td>
+                <td class="py-2 sm:py-2.5 px-2 sm:px-3 text-center">
+                    <button type="button" class="dues-quick-pay-btn px-2 sm:px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] sm:text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer inline-flex items-center gap-1" data-id="${escapeHtml(item.id)}">
                         <i class="fas fa-hand-holding-dollar text-[10px]"></i>
                         <span>Collect</span>
                     </button>
@@ -600,16 +600,16 @@ export const renderFeeDues = () => {
     const curPage = Math.floor(startIdx / limit) + 1;
 
     tableHtml += `
-        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 text-xs font-medium text-slate-500">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-3 mt-2.5 sm:mt-4 text-[11px] sm:text-xs font-medium text-slate-500">
             <div>
                 Showing <strong>${startIdx + 1}</strong> to <strong>${Math.min(startIdx + limit, totalStudents)}</strong> of <strong>${totalStudents}</strong> defaulters
             </div>
             <div class="flex items-center gap-1.5">
-                <button type="button" id="dues-prev-page" class="px-3 py-1.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-bold transition disabled:opacity-40 cursor-pointer" ${startIdx === 0 ? 'disabled' : ''}>
+                <button type="button" id="dues-prev-page" class="px-2.5 sm:px-3 py-1 sm:py-1.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-bold transition disabled:opacity-40 cursor-pointer" ${startIdx === 0 ? 'disabled' : ''}>
                     <i class="fas fa-chevron-left mr-1"></i>Previous
                 </button>
-                <span class="px-2 font-bold text-slate-700">Page ${curPage} of ${totalPages || 1}</span>
-                <button type="button" id="dues-next-page" class="px-3 py-1.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-bold transition disabled:opacity-40 cursor-pointer" ${startIdx + limit >= totalStudents ? 'disabled' : ''}>
+                <span class="px-1.5 sm:px-2 font-bold text-slate-700">Page ${curPage} of ${totalPages || 1}</span>
+                <button type="button" id="dues-next-page" class="px-2.5 sm:px-3 py-1 sm:py-1.5 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-bold transition disabled:opacity-40 cursor-pointer" ${startIdx + limit >= totalStudents ? 'disabled' : ''}>
                     Next<i class="fas fa-chevron-right ml-1"></i>
                 </button>
             </div>

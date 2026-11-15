@@ -1932,30 +1932,30 @@ const renderDashboardStudentClassTable = () => {
     }
 
     tableHost.innerHTML = `
-        <table class="w-full text-xs sm:text-sm text-left">
+        <table class="w-full text-xs sm:text-sm text-left tabular-nums">
             <thead class="bg-gray-50 text-gray-500 uppercase tracking-wider text-[10px] sm:text-xs">
                 <tr>
-                    <th class="px-4 py-2 font-bold">Class</th>
-                    <th class="px-4 py-2 font-bold text-right">Boys</th>
-                    <th class="px-4 py-2 font-bold text-right">Girls</th>
-                    <th class="px-4 py-2 font-bold text-right">Total</th>
+                    <th class="px-2.5 sm:px-4 py-1.5 sm:py-2 font-bold">Class</th>
+                    <th class="px-2.5 sm:px-4 py-1.5 sm:py-2 font-bold text-right">Boys</th>
+                    <th class="px-2.5 sm:px-4 py-1.5 sm:py-2 font-bold text-right">Girls</th>
+                    <th class="px-2.5 sm:px-4 py-1.5 sm:py-2 font-bold text-right">Total</th>
                 </tr>
             </thead>
             <tbody>
                 ${rows.map((row) => `
                     <tr class="border-t border-gray-100 hover:bg-indigo-50/30">
-                        <td class="px-4 py-2 font-semibold text-gray-800">${escapeHtml(row.className)}</td>
-                        <td class="px-4 py-2 text-right text-blue-700 font-bold">${row.boys}</td>
-                        <td class="px-4 py-2 text-right text-pink-700 font-bold">${row.girls}</td>
-                        <td class="px-4 py-2 text-right text-gray-900 font-extrabold">${row.total}</td>
+                        <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 font-semibold text-gray-800">${escapeHtml(row.className)}</td>
+                        <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 text-right text-blue-700 font-bold">${row.boys}</td>
+                        <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 text-right text-pink-700 font-bold">${row.girls}</td>
+                        <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 text-right text-gray-900 font-extrabold">${row.total}</td>
                     </tr>`).join('')}
             </tbody>
             <tfoot class="bg-indigo-50 border-t border-indigo-100">
                 <tr>
-                    <td class="px-4 py-2 font-extrabold text-indigo-900">Total</td>
-                    <td class="px-4 py-2 text-right font-extrabold text-indigo-900">${totals.boys}</td>
-                    <td class="px-4 py-2 text-right font-extrabold text-indigo-900">${totals.girls}</td>
-                    <td class="px-4 py-2 text-right font-extrabold text-indigo-900">${totals.total}</td>
+                    <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 font-extrabold text-indigo-900">Total</td>
+                    <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 text-right font-extrabold text-indigo-900">${totals.boys}</td>
+                    <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 text-right font-extrabold text-indigo-900">${totals.girls}</td>
+                    <td class="px-2.5 sm:px-4 py-1.5 sm:py-2 text-right font-extrabold text-indigo-900">${totals.total}</td>
                 </tr>
             </tfoot>
         </table>`;
@@ -3393,15 +3393,15 @@ const populateFeeItemSelection = () => {
         return `
         <div class="relative fee-month-item-card" data-item-key="${item.key}">
             <input type="checkbox" id="item-${item.key}" data-item-key="${item.key}" data-item-type="${item.type||'month'}" class="fee-item-checkbox peer sr-only">
-            <label for="item-${item.key}" class="block py-2 px-1 text-[11px] sm:text-xs font-semibold border-2 border-red-300 text-red-700 rounded-lg cursor-pointer text-center bg-red-50 peer-checked:bg-green-600 peer-checked:text-white peer-checked:border-green-600 shadow-sm transition fee-item-label" title="${item.name}">
+            <label for="item-${item.key}" class="block py-1.5 sm:py-2 px-1 text-[11px] sm:text-xs font-semibold border-2 border-red-300 text-red-700 rounded-lg cursor-pointer text-center bg-red-50 peer-checked:bg-green-600 peer-checked:text-white peer-checked:border-green-600 shadow-sm transition fee-item-label" title="${item.name}">
                 <div class="leading-tight">
                     <div class="font-bold break-words">${displayName}</div>
-                    <div class="text-[10px] opacity-80 mt-1 block">${itemYear}</div>
-                    <div class="fee-item-receipt text-[10px] opacity-70 mt-1 h-3"></div>
+                    <div class="text-[10px] opacity-80 mt-0.5 sm:mt-1 block">${itemYear}</div>
+                    <div class="fee-item-receipt text-[10px] opacity-70 mt-0.5 sm:mt-1 h-3"></div>
                 </div>
             </label>
             ${isMonth ? `
-            <div class="month-amount-wrapper hidden mt-1.5">
+            <div class="month-amount-wrapper hidden mt-1 sm:mt-1.5">
                 <div class="relative">
                     <span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-green-700">₹</span>
                     <input type="number" step="any" min="0" data-item-key="${item.key}"
@@ -3409,7 +3409,7 @@ const populateFeeItemSelection = () => {
                            placeholder="Amount">
                 </div>
             </div>` : `
-            <input type="number" data-locked="${amountLocked ? 'true' : 'false'}" ${amountLocked ? 'readonly' : ''} class="custom-fee-amount-input hidden w-full mt-1.5 p-1.5 text-xs font-medium border rounded-md shadow-sm text-center ${amountLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50'}" placeholder="₹ Amount" value="${defaultAmt}">
+            <input type="number" data-locked="${amountLocked ? 'true' : 'false'}" ${amountLocked ? 'readonly' : ''} class="custom-fee-amount-input hidden w-full mt-1 sm:mt-1.5 p-1 sm:p-1.5 text-xs font-medium border rounded-md shadow-sm text-center ${amountLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-gray-50'}" placeholder="₹ Amount" value="${defaultAmt}">
             `}
         </div>`;
     };
@@ -3420,7 +3420,7 @@ const populateFeeItemSelection = () => {
     const otherItems = visibleItems.filter((item) => (item.type || 'month') === 'custom' && item.key !== STUDENT_DONATION_ITEM_KEY);
     const buildSection = (title, items, tone = 'text-gray-500') => {
         if (!items.length) return '';
-        return `<div class="col-span-3 mt-2"><div class="text-[10px] uppercase tracking-widest font-bold ${tone} mb-2">${title}</div><div class="grid grid-cols-3 gap-2">${items.map(renderFeeOption).join('')}</div></div>`;
+        return `<div class="col-span-3 mt-1.5 sm:mt-2"><div class="text-[10px] uppercase tracking-widest font-bold ${tone} mb-1.5 sm:mb-2">${title}</div><div class="grid grid-cols-3 gap-1.5 sm:gap-2">${items.map(renderFeeOption).join('')}</div></div>`;
     };
     container.innerHTML = [
         buildSection('Monthly Fees', monthlyItems, 'text-blue-600'),
@@ -6090,29 +6090,29 @@ const renderHistoryPage = () => {
         const descHtml = hasDescription
             ? `<div class="text-[11px] font-normal text-slate-500 truncate max-w-[200px] sm:max-w-[260px] mt-0.5" title="${escapeHtml(i.description)}"><i class="fas fa-comment-dots text-[10px] text-slate-400 mr-1"></i>${escapeHtml(i.description)}</div>`
             : '';
-        html += `<tr class="bg-white hover:bg-gray-50 transition">
-            <td class="p-3 font-medium text-gray-900">${i.r}</td>
-            <td class="p-3 text-gray-600">${new Date(i.dt).toLocaleDateString('en-GB')}</td>
-            <td class="p-3 font-medium text-blue-700 max-w-[220px] sm:max-w-[300px]">
+        html += `<tr class="bg-white hover:bg-gray-50 transition text-xs sm:text-sm">
+            <td class="p-2 sm:p-3 font-medium text-gray-900 tabular-nums">${i.r}</td>
+            <td class="p-2 sm:p-3 text-gray-600 tabular-nums">${new Date(i.dt).toLocaleDateString('en-GB')}</td>
+            <td class="p-2 sm:p-3 font-medium text-blue-700 max-w-[180px] sm:max-w-[300px]">
                 <div class="truncate font-semibold text-slate-900" title="${escapeHtml(primaryStudentLabel)}">${escapeHtml(primaryStudentLabel)}</div>
                 ${descHtml}
-                ${otherStudentRows.length ? `<span class="text-[10px] text-gray-500 block mt-1">${otherStudentRows.map((row) => escapeHtml(row)).join('<br>')}</span>` : ''}
+                ${otherStudentRows.length ? `<span class="text-[10px] text-gray-500 block mt-0.5 sm:mt-1">${otherStudentRows.map((row) => escapeHtml(row)).join('<br>')}</span>` : ''}
             </td>
-            <td class="p-3"><span class="text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100 whitespace-nowrap">${i.by}</span></td>
-            <td class="p-3 text-center">
-                <button type="button" class="view-history-breakdown-btn inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${isDonationRow ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'} transition cursor-pointer shadow-2xs" data-tid="${escapeHtml(i.tId)}" data-sid="${escapeHtml(i.sId || '')}" title="Click to view fee breakdown">
+            <td class="p-2 sm:p-3"><span class="text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-blue-100 whitespace-nowrap">${i.by}</span></td>
+            <td class="p-2 sm:p-3 text-center">
+                <button type="button" class="view-history-breakdown-btn inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold ${isDonationRow ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'} transition cursor-pointer shadow-2xs" data-tid="${escapeHtml(i.tId)}" data-sid="${escapeHtml(i.sId || '')}" title="Click to view fee breakdown">
                     <span>${isDonationRow ? 'Donation' : `${i.i.length} ${i.i.length === 1 ? 'Item' : 'Items'}`}</span>
                     <i class="fas fa-list-check text-[10px]"></i>
                 </button>
             </td>
-            <td class="p-3 font-bold text-gray-800">${totalLabel}</td>
-            <td class="p-3 text-center whitespace-nowrap">
-                <button type="button" class="view-history-breakdown-btn text-emerald-600 hover:text-emerald-800 mr-2.5 transition" data-tid="${escapeHtml(i.tId)}" data-sid="${escapeHtml(i.sId || '')}" title="View Items Breakdown">
+            <td class="p-2 sm:p-3 font-bold text-gray-800 tabular-nums">${totalLabel}</td>
+            <td class="p-2 sm:p-3 text-center whitespace-nowrap">
+                <button type="button" class="view-history-breakdown-btn text-emerald-600 hover:text-emerald-800 mr-1.5 sm:mr-2.5 transition" data-tid="${escapeHtml(i.tId)}" data-sid="${escapeHtml(i.sId || '')}" title="View Items Breakdown">
                     <i class="fas fa-list-check"></i>
                 </button>
                 ${isDonationRow
-                ? `<button class="donation-edit-btn text-blue-500 hover:text-blue-700 mr-2.5" data-id="${i.tId.replace('donation:', '')}" title="Edit Donation"><i class="fas fa-edit"></i></button><button class="donation-del-btn text-red-500 hover:text-red-700" data-id="${i.tId.replace('donation:', '')}" title="Delete Donation"><i class="fas fa-trash"></i></button>`
-                : `<button class="edit-payment-btn text-blue-500 hover:text-blue-700 mr-2.5" data-sid="${i.sId}" data-tid="${i.tId}" title="Edit Payment"><i class="fas fa-edit"></i></button><button class="delete-payment-btn text-red-500 hover:text-red-700" data-sid="${i.sId}" data-tid="${i.tId}" title="Delete Payment"><i class="fas fa-trash"></i></button>`}
+                ? `<button class="donation-edit-btn text-blue-500 hover:text-blue-700 mr-1.5 sm:mr-2.5" data-id="${i.tId.replace('donation:', '')}" title="Edit Donation"><i class="fas fa-edit"></i></button><button class="donation-del-btn text-red-500 hover:text-red-700" data-id="${i.tId.replace('donation:', '')}" title="Delete Donation"><i class="fas fa-trash"></i></button>`
+                : `<button class="edit-payment-btn text-blue-500 hover:text-blue-700 mr-1.5 sm:mr-2.5" data-sid="${i.sId}" data-tid="${i.tId}" title="Edit Payment"><i class="fas fa-edit"></i></button><button class="delete-payment-btn text-red-500 hover:text-red-700" data-sid="${i.sId}" data-tid="${i.tId}" title="Delete Payment"><i class="fas fa-trash"></i></button>`}
             </td>
         </tr>`;
     });
@@ -6676,7 +6676,7 @@ const renderMonthlyCollectedPage = (searchTerm = '') => {
         const otherTotal = roundMoney(cTot);
         const grandTotal = roundMoney(defaultTotal + donationTotal + otherTotal);
 
-        let html = `<div class="bg-gray-50 border p-4 rounded-xl"><div class="flex flex-col md:flex-row md:justify-between md:items-center gap-3 cursor-pointer month-header"><div><h3 class="text-base font-bold">${formatMonthLabel(mk)}</h3><p class="text-xs text-gray-500 font-medium mt-1">${Object.keys(uTxns).length} receipt groups • ${new Set(monthPays.map((payment) => payment.studentId)).size} students</p></div><div class="flex flex-wrap items-center gap-2 text-[11px] font-bold"><span class="bg-white px-2 py-1 rounded border">Default: ${formatCurrency(defaultTotal)}</span><span class="bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-200">Donation: ${formatCurrency(donationTotal)}</span><span class="bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-200">Other: ${formatCurrency(otherTotal)}</span><span class="bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-200">Total: ${formatCurrency(grandTotal)}</span><i class="fas fa-chevron-down month-toggle-icon text-gray-400 ${mk === currentMK ? 'rotate-180' : ''} transition ml-1"></i></div></div><div class="month-details-container overflow-x-auto mt-4 pt-4 border-t ${mk === currentMK ? '' : 'hidden'}">`;
+        let html = `<div class="bg-gray-50 border p-2.5 sm:p-4 rounded-xl"><div class="flex flex-col md:flex-row md:justify-between md:items-center gap-2 sm:gap-3 cursor-pointer month-header"><div><h3 class="text-sm sm:text-base font-bold">${formatMonthLabel(mk)}</h3><p class="text-[11px] sm:text-xs text-gray-500 font-medium mt-0.5 sm:mt-1">${Object.keys(uTxns).length} receipt groups • ${new Set(monthPays.map((payment) => payment.studentId)).size} students</p></div><div class="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-bold tabular-nums"><span class="bg-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border">Default: ${formatCurrency(defaultTotal)}</span><span class="bg-emerald-50 text-emerald-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-emerald-200">Donation: ${formatCurrency(donationTotal)}</span><span class="bg-amber-50 text-amber-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-amber-200">Other: ${formatCurrency(otherTotal)}</span><span class="bg-indigo-50 text-indigo-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-indigo-200">Total: ${formatCurrency(grandTotal)}</span><i class="fas fa-chevron-down month-toggle-icon text-gray-400 ${mk === currentMK ? 'rotate-180' : ''} transition ml-auto sm:ml-1"></i></div></div><div class="month-details-container overflow-x-auto mt-2.5 pt-2.5 sm:mt-4 sm:pt-4 border-t ${mk === currentMK ? '' : 'hidden'}">`;
         if (mF.length > 0) {
             const monthlyTxnRows = Object.values(mF.reduce((acc, payment) => {
                 const txnKey = payment.transactionId || payment.receiptNo || `tx-${payment.timestamp || Math.random()}`;
@@ -6696,13 +6696,13 @@ const renderMonthlyCollectedPage = (searchTerm = '') => {
                 };
                 return acc;
             }, {})).sort(receiptSort);
-            html += `<table class="w-full text-sm text-left mb-4"><thead class="bg-gray-100"><tr><th class="p-2">Rcpt</th><th class="p-2">Students</th><th class="p-2">Amount</th></tr></thead><tbody>${monthlyTxnRows.map((row) => {
-                const studentLines = Object.values(row.students).map((student) => `<div class="leading-tight">${escapeHtml(student.name)} <span class="text-[11px] text-gray-500">(${escapeHtml(student.class)} · Adm: ${escapeHtml(student.adm)})</span></div>`).join('');
-                return `<tr class="border-b hover:bg-white align-top"><td class="p-2">${row.receiptNo}</td><td class="p-2">${studentLines}</td><td class="p-2 font-semibold">₹${row.total.toFixed(0)}</td></tr>`;
+            html += `<table class="w-full text-xs sm:text-sm text-left mb-3 sm:mb-4 tabular-nums"><thead class="bg-gray-100"><tr><th class="p-1.5 sm:p-2">Rcpt</th><th class="p-1.5 sm:p-2">Students</th><th class="p-1.5 sm:p-2">Amount</th></tr></thead><tbody>${monthlyTxnRows.map((row) => {
+                const studentLines = Object.values(row.students).map((student) => `<div class="leading-tight">${escapeHtml(student.name)} <span class="text-[10px] sm:text-[11px] text-gray-500">(${escapeHtml(student.class)} · Adm: ${escapeHtml(student.adm)})</span></div>`).join('');
+                return `<tr class="border-b hover:bg-white align-top"><td class="p-1.5 sm:p-2">${row.receiptNo}</td><td class="p-1.5 sm:p-2">${studentLines}</td><td class="p-1.5 sm:p-2 font-semibold">₹${row.total.toFixed(0)}</td></tr>`;
             }).join('')}</tbody></table>`;
         }
         const sortedCustomFees = [...cF].sort(receiptSort);
-        if (sortedCustomFees.length > 0) html += `<h4 class="text-sm font-bold mt-4 mb-2 bg-gray-200 inline-block px-3 py-1 rounded-lg">Other Fees</h4><table class="w-full text-sm text-left whitespace-nowrap"><thead class="bg-gray-100"><tr><th class="p-2">Rcpt</th><th class="p-2">Student</th><th class="p-2">Item</th><th class="p-2">Amount</th></tr></thead><tbody>` + sortedCustomFees.map(p => `<tr class="border-b hover:bg-white"><td class="p-2">${p.receiptNo||'-'}</td><td class="p-2">${getStudentById(p.studentId)?.name||'Unknown'}</td><td class="p-2">${normalizeFeeItemName(feeItems.find(fi => fi.key === p.itemKey)?.name||p.itemKey)}</td><td class="p-2 font-semibold">₹${Number(p.amount || 0).toFixed(0)}</td></tr>`).join('') + `</tbody><tfoot class="font-bold border-t"><tr><td colspan="3" class="p-2 text-right">Total</td><td class="p-2 text-green-700">₹${otherTotal.toFixed(0)}</td></tr></tfoot></table>`;
+        if (sortedCustomFees.length > 0) html += `<h4 class="text-xs sm:text-sm font-bold mt-3 sm:mt-4 mb-1.5 sm:mb-2 bg-gray-200 inline-block px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-lg">Other Fees</h4><table class="w-full text-xs sm:text-sm text-left whitespace-nowrap tabular-nums"><thead class="bg-gray-100"><tr><th class="p-1.5 sm:p-2">Rcpt</th><th class="p-1.5 sm:p-2">Student</th><th class="p-1.5 sm:p-2">Item</th><th class="p-1.5 sm:p-2">Amount</th></tr></thead><tbody>` + sortedCustomFees.map(p => `<tr class="border-b hover:bg-white"><td class="p-1.5 sm:p-2">${p.receiptNo||'-'}</td><td class="p-1.5 sm:p-2">${getStudentById(p.studentId)?.name||'Unknown'}</td><td class="p-1.5 sm:p-2">${normalizeFeeItemName(feeItems.find(fi => fi.key === p.itemKey)?.name||p.itemKey)}</td><td class="p-1.5 sm:p-2 font-semibold">₹${Number(p.amount || 0).toFixed(0)}</td></tr>`).join('') + `</tbody><tfoot class="font-bold border-t"><tr><td colspan="3" class="p-1.5 sm:p-2 text-right">Total</td><td class="p-1.5 sm:p-2 text-green-700">₹${otherTotal.toFixed(0)}</td></tr></tfoot></table>`;
         if (donationPays.length > 0 || studentDonationPays.length > 0) {
             const donationRows = [
                 ...donationPays.map((entry) => ({
@@ -6724,7 +6724,7 @@ const renderMonthlyCollectedPage = (searchTerm = '') => {
                 })
             ];
             const sortedDonationRows = donationRows.sort(receiptSort);
-            html += `<h4 class="text-sm font-bold mt-4 mb-2 bg-emerald-100 text-emerald-700 inline-block px-3 py-1 rounded-lg">Donation</h4><table class="w-full text-sm text-left whitespace-nowrap"><thead class="bg-emerald-50"><tr><th class="p-2">Rcpt</th><th class="p-2">Name</th><th class="p-2">Description</th><th class="p-2">Amount</th><th class="p-2">Collected By</th></tr></thead><tbody>${sortedDonationRows.map((entry) => `<tr class="border-b hover:bg-white"><td class="p-2">${entry.receiptNo}</td><td class="p-2">${escapeHtml(entry.name)}</td><td class="p-2">${escapeHtml(entry.description)}</td><td class="p-2 font-semibold">₹${entry.amount.toFixed(0)}</td><td class="p-2">${escapeHtml(entry.by)}</td></tr>`).join('')}</tbody><tfoot class="font-bold border-t"><tr><td colspan="3" class="p-2 text-right">Donation Total</td><td class="p-2 text-emerald-700">₹${donationTotal.toFixed(0)}</td><td></td></tr></tfoot></table>`;
+            html += `<h4 class="text-xs sm:text-sm font-bold mt-3 sm:mt-4 mb-1.5 sm:mb-2 bg-emerald-100 text-emerald-700 inline-block px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-lg">Donation</h4><table class="w-full text-xs sm:text-sm text-left whitespace-nowrap tabular-nums"><thead class="bg-emerald-50"><tr><th class="p-1.5 sm:p-2">Rcpt</th><th class="p-1.5 sm:p-2">Name</th><th class="p-1.5 sm:p-2">Description</th><th class="p-1.5 sm:p-2">Amount</th><th class="p-1.5 sm:p-2">Collected By</th></tr></thead><tbody>${sortedDonationRows.map((entry) => `<tr class="border-b hover:bg-white"><td class="p-1.5 sm:p-2">${entry.receiptNo}</td><td class="p-1.5 sm:p-2">${escapeHtml(entry.name)}</td><td class="p-1.5 sm:p-2">${escapeHtml(entry.description)}</td><td class="p-1.5 sm:p-2 font-semibold">₹${entry.amount.toFixed(0)}</td><td class="p-1.5 sm:p-2">${escapeHtml(entry.by)}</td></tr>`).join('')}</tbody><tfoot class="font-bold border-t"><tr><td colspan="3" class="p-1.5 sm:p-2 text-right">Donation Total</td><td class="p-1.5 sm:p-2 text-emerald-700">₹${donationTotal.toFixed(0)}</td><td></td></tr></tfoot></table>`;
         }
         cont.innerHTML += html + `</div></div>`;
     });
@@ -6778,28 +6778,28 @@ const renderCollectorWiseMonthlyPage = () => {
         const monthTotalDefault = collectorRows.reduce((sum, row) => sum + row.monthlyDefaultTotal, 0);
         const monthTotalOthers = collectorRows.reduce((sum, row) => sum + row.monthlyOthersTotal, 0);
         return `
-            <div class="bg-white border border-gray-200 rounded-xl p-4">
-                <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-3 mb-3">
-                    <h3 class="font-bold text-gray-800">${formatMonthLabel(monthKey)}</h3>
-                    <div class="text-xs text-gray-500 font-semibold">Default: ${formatCurrency(monthTotalDefault)} • Others: ${formatCurrency(monthTotalOthers)}</div>
+            <div class="bg-white border border-gray-200 rounded-xl p-2.5 sm:p-4">
+                <div class="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 border-b pb-2 mb-2 sm:pb-3 sm:mb-3">
+                    <h3 class="font-bold text-sm sm:text-base text-gray-800">${formatMonthLabel(monthKey)}</h3>
+                    <div class="text-[11px] sm:text-xs text-gray-500 font-semibold tabular-nums">Default: ${formatCurrency(monthTotalDefault)} • Others: ${formatCurrency(monthTotalOthers)}</div>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-left whitespace-nowrap">
+                    <table class="w-full text-xs sm:text-sm text-left whitespace-nowrap tabular-nums">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="p-2">Collector</th>
-                                <th class="p-2 text-right">Default Fee Total</th>
-                                <th class="p-2 text-right">Others Fee Total</th>
-                                <th class="p-2 text-right">Grand Total</th>
+                                <th class="p-1.5 sm:p-2">Collector</th>
+                                <th class="p-1.5 sm:p-2 text-right">Default Fee Total</th>
+                                <th class="p-1.5 sm:p-2 text-right">Others Fee Total</th>
+                                <th class="p-1.5 sm:p-2 text-right">Grand Total</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${collectorRows.map((row) => `
                                 <tr class="border-b hover:bg-gray-50">
-                                    <td class="p-2 font-semibold text-gray-800">${escapeHtml(row.collectorLabel)}</td>
-                                    <td class="p-2 text-right">${formatCurrency(row.monthlyDefaultTotal)}</td>
-                                    <td class="p-2 text-right">${formatCurrency(row.monthlyOthersTotal)}</td>
-                                    <td class="p-2 text-right font-bold text-indigo-700">${formatCurrency(row.monthlyDefaultTotal + row.monthlyOthersTotal)}</td>
+                                    <td class="p-1.5 sm:p-2 font-semibold text-gray-800">${escapeHtml(row.collectorLabel)}</td>
+                                    <td class="p-1.5 sm:p-2 text-right">${formatCurrency(row.monthlyDefaultTotal)}</td>
+                                    <td class="p-1.5 sm:p-2 text-right">${formatCurrency(row.monthlyOthersTotal)}</td>
+                                    <td class="p-1.5 sm:p-2 text-right font-bold text-indigo-700">${formatCurrency(row.monthlyDefaultTotal + row.monthlyOthersTotal)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -7847,19 +7847,19 @@ const renderStudentInfoList = () => {
     const scopeLabel = fCls === 'all' ? 'All Classes' : `Class: ${escapeHtml(fCls)}`;
     if (statsBar) {
         statsBar.innerHTML = `
-            <div class="flex items-center gap-2">
-                <span class="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
-                <span class="text-sm font-black text-gray-800">${scopeLabel}</span>
-                ${(sTerm || fGen !== 'all') ? `<span class="text-xs text-gray-500 font-medium">(Showing ${fil.length} of ${totalInClass})</span>` : ''}
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <span class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-blue-600 inline-block"></span>
+                <span class="text-xs sm:text-sm font-black text-gray-800">${scopeLabel}</span>
+                ${(sTerm || fGen !== 'all') ? `<span class="text-[11px] sm:text-xs text-gray-500 font-medium">(Showing ${fil.length} of ${totalInClass})</span>` : ''}
             </div>
-            <div class="flex flex-wrap items-center gap-2 text-xs font-bold">
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 text-slate-800 border border-slate-200">
+            <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-bold tabular-nums">
+                <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg bg-slate-100 text-slate-800 border border-slate-200">
                     <i class="fas fa-users text-slate-500 text-[10px]"></i> Total: <b>${totalInClass}</b>
                 </span>
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
                     <i class="fas fa-mars text-blue-500 text-[10px]"></i> Boys: <b>${totalBoysInClass}</b>
                 </span>
-                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-pink-50 text-pink-700 border border-pink-200">
+                <span class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg bg-pink-50 text-pink-700 border border-pink-200">
                     <i class="fas fa-venus text-pink-500 text-[10px]"></i> Girls: <b>${totalGirlsInClass}</b>
                 </span>
             </div>
@@ -7966,24 +7966,24 @@ const renderStudentInfoList = () => {
 
         return `
             <tr class="hover:bg-blue-50/40 transition">
-                <td class="py-3 px-3 text-center text-xs font-mono font-bold text-gray-400">${sliceStart + idx + 1}</td>
-                <td class="py-3 px-3 whitespace-nowrap">
-                    <span class="font-mono text-xs font-extrabold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">${escapeHtml(admNo)}</span>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 text-center text-xs font-mono font-bold text-gray-400 tabular-nums">${sliceStart + idx + 1}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 whitespace-nowrap">
+                    <span class="font-mono text-[11px] sm:text-xs font-extrabold text-slate-700 bg-slate-100 px-1.5 sm:px-2 py-0.5 rounded border border-slate-200">${escapeHtml(admNo)}</span>
                 </td>
-                <td class="py-3 px-4 font-bold text-gray-900">
+                <td class="py-2 sm:py-3 px-2.5 sm:px-4 font-bold text-gray-900">
                     <div class="hover:text-blue-600 cursor-pointer inline-flex items-center gap-1.5" onclick="window.openStudentProfile('${escapeHtml(s.id)}')">
                         <span>${escapeHtml(s.name || '-')}</span>
                         ${String(s.status || '').toLowerCase() === 'discontinued' ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-rose-100 text-rose-700 border border-rose-200">Discontinued</span>` : ''}
                     </div>
                 </td>
-                <td class="py-3 px-3 whitespace-nowrap font-medium text-gray-600">${escapeHtml(s.class || '-')}</td>
-                <td class="py-3 px-3 text-center whitespace-nowrap">${genderBadge}</td>
-                <td class="py-3 px-3 whitespace-nowrap text-xs text-gray-600 font-medium">${escapeHtml(guardian)}</td>
-                <td class="py-3 px-3 whitespace-nowrap text-xs font-mono">
+                <td class="py-2 sm:py-3 px-2 sm:px-3 whitespace-nowrap font-medium text-gray-600">${escapeHtml(s.class || '-')}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 text-center whitespace-nowrap">${genderBadge}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 whitespace-nowrap text-xs text-gray-600 font-medium">${escapeHtml(guardian)}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 whitespace-nowrap text-xs font-mono">
                     ${phone ? `<a href="tel:${escapeHtml(phone)}" class="text-blue-600 hover:text-blue-800 hover:underline font-bold inline-flex items-center gap-1"><i class="fas fa-phone text-[10px] text-emerald-600"></i> ${escapeHtml(phone)}</a>` : '<span class="text-gray-400">-</span>'}
                 </td>
-                <td class="py-3 px-3 text-center whitespace-nowrap">
-                    <button type="button" onclick="window.openStudentProfile('${escapeHtml(s.id)}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white text-xs font-bold border border-blue-200 transition shadow-2xs cursor-pointer" title="View Full Profile">
+                <td class="py-2 sm:py-3 px-2 sm:px-3 text-center whitespace-nowrap">
+                    <button type="button" onclick="window.openStudentProfile('${escapeHtml(s.id)}')" class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white text-[11px] sm:text-xs font-bold border border-blue-200 transition shadow-2xs cursor-pointer" title="View Full Profile">
                         <i class="fas fa-id-card text-[11px]"></i>
                         <span>Profile</span>
                     </button>
@@ -7996,14 +7996,14 @@ const renderStudentInfoList = () => {
         if (!isAllRows) {
             const hasPrev = sliceStart > 0;
             const hasNext = sliceEnd < totalFiltered;
-            paginationEl.className = 'flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50/70 text-xs';
+            paginationEl.className = 'flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-4 py-2 sm:py-3 border-t border-slate-200 bg-slate-50/70 text-[11px] sm:text-xs';
             paginationEl.innerHTML = `
                 <span class="font-semibold text-slate-600">Showing <b class="text-slate-900">${sliceStart + 1} - ${sliceEnd}</b> of <b class="text-slate-900">${totalFiltered}</b> students</span>
                 <div class="flex items-center gap-2">
-                    <button type="button" id="stu-info-prev-btn" class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer" ${hasPrev ? '' : 'disabled'}>
+                    <button type="button" id="stu-info-prev-btn" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer" ${hasPrev ? '' : 'disabled'}>
                         <i class="fas fa-chevron-left mr-1 text-[10px]"></i> Previous
                     </button>
-                    <button type="button" id="stu-info-next-btn" class="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer" ${hasNext ? '' : 'disabled'}>
+                    <button type="button" id="stu-info-next-btn" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer" ${hasNext ? '' : 'disabled'}>
                         Next <i class="fas fa-chevron-right ml-1 text-[10px]"></i>
                     </button>
                 </div>
@@ -8019,7 +8019,7 @@ const renderStudentInfoList = () => {
                 }
             });
         } else {
-            paginationEl.className = 'flex items-center justify-between px-4 py-2.5 border-t border-slate-200 bg-slate-50/70 text-xs';
+            paginationEl.className = 'flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-t border-slate-200 bg-slate-50/70 text-[11px] sm:text-xs';
             paginationEl.innerHTML = `<span class="font-semibold text-slate-600">Showing all <b class="text-slate-900">${totalFiltered}</b> students</span>`;
         }
     }
