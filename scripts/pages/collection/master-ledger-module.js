@@ -498,7 +498,8 @@ const renderFilterControls = () => {
 };
 
 // Render Table
-const renderLedgerTable = () => {
+const renderLedgerTable = (options = {}) => {
+    const preserveScroll = Boolean(options && options.preserveScroll);
     const tableContainer = document.getElementById('master-ledger-table-container');
     if (!tableContainer) return;
 
@@ -783,9 +784,10 @@ const renderLedgerTable = () => {
         `;
     }
 
+    const prevScrollTop = preserveScroll ? tableContainer.scrollTop : 0;
     const prevScrollLeft = tableContainer.scrollLeft;
     tableContainer.innerHTML = html;
-    tableContainer.scrollTop = 0;
+    tableContainer.scrollTop = prevScrollTop;
     tableContainer.scrollLeft = prevScrollLeft;
 
     document.getElementById('ledger-prev-btn')?.addEventListener('click', () => {

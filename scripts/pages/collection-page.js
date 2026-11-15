@@ -852,6 +852,9 @@ export function toggleSpreadsheetFullscreen(targetPageId) {
 export function enterSpreadsheetFullscreen(_targetPageId) {
     const appEl = document.getElementById('collection-app');
     if (!appEl) return;
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+    }
     appEl.classList.add('spreadsheet-fullscreen-mode');
     appEl.classList.remove('spreadsheet-fs-filters-open');
 
@@ -860,12 +863,16 @@ export function enterSpreadsheetFullscreen(_targetPageId) {
     ensureModalDockSwitchButtons();
     applyModalDockSide(getSavedModalDockSide());
     syncSpreadsheetFullscreenViewport();
+    requestAnimationFrame(() => syncSpreadsheetFullscreenViewport());
 
     const tryLockLandscape = () => {
         try {
             if (screen.orientation && screen.orientation.lock) {
                 screen.orientation.lock('landscape')
-                    .then(() => setTimeout(syncSpreadsheetFullscreenViewport, 80))
+                    .then(() => {
+                        syncSpreadsheetFullscreenViewport();
+                        requestAnimationFrame(() => syncSpreadsheetFullscreenViewport());
+                    })
                     .catch(() => syncSpreadsheetFullscreenViewport());
             }
         } catch (_) {}
@@ -873,22 +880,29 @@ export function enterSpreadsheetFullscreen(_targetPageId) {
 
     try {
         const root = document.documentElement;
+        const onNativeEntered = () => {
+            nativeFullscreenActive = true;
+            syncSpreadsheetFullscreenViewport();
+            tryLockLandscape();
+            requestAnimationFrame(() => syncSpreadsheetFullscreenViewport());
+            setTimeout(syncSpreadsheetFullscreenViewport, 50);
+        };
         if (root.requestFullscreen) {
-            root.requestFullscreen()
-                .then(() => {
-                    nativeFullscreenActive = true;
-                    tryLockLandscape();
-                    setTimeout(syncSpreadsheetFullscreenViewport, 120);
-                })
+            let fsPromise;
+            try {
+                fsPromise = root.requestFullscreen({ navigationUI: 'hide' });
+            } catch (_) {
+                fsPromise = root.requestFullscreen();
+            }
+            Promise.resolve(fsPromise)
+                .then(onNativeEntered)
                 .catch(() => {
                     tryLockLandscape();
                     syncSpreadsheetFullscreenViewport();
                 });
         } else if (root.webkitRequestFullscreen) {
             root.webkitRequestFullscreen();
-            nativeFullscreenActive = true;
-            tryLockLandscape();
-            setTimeout(syncSpreadsheetFullscreenViewport, 120);
+            onNativeEntered();
         } else {
             tryLockLandscape();
         }

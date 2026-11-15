@@ -41,10 +41,22 @@
       border-bottom: 1px solid rgba(226, 232, 240, 0.8);
     }
 
+    html,
     body.collection-shell {
       overflow-x: clip;
       max-width: 100%;
+      background-color: #f3f4f6;
     }
+
+    html:fullscreen,
+    html:-webkit-full-screen,
+    :fullscreen::backdrop,
+    :-webkit-full-screen::backdrop,
+    #collection-app.spreadsheet-fullscreen-mode::backdrop {
+      background-color: #f3f4f6 !important;
+      background: #f3f4f6 !important;
+    }
+
     .collection-main-wrapper {
       max-width: 100%;
       min-width: 0;
@@ -56,6 +68,7 @@
       overflow: hidden !important;
       height: var(--vv-height, 100dvh) !important;
       overscroll-behavior: none !important;
+      background-color: #f3f4f6 !important;
     }
 
     #collection-app.spreadsheet-fullscreen-mode {
@@ -75,6 +88,51 @@
       background: #f3f4f6 !important;
       overflow: hidden !important;
       box-sizing: border-box !important;
+    }
+
+    /* Remove expensive full-viewport backdrop-filter blur & GPU transform popup animation in fullscreen/mobile */
+    #collection-app.spreadsheet-fullscreen-mode .modal-overlay,
+    #collection-app.spreadsheet-fullscreen-mode .popup-overlay,
+    #collection-app.spreadsheet-fullscreen-mode #student-profile-popup,
+    #collection-app.spreadsheet-fullscreen-mode #collection-bulk-status-modal,
+    #collection-app.spreadsheet-fullscreen-mode #collection-more-sheet,
+    body.collection-landscape-modal-mode .modal-overlay,
+    body.collection-landscape-modal-mode .popup-overlay,
+    body.collection-landscape-modal-mode #student-profile-popup,
+    body.collection-landscape-modal-mode #collection-bulk-status-modal,
+    body.collection-landscape-modal-mode #collection-more-sheet {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      background-color: rgba(15, 23, 42, 0.56) !important;
+      width: 100% !important;
+      transition: none !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode .collection-sticky-header,
+    body.collection-landscape-modal-mode .collection-sticky-header {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      background: #ffffff !important;
+    }
+
+    #collection-app.spreadsheet-fullscreen-mode .modal-box,
+    body.collection-landscape-modal-mode .modal-box {
+      animation: none !important;
+    }
+
+    @media (max-width: 1024px), (hover: none) and (pointer: coarse) {
+      .modal-overlay,
+      .popup-overlay,
+      #student-profile-popup,
+      #collection-bulk-status-modal,
+      #collection-more-sheet {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+        background-color: rgba(15, 23, 42, 0.56) !important;
+      }
+      .modal-box {
+        animation: none !important;
+      }
     }
 
     #collection-app.spreadsheet-fullscreen-mode.spreadsheet-css-rotated {
@@ -121,6 +179,7 @@
     body.collection-landscape-modal-mode .popup-overlay,
     body.collection-landscape-modal-mode #student-profile-popup {
       top: var(--vv-offset-top, 0px) !important;
+      width: 100% !important;
       height: var(--vv-height, 100dvh) !important;
       max-height: var(--vv-height, 100dvh) !important;
       padding: 6px 10px !important;
@@ -278,6 +337,8 @@
       overflow: auto !important;
       border-radius: 12px !important;
       box-sizing: border-box !important;
+      isolation: isolate !important;
+      background: #ffffff !important;
     }
 
     /* Collapsible Navigation Styling */

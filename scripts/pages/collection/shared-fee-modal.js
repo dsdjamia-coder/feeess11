@@ -480,19 +480,41 @@ export const openFeeEntryEditModal = (options = {}) => {
     modal.classList.remove('hidden');
     modal.classList.add('flex');
 
-    // Focus amount input
-    setTimeout(() => {
-        if (amtInput) {
+    // Focus amount input after modal frame paints so IME resize does not collide with overlay mount
+    const isMobileOrFullscreen = Boolean(
+        document.body?.classList.contains('collection-landscape-modal-mode') ||
+        document.body?.classList.contains('collection-fullscreen-lock') ||
+        window.matchMedia?.('(hover: none) and (pointer: coarse)')?.matches
+    );
+    const scheduleFocus = () => {
+        if (!amtInput || modal.classList.contains('hidden')) return;
+        try {
+            amtInput.focus({ preventScroll: true });
+            amtInput.select();
+        } catch (_) {
             amtInput.focus();
             amtInput.select();
         }
-    }, 50);
+    };
+    if (isMobileOrFullscreen) {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                setTimeout(scheduleFocus, 90);
+            });
+        });
+    } else {
+        setTimeout(scheduleFocus, 50);
+    }
 };
 
 // Close Shared Modal
 export const closeFeeEntryEditModal = () => {
     const modal = document.getElementById('master-ledger-pay-modal');
     if (modal) {
+        const activeEl = document.activeElement;
+        if (activeEl && modal.contains(activeEl) && typeof activeEl.blur === 'function') {
+            activeEl.blur();
+        }
         modal.classList.add('hidden');
         modal.classList.remove('flex');
     }
@@ -909,33 +931,50 @@ export const submitFeeEntryPayment = async () => {
             activeModalOptions.onUpdated(isBulk ? savedPaymentRecords.map(r => r.record) : savedPaymentRecord);
         }
 
-        // 5. Background sync for active tabs, History, Monthly Report, and Dashboard without full page reload
-        setTimeout(() => {
-            if (typeof window.syncMasterLedgerState === 'function') {
-                window.syncMasterLedgerState();
-            }
-            if (typeof window.renderFeeTable === 'function') {
-                window.renderFeeTable();
-            }
-            if (typeof window.MasterLedger?.renderTable === 'function') {
-                window.MasterLedger.renderTable();
-            }
-            if (typeof window.prepareHistoryData === 'function') {
-                window.prepareHistoryData();
-            }
-            if (typeof window.updateDashboardMetrics === 'function') {
-                window.updateDashboardMetrics();
-            }
-            if (typeof window.renderMonthlyCollectedPage === 'function') {
-                const searchVal = document.getElementById('monthly-collected-search-input')?.value || '';
-                window.renderMonthlyCollectedPage(searchVal);
-            }
-            if (typeof window.renderCollectorWiseMonthlyPage === 'function') {
-                window.renderCollectorWiseMonthlyPage();
-            }
-        }, 80);
-
+        // 5. Close modal & keyboard smoothly BEFORE staggered non-blocking background refreshes
         closeFeeEntryEditModal();
+
+        const isPanelVisible = (id) => {
+            const el = document.getElementById(id);
+            return Boolean(el && !el.classList.contains('hidden'));
+        };
+
+        const runDeferredRefreshes = () => {
+            if (isPanelVisible('master-ledger-page')) {
+                if (typeof window.MasterLedger?.renderTable === 'function') {
+                    window.MasterLedger.renderTable({ preserveScroll: true });
+                } else if (typeof window.syncMasterLedgerState === 'function') {
+                    window.syncMasterLedgerState();
+                }
+            }
+
+            const runIdleSecondary = () => {
+                if (isPanelVisible('history-page') && typeof window.prepareHistoryData === 'function') {
+                    window.prepareHistoryData();
+                }
+                if (isPanelVisible('dashboard-page') && typeof window.updateDashboardMetrics === 'function') {
+                    window.updateDashboardMetrics();
+                }
+                if (isPanelVisible('monthly-collected-page')) {
+                    if (isPanelVisible('collector-wise-monthly-page') && typeof window.renderCollectorWiseMonthlyPage === 'function') {
+                        window.renderCollectorWiseMonthlyPage();
+                    } else if (typeof window.renderMonthlyCollectedPage === 'function') {
+                        const searchVal = document.getElementById('monthly-collected-search-input')?.value || '';
+                        window.renderMonthlyCollectedPage(searchVal);
+                    }
+                }
+            };
+
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(runIdleSecondary, { timeout: 600 });
+            } else {
+                setTimeout(runIdleSecondary, 120);
+            }
+        };
+
+        requestAnimationFrame(() => {
+            setTimeout(runDeferredRefreshes, 220);
+        });
     } catch (err) {
         console.error('Error saving fee payment:', err);
         showToast(`Failed to save payment: ${err.message || 'Firestore error'}`, 'error');

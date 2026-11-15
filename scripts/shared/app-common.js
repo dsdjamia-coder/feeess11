@@ -76,6 +76,12 @@ export const initGlobalModalScrollLock = () => {
         if (syncRaf) cancelAnimationFrame(syncRaf);
         syncRaf = requestAnimationFrame(() => {
             syncRaf = null;
+            if (document.body?.classList.contains('collection-fullscreen-lock')) {
+                if (document.body.classList.contains('modal-scroll-lock')) {
+                    document.body.classList.remove('modal-scroll-lock');
+                }
+                return;
+            }
             const overlays = document.querySelectorAll('.modal-overlay:not(.hidden), .popup-overlay:not(.hidden)');
             const hasOpenOverlay = Array.from(overlays).some((overlay) => isVisible(overlay));
             if (document.body && document.body.classList.contains('modal-scroll-lock') !== hasOpenOverlay) {
