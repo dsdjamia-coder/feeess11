@@ -703,12 +703,121 @@ document.getElementById('back-to-official-btn')?.addEventListener('click', (e) =
 // SPREADSHEET FULLSCREEN & MOBILE LANDSCAPE CONTROLLER
 // ============================================================
 let nativeFullscreenActive = false;
+const MODAL_DOCK_STORAGE_KEY = 'collection_modal_dock_side_v1';
+const MODAL_DOCK_CYCLE = ['left', 'right', 'center'];
+
+const getSavedModalDockSide = () => {
+    try {
+        const raw = localStorage.getItem(MODAL_DOCK_STORAGE_KEY);
+        if (MODAL_DOCK_CYCLE.includes(raw)) return raw;
+    } catch (_) {}
+    return 'left';
+};
+
+const getModalDockUiMeta = (side) => {
+    if (side === 'right') return { label: 'Right', icon: 'fa-align-right', title: 'Popup on Right (tap to move Center)' };
+    if (side === 'center') return { label: 'Center', icon: 'fa-align-center', title: 'Popup Centered (tap to move Left)' };
+    return { label: 'Left', icon: 'fa-align-left', title: 'Popup on Left (tap to move Right)' };
+};
+
+const applyModalDockSide = (side = getSavedModalDockSide()) => {
+    const validSide = MODAL_DOCK_CYCLE.includes(side) ? side : 'left';
+    try {
+        localStorage.setItem(MODAL_DOCK_STORAGE_KEY, validSide);
+    } catch (_) {}
+    if (document.body) {
+        document.body.dataset.modalDock = validSide;
+    }
+    const meta = getModalDockUiMeta(validSide);
+    document.querySelectorAll('.modal-dock-switch-btn').forEach((btn) => {
+        btn.title = meta.title;
+        btn.setAttribute('aria-label', meta.title);
+        btn.innerHTML = `<i class="fas ${meta.icon} text-[10px]"></i><span>${meta.label}</span>`;
+    });
+};
+
+const ensureModalDockSwitchButtons = () => {
+    const side = getSavedModalDockSide();
+    const meta = getModalDockUiMeta(side);
+    const modalSelectors = [
+        '.modal-overlay > .modal-box',
+        '.popup-overlay > .card',
+        '#student-profile-popup > div'
+    ];
+    document.querySelectorAll(modalSelectors.join(', ')).forEach((box) => {
+        if (!box || box.querySelector('.modal-dock-switch-btn')) return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'modal-dock-switch-btn items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-slate-100 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 text-slate-600 text-[10px] font-bold transition shrink-0 cursor-pointer';
+        btn.title = meta.title;
+        btn.setAttribute('aria-label', meta.title);
+        btn.innerHTML = `<i class="fas ${meta.icon} text-[10px]"></i><span>${meta.label}</span>`;
+
+        // Try placing beside close button inside structured flex header row
+        const firstChild = box.firstElementChild;
+        if (firstChild && firstChild.classList.contains('flex') && firstChild.classList.contains('justify-between')) {
+            const closeBtn = firstChild.querySelector('button[id*="close"], button[title*="Close"]');
+            if (closeBtn && closeBtn.parentElement === firstChild) {
+                const actionGroup = document.createElement('div');
+                actionGroup.className = 'flex items-center gap-1.5 shrink-0';
+                firstChild.insertBefore(actionGroup, closeBtn);
+                actionGroup.appendChild(btn);
+                actionGroup.appendChild(closeBtn);
+                return;
+            }
+            firstChild.appendChild(btn);
+            return;
+        }
+
+        // Fallback for simpler card/modal-box headers (e.g. Confirm, Edit Fee, Concession)
+        const heading = box.querySelector(':scope > h3, :scope > h2');
+        if (heading) {
+            const hasAbsClose = Boolean(box.querySelector(':scope > button.absolute'));
+            const row = document.createElement('div');
+            row.className = `flex items-center justify-between gap-2 mb-3 border-b pb-2${hasAbsClose ? ' pr-8' : ''}`;
+            heading.classList.remove('mb-4', 'mb-3', 'mb-2', 'border-b', 'pb-2');
+            heading.classList.add('!mb-0', '!border-0', '!pb-0');
+            box.insertBefore(row, heading);
+            row.appendChild(heading);
+            row.appendChild(btn);
+            return;
+        }
+
+        btn.classList.add('ml-auto', 'mb-2');
+        box.insertBefore(btn, box.firstChild);
+    });
+};
 
 export function syncSpreadsheetFullscreenViewport() {
     const appEl = document.getElementById('collection-app');
+    const vv = window.visualViewport;
+    const vw = Math.max(160, Math.round(vv?.width || window.innerWidth || document.documentElement?.clientWidth || 0));
+    const vh = Math.max(160, Math.round(vv?.height || window.innerHeight || document.documentElement?.clientHeight || 0));
+    const vvTop = Math.max(0, Math.round(vv?.offsetTop || 0));
+
+    const rootStyle = document.documentElement?.style;
+    if (rootStyle) {
+        rootStyle.setProperty('--vv-width', `${vw}px`);
+        rootStyle.setProperty('--vv-height', `${vh}px`);
+        rootStyle.setProperty('--vv-offset-top', `${vvTop}px`);
+    }
+
+    const isFullscreen = Boolean(appEl && appEl.classList.contains('spreadsheet-fullscreen-mode'));
+    const isPortraitViewport = vw > 0 && vh > vw;
+    const isCompactLandscape = isFullscreen
+        ? (isPortraitViewport || vw <= 1024 || vh <= 560)
+        : (vw > vh && vh <= 560);
+
+    if (document.body) {
+        document.body.classList.toggle('collection-landscape-modal-mode', isCompactLandscape);
+        if (!document.body.dataset.modalDock) {
+            document.body.dataset.modalDock = getSavedModalDockSide();
+        }
+    }
+
     if (!appEl) return;
 
-    const isFullscreen = appEl.classList.contains('spreadsheet-fullscreen-mode');
     if (!isFullscreen) {
         appEl.classList.remove('spreadsheet-css-rotated', 'spreadsheet-fs-filters-open');
         appEl.style.removeProperty('--fs-rot-w');
@@ -718,10 +827,8 @@ export function syncSpreadsheetFullscreenViewport() {
     }
 
     document.body?.classList.add('collection-fullscreen-lock');
-    const vw = Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0);
-    const vh = Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0);
 
-    if (vw > 0 && vh > vw) {
+    if (isPortraitViewport) {
         appEl.style.setProperty('--fs-rot-w', `${vh}px`);
         appEl.style.setProperty('--fs-rot-h', `${vw}px`);
         appEl.classList.add('spreadsheet-css-rotated');
@@ -750,6 +857,8 @@ export function enterSpreadsheetFullscreen(_targetPageId) {
 
     updateFullscreenButtons(true);
     syncFullscreenFiltersToggleState(false);
+    ensureModalDockSwitchButtons();
+    applyModalDockSide(getSavedModalDockSide());
     syncSpreadsheetFullscreenViewport();
 
     const tryLockLandscape = () => {
@@ -814,6 +923,7 @@ export function exitSpreadsheetFullscreen() {
 
     updateFullscreenButtons(false);
     syncFullscreenFiltersToggleState(false);
+    syncSpreadsheetFullscreenViewport();
 }
 
 function syncFullscreenFiltersToggleState(isOpen) {
@@ -844,7 +954,19 @@ function updateFullscreenButtons(isFullscreen) {
     });
 }
 
-// Global Fullscreen, Orientation and Keyboard Event Listeners
+// Initialize dock buttons & visualViewport listeners
+const initMobileLandscapeModalSupport = () => {
+    ensureModalDockSwitchButtons();
+    applyModalDockSide(getSavedModalDockSide());
+    syncSpreadsheetFullscreenViewport();
+};
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMobileLandscapeModalSupport, { once: true });
+} else {
+    initMobileLandscapeModalSupport();
+}
+
+// Global Fullscreen, VisualViewport, Orientation and Keyboard Event Listeners
 document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement && nativeFullscreenActive) {
         nativeFullscreenActive = false;
@@ -865,6 +987,25 @@ window.addEventListener('resize', syncSpreadsheetFullscreenViewport);
 window.addEventListener('orientationchange', () => {
     setTimeout(syncSpreadsheetFullscreenViewport, 100);
 });
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncSpreadsheetFullscreenViewport);
+    window.visualViewport.addEventListener('scroll', syncSpreadsheetFullscreenViewport);
+}
+document.addEventListener('focusin', (e) => {
+    const field = e.target?.closest?.('input, select, textarea');
+    if (!field) return;
+    const modal = field.closest('.modal-overlay, .popup-overlay, #student-profile-popup');
+    if (!modal) return;
+    setTimeout(() => {
+        syncSpreadsheetFullscreenViewport();
+        if (document.body?.classList.contains('collection-landscape-modal-mode')) {
+            field.scrollIntoView?.({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+        }
+    }, 180);
+});
+document.addEventListener('focusout', () => {
+    setTimeout(syncSpreadsheetFullscreenViewport, 140);
+});
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         const appEl = document.getElementById('collection-app');
@@ -875,6 +1016,14 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('click', (e) => {
+    const dockBtn = e.target.closest('.modal-dock-switch-btn');
+    if (dockBtn) {
+        e.stopPropagation();
+        const cur = getSavedModalDockSide();
+        const nextIdx = (MODAL_DOCK_CYCLE.indexOf(cur) + 1) % MODAL_DOCK_CYCLE.length;
+        applyModalDockSide(MODAL_DOCK_CYCLE[nextIdx]);
+        return;
+    }
     const fsFiltersBtn = e.target.closest('#ledger-fullscreen-filters-btn');
     if (fsFiltersBtn) {
         const appEl = document.getElementById('collection-app');
