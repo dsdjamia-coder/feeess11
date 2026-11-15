@@ -417,6 +417,10 @@
       #open-carryforward-modal-btn,
       #subject-add-row-btn,
       #save-subject-schema-btn,
+      #subject-template-menu-btn,
+      #subject-bulk-upload-btn,
+      #marks-template-menu-btn,
+      #marks-bulk-upload-btn,
       #exam-config-add-row-btn,
       #save-exam-config-btn,
       #add-grade-rule-row-btn,
@@ -639,8 +643,8 @@
                             </h3>
                             <span class="text-xs font-medium text-slate-500">Pass Rates</span>
                         </div>
-                        <div id="dash-class-breakdown" class="space-y-2.5">
-                            <p class="text-slate-400 text-xs">Loading class breakdown...</p>
+                        <div id="dash-class-breakdown" class="grid grid-cols-3 gap-2 sm:gap-2.5">
+                            <p class="col-span-3 text-slate-400 text-xs">Loading class breakdown...</p>
                         </div>
                     </div>
 
@@ -692,56 +696,62 @@
 
                         <!-- Class & Exam Compact Selectors -->
                         <div class="grid grid-cols-2 gap-2 w-full lg:w-auto lg:min-w-[380px]">
-                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition">
-                                <label for="entry-class-select" class="text-xs font-semibold text-slate-600 whitespace-nowrap">Class <span class="text-red-500">*</span>:</label>
-                                <select id="entry-class-select" class="w-full text-xs font-semibold bg-transparent border-none outline-none py-1 text-slate-800">
+                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition min-w-0">
+                                <label for="entry-class-select" class="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0">Class <span class="text-red-500">*</span>:</label>
+                                <select id="entry-class-select" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full text-xs font-semibold bg-transparent border-none outline-none py-1 text-slate-800">
                                     <option value="">-- Choose Class --</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition">
-                                <label for="entry-exam-select" class="text-xs font-semibold text-slate-600 whitespace-nowrap">Exam <span class="text-red-500">*</span>:</label>
-                                <select id="entry-exam-select" class="w-full text-xs font-semibold bg-transparent border-none outline-none py-1 text-slate-800">
+                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition min-w-0">
+                                <label for="entry-exam-select" class="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0">Exam <span class="text-red-500">*</span>:</label>
+                                <select id="entry-exam-select" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full text-xs font-semibold bg-transparent border-none outline-none py-1 text-slate-800">
                                     <option value="">-- Choose Exam --</option>
                                 </select>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Compact Template Download & Bulk Upload Row -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between gap-2">
-                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                <i class="fas fa-file-arrow-down text-indigo-600"></i>
-                                <span>Download Template</span>
-                            </h4>
-                            <div class="grid grid-cols-2 gap-2">
-                                <button id="marks-template-csv-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white border border-slate-200 text-slate-400 font-bold text-xs transition opacity-50 cursor-not-allowed">
-                                    <i class="fas fa-file-csv text-blue-500 text-sm"></i>
-                                    <span>CSV Format</span>
+                    <!-- Admin-Style Bulk Marks Upload & Template Bar -->
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5">
+                        <div class="flex flex-wrap items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80">
+                            <div>
+                                <h4 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
+                                    <i class="fas fa-file-excel text-emerald-600"></i>
+                                    <span>Bulk Upload Marks</span>
+                                    <span class="text-[11px] font-semibold text-slate-500">· Excel (.xlsx, .xls) &amp; CSV (.csv)</span>
+                                </h4>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Set Total &amp; Pass marks per subject in the table headers below, or upload a spreadsheet and verify records before saving.</p>
+                            </div>
+                            <div class="relative inline-block text-left" id="marks-template-dropdown">
+                                <button type="button" id="marks-template-menu-btn" disabled aria-haspopup="true" aria-expanded="false" class="marks-action-btn bg-white border border-slate-200 text-slate-400 px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-2 transition opacity-50 cursor-not-allowed">
+                                    <i class="fas fa-download text-indigo-500"></i>
+                                    <span>Download Template</span>
+                                    <i class="fas fa-chevron-down text-[10px] text-slate-400 transition-transform" id="marks-template-chevron"></i>
                                 </button>
-                                <button id="marks-template-xlsx-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white border border-slate-200 text-slate-400 font-bold text-xs transition opacity-50 cursor-not-allowed">
-                                    <i class="fas fa-file-excel text-emerald-600 text-sm"></i>
-                                    <span>Excel (.xlsx)</span>
-                                </button>
+                                <div id="marks-template-menu" role="menu" class="hidden absolute right-0 mt-1.5 w-56 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-40">
+                                    <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">Choose Template Format</div>
+                                    <button type="button" role="menuitem" data-template-format="xlsx" class="marks-template-option w-full text-left px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                        <span class="flex items-center gap-2"><i class="fas fa-file-excel text-emerald-600 w-4 text-center"></i><span>Excel Workbook</span></span>
+                                        <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">.xlsx</span>
+                                    </button>
+                                    <button type="button" role="menuitem" data-template-format="csv" class="marks-template-option w-full text-left px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                        <span class="flex items-center gap-2"><i class="fas fa-file-csv text-blue-600 w-4 text-center"></i><span>CSV (Comma Separated)</span></span>
+                                        <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">.csv</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex flex-col justify-between gap-2">
-                            <h4 class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                <i class="fas fa-cloud-arrow-up text-emerald-600"></i>
-                                <span>Bulk Upload</span>
-                            </h4>
-                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                <label id="marks-file-picker-label" class="flex-1 flex items-center gap-2 px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 transition overflow-hidden opacity-50 cursor-not-allowed">
-                                    <i class="fas fa-paperclip text-slate-400 shrink-0"></i>
-                                    <span id="marks-bulk-filename" class="truncate text-slate-500">Choose CSV or Excel...</span>
-                                    <input type="file" id="marks-bulk-file" accept=".csv,.xlsx,.xls" disabled class="sr-only">
-                                </label>
-                                <button id="marks-bulk-upload-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2 px-3.5 rounded-lg bg-slate-200 text-slate-400 font-bold text-xs transition opacity-50 cursor-not-allowed shrink-0">
-                                    <i class="fas fa-cloud-arrow-up"></i>
-                                    <span>Upload &amp; Review</span>
-                                </button>
-                            </div>
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <label id="marks-file-picker-label" class="flex-1 flex items-center gap-2.5 px-3 py-2 bg-white border border-dashed border-slate-300 rounded-xl text-xs font-semibold text-slate-600 transition overflow-hidden opacity-50 cursor-not-allowed">
+                                <i class="fas fa-cloud-arrow-up text-slate-400 shrink-0 text-sm"></i>
+                                <span id="marks-bulk-filename" class="truncate text-slate-500">Choose .xlsx, .xls, or .csv spreadsheet...</span>
+                                <input type="file" id="marks-bulk-file" accept=".xlsx,.xls,.csv,text/csv,application/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled class="sr-only">
+                            </label>
+                            <button id="marks-bulk-upload-btn" type="button" disabled class="marks-action-btn flex items-center justify-center gap-1.5 py-2 px-4 rounded-xl bg-slate-200 text-slate-400 font-bold text-xs transition opacity-50 cursor-not-allowed shrink-0">
+                                <i class="fas fa-magnifying-glass-chart"></i>
+                                <span>Upload &amp; Verify</span>
+                            </button>
                         </div>
                     </div>
 
@@ -782,20 +792,20 @@
                         <!-- Sorting, Order & Action Controls Toolbar -->
                         <div class="p-2.5 sm:px-3 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2 bg-white">
                             <div class="flex items-center gap-2 flex-wrap">
-                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus-within:border-indigo-400 focus-within:bg-white transition">
-                                    <i class="fas fa-arrow-down-a-z text-slate-400"></i>
-                                    <label for="entry-sort-order" class="font-bold text-slate-600 text-xs">Sort:</label>
-                                    <select id="entry-sort-order" class="bg-transparent border-none text-xs font-bold text-slate-800 outline-none cursor-pointer">
+                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus-within:border-indigo-400 focus-within:bg-white transition min-w-0">
+                                    <i class="fas fa-arrow-down-a-z text-slate-400 shrink-0"></i>
+                                    <label for="entry-sort-order" class="font-bold text-slate-600 text-xs shrink-0">Sort:</label>
+                                    <select id="entry-sort-order" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-[115px]" class="bg-transparent border-none text-xs font-bold text-slate-800 outline-none cursor-pointer">
                                         <option value="name_asc">Name: A - Z</option>
                                         <option value="name_desc">Name: Z - A</option>
                                         <option value="adm_asc">Adm No: Low to High</option>
                                         <option value="adm_desc">Adm No: High to Low</option>
                                     </select>
                                 </div>
-                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus-within:border-indigo-400 focus-within:bg-white transition">
-                                    <i class="fas fa-users text-slate-400"></i>
-                                    <label for="entry-gender-order" class="font-bold text-slate-600 text-xs">Order:</label>
-                                    <select id="entry-gender-order" class="bg-transparent border-none text-xs font-bold text-slate-800 outline-none cursor-pointer">
+                                <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs focus-within:border-indigo-400 focus-within:bg-white transition min-w-0">
+                                    <i class="fas fa-users text-slate-400 shrink-0"></i>
+                                    <label for="entry-gender-order" class="font-bold text-slate-600 text-xs shrink-0">Order:</label>
+                                    <select id="entry-gender-order" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-[100px]" class="bg-transparent border-none text-xs font-bold text-slate-800 outline-none cursor-pointer">
                                         <option value="mixed">Mixed</option>
                                         <option value="boys_first">Boys First, then Girls</option>
                                         <option value="girls_first">Girls First, then Boys</option>
@@ -852,23 +862,23 @@
                     <!-- Filter & Sorting Toolbar -->
                     <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 space-y-2">
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-chalkboard text-slate-400"></i>
-                                <label for="draft-class-filter" class="font-bold text-slate-600 whitespace-nowrap">Class:</label>
-                                <select id="draft-class-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-chalkboard text-slate-400 shrink-0"></i>
+                                <label for="draft-class-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Class:</label>
+                                <select id="draft-class-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
                                     <option value="">Select Class</option>
                                     <option value="ALL" selected>All Classes</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-book-open text-slate-400"></i>
-                                <label for="draft-exam-filter" class="font-bold text-slate-600 whitespace-nowrap">Exam:</label>
-                                <select id="draft-exam-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer"></select>
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-book-open text-slate-400 shrink-0"></i>
+                                <label for="draft-exam-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Exam:</label>
+                                <select id="draft-exam-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer"></select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-filter text-slate-400"></i>
-                                <label for="draft-status-filter" class="font-bold text-slate-600 whitespace-nowrap">Filter:</label>
-                                <select id="draft-status-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-filter text-slate-400 shrink-0"></i>
+                                <label for="draft-status-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Filter:</label>
+                                <select id="draft-status-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
                                     <option value="all" selected>All</option>
                                     <option value="passed">Passed</option>
                                     <option value="failed">Failed</option>
@@ -876,10 +886,10 @@
                                     <option value="p_awarded">P Awarded</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-arrow-down-a-z text-slate-400"></i>
-                                <label for="draft-order-filter" class="font-bold text-slate-600 whitespace-nowrap">Order:</label>
-                                <select id="draft-order-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-arrow-down-a-z text-slate-400 shrink-0"></i>
+                                <label for="draft-order-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Order:</label>
+                                <select id="draft-order-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
                                     <option value="admission">Admission No Order</option>
                                     <option value="alpha">Alphabetical (A - Z)</option>
                                     <option value="alpha_desc">Alphabetical (Z - A)</option>
@@ -921,23 +931,23 @@
                     <!-- Filter & Sorting Toolbar -->
                     <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 space-y-2">
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-chalkboard text-slate-400"></i>
-                                <label for="published-class-filter" class="font-bold text-slate-600 whitespace-nowrap">Class:</label>
-                                <select id="published-class-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-chalkboard text-slate-400 shrink-0"></i>
+                                <label for="published-class-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Class:</label>
+                                <select id="published-class-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
                                     <option value="">Select Class</option>
                                     <option value="ALL" selected>All Classes</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-book-open text-slate-400"></i>
-                                <label for="published-exam-filter" class="font-bold text-slate-600 whitespace-nowrap">Exam:</label>
-                                <select id="published-exam-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer"></select>
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-book-open text-slate-400 shrink-0"></i>
+                                <label for="published-exam-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Exam:</label>
+                                <select id="published-exam-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer"></select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-filter text-slate-400"></i>
-                                <label for="published-status-filter" class="font-bold text-slate-600 whitespace-nowrap">Filter:</label>
-                                <select id="published-status-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-filter text-slate-400 shrink-0"></i>
+                                <label for="published-status-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Filter:</label>
+                                <select id="published-status-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
                                     <option value="all" selected>All</option>
                                     <option value="passed">Passed</option>
                                     <option value="failed">Failed</option>
@@ -945,10 +955,10 @@
                                     <option value="p_awarded">P Awarded</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400">
-                                <i class="fas fa-arrow-down-a-z text-slate-400"></i>
-                                <label for="published-order-filter" class="font-bold text-slate-600 whitespace-nowrap">Order:</label>
-                                <select id="published-order-filter" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
+                            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
+                                <i class="fas fa-arrow-down-a-z text-slate-400 shrink-0"></i>
+                                <label for="published-order-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Order:</label>
+                                <select id="published-order-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full bg-transparent border-none text-xs font-semibold text-slate-800 outline-none cursor-pointer">
                                     <option value="admission">Admission No Order</option>
                                     <option value="alpha">Alphabetical (A - Z)</option>
                                     <option value="alpha_desc">Alphabetical (Z - A)</option>
@@ -1004,19 +1014,19 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                             <div>
                                 <label for="report-academic-year" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Academic Year</label>
-                                <select id="report-academic-year" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
+                                <select id="report-academic-year" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
                             </div>
                             <div>
                                 <label for="report-class-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Select Class</label>
-                                <select id="report-class-select" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
+                                <select id="report-class-select" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
                             </div>
                             <div>
                                 <label for="report-exam-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Select Exam</label>
-                                <select id="report-exam-select" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
+                                <select id="report-exam-select" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none"></select>
                             </div>
                             <div>
                                 <label for="report-order-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Order / Sorting</label>
-                                <select id="report-order-select" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none">
+                                <select id="report-order-select" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-800 focus:border-indigo-500 outline-none">
                                     <option value="rank">Rank Order (High to Low)</option>
                                     <option value="admission">Admission No Order</option>
                                     <option value="gender">Boys First, then Girls</option>
@@ -1026,11 +1036,11 @@
                         </div>
 
                         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
-                            <div class="flex items-center gap-2">
-                                <label for="report-model-select" class="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <label for="report-model-select" class="text-xs font-bold text-slate-600 flex items-center gap-1.5 whitespace-nowrap shrink-0">
                                     <i class="fas fa-layer-group text-indigo-600"></i> Model View:
                                 </label>
-                                <select id="report-model-select" class="p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:border-indigo-500 outline-none cursor-pointer min-w-[200px]">
+                                <select id="report-model-select" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 sm:flex-none sm:w-[210px]" class="p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:border-indigo-500 outline-none cursor-pointer">
                                     <option value="consolidated" selected>Consolidated Marksheet</option>
                                     <option value="individual">Individual Report Cards</option>
                                 </select>
@@ -1065,11 +1075,11 @@
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div>
                                         <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">Academic Year <span class="text-red-500">*</span></label>
-                                        <select id="publish-academic-year" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
+                                        <select id="publish-academic-year" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">Select Exam <span class="text-red-500">*</span></label>
-                                        <select id="publish-exam-select" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
+                                        <select id="publish-exam-select" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"></select>
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">Exam Name (Display) <span class="text-red-500">*</span></label>
@@ -1150,7 +1160,7 @@
                                     <i class="fas fa-table-list text-indigo-600"></i>
                                     <span>Published Exam Records</span>
                                 </h3>
-                                <select id="publish-history-year-filter" class="p-1.5 border rounded-lg bg-white text-xs font-semibold text-slate-700">
+                                <select id="publish-history-year-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="w-full sm:w-48" class="p-1.5 border rounded-lg bg-white text-xs font-semibold text-slate-700">
                                     <option value="">All Academic Years</option>
                                 </select>
                             </div>
@@ -1211,30 +1221,81 @@
 
                             <!-- 1. Subject Configuration Panel -->
                             <div id="subject-setup-panel" class="grid grid-cols-1 gap-3">
-                                <div>
-                                    <label class="block text-xs font-semibold mb-1 text-slate-700">Select Class</label>
-                                    <select id="subject-class-select" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-medium"></select>
+                                <div class="space-y-2">
+                                    <label for="subject-class-select" class="block text-xs font-semibold text-slate-700">Select Class or Bulk Target</label>
+                                    <select id="subject-class-select" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-medium"></select>
+                                    <div id="subject-all-classes-hint" class="hidden px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-900 font-medium flex items-center gap-2">
+                                        <i class="fas fa-layer-group text-indigo-600 shrink-0"></i>
+                                        <span><strong>All Classes Mode:</strong> New subjects entered below will be appended in one click to every accessible class without duplicating existing subjects. Total &amp; Pass marks are configured per exam during Marks Entry.</span>
+                                    </div>
+                                    <div id="subject-single-class-hint" class="px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 font-medium flex items-center gap-2">
+                                        <i class="fas fa-circle-info text-slate-400 shrink-0"></i>
+                                        <span>Configure subject names here. Exam-specific <strong>Total Mark</strong> and <strong>Pass Mark</strong> are set directly in <strong>Marks Entry</strong> column headers.</span>
+                                    </div>
                                 </div>
-                                <div class="border rounded-xl overflow-hidden">
+                                <div class="border rounded-xl overflow-hidden bg-white">
                                     <table class="w-full text-sm">
                                         <thead class="bg-slate-50 border-b">
                                             <tr>
                                                 <th class="p-2.5 text-left font-semibold text-slate-700">Subject Name</th>
-                                                <th class="p-2.5 text-left font-semibold text-slate-700 w-32">Total Mark</th>
-                                                <th class="p-2.5 text-left font-semibold text-slate-700 w-32">Pass Mark</th>
-                                                <th class="p-2.5 text-left w-14"></th>
+                                                <th class="p-2.5 text-center font-semibold text-slate-500 w-16">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody id="subject-rows-body"></tbody>
                                     </table>
                                     <div class="p-2.5 border-t bg-slate-50 flex flex-wrap justify-between items-center gap-2">
-                                        <button type="button" id="subject-add-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg transition">
+                                        <button type="button" id="subject-add-row-btn" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
                                             <i class="fas fa-plus mr-1"></i> Add Subject Row
                                         </button>
-                                        <button type="button" id="save-subject-schema-btn" class="btn-primary py-1.5 px-4 rounded-lg font-bold text-xs sm:text-sm">
-                                            <i class="fas fa-save mr-1.5"></i> Save Subjects
+                                        <button type="button" id="save-subject-schema-btn" class="btn-primary py-1.5 px-4 rounded-lg font-bold text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer">
+                                            <i class="fas fa-save"></i>
+                                            <span id="save-subject-schema-label">Save Subjects</span>
                                         </button>
                                     </div>
+                                </div>
+
+                                <!-- All-Classes Subjects & Exams Template Download + Bulk Upload -->
+                                <div id="subject-bulk-card" class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5 mt-1">
+                                    <div class="flex flex-wrap items-center justify-between gap-2.5 pb-2 border-b border-slate-200">
+                                        <div>
+                                            <h4 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
+                                                <i class="fas fa-file-excel text-emerald-600"></i>
+                                                <span>Bulk Upload All Classes (Subjects &amp; Exams)</span>
+                                                <span class="text-[11px] font-semibold text-slate-500">· .xlsx &amp; .csv</span>
+                                            </h4>
+                                            <p class="text-[11px] text-slate-500 mt-0.5">Download a single spreadsheet containing all classes (Class, Subjects, Custom Exams), edit rows, and upload with full review &amp; inline editing.</p>
+                                        </div>
+                                        <div class="relative inline-block text-left" id="subject-template-dropdown">
+                                            <button type="button" id="subject-template-menu-btn" aria-haspopup="true" aria-expanded="false" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-2 cursor-pointer transition">
+                                                <i class="fas fa-download text-indigo-600"></i>
+                                                <span>Download Template</span>
+                                                <i class="fas fa-chevron-down text-[10px] text-slate-500 transition-transform" id="subject-template-chevron"></i>
+                                            </button>
+                                            <div id="subject-template-menu" role="menu" class="hidden absolute right-0 mt-1.5 w-60 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-40">
+                                                <div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">All Classes Template</div>
+                                                <button type="button" role="menuitem" data-template-format="xlsx" class="subject-template-option w-full text-left px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                                    <span class="flex items-center gap-2"><i class="fas fa-file-excel text-emerald-600 w-4 text-center"></i><span>Excel Workbook</span></span>
+                                                    <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">.xlsx</span>
+                                                </button>
+                                                <button type="button" role="menuitem" data-template-format="csv" class="subject-template-option w-full text-left px-3.5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                                    <span class="flex items-center gap-2"><i class="fas fa-file-csv text-blue-600 w-4 text-center"></i><span>CSV (Comma Separated)</span></span>
+                                                    <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">.csv</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                        <label id="subject-file-picker-label" class="flex-1 flex items-center gap-2.5 px-3 py-2 bg-white border border-dashed border-slate-300 hover:border-indigo-400 rounded-xl text-xs font-semibold text-slate-600 transition overflow-hidden cursor-pointer">
+                                            <i class="fas fa-cloud-arrow-up text-indigo-500 shrink-0 text-sm"></i>
+                                            <span id="subject-bulk-filename" class="truncate text-slate-500">Choose .xlsx, .xls, or .csv file to upload subjects...</span>
+                                            <input type="file" id="subject-bulk-file" accept=".xlsx,.xls,.csv,text/csv,application/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="sr-only">
+                                        </label>
+                                        <button id="subject-bulk-upload-btn" type="button" class="flex items-center justify-center gap-1.5 py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer shrink-0">
+                                            <i class="fas fa-magnifying-glass-chart"></i>
+                                            <span>Upload &amp; Verify</span>
+                                        </button>
+                                    </div>
+                                    <div id="subject-bulk-status" class="text-[11px] font-medium text-slate-500 hidden"></div>
                                 </div>
                             </div>
 
@@ -1242,7 +1303,7 @@
                             <div id="exam-setup-panel" class="hidden grid grid-cols-1 gap-3">
                                 <div>
                                     <label class="block text-xs font-semibold mb-1 text-slate-700">Select Class</label>
-                                    <select id="exam-config-class-select" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-medium"></select>
+                                    <select id="exam-config-class-select" data-smart-select="true" data-smart-floating="true" class="w-full p-2 border rounded-lg bg-white text-xs sm:text-sm font-medium"></select>
                                     <div class="mt-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs text-slate-600 flex flex-wrap items-center gap-2">
                                         <span class="font-bold text-slate-700">Default Exams:</span>
                                         <span>First Terminal · Half-Yearly · Annual</span>
@@ -1276,8 +1337,8 @@
                             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
                                 <h3 class="text-sm font-bold text-slate-800">Saved Classes, Subjects &amp; Exams</h3>
                                 <div class="flex items-center gap-2 w-full sm:w-auto">
-                                    <label class="text-xs font-semibold text-slate-600 whitespace-nowrap">Filter Class:</label>
-                                    <select id="schema-list-class-filter" class="p-1.5 border rounded-lg bg-white text-xs font-medium w-full sm:w-44">
+                                    <label class="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0">Filter Class:</label>
+                                    <select id="schema-list-class-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="w-full sm:w-44" class="p-1.5 border rounded-lg bg-white text-xs font-medium w-full sm:w-44">
                                         <option value="">All Classes</option>
                                     </select>
                                 </div>
@@ -1360,8 +1421,8 @@
                             </label>
 
                             <div class="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 rounded-lg">
-                                <label for="promotion-target-year" class="text-xs font-bold text-indigo-900 whitespace-nowrap">To Year:</label>
-                                <select id="promotion-target-year" class="p-1 border border-indigo-200 rounded bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none min-w-[130px]"></select>
+                                <label for="promotion-target-year" class="text-xs font-bold text-indigo-900 whitespace-nowrap shrink-0">To Year:</label>
+                                <select id="promotion-target-year" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-[130px]" class="p-1 border border-indigo-200 rounded bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"></select>
                             </div>
 
                             <button id="run-auto-promotion-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-3.5 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ml-auto lg:ml-0">
@@ -1407,7 +1468,7 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-1">Total Max Marks</label>
-                        <select id="exam-max" class="w-full p-2.5 border rounded-lg bg-gray-50">
+                        <select id="exam-max" data-smart-select="true" data-smart-floating="true" class="w-full p-2.5 border rounded-lg bg-gray-50">
                             <option value="100">100</option>
                             <option value="50">50</option>
                         </select>
@@ -1634,95 +1695,237 @@
             </div>
         </div>
     </div>
-    <!-- Marks Upload & Review Modal -->
+    <!-- Marks Upload & Review Modal (Admin-Style Verification & Inline Edit) -->
     <div id="marks-upload-review-modal" class="modal-overlay hidden" style="z-index: 9990;">
         <div class="modal-box w-full max-w-6xl max-h-[92vh] flex flex-col p-4 sm:p-6 text-left rounded-2xl shadow-2xl bg-white overflow-hidden">
             <!-- Modal Header -->
             <div class="flex items-center justify-between border-b pb-3 mb-3">
-                <div class="flex items-center gap-2.5">
-                    <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-base shadow-xs">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-base shadow-xs shrink-0">
                         <i class="fas fa-file-circle-check"></i>
                     </div>
-                    <div>
-                        <h3 class="text-base sm:text-lg font-bold text-gray-900 leading-tight" id="marks-review-modal-title">Review Marks Spreadsheet</h3>
-                        <p class="text-xs text-gray-500" id="marks-review-modal-subtitle">Inspect parsed records, review warnings, and select conflict strategy before saving.</p>
+                    <div class="min-w-0">
+                        <h3 class="text-base sm:text-lg font-bold text-gray-900 leading-tight truncate" id="marks-review-modal-title">Review Marks Spreadsheet</h3>
+                        <p class="text-xs text-gray-500 truncate" id="marks-review-modal-subtitle">Inspect parsed records, edit inline if needed, and verify before saving.</p>
                     </div>
                 </div>
-                <button type="button" id="marks-review-modal-close-x" class="text-gray-400 hover:text-gray-600 text-xl font-bold p-1 leading-none">&times;</button>
-            </div>
-
-            <!-- Top Summary Badges Bar -->
-            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 pb-3 border-b border-slate-100">
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center">
-                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Total Rows</span>
-                    <span id="marks-review-stat-total" class="text-base font-extrabold text-slate-800 font-mono">0</span>
-                </div>
-                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-center">
-                    <span class="text-[10px] uppercase font-bold text-emerald-700 tracking-wider block">Ready / Valid</span>
-                    <span id="marks-review-stat-valid" class="text-base font-extrabold text-emerald-700 font-mono">0</span>
-                </div>
-                <div class="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-center">
-                    <span class="text-[10px] uppercase font-bold text-rose-700 tracking-wider block">Issues / Errors</span>
-                    <span id="marks-review-stat-issues" class="text-base font-extrabold text-rose-700 font-mono">0</span>
-                </div>
-                <div class="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-center">
-                    <span class="text-[10px] uppercase font-bold text-amber-700 tracking-wider block">Blank Fields</span>
-                    <span id="marks-review-stat-blanks" class="text-base font-extrabold text-amber-700 font-mono">0</span>
-                </div>
-                <div class="bg-sky-50 border border-sky-200 rounded-xl p-2.5 text-center col-span-2 sm:col-span-1">
-                    <span class="text-[10px] uppercase font-bold text-sky-700 tracking-wider block">Existing in Class</span>
-                    <span id="marks-review-stat-existing" class="text-base font-extrabold text-sky-700 font-mono">0</span>
-                </div>
+                <button type="button" id="marks-review-modal-close-x" class="text-gray-400 hover:text-gray-600 text-xl font-bold p-1 leading-none cursor-pointer">&times;</button>
             </div>
 
             <!-- Top Controls & Action Toolbar -->
-            <div class="pt-3 pb-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 border-b border-slate-100 bg-white">
-                <!-- Conflict Strategy for Existing Records -->
-                <div id="marks-review-conflict-container" class="flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
-                    <span class="font-bold text-slate-700 whitespace-nowrap"><i class="fas fa-layer-group text-sky-600 mr-1"></i>If record exists:</span>
-                    <div class="flex items-center gap-3 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-                        <label class="flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-indigo-600 font-medium text-xs">
-                            <input type="radio" name="marks-duplicate-action" value="merge" checked class="text-indigo-600 focus:ring-indigo-500">
-                            <span>Merge & Overwrite</span>
-                        </label>
-                        <label class="flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-indigo-600 font-medium text-xs">
-                            <input type="radio" name="marks-duplicate-action" value="skip" class="text-indigo-600 focus:ring-indigo-500">
-                            <span>Skip Existing</span>
-                        </label>
+            <div class="pb-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 border-b border-slate-100 bg-white">
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <!-- Edit & Mapping Switch (Admin Style) -->
+                    <label for="marks-review-edit-switch" class="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-all shadow-xs border border-slate-300 cursor-pointer select-none">
+                        <span class="flex items-center gap-1.5 text-slate-700 font-bold">
+                            <i class="fas fa-sliders-h text-emerald-600"></i>
+                            <span>Edit &amp; Mapping:</span>
+                        </span>
+                        <div class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="marks-review-edit-switch" class="sr-only peer">
+                            <div class="w-8 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </div>
+                        <span id="marks-review-edit-status" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">OFF</span>
+                    </label>
+
+                    <!-- Conflict Strategy for Existing Records -->
+                    <div id="marks-review-conflict-container" class="flex flex-wrap items-center gap-2 text-xs">
+                        <span class="font-bold text-slate-700 whitespace-nowrap"><i class="fas fa-layer-group text-sky-600 mr-1"></i>If record exists:</span>
+                        <div class="flex items-center gap-3 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-indigo-600 font-semibold text-xs">
+                                <input type="radio" name="marks-duplicate-action" value="merge" checked class="text-indigo-600 focus:ring-indigo-500">
+                                <span>Merge &amp; Overwrite</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-indigo-600 font-semibold text-xs">
+                                <input type="radio" name="marks-duplicate-action" value="skip" class="text-indigo-600 focus:ring-indigo-500">
+                                <span>Skip Existing</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Action Buttons: Cancel, Skip Issues & Upload, Upload All Valid -->
+                <!-- Action Buttons -->
                 <div class="flex items-center justify-end gap-2 shrink-0 flex-wrap">
-                    <button type="button" id="marks-review-cancel-btn" class="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold text-xs transition">
+                    <button type="button" id="marks-review-cancel-btn" class="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold text-xs transition cursor-pointer">
                         Cancel
                     </button>
-                    <button type="button" id="marks-review-skip-issues-btn" class="hidden px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5">
+                    <button type="button" id="marks-review-skip-issues-btn" class="hidden px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
                         <i class="fas fa-filter"></i>
-                        <span>Skip Issues & Upload Valid (<span id="marks-review-skip-count">0</span>)</span>
+                        <span>Upload Valid Only (<span id="marks-review-skip-count">0</span>)</span>
                     </button>
-                    <button type="button" id="marks-review-confirm-upload-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5">
+                    <button type="button" id="marks-review-confirm-upload-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
                         <i class="fas fa-cloud-arrow-up"></i>
-                        <span id="marks-review-confirm-upload-label">Start Upload (0)</span>
+                        <span id="marks-review-confirm-upload-label">Upload All (0)</span>
                     </button>
                 </div>
+            </div>
+
+            <!-- Top Summary Badges Bar -->
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 py-2.5 border-b border-slate-100">
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Total Rows</span>
+                    <span id="marks-review-stat-total" class="text-base font-extrabold text-slate-800 font-mono tabular-nums">0</span>
+                </div>
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-emerald-700 tracking-wider block">Ready to Upload</span>
+                    <span id="marks-review-stat-valid" class="text-base font-extrabold text-emerald-700 font-mono tabular-nums">0</span>
+                </div>
+                <div class="bg-rose-50 border border-rose-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-rose-700 tracking-wider block">Issues / Errors</span>
+                    <span id="marks-review-stat-issues" class="text-base font-extrabold text-rose-700 font-mono tabular-nums">0</span>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-amber-700 tracking-wider block">Blank Fields</span>
+                    <span id="marks-review-stat-blanks" class="text-base font-extrabold text-amber-700 font-mono tabular-nums">0</span>
+                </div>
+                <div class="bg-sky-50 border border-sky-200 rounded-xl p-2 text-center col-span-2 sm:col-span-1">
+                    <span class="text-[10px] uppercase font-bold text-sky-700 tracking-wider block">Existing / Merge</span>
+                    <span id="marks-review-stat-existing" class="text-base font-extrabold text-sky-700 font-mono tabular-nums">0</span>
+                </div>
+            </div>
+
+            <!-- Edit Mode Guidance Banner -->
+            <div id="marks-review-edit-banner" class="hidden mt-2 p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg text-xs text-emerald-900 font-medium flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-pen-to-square text-emerald-600"></i>
+                    <span><b>Spreadsheet Edit Mode Active:</b> Click any cell to fix marks, attendance, or student identifiers, or adjust column headers. Validation updates live.</span>
+                </div>
+                <span class="text-[11px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">Press Enter / Tab to move</span>
             </div>
 
             <!-- Preview Legend Info -->
             <div class="py-2 flex items-center justify-between text-[11px] text-slate-500 flex-wrap gap-2">
                 <span class="flex items-center gap-1.5">
                     <i class="fas fa-info-circle text-indigo-500"></i>
-                    <span>Scroll horizontally and vertically to inspect full table.</span>
+                    <span>Marks are verified against active exam header Total Marks.</span>
                 </span>
-                <div class="flex items-center gap-3">
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-amber-100 border border-amber-300 inline-block"></span> Blank / Not entered</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-rose-200 border border-rose-300 inline-block"></span> Invalid / Issue</span>
-                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-sky-100 border border-sky-300 inline-block"></span> Existing in Class</span>
+                <div class="flex items-center flex-wrap gap-3">
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-amber-100 border border-amber-300 inline-block"></span> Blank Field</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-rose-200 border border-rose-400 inline-block"></span> Error / Invalid Mark / Unknown Student</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-sky-100 border border-sky-300 inline-block"></span> Existing Record</span>
                 </div>
             </div>
 
             <!-- Table Container (Horizontal and Vertical Scroll) -->
-            <div id="marks-review-table-container" class="flex-1 overflow-x-auto overflow-y-auto max-h-[460px] border border-slate-200 rounded-xl custom-scroll bg-slate-50">
+            <div id="marks-review-table-container" class="flex-1 overflow-x-auto overflow-y-auto max-h-[440px] border border-slate-200 rounded-xl custom-scroll bg-slate-50">
+                <!-- Dynamically rendered table -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Subjects & Exams All-Classes Upload Review Modal (Admin-Style Verification & Inline Edit) -->
+    <div id="subject-upload-review-modal" class="modal-overlay hidden" style="z-index: 9991;">
+        <div class="modal-box w-full max-w-6xl max-h-[92vh] flex flex-col p-4 sm:p-6 text-left rounded-2xl shadow-2xl bg-white overflow-hidden">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between border-b pb-3 mb-3">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-base shadow-xs shrink-0">
+                        <i class="fas fa-table-list"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="text-base sm:text-lg font-bold text-gray-900 leading-tight truncate" id="subject-review-modal-title">Review Subjects &amp; Exams Spreadsheet</h3>
+                        <p class="text-xs text-gray-500 truncate" id="subject-review-modal-subtitle">Verify class rows, edit subjects or exam names inline, and confirm upload.</p>
+                    </div>
+                </div>
+                <button type="button" id="subject-review-modal-close-x" class="text-gray-400 hover:text-gray-600 text-xl font-bold p-1 leading-none cursor-pointer">&times;</button>
+            </div>
+
+            <!-- Top Controls & Action Toolbar -->
+            <div class="pb-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 border-b border-slate-100 bg-white">
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <!-- Edit & Mapping Switch -->
+                    <label for="subject-review-edit-switch" class="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-all shadow-xs border border-slate-300 cursor-pointer select-none">
+                        <span class="flex items-center gap-1.5 text-slate-700 font-bold">
+                            <i class="fas fa-sliders-h text-emerald-600"></i>
+                            <span>Edit &amp; Mapping:</span>
+                        </span>
+                        <div class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="subject-review-edit-switch" class="sr-only peer">
+                            <div class="w-8 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </div>
+                        <span id="subject-review-edit-status" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">OFF</span>
+                    </label>
+
+                    <!-- Conflict Strategy for Existing Class Schemas -->
+                    <div id="subject-review-conflict-container" class="flex flex-wrap items-center gap-2 text-xs">
+                        <span class="font-bold text-slate-700 whitespace-nowrap"><i class="fas fa-layer-group text-sky-600 mr-1"></i>If class exists:</span>
+                        <div class="flex flex-wrap items-center gap-3 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-indigo-600 font-semibold text-xs">
+                                <input type="radio" name="subject-duplicate-action" value="merge" checked class="text-indigo-600 focus:ring-indigo-500">
+                                <span>Merge &amp; Append New</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-indigo-600 font-semibold text-xs">
+                                <input type="radio" name="subject-duplicate-action" value="replace" class="text-indigo-600 focus:ring-indigo-500">
+                                <span>Replace Class Subjects</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700 hover:text-indigo-600 font-semibold text-xs">
+                                <input type="radio" name="subject-duplicate-action" value="skip" class="text-indigo-600 focus:ring-indigo-500">
+                                <span>Skip Existing</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex items-center justify-end gap-2 shrink-0 flex-wrap">
+                    <button type="button" id="subject-review-cancel-btn" class="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold text-xs transition cursor-pointer">
+                        Cancel
+                    </button>
+                    <button type="button" id="subject-review-skip-issues-btn" class="hidden px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                        <i class="fas fa-filter"></i>
+                        <span>Upload Valid Only (<span id="subject-review-skip-count">0</span>)</span>
+                    </button>
+                    <button type="button" id="subject-review-confirm-upload-btn" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer">
+                        <i class="fas fa-cloud-arrow-up"></i>
+                        <span id="subject-review-confirm-upload-label">Upload All (0)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Diagnostic Summary Cards -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2.5 border-b border-slate-100">
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Total Rows</span>
+                    <span id="subject-review-stat-total" class="text-base font-extrabold text-slate-800 font-mono tabular-nums">0</span>
+                </div>
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-emerald-700 tracking-wider block">Ready to Upload</span>
+                    <span id="subject-review-stat-valid" class="text-base font-extrabold text-emerald-700 font-mono tabular-nums">0</span>
+                </div>
+                <div class="bg-rose-50 border border-rose-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-rose-700 tracking-wider block">Issues / Errors</span>
+                    <span id="subject-review-stat-issues" class="text-base font-extrabold text-rose-700 font-mono tabular-nums">0</span>
+                </div>
+                <div class="bg-sky-50 border border-sky-200 rounded-xl p-2 text-center">
+                    <span class="text-[10px] uppercase font-bold text-sky-700 tracking-wider block">Existing Class Match</span>
+                    <span id="subject-review-stat-existing" class="text-base font-extrabold text-sky-700 font-mono tabular-nums">0</span>
+                </div>
+            </div>
+
+            <!-- Edit Mode Guidance Banner -->
+            <div id="subject-review-edit-banner" class="hidden mt-2 p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg text-xs text-emerald-900 font-medium flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-pen-to-square text-emerald-600"></i>
+                    <span><b>Spreadsheet Edit Mode Active:</b> Click any cell to edit class names, comma-separated subjects, or custom exams, or remap headers above.</span>
+                </div>
+                <span class="text-[11px] text-emerald-800 font-bold bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">Press Enter / Tab to move</span>
+            </div>
+
+            <!-- Preview Legend -->
+            <div class="py-2 flex items-center justify-between text-[11px] text-slate-500 flex-wrap gap-2">
+                <span class="flex items-center gap-1.5">
+                    <i class="fas fa-info-circle text-indigo-500"></i>
+                    <span>Enter comma-separated Subject and Custom Exam names per class row.</span>
+                </span>
+                <div class="flex items-center flex-wrap gap-3">
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-amber-100 border border-amber-300 inline-block"></span> Optional Blank</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-rose-200 border border-rose-400 inline-block"></span> Invalid / Unknown Class / Empty Row</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-sky-100 border border-sky-300 inline-block"></span> Existing Class Schema</span>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div id="subject-review-table-container" class="flex-1 overflow-x-auto overflow-y-auto max-h-[440px] border border-slate-200 rounded-xl custom-scroll bg-slate-50">
                 <!-- Dynamically rendered table -->
             </div>
         </div>

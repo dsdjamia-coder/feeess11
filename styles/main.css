@@ -260,6 +260,29 @@ body.collection-shell .smart-select-disabled .smart-select-input {
 .smart-select-disabled .smart-select-caret {
     opacity: 0.45;
 }
+body[data-page-type="result"] .smart-select-trigger.border-none {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding-left: 0.125rem;
+    padding-right: 1.45rem;
+    min-height: 24px;
+}
+body[data-page-type="result"] .smart-select-trigger.border-none:focus {
+    box-shadow: none !important;
+}
+body[data-page-type="result"] .smart-select-trigger.border-none + .smart-select-caret {
+    right: 0.25rem;
+    font-size: 0.65rem;
+}
+body[data-page-type="result"] .smart-select-trigger:not(.border-none):focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+body[data-page-type="result"] .smart-select-list .suggestion-item {
+    font-size: 12px;
+    padding: 9px 11px;
+}
 body.collection-shell .collection-bulk-col-map-wrap .smart-select-input {
     border-radius: 6px;
     padding: 0.25rem 1.45rem 0.25rem 0.45rem;

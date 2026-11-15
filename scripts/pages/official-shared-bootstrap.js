@@ -1758,20 +1758,26 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         if (m.hasAccess) {
           const clickAction = `data-navigate-url="${m.href}"`;
           return `
-            <div ${clickAction} class="group flex items-center justify-between gap-3 bg-white border border-slate-200 hover:border-blue-400 rounded-xl p-3.5 shadow-2xs hover:shadow-md transition-all duration-150 cursor-pointer">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl ${m.iconBg} flex items-center justify-center text-base shrink-0 group-hover:scale-105 transition-transform">
-                  <i class="fas ${m.icon}"></i>
+            <div ${clickAction} class="group flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 bg-white border border-slate-200 hover:border-blue-400 rounded-xl p-2.5 sm:p-3.5 h-full shadow-2xs hover:shadow-md transition-all duration-150 cursor-pointer">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
+                <div class="flex items-center justify-between gap-1.5 sm:contents">
+                  <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl ${m.iconBg} flex items-center justify-center text-sm sm:text-base shrink-0 group-hover:scale-105 transition-transform">
+                    <i class="fas ${m.icon}"></i>
+                  </div>
+                  <span class="sm:hidden inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-slate-700 bg-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0">
+                    <span>Open</span>
+                    <i class="fas fa-chevron-right text-[8px]"></i>
+                  </span>
                 </div>
                 <div class="min-w-0">
                   <div class="flex items-center gap-1.5">
-                    <h4 class="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">${m.title}</h4>
+                    <h4 class="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors leading-snug line-clamp-2 sm:line-clamp-none sm:truncate">${m.title}</h4>
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Available"></span>
                   </div>
-                  <p class="text-[11px] text-slate-500 truncate mt-0.5">${m.desc}</p>
+                  <p class="text-[10px] sm:text-[11px] text-slate-500 leading-tight line-clamp-2 sm:line-clamp-none sm:truncate mt-0.5">${m.desc}</p>
                 </div>
               </div>
-              <div class="shrink-0 flex items-center gap-1.5 pl-2">
+              <div class="hidden sm:flex shrink-0 items-center gap-1.5 pl-2">
                 <span class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-slate-700 bg-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                   <span>Open</span>
                   <i class="fas fa-chevron-right text-[9px]"></i>
@@ -1780,17 +1786,23 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             </div>`;
         } else {
           return `
-            <div data-locked-reason="${m.title}" class="flex items-center justify-between gap-3 bg-slate-50/80 border border-slate-200/70 rounded-xl p-3.5 opacity-70 cursor-not-allowed">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-10 h-10 rounded-xl bg-slate-200/70 text-slate-400 flex items-center justify-center text-base shrink-0">
-                  <i class="fas ${m.icon}"></i>
+            <div data-locked-reason="${m.title}" class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 bg-slate-50/80 border border-slate-200/70 rounded-xl p-2.5 sm:p-3.5 h-full opacity-70 cursor-not-allowed">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
+                <div class="flex items-center justify-between gap-1.5 sm:contents">
+                  <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-slate-200/70 text-slate-400 flex items-center justify-center text-sm sm:text-base shrink-0">
+                    <i class="fas ${m.icon}"></i>
+                  </div>
+                  <span class="sm:hidden inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold text-slate-500 bg-slate-200/70 shrink-0">
+                    <i class="fas fa-lock text-[8px]"></i>
+                    <span>Locked</span>
+                  </span>
                 </div>
                 <div class="min-w-0">
-                  <h4 class="text-sm font-bold text-slate-600 truncate">${m.title}</h4>
-                  <p class="text-[11px] text-slate-400 truncate mt-0.5">${m.desc}</p>
+                  <h4 class="text-xs sm:text-sm font-bold text-slate-600 leading-snug line-clamp-2 sm:line-clamp-none sm:truncate">${m.title}</h4>
+                  <p class="text-[10px] sm:text-[11px] text-slate-400 leading-tight line-clamp-2 sm:line-clamp-none sm:truncate mt-0.5">${m.desc}</p>
                 </div>
               </div>
-              <div class="shrink-0 pl-2">
+              <div class="hidden sm:block shrink-0 pl-2">
                 <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-500 bg-slate-200/70">
                   <i class="fas fa-lock text-[9px]"></i>
                   <span>Locked</span>
@@ -1809,9 +1821,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       if (!dashContainer) return;
 
       dashContainer.innerHTML = `
-        <div class="max-w-2xl mx-auto py-2 sm:py-4 space-y-3">
+        <div class="max-w-2xl mx-auto py-1.5 sm:py-4 space-y-2.5 sm:space-y-3">
           <!-- Minimal Hub Welcome Strip -->
-          <div class="bg-slate-900 text-white rounded-xl px-4 py-3 shadow-xs border border-slate-800 flex items-center justify-between gap-3">
+          <div class="bg-slate-900 text-white rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 shadow-xs border border-slate-800 flex items-center justify-between gap-2.5 sm:gap-3">
             <div class="min-w-0">
               <div class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
                 <i class="fas fa-shield-alt"></i>
@@ -1819,39 +1831,39 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
               </div>
               <h3 class="text-sm sm:text-base font-bold text-white truncate mt-0.5">Welcome, ${escapeHtml(userName)}</h3>
             </div>
-            <span class="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 text-slate-200 border border-white/10">
+            <span class="shrink-0 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[10px] sm:text-[11px] font-semibold bg-white/10 text-slate-200 border border-white/10">
               ${escapeHtml(userRoleLabel)}
             </span>
           </div>
 
           <!-- Institution Strength Summary (Single-Doc Read) -->
-          <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs">
-            <div class="flex items-center justify-between gap-2 mb-2.5">
-              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Institution Strength</span>
+          <div class="bg-white border border-slate-200 rounded-xl p-2.5 sm:p-3 shadow-2xs">
+            <div class="flex items-center justify-between gap-2 mb-2 sm:mb-2.5">
+              <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-500">Institution Strength</span>
               ${stats.statsAcademicYear ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600">${escapeHtml(stats.statsAcademicYear)}</span>` : ''}
             </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div class="rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+              <div class="rounded-lg border border-blue-100 bg-blue-50/70 px-2.5 py-1.5 sm:px-3 sm:py-2">
                 <div class="text-[10px] font-bold uppercase text-blue-700">Total Students</div>
-                <div class="text-lg font-black text-blue-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.totalStudents : '-'))}</div>
+                <div class="text-base sm:text-lg font-black text-blue-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.totalStudents : '-'))}</div>
               </div>
-              <div class="rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2">
+              <div class="rounded-lg border border-sky-100 bg-sky-50/70 px-2.5 py-1.5 sm:px-3 sm:py-2">
                 <div class="text-[10px] font-bold uppercase text-sky-700">Boys</div>
-                <div class="text-lg font-black text-sky-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.boys : '-'))}</div>
+                <div class="text-base sm:text-lg font-black text-sky-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.boys : '-'))}</div>
               </div>
-              <div class="rounded-lg border border-teal-100 bg-teal-50/70 px-3 py-2">
+              <div class="rounded-lg border border-teal-100 bg-teal-50/70 px-2.5 py-1.5 sm:px-3 sm:py-2">
                 <div class="text-[10px] font-bold uppercase text-teal-700">Girls</div>
-                <div class="text-lg font-black text-teal-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.girls : '-'))}</div>
+                <div class="text-base sm:text-lg font-black text-teal-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.girls : '-'))}</div>
               </div>
-              <div class="rounded-lg border border-indigo-100 bg-indigo-50/70 px-3 py-2">
+              <div class="rounded-lg border border-indigo-100 bg-indigo-50/70 px-2.5 py-1.5 sm:px-3 sm:py-2">
                 <div class="text-[10px] font-bold uppercase text-indigo-700">Classes</div>
-                <div class="text-lg font-black text-indigo-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.classCount : '-'))}</div>
+                <div class="text-base sm:text-lg font-black text-indigo-950 leading-tight mt-0.5">${escapeHtml(String(stats.hasStats ? stats.classCount : '-'))}</div>
               </div>
             </div>
           </div>
 
           <!-- Compact Portal Access Grid -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div class="grid grid-cols-2 gap-2 sm:gap-2.5">
             ${moduleCardsHtml}
           </div>
         </div>`;

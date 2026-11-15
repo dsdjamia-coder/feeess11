@@ -2,7 +2,7 @@ import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/1
 import { doc, onSnapshot, collection, getDocs, writeBatch, setDoc, query, where, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '../../config/app-config.js';
-import { BASE_PATH, applyInstitutionBranding, escapeHtml, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear } from '../shared/app-common.js';
+import { BASE_PATH, applyInstitutionBranding, enableSmartSelectWindowing, escapeHtml, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 
 // --- Global Variables ---
@@ -172,13 +172,44 @@ const normalizeSubjectRow = (row = {}, index = 0) => {
         passMarks: Number.isFinite(passMarks) && passMarks >= 0 ? passMarks : 0
     };
 };
+const getSubjectMarksOverride = (subjectMarks = {}, subject = {}) => {
+    if (!subjectMarks || typeof subjectMarks !== 'object') return null;
+    if (subject.id && subjectMarks[subject.id]) return subjectMarks[subject.id];
+    if (subject.name && subjectMarks[subject.name]) return subjectMarks[subject.name];
+    const subIdLower = String(subject.id || '').trim().toLowerCase();
+    const subNameLower = String(subject.name || '').trim().toLowerCase();
+    for (const [key, val] of Object.entries(subjectMarks)) {
+        const keyLower = String(key || '').trim().toLowerCase();
+        if (keyLower && (keyLower === subIdLower || keyLower === subNameLower)) {
+            return val;
+        }
+    }
+    return null;
+};
 const getSchemaSubjectRows = (schema = {}, examKey = '') => {
-    const subjectRows = Array.isArray(schema.subjectRows) && schema.subjectRows.length
+    const baseRows = Array.isArray(schema.subjectRows) && schema.subjectRows.length
         ? schema.subjectRows.map((row, index) => normalizeSubjectRow(row, index)).filter(Boolean)
         : normalizeSchemaSubjects(schema.subjects || []).map((name, index) => normalizeSubjectRow({ name, maxMarks: schema.maxMarks || 100, passMarks: schema.passMarks || 35 }, index)).filter(Boolean);
-    if (!examKey || !schema.examConfigs?.[examKey]?.subjects?.length) return subjectRows;
-    const allowed = new Set(schema.examConfigs[examKey].subjects.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean));
-    return subjectRows.filter((subject) => allowed.has(subject.id.toLowerCase()) || allowed.has(subject.name.toLowerCase()));
+    const examConfig = examKey ? schema.examConfigs?.[examKey] : null;
+    const examMarksMap = (examConfig?.subjectMarks && typeof examConfig.subjectMarks === 'object') ? examConfig.subjectMarks : null;
+    const filteredRows = (!examKey || !examConfig?.subjects?.length)
+        ? baseRows
+        : (() => {
+            const allowed = new Set(examConfig.subjects.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean));
+            return baseRows.filter((subject) => allowed.has(subject.id.toLowerCase()) || allowed.has(subject.name.toLowerCase()));
+        })();
+    if (!examMarksMap) return filteredRows;
+    return filteredRows.map((subject) => {
+        const override = getSubjectMarksOverride(examMarksMap, subject);
+        if (!override || typeof override !== 'object') return subject;
+        const maxMarks = Number(override.maxMarks ?? subject.maxMarks ?? 100);
+        const passMarks = Number(override.passMarks ?? subject.passMarks ?? 35);
+        return {
+            ...subject,
+            maxMarks: Number.isFinite(maxMarks) && maxMarks > 0 ? maxMarks : subject.maxMarks,
+            passMarks: Number.isFinite(passMarks) && passMarks >= 0 ? passMarks : subject.passMarks
+        };
+    });
 };
 const makeExamKey = (label = '') => String(label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `exam_${Date.now()}`;
 const DEFAULT_EXAM_DEFS = [
@@ -188,6 +219,20 @@ const DEFAULT_EXAM_DEFS = [
 ];
 const isDefaultExamKey = (key = '') => DEFAULT_EXAM_DEFS.some((exam) => exam.key === key);
 const getCustomExamConfigs = (configs = {}) => Object.fromEntries(Object.entries(configs || {}).filter(([key, config]) => !isDefaultExamKey(key) && config?.disabled !== true));
+const preserveExamConfigs = (configs = {}) => {
+    const next = {};
+    Object.entries(configs || {}).forEach(([key, config]) => {
+        if (!config || typeof config !== 'object') return;
+        if (isDefaultExamKey(key)) {
+            if (config.subjectMarks && typeof config.subjectMarks === 'object' && Object.keys(config.subjectMarks).length > 0) {
+                next[key] = { subjectMarks: config.subjectMarks };
+            }
+        } else if (config.disabled !== true) {
+            next[key] = config;
+        }
+    });
+    return next;
+};
 const makeExamValue = (schemaId = '', examKey = '') => `${schemaId}::${examKey}`;
 const parseExamValue = (value = '') => {
     const [schemaId, examKey] = String(value || '').split('::');
@@ -203,7 +248,7 @@ const getExamOptionsForClass = (classLabel = '', year = currentAcademicYear) => 
         key: exam.key,
         label: exam.label,
         schema,
-        config: { label: exam.label, subjects: [], isDefault: true },
+        config: { label: exam.label, subjects: [], isDefault: true, ...(configs[exam.key] || {}) },
         isDefault: true
     }));
     const custom = Object.entries(configs)
@@ -636,9 +681,18 @@ const isPassingMark = (value = '', passMarks = 35) => {
 const isPassFromMarks = (row = {}) => {
     const marks = row.marks || {};
     const schema = resultSchemas.find((item) => item.id === row.schemaId) || getSchemaForClass(row.academicYear || currentAcademicYear, row.classLabel || '');
-    const subjects = getSchemaSubjectRows(schema || {}, row.examKey || parseExamValue(row.examId || '').examKey);
+    const examKey = row.examKey || parseExamValue(row.examId || '').examKey;
+    const subjects = getSchemaSubjectRows(schema || {}, examKey);
+    const hasExamOverride = Boolean(examKey && schema?.examConfigs?.[examKey]?.subjectMarks);
     const entries = subjects.length
-        ? subjects.map((subject) => ({ value: getResultMark(marks, subject), passMarks: subject.passMarks }))
+        ? subjects.map((subject) => {
+            const rawObj = marks[subject.id] ?? marks[subject.name];
+            const storedPass = (rawObj && typeof rawObj === 'object' && rawObj.passMarks !== undefined) ? Number(rawObj.passMarks) : null;
+            return {
+                value: getResultMark(marks, subject),
+                passMarks: hasExamOverride ? subject.passMarks : (Number.isFinite(storedPass) ? storedPass : subject.passMarks)
+            };
+        })
         : Object.values(marks).map((mark) => ({ value: getStoredMarkValue(mark), passMarks: mark?.passMarks ?? 35 }));
     if (!entries.length) return false;
     return entries.every((entry) => isPassingMark(entry.value, entry.passMarks));
@@ -1563,6 +1617,7 @@ const renderPromotionCandidatesUI = () => {
         if (selectedValue && yearSelect.value !== selectedValue) {
             yearSelect.value = selectedValue;
         }
+        syncSmartSelectDisplay(yearSelect);
     }
 
     const container = document.getElementById('promotion-preview-list');
@@ -1708,7 +1763,7 @@ const renderPromotionCandidatesUI = () => {
                         <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                             <i class="fas fa-sign-in-alt text-indigo-500 mr-1"></i> Promote Eligible Students To:
                         </label>
-                        <select class="promotion-target-class-select w-full p-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" data-class="${escapeHtml(cls)}">
+                        <select data-smart-select="true" data-smart-floating="true" class="promotion-target-class-select w-full p-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" data-class="${escapeHtml(cls)}">
                             ${options}
                         </select>
                     </div>
@@ -1717,6 +1772,9 @@ const renderPromotionCandidatesUI = () => {
             }).join('')}
         </div>
     `;
+
+    enableSmartSelectWindowing(container, { visibleCount: 0 });
+    syncSmartSelectDisplay(container);
 
     // Listen to changes on promotion target class selects
     container.querySelectorAll('.promotion-target-class-select').forEach((sel) => {
@@ -2041,6 +2099,7 @@ const renderPublishControls = () => {
     const prevExam = examSelect.value || resultCenterSettings.publishExamKey || '';
     examSelect.innerHTML = `<option value="">-- Choose Academic Exam --</option>${exams.map((exam) => `<option value="${exam.value}">${escapeHtml(exam.label)}</option>`).join('')}`;
     if (prevExam) examSelect.value = prevExam;
+    syncSmartSelectDisplay(examSelect);
 
     const historyYearSelect = document.getElementById('publish-history-year-filter');
     if (historyYearSelect) {
@@ -2050,6 +2109,7 @@ const renderPublishControls = () => {
             selectedValue: prevFilter,
             defaultToCurrent: false
         });
+        syncSmartSelectDisplay(historyYearSelect);
     }
 
     renderPublishedHistoryTable();
@@ -2088,6 +2148,7 @@ const renderExamSelectOptions = (selectEl, classLabel = '', year = currentAcadem
     } else if (!placeholderHtml && options.length > 0) {
         selectEl.value = options[0].value;
     }
+    syncSmartSelectDisplay(selectEl);
 };
 const getReportClassesForYear = (targetYear) => {
     const classSet = new Set();
@@ -2182,6 +2243,7 @@ const populateReportClasses = (selectedYear) => {
     } else {
         reportClassSelect.value = '';
     }
+    syncSmartSelectDisplay(reportClassSelect);
 };
 
 const populateReportYears = () => {
@@ -2243,21 +2305,53 @@ function populateDropdowns() {
     populateReportClasses();
 
     const subjectClassOpts = hasAssigned
+        ? (`<option value="">-- Choose Class --</option>`
+            + (teacherAllowedClasses.length > 1 ? `<option value="__ALL__">All Classes (Add to All)</option>` : '')
+            + teacherAllowedClasses.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join(''))
+        : `<option value="">No classes assigned</option>`;
+
+    const examConfigClassOpts = hasAssigned
         ? (`<option value="">-- Choose Class --</option>` + teacherAllowedClasses.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join(''))
         : `<option value="">No classes assigned</option>`;
 
-    [subjectClassSelect, examConfigClassSelect].forEach((select) => {
-        if (!select) return;
-        const current = select.value;
-        select.innerHTML = subjectClassOpts;
-        if (teacherAllowedClasses.length === 1) {
-            select.value = teacherAllowedClasses[0];
+    if (subjectClassSelect) {
+        const current = subjectClassSelect.value;
+        subjectClassSelect.innerHTML = subjectClassOpts;
+        if (current === '__ALL__' && teacherAllowedClasses.length > 1) {
+            subjectClassSelect.value = '__ALL__';
+        } else if (teacherAllowedClasses.length === 1) {
+            subjectClassSelect.value = teacherAllowedClasses[0];
         } else if (current && teacherAllowedClasses.some((c) => isClassInDutyScope(current, [c]))) {
-            select.value = current;
+            subjectClassSelect.value = current;
         } else {
-            select.value = '';
+            subjectClassSelect.value = '';
         }
-    });
+        if (typeof syncSubjectSetupTargetUI === 'function') {
+            syncSubjectSetupTargetUI();
+        }
+        const subBody = document.getElementById('subject-rows-body');
+        if (subBody && subBody.querySelectorAll('.subject-row').length === 0 && typeof renderSubjectRowsEditor === 'function') {
+            const initialCls = subjectClassSelect.value;
+            if (initialCls && initialCls !== '__ALL__') {
+                const existing = getSchemaForClass(currentAcademicYear, initialCls);
+                renderSubjectRowsEditor(getSchemaSubjectRows(existing || {}));
+            } else {
+                renderSubjectRowsEditor([{ name: '' }]);
+            }
+        }
+    }
+
+    if (examConfigClassSelect) {
+        const current = examConfigClassSelect.value;
+        examConfigClassSelect.innerHTML = examConfigClassOpts;
+        if (teacherAllowedClasses.length === 1) {
+            examConfigClassSelect.value = teacherAllowedClasses[0];
+        } else if (current && teacherAllowedClasses.some((c) => isClassInDutyScope(current, [c]))) {
+            examConfigClassSelect.value = current;
+        } else {
+            examConfigClassSelect.value = '';
+        }
+    }
 
     const schemaListClassFilter = document.getElementById('schema-list-class-filter');
     if (schemaListClassFilter) {
@@ -2287,6 +2381,7 @@ function populateDropdowns() {
     renderExamSelectOptions(document.getElementById('entry-exam-select'), entryClassSelect?.value || '', currentAcademicYear);
     const reportClassSelect = document.getElementById('report-class-select');
     renderExamSelectOptions(document.getElementById('report-exam-select'), reportClassSelect?.value || '', document.getElementById('report-academic-year')?.value || currentAcademicYear, '-- Choose Exam --', true);
+    syncSmartSelectDisplay(document);
 };
 
 // --- Dashboard ---
@@ -2329,25 +2424,59 @@ function updateDashboard() {
     const healthBarEl = document.getElementById('dash-health-bar');
     if (healthBarEl) healthBarEl.style.width = `${passPercent}%`;
 
-    // 1. Class Performance Breakdown
+    // 1. Class Performance Breakdown (3-Column Circular Progress Gauges)
     const breakdownEl = document.getElementById('dash-class-breakdown');
     if (breakdownEl) {
         if (!targetClasses.length) {
-            breakdownEl.innerHTML = '<p class="text-gray-400 text-xs italic">No classes found.</p>';
+            breakdownEl.innerHTML = '<p class="col-span-3 text-gray-400 text-xs italic">No classes found.</p>';
         } else {
+            const ringRadius = 30;
+            const ringCircumference = +(2 * Math.PI * ringRadius).toFixed(2);
             breakdownEl.innerHTML = targetClasses.map((cls) => {
                 const clsRows = yearRows.filter((r) => r.classLabel === cls);
                 const clsPublished = clsRows.filter((r) => r.published === true);
                 const clsPassed = clsPublished.filter((r) => isPassFromMarks(r));
+                const denominator = clsPublished.length || clsRows.length;
                 const pct = clsPublished.length ? Math.round((clsPassed.length / clsPublished.length) * 100) : 0;
+                const clampedPct = Math.max(0, Math.min(100, pct));
+                const dashOffset = +(ringCircumference * (1 - clampedPct / 100)).toFixed(2);
+
+                let strokeColor = '#94a3b8';
+                let trackColor = '#e2e8f0';
+                let pctTextClass = 'text-slate-500';
+                let cardTintClass = 'bg-slate-50/80 border-slate-200/90';
+
+                if (clsPublished.length > 0) {
+                    if (pct >= 75) {
+                        strokeColor = '#16a34a';
+                        trackColor = '#dcfce7';
+                        pctTextClass = 'text-emerald-700';
+                        cardTintClass = 'bg-emerald-50/35 border-emerald-200/80';
+                    } else if (pct >= 40) {
+                        strokeColor = '#d97706';
+                        trackColor = '#fef3c7';
+                        pctTextClass = 'text-amber-700';
+                        cardTintClass = 'bg-amber-50/35 border-amber-200/80';
+                    } else {
+                        strokeColor = '#dc2626';
+                        trackColor = '#fee2e2';
+                        pctTextClass = 'text-rose-700';
+                        cardTintClass = 'bg-rose-50/35 border-rose-200/80';
+                    }
+                }
+
                 return `
-                    <div class="p-2.5 bg-slate-50 border rounded-xl">
-                        <div class="flex justify-between items-center text-xs font-bold text-slate-700 mb-1">
-                            <span>${escapeHtml(cls)}</span>
-                            <span class="text-indigo-700 font-extrabold">${pct}% <span class="text-[10px] text-slate-400 font-normal">(${clsPassed.length}/${clsPublished.length || clsRows.length})</span></span>
-                        </div>
-                        <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                            <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: ${pct}%"></div>
+                    <div class="p-2 sm:p-2.5 border ${cardTintClass} rounded-xl flex flex-col items-center justify-between text-center min-w-0">
+                        <div class="w-full text-[11px] sm:text-xs font-extrabold text-slate-800 truncate mb-1.5" title="${escapeHtml(cls)}">${escapeHtml(cls)}</div>
+                        <div class="relative w-16 h-16 sm:w-[72px] sm:h-[72px] flex items-center justify-center shrink-0">
+                            <svg class="w-full h-full -rotate-90" viewBox="0 0 72 72" aria-label="${escapeHtml(cls)} pass rate ${pct}% (${clsPassed.length}/${denominator})">
+                                <circle cx="36" cy="36" r="${ringRadius}" fill="none" stroke="${trackColor}" stroke-width="6"></circle>
+                                <circle cx="36" cy="36" r="${ringRadius}" fill="none" stroke="${strokeColor}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${ringCircumference}" stroke-dashoffset="${dashOffset}" style="transition: stroke-dashoffset 0.35s ease;"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-1">
+                                <span class="text-xs sm:text-sm font-extrabold tabular-nums leading-none ${pctTextClass}">${pct}%</span>
+                                <span class="text-[9px] sm:text-[10px] font-bold tabular-nums text-slate-500 leading-none mt-0.5">${clsPassed.length}/${denominator}</span>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -2515,6 +2644,7 @@ const populateClassFilterSelect = (selectEl, allowedClasses) => {
     } else {
         selectEl.value = 'ALL';
     }
+    syncSmartSelectDisplay(selectEl);
 };
 
 const renderPublishedDraftTables = () => {
@@ -2801,27 +2931,12 @@ const getAvailableSubjectTotals = (selectedVal) => {
     return Array.from(totals).sort((a, b) => b - a);
 };
 
-const refreshSubjectTotalDropdowns = (newTotal) => {
-    document.querySelectorAll('#subject-rows-body .subject-total-input').forEach((selectEl) => {
-        const currentVal = Number(selectEl.value || 100);
-        const availableTotals = getAvailableSubjectTotals(currentVal);
-        selectEl.innerHTML = availableTotals.map((val) => `<option value="${val}" ${val === currentVal ? 'selected' : ''}>${val}</option>`).join('');
-    });
-};
-
 const buildSubjectRowHtml = (row = {}) => {
-    const rowMax = Number(row.maxMarks ?? 100);
-    const availableTotals = getAvailableSubjectTotals(rowMax);
-    const optionsHtml = availableTotals.map((val) => `<option value="${val}" ${val === rowMax ? 'selected' : ''}>${val}</option>`).join('');
-    const rowPass = (row.passMarks !== undefined && row.passMarks !== null && row.passMarks !== '')
-        ? Number(row.passMarks)
-        : getDefaultPassMarkForTotal(rowMax);
+    const name = typeof row === 'string' ? row : (row?.name || '');
     return `
-    <tr class="subject-row border-t">
-        <td class="p-2"><input type="text" class="subject-name-input w-full p-2 border rounded" value="${escapeHtml(row.name || '')}" placeholder="Subject name"></td>
-        <td class="p-2"><select class="subject-total-input w-full p-2 border rounded">${optionsHtml}</select></td>
-        <td class="p-2"><input type="number" class="subject-pass-input w-full p-2 border rounded" value="${escapeHtml(String(rowPass))}" min="0"></td>
-        <td class="p-2"><button type="button" class="subject-remove-row text-red-600 font-bold">✕</button></td>
+    <tr class="subject-row border-t border-slate-100">
+        <td class="p-2"><input type="text" class="subject-name-input w-full p-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none" value="${escapeHtml(name)}" placeholder="Enter subject name (e.g. Quran, Fiqh, Arabic)"></td>
+        <td class="p-2 text-center"><button type="button" class="subject-remove-row text-red-600 hover:text-red-800 p-1.5 rounded-lg hover:bg-red-50 transition font-bold cursor-pointer" title="Remove subject"><i class="fas fa-times"></i></button></td>
     </tr>
 `;
 };
@@ -2841,7 +2956,7 @@ const renderExamSetup = () => {
             <div class="text-center py-10 px-4 text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                 <i class="fas fa-folder-open text-3xl text-slate-300 mb-2 block"></i>
                 <div class="font-bold text-slate-700">No saved subjects or exams found</div>
-                <p class="text-xs text-slate-400 mt-1">Select a class above to configure subjects and custom exams for academic year ${escapeHtml(currentAcademicYear || 'current')}.</p>
+                <p class="text-xs text-slate-400 mt-1">Select a class above or upload a template to configure subjects and custom exams for academic year ${escapeHtml(currentAcademicYear || 'current')}.</p>
             </div>
         `;
         return;
@@ -2853,8 +2968,8 @@ const renderExamSetup = () => {
         
         const subjectsBadgeHtml = subjectRows.length
             ? subjectRows.map((sub) => `
-                <span class="inline-flex items-center gap-1 bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-medium mr-1 mb-1">
-                    ${escapeHtml(sub.name)} <span class="text-slate-500 font-semibold">(${sub.maxMarks}/${sub.passMarks})</span>
+                <span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold mr-1 mb-1">
+                    ${escapeHtml(sub.name)}
                 </span>
             `).join('')
             : '<span class="text-xs text-slate-400 italic">No subjects configured</span>';
@@ -2871,8 +2986,8 @@ const renderExamSetup = () => {
                 return `
                 <span class="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded text-[11px] font-medium mr-1 mb-1">
                     <span>${escapeHtml(examLabel)}</span>
-                    <button type="button" class="custom-exam-edit-btn text-blue-600 hover:text-blue-800 font-bold p-0.5" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Edit Custom Exam"><i class="fas fa-pen text-[9px]"></i></button>
-                    <button type="button" class="custom-exam-delete-btn text-red-600 hover:text-red-800 font-bold p-0.5" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Delete Custom Exam"><i class="fas fa-times text-[9px]"></i></button>
+                    <button type="button" class="custom-exam-edit-btn text-blue-600 hover:text-blue-800 font-bold p-0.5 cursor-pointer" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Edit Custom Exam"><i class="fas fa-pen text-[9px]"></i></button>
+                    <button type="button" class="custom-exam-delete-btn text-red-600 hover:text-red-800 font-bold p-0.5 cursor-pointer" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Delete Custom Exam"><i class="fas fa-times text-[9px]"></i></button>
                 </span>
                 `;
             }).join('')
@@ -2883,7 +2998,7 @@ const renderExamSetup = () => {
             <td class="p-3 align-top font-bold text-slate-800 whitespace-nowrap">
                 <div class="flex items-center gap-2">
                     <span class="text-sm font-extrabold text-slate-800">${escapeHtml(schema.classLabel || '--')}</span>
-                    <span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">${subjectRows.length} Subs</span>
+                    <span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold tabular-nums">${subjectRows.length} Subs</span>
                 </div>
                 <div class="text-[11px] text-slate-400 font-normal mt-0.5">${escapeHtml(schema.academicYear || currentAcademicYear || '')}</div>
             </td>
@@ -2898,13 +3013,13 @@ const renderExamSetup = () => {
             </td>
             <td class="p-3 align-top text-right whitespace-nowrap">
                 <div class="flex items-center justify-end gap-1.5">
-                    <button type="button" class="schema-edit-btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold py-1.5 px-2.5 rounded-lg transition flex items-center gap-1" data-id="${schema.id}" title="Edit Subjects">
+                    <button type="button" class="schema-edit-btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold py-1.5 px-2.5 rounded-lg transition flex items-center gap-1 cursor-pointer" data-id="${schema.id}" title="Edit Subjects">
                         <i class="fas fa-edit"></i> Edit
                     </button>
-                    <button type="button" class="schema-configure-exams-btn bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-1.5 px-2 rounded-lg transition flex items-center gap-1" data-id="${schema.id}" data-class="${escapeHtml(schema.classLabel)}" title="Configure Exams">
+                    <button type="button" class="schema-configure-exams-btn bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-1.5 px-2 rounded-lg transition flex items-center gap-1 cursor-pointer" data-id="${schema.id}" data-class="${escapeHtml(schema.classLabel)}" title="Configure Exams">
                         <i class="fas fa-tasks"></i> Exams
                     </button>
-                    <button type="button" class="schema-delete-btn bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold py-1.5 px-2 rounded-lg transition" data-id="${schema.id}" title="Delete Class Schema">
+                    <button type="button" class="schema-delete-btn bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold py-1.5 px-2 rounded-lg transition cursor-pointer" data-id="${schema.id}" title="Delete Class Schema">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
@@ -2918,7 +3033,7 @@ const renderExamSetup = () => {
             <thead class="bg-slate-50 text-slate-700 border-b font-semibold">
                 <tr>
                     <th class="p-3 w-36">Class</th>
-                    <th class="p-3 min-w-[220px]">Subjects (Total/Pass)</th>
+                    <th class="p-3 min-w-[220px]">Configured Subjects</th>
                     <th class="p-3 min-w-[220px]">Active Exams</th>
                     <th class="p-3 text-right w-48">Actions</th>
                 </tr>
@@ -2936,6 +3051,8 @@ const openExamModal = () => {
         modal.classList.remove('hidden');
         modal.classList.add('flex');
         modal.style.display = 'flex';
+        enableSmartSelectWindowing(modal, { visibleCount: 0 });
+        syncSmartSelectDisplay(modal);
     }
     document.body.classList.add('modal-scroll-lock');
 };
@@ -3186,6 +3303,150 @@ const updateMarkEntryActionButtonsUI = () => {
 
 let lastLoadedMarksContext = { class: '', exam: '', academicYear: '' };
 
+const getActiveHeaderSubjectRows = (schema = currentExamSchema, examKey = currentExamContext?.key || '') => {
+    const baseRows = getSchemaSubjectRows(schema || {}, examKey);
+    const head = document.getElementById('marks-table-head');
+    if (!head || !head.querySelector('.header-subject-max-input')) return baseRows;
+    return baseRows.map((sub) => {
+        const maxInput = Array.from(head.querySelectorAll('.header-subject-max-input')).find((el) => el.dataset.subject === sub.id);
+        const passInput = Array.from(head.querySelectorAll('.header-subject-pass-input')).find((el) => el.dataset.subject === sub.id);
+        const maxVal = Number(maxInput?.value ?? sub.maxMarks);
+        const passVal = Number(passInput?.value ?? sub.passMarks);
+        return {
+            ...sub,
+            maxMarks: Number.isFinite(maxVal) && maxVal > 0 ? maxVal : sub.maxMarks,
+            passMarks: Number.isFinite(passVal) && passVal >= 0 ? passVal : sub.passMarks
+        };
+    });
+};
+
+const closeAllMaxPresetMenus = () => {
+    document.querySelectorAll('.header-max-preset-menu').forEach((menu) => {
+        menu.classList.add('hidden');
+        menu.style.position = '';
+        menu.style.top = '';
+        menu.style.left = '';
+        menu.style.zIndex = '';
+    });
+};
+
+const positionHeaderMaxPresetMenu = (menu, toggleBtn) => {
+    if (!menu || !toggleBtn) return;
+    const rect = toggleBtn.getBoundingClientRect();
+    const menuWidth = 116;
+    const vpWidth = Math.max(160, window.innerWidth || 0);
+    const vpHeight = Math.max(160, window.innerHeight || 0);
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '6500';
+    let left = rect.left;
+    if (left + menuWidth > vpWidth - 8) {
+        left = Math.max(8, rect.right - menuWidth);
+    }
+    menu.style.left = `${Math.max(8, left)}px`;
+    const menuHeight = menu.offsetHeight || 160;
+    const spaceBelow = vpHeight - rect.bottom;
+    if (spaceBelow < menuHeight + 10 && rect.top > spaceBelow) {
+        menu.style.top = `${Math.max(8, rect.top - menuHeight - 4)}px`;
+    } else {
+        menu.style.top = `${rect.bottom + 4}px`;
+    }
+};
+
+const applySubjectHeaderMarkRulesToColumn = (subId = '', nextMax, nextPass) => {
+    const tableBody = document.getElementById('marks-table-body');
+    if (!tableBody || !subId) return;
+    tableBody.querySelectorAll('.mark-input').forEach((inp) => {
+        if (inp.dataset.subject === subId) {
+            if (Number.isFinite(nextMax) && nextMax > 0) inp.dataset.max = String(nextMax);
+            if (Number.isFinite(nextPass) && nextPass >= 0) inp.dataset.pass = String(nextPass);
+            validateSingleMarkInput(inp);
+        }
+    });
+    const hasError = Boolean(tableBody.querySelector('.mark-input.input-error'));
+    document.getElementById('marks-validation-note')?.classList.toggle('hidden', !hasError);
+};
+
+const bindHeaderSubjectMarkInputs = () => {
+    const tableHead = document.getElementById('marks-table-head');
+    if (!tableHead || tableHead.dataset.headerSubjectMarksBound === 'true') return;
+    tableHead.dataset.headerSubjectMarksBound = 'true';
+
+    tableHead.addEventListener('click', (e) => {
+        const presetToggle = e.target.closest('.header-max-preset-toggle');
+        if (presetToggle) {
+            e.preventDefault();
+            e.stopPropagation();
+            const wrapper = presetToggle.closest('.header-max-preset-wrap');
+            const menu = wrapper?.querySelector('.header-max-preset-menu');
+            const wasHidden = menu?.classList.contains('hidden');
+            closeAllMaxPresetMenus();
+            if (wasHidden && menu) {
+                menu.classList.remove('hidden');
+                positionHeaderMaxPresetMenu(menu, wrapper || presetToggle);
+            }
+            return;
+        }
+        const presetOption = e.target.closest('.header-max-preset-option');
+        if (presetOption) {
+            e.preventDefault();
+            e.stopPropagation();
+            const val = Number(presetOption.dataset.value || 100);
+            const subId = presetOption.dataset.subject || '';
+            const th = presetOption.closest('th');
+            const maxInput = th?.querySelector('.header-subject-max-input');
+            const passInput = th?.querySelector('.header-subject-pass-input');
+            if (maxInput && Number.isFinite(val) && val > 0) {
+                maxInput.value = String(val);
+                const autoPass = getDefaultPassMarkForTotal(val);
+                if (passInput) passInput.value = String(autoPass);
+                applySubjectHeaderMarkRulesToColumn(subId, val, autoPass);
+            }
+            closeAllMaxPresetMenus();
+        }
+    });
+
+    tableHead.addEventListener('input', (e) => {
+        const maxInput = e.target.closest('.header-subject-max-input');
+        if (maxInput) {
+            const subId = maxInput.dataset.subject || '';
+            const nextMax = Number(maxInput.value);
+            const th = maxInput.closest('th');
+            const passInput = th?.querySelector('.header-subject-pass-input');
+            if (Number.isFinite(nextMax) && nextMax > 0) {
+                const autoPass = getDefaultPassMarkForTotal(nextMax);
+                if (passInput) passInput.value = String(autoPass);
+                applySubjectHeaderMarkRulesToColumn(subId, nextMax, autoPass);
+            }
+            return;
+        }
+        const passInput = e.target.closest('.header-subject-pass-input');
+        if (passInput) {
+            const subId = passInput.dataset.subject || '';
+            const th = passInput.closest('th');
+            const maxInputEl = th?.querySelector('.header-subject-max-input');
+            const curMax = Number(maxInputEl?.value || 100);
+            const nextPass = Number(passInput.value);
+            if (Number.isFinite(nextPass) && nextPass >= 0) {
+                applySubjectHeaderMarkRulesToColumn(subId, curMax, nextPass);
+            }
+        }
+    });
+
+    if (document.body.dataset.headerMaxPresetOutsideBound !== 'true') {
+        document.body.dataset.headerMaxPresetOutsideBound = 'true';
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.header-max-preset-wrap')) {
+                closeAllMaxPresetMenus();
+            }
+        });
+        window.addEventListener('resize', closeAllMaxPresetMenus);
+        document.addEventListener('scroll', (e) => {
+            if (e.target && e.target.closest && e.target.closest('.header-max-preset-menu')) return;
+            closeAllMaxPresetMenus();
+        }, true);
+    }
+};
+
 const loadMarksTable = () => {
     const examId = document.getElementById('entry-exam-select')?.value || '';
     const className = document.getElementById('entry-class-select')?.value || '';
@@ -3208,9 +3469,18 @@ const loadMarksTable = () => {
         lastLoadedMarksContext.academicYear === currentAcademicYear
     );
 
-    // Only capture user-entered inputs before re-sorting/re-ordering if it's the SAME class and exam!
     const currentInputValues = {};
+    const currentHeaderSubjectMarks = {};
     if (isSameContext) {
+        document.querySelectorAll('#marks-table-head .header-subject-max-input').forEach((inp) => {
+            const subId = inp.dataset.subject;
+            if (!subId) return;
+            const passInp = Array.from(document.querySelectorAll('#marks-table-head .header-subject-pass-input')).find((p) => p.dataset.subject === subId);
+            currentHeaderSubjectMarks[subId] = {
+                maxMarks: inp.value,
+                passMarks: passInp?.value ?? ''
+            };
+        });
         document.querySelectorAll('#marks-table-body tr').forEach((tr) => {
             const sId = tr.dataset.studentid;
             if (!sId) return;
@@ -3226,7 +3496,6 @@ const loadMarksTable = () => {
             currentInputValues[sId] = { marks: sMarks, working: work, present: pres, overridden: isOverridden };
         });
     } else {
-        // Reset top attendance setters when context (exam or class) switches
         const toolbarInp = document.getElementById('entry-top-total-attendance');
         const headerInp = document.getElementById('header-col-total-attendance');
         if (toolbarInp) toolbarInp.value = '';
@@ -3267,11 +3536,9 @@ const loadMarksTable = () => {
     const studentCountBadge = document.getElementById('entry-student-count-badge');
     if (studentCountBadge) studentCountBadge.textContent = `${entryStudents.length} Students`;
 
-    // Determine active top total attendance
     let activeTopTotalAtt = (document.getElementById('entry-top-total-attendance')?.value || document.getElementById('header-col-total-attendance')?.value || '').trim();
 
     if (!activeTopTotalAtt) {
-        // Detect most common working days from existing saved records or pending inputs
         const workingDaysCounts = {};
         entryStudents.forEach(student => {
             const pendingInput = currentInputValues[student.id];
@@ -3297,20 +3564,59 @@ const loadMarksTable = () => {
         }
     }
 
-    // Build Headers
-    let headHtml = `<tr>
-        <th class="p-3 text-center w-12 bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200">#</th>
-        <th class="p-3 text-left min-w-[95px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200">Adm No</th>
-        <th class="p-3 text-left min-w-[170px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200">Student Name</th>`;
-    getSchemaSubjectRows(currentExamSchema, currentExamContext?.key || '').forEach(sub => {
-        headHtml += `<th class="p-3 text-center min-w-[95px] bg-slate-100 text-slate-700 font-bold text-xs sticky top-0 border-b border-slate-200">${escapeHtml(sub.name)}<div class="text-[10px] text-slate-400 font-normal">Max: ${sub.maxMarks} | Pass: ${sub.passMarks}</div></th>`;
+    const resolvedSubjects = getSchemaSubjectRows(currentExamSchema, currentExamContext?.key || '').map((sub) => {
+        const pendingHdr = currentHeaderSubjectMarks[sub.id];
+        if (!pendingHdr) return sub;
+        const pMax = Number(pendingHdr.maxMarks);
+        const pPass = Number(pendingHdr.passMarks);
+        return {
+            ...sub,
+            maxMarks: Number.isFinite(pMax) && pMax > 0 ? pMax : sub.maxMarks,
+            passMarks: Number.isFinite(pPass) && pPass >= 0 ? pPass : sub.passMarks
+        };
     });
-    headHtml += `<th class="p-2 text-center min-w-[125px] bg-slate-100 text-slate-700 font-bold text-xs sticky top-0 border-b border-slate-200">
-        <div>Total Att.</div>
+    const totalPresets = Array.from(new Set([...getAvailableSubjectTotals(), 75, 25])).sort((a, b) => b - a);
+
+    // Build Headers with Hybrid Total Mark + Auto/Editable Pass Mark
+    let headHtml = `<tr>
+        <th class="p-3 text-center w-12 bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">#</th>
+        <th class="p-3 text-left min-w-[90px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">Adm No</th>
+        <th class="p-3 text-left min-w-[165px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">Student Name</th>`;
+    resolvedSubjects.forEach((sub) => {
+        const presetMenuHtml = totalPresets.map((val) => `
+            <button type="button" class="header-max-preset-option w-full text-left px-2.5 py-1 text-[11px] font-bold font-mono text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center justify-between gap-2 cursor-pointer" data-subject="${escapeHtml(sub.id)}" data-value="${val}">
+                <span>${val}</span>
+                <span class="text-[9px] text-slate-400 font-sans">Pass ${getDefaultPassMarkForTotal(val)}</span>
+            </button>
+        `).join('');
+        headHtml += `<th class="p-2 text-center min-w-[148px] bg-slate-100 text-slate-700 font-bold text-xs sticky top-0 border-b border-slate-200 z-10 align-top">
+            <div class="truncate max-w-[142px] mx-auto text-slate-800 font-extrabold normal-case text-xs mb-1.5" title="${escapeHtml(sub.name)}">${escapeHtml(sub.name)}</div>
+            <div class="flex items-center justify-center gap-1 normal-case">
+                <div class="flex flex-col items-start">
+                    <span class="text-[9px] font-bold text-slate-500 leading-none mb-0.5">Total</span>
+                    <div class="header-max-preset-wrap relative flex items-center bg-white border border-slate-300 rounded-md shadow-2xs focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                        <input type="number" min="1" max="1000" step="1" inputmode="numeric" data-subject="${escapeHtml(sub.id)}" value="${sub.maxMarks}" title="Total Mark (type any mark or pick preset)" class="header-subject-max-input w-11 px-1 py-0.5 text-center font-extrabold font-mono tabular-nums text-[11px] text-indigo-900 bg-transparent outline-none">
+                        <button type="button" class="header-max-preset-toggle px-1 py-0.5 text-slate-500 hover:text-indigo-700 border-l border-slate-200 bg-slate-50 rounded-r-md cursor-pointer leading-none" title="Choose preset Total Mark">
+                            <i class="fas fa-chevron-down text-[9px]"></i>
+                        </button>
+                        <div class="header-max-preset-menu hidden absolute left-0 top-full mt-1 w-28 bg-white border border-slate-200 rounded-lg shadow-xl py-1 z-30">
+                            ${presetMenuHtml}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col items-start">
+                    <span class="text-[9px] font-bold text-slate-500 leading-none mb-0.5">Pass</span>
+                    <input type="number" min="0" max="1000" step="1" inputmode="numeric" data-subject="${escapeHtml(sub.id)}" value="${sub.passMarks}" title="Pass Mark (auto-calculated from Total Mark; edit anytime)" class="header-subject-pass-input w-12 px-1 py-0.5 text-center font-extrabold font-mono tabular-nums text-[11px] text-emerald-800 bg-white border border-slate-300 rounded-md shadow-2xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none">
+                </div>
+            </div>
+        </th>`;
+    });
+    headHtml += `<th class="p-2 text-center min-w-[115px] bg-slate-100 text-slate-700 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">
+        <div class="normal-case">Total Att.</div>
         <div class="mt-1 flex items-center justify-center">
-            <input type="number" min="0" id="header-col-total-attendance" value="${escapeHtml(activeTopTotalAtt)}" placeholder="Set All" title="Input Total Attendance here to set for all students" class="w-18 px-1.5 py-0.5 text-center font-extrabold text-xs bg-white text-indigo-900 border border-indigo-300 rounded shadow-2xs focus:border-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none">
+            <input type="number" min="0" id="header-col-total-attendance" value="${escapeHtml(activeTopTotalAtt)}" placeholder="Set All" title="Input Total Attendance here to set for all students" class="w-18 px-1.5 py-0.5 text-center font-extrabold font-mono tabular-nums text-xs bg-white text-indigo-900 border border-indigo-300 rounded shadow-2xs focus:border-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none">
         </div>
-    </th><th class="p-3 text-center min-w-[110px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200">Present Att.</th></tr>`;
+    </th><th class="p-3 text-center min-w-[100px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">Present Att.</th></tr>`;
     document.getElementById('marks-table-head').innerHTML = headHtml;
 
     // Build Rows
@@ -3329,11 +3635,11 @@ const loadMarksTable = () => {
                 : '';
 
         bodyHtml += `<tr class="border-b hover:bg-slate-50 transition" data-studentid="${student.id}">
-            <td class="p-3 text-center font-mono text-gray-400 text-xs">${index + 1}</td>
-            <td class="p-3 font-mono text-xs font-bold text-slate-600">${escapeHtml(admNo)}</td>
+            <td class="p-3 text-center font-mono tabular-nums text-gray-400 text-xs">${index + 1}</td>
+            <td class="p-3 font-mono tabular-nums text-xs font-bold text-slate-600">${escapeHtml(admNo)}</td>
             <td class="p-3 font-bold text-gray-800 text-sm whitespace-nowrap"><div class="flex items-center">${escapeHtml(student.name)} ${genderBadge}</div></td>`;
         
-        getSchemaSubjectRows(currentExamSchema, currentExamContext?.key || '').forEach(sub => {
+        resolvedSubjects.forEach((sub) => {
             let val = '';
             if (pendingInput && pendingInput.marks && pendingInput.marks[sub.id] !== undefined) {
                 val = pendingInput.marks[sub.id];
@@ -3342,7 +3648,7 @@ const loadMarksTable = () => {
                 val = rawMark && typeof rawMark === 'object' ? (rawMark.value ?? rawMark.mark ?? '') : rawMark;
             }
             bodyHtml += `<td class="p-2 text-center">
-                <input type="text" data-subject="${escapeHtml(sub.id)}" data-subject-name="${escapeHtml(sub.name)}" data-max="${sub.maxMarks}" data-pass="${sub.passMarks}" class="mark-input w-full md:w-20 p-2 text-center font-bold text-sm border rounded focus:border-indigo-500 focus:bg-indigo-50 outline-none transition" value="${escapeHtml(String(val ?? ''))}" placeholder="-">
+                <input type="text" data-subject="${escapeHtml(sub.id)}" data-subject-name="${escapeHtml(sub.name)}" data-max="${sub.maxMarks}" data-pass="${sub.passMarks}" class="mark-input w-full md:w-20 p-2 text-center font-bold font-mono tabular-nums text-sm border rounded focus:border-indigo-500 focus:bg-indigo-50 outline-none transition" value="${escapeHtml(String(val ?? ''))}" placeholder="-">
             </td>`;
         });
         const attendance = existingRecord?.attendance || {};
@@ -3360,12 +3666,13 @@ const loadMarksTable = () => {
         }
         const presVal = (pendingInput && pendingInput.present !== undefined) ? pendingInput.present : (attendance.presentDays ?? '');
 
-        bodyHtml += `<td class="p-2 text-center"><input type="number" min="0" class="attendance-working w-full md:w-24 p-2 text-center border rounded text-xs transition ${isOverridden ? 'border-amber-400 bg-amber-50/60 font-bold text-amber-900' : ''}" data-overridden="${isOverridden ? 'true' : 'false'}" value="${escapeHtml(String(workVal ?? ''))}" placeholder="0" title="${isOverridden ? 'Custom attendance for this student (will not change when top total is edited)' : 'Standard total attendance'}"></td>`;
-        bodyHtml += `<td class="p-2 text-center"><input type="number" min="0" class="attendance-present w-full md:w-24 p-2 text-center border rounded text-xs" value="${escapeHtml(String(presVal ?? ''))}" placeholder="0"></td>`;
+        bodyHtml += `<td class="p-2 text-center"><input type="number" min="0" class="attendance-working w-full md:w-24 p-2 text-center font-mono tabular-nums border rounded text-xs transition ${isOverridden ? 'border-amber-400 bg-amber-50/60 font-bold text-amber-900' : ''}" data-overridden="${isOverridden ? 'true' : 'false'}" value="${escapeHtml(String(workVal ?? ''))}" placeholder="0" title="${isOverridden ? 'Custom attendance for this student (will not change when top total is edited)' : 'Standard total attendance'}"></td>`;
+        bodyHtml += `<td class="p-2 text-center"><input type="number" min="0" class="attendance-present w-full md:w-24 p-2 text-center font-mono tabular-nums border rounded text-xs" value="${escapeHtml(String(presVal ?? ''))}" placeholder="0"></td>`;
         bodyHtml += `</tr>`;
     });
     document.getElementById('marks-table-body').innerHTML = bodyHtml;
     cont.classList.remove('hidden');
+    bindHeaderSubjectMarkInputs();
     bindMarksValidationEvents();
     bindMarksKeyboardNavigation();
     bindAttendanceEvents();
@@ -3435,6 +3742,155 @@ const bindTopTotalAttendanceInputs = () => {
     }
 };
 
+// Shared Admin-style CSV & Excel Spreadsheet Readers
+const decodeCsvBuffer = (arrayBuffer) => {
+    const bytes = new Uint8Array(arrayBuffer);
+    let text = '';
+    if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+        text = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+    } else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+        text = new TextDecoder('utf-16be').decode(bytes.subarray(2));
+    } else if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+        text = new TextDecoder('utf-8').decode(bytes.subarray(3));
+    } else {
+        text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+        if (text.includes('\u0000')) {
+            text = new TextDecoder('utf-16le').decode(bytes);
+        }
+    }
+    return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+};
+
+const detectCsvDelimiter = (text) => {
+    const lines = text.split('\n');
+    const headerLine = lines.find((line) => line.trim() !== '') || '';
+    const counts = { ',': 0, ';': 0, '\t': 0 };
+    let inQuotes = false;
+    for (let i = 0; i < headerLine.length; i += 1) {
+        const ch = headerLine[i];
+        if (ch === '"') {
+            if (inQuotes && headerLine[i + 1] === '"') {
+                i += 1;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (!inQuotes && Object.prototype.hasOwnProperty.call(counts, ch)) {
+            counts[ch] += 1;
+        }
+    }
+    if (counts[';'] > counts[','] && counts[';'] >= counts['\t']) return ';';
+    if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) return '\t';
+    return ',';
+};
+
+const parseCsvMatrix = (text, delimiter) => {
+    const rows = [];
+    let currentRow = [];
+    let currentCell = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (text[i + 1] === '"') {
+                    currentCell += '"';
+                    i += 1;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                currentCell += ch;
+            }
+        } else if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === delimiter) {
+            currentRow.push(currentCell);
+            currentCell = '';
+        } else if (ch === '\n') {
+            currentRow.push(currentCell);
+            if (currentRow.some((cell) => String(cell).trim() !== '')) {
+                rows.push(currentRow);
+            }
+            currentRow = [];
+            currentCell = '';
+        } else {
+            currentCell += ch;
+        }
+    }
+
+    if (currentCell.length > 0 || currentRow.length > 0) {
+        currentRow.push(currentCell);
+        if (currentRow.some((cell) => String(cell).trim() !== '')) {
+            rows.push(currentRow);
+        }
+    }
+    return rows;
+};
+
+const parseCsvArrayBufferToObjects = (arrayBuffer) => {
+    const text = decodeCsvBuffer(arrayBuffer);
+    if (!text.trim()) return [];
+    const delimiter = detectCsvDelimiter(text);
+    const matrix = parseCsvMatrix(text, delimiter);
+    if (matrix.length < 2) return [];
+
+    const rawHeaders = matrix[0];
+    const usedHeaders = new Set();
+    const headers = rawHeaders.map((h, idx) => {
+        const cleaned = String(h || '').trim();
+        let candidate = cleaned || `Column ${idx + 1}`;
+        let suffix = 2;
+        while (usedHeaders.has(candidate)) {
+            candidate = `${cleaned || `Column ${idx + 1}`} (${suffix})`;
+            suffix += 1;
+        }
+        usedHeaders.add(candidate);
+        return candidate;
+    });
+
+    const objects = [];
+    for (let r = 1; r < matrix.length; r += 1) {
+        const cells = matrix[r];
+        const rowObj = {};
+        let hasAnyValue = false;
+        headers.forEach((header, idx) => {
+            const val = cells[idx] !== undefined && cells[idx] !== null ? String(cells[idx]).trim() : '';
+            if (val !== '') hasAnyValue = true;
+            rowObj[header] = val;
+        });
+        if (hasAnyValue) objects.push(rowObj);
+    }
+    return objects;
+};
+
+const readSpreadsheetFileToObjects = async (file) => {
+    const fileName = String(file?.name || '');
+    const ext = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+    const mime = String(file?.type || '').toLowerCase();
+    const isCsv = ext === 'csv' || (!ext && (mime.includes('csv') || mime === 'text/plain'));
+    const isExcel = !isCsv && (ext === 'xlsx' || ext === 'xls' || mime.includes('spreadsheetml') || mime.includes('ms-excel'));
+    if (!isCsv && !isExcel) {
+        throw new Error('Unsupported file format. Please upload a .xlsx, .xls, or .csv file.');
+    }
+    const buf = await file.arrayBuffer();
+    if (isCsv) {
+        return parseCsvArrayBufferToObjects(buf);
+    }
+    if (!window.XLSX) {
+        throw new Error('Spreadsheet library is still loading. Please try again in a moment.');
+    }
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+    const firstSheetName = wb.SheetNames?.[0];
+    if (!firstSheetName) {
+        throw new Error('No worksheets found in the uploaded file.');
+    }
+    const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheetName], { defval: '' });
+    return sheetRows.filter((row) =>
+        Object.values(row).some((val) => val !== undefined && val !== null && String(val).trim() !== '')
+    );
+};
+
 const sanitizeBulkDocId = (value = '') => String(value || '').replace(/[^\w-]/g, '_');
 const getBulkTemplateRows = () => {
     const className = document.getElementById('entry-class-select')?.value || '';
@@ -3443,11 +3899,12 @@ const getBulkTemplateRows = () => {
     const scopedStudents = students
         .filter((s) => s.class === className && (s.academicYear === currentAcademicYear || !s.academicYear))
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-    const subjectRows = getSchemaSubjectRows(currentExamSchema, currentExamContext?.key || '');
+    const subjectRows = getActiveHeaderSubjectRows(currentExamSchema, currentExamContext?.key || '');
     const currentTopTotal = (document.getElementById('entry-top-total-attendance')?.value || document.getElementById('header-col-total-attendance')?.value || '').trim();
     return scopedStudents.map((student) => {
         const row = {
             student_id: student.id,
+            adm_no: student.adm || student.admissionNo || student.uid || '',
             student_name: student.name || '',
             class: className,
             total_attendance: currentTopTotal,
@@ -3483,7 +3940,7 @@ const downloadMarksTemplate = (asXlsx = false) => {
     const classLabel = (document.getElementById('entry-class-select')?.value || 'class').replace(/\s+/g, '_');
     if (!asXlsx) {
         const headers = Object.keys(rows[0]);
-        const csv = [headers.map(csvEscape).join(','), ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))].join('\n');
+        const csv = '\uFEFF' + [headers.map(csvEscape).join(','), ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))].join('\n');
         downloadBlob(csv, `marks_template_${classLabel}_${examLabel}.csv`, 'text/csv;charset=utf-8');
         return;
     }
@@ -3498,35 +3955,22 @@ function updateMarksDownloadAndUploadState() {
     const examVal = document.getElementById('entry-exam-select')?.value || '';
     const isBothSelected = Boolean(classVal && examVal);
 
-    const csvBtn = document.getElementById('marks-template-csv-btn');
-    const xlsxBtn = document.getElementById('marks-template-xlsx-btn');
+    const templateBtn = document.getElementById('marks-template-menu-btn');
+    const templateMenu = document.getElementById('marks-template-menu');
     const fileInput = document.getElementById('marks-bulk-file');
     const uploadBtn = document.getElementById('marks-bulk-upload-btn');
     const fileLabel = document.getElementById('marks-file-picker-label');
     const filenameSpan = document.getElementById('marks-bulk-filename');
 
-    if (csvBtn) {
-        csvBtn.disabled = !isBothSelected;
-        csvBtn.classList.toggle('opacity-50', !isBothSelected);
-        csvBtn.classList.toggle('cursor-not-allowed', !isBothSelected);
-        csvBtn.classList.toggle('cursor-pointer', isBothSelected);
-        if (isBothSelected) {
-            csvBtn.className = 'marks-action-btn flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white border border-blue-300 hover:border-blue-500 hover:bg-blue-50/50 text-blue-900 font-bold text-xs shadow-xs transition cursor-pointer';
-        } else {
-            csvBtn.className = 'marks-action-btn flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white border border-slate-200 text-slate-400 font-bold text-xs shadow-2xs transition opacity-50 cursor-not-allowed';
+    if (templateBtn) {
+        templateBtn.disabled = !isBothSelected;
+        if (!isBothSelected && templateMenu) {
+            templateMenu.classList.add('hidden');
+            templateBtn.setAttribute('aria-expanded', 'false');
         }
-    }
-
-    if (xlsxBtn) {
-        xlsxBtn.disabled = !isBothSelected;
-        xlsxBtn.classList.toggle('opacity-50', !isBothSelected);
-        xlsxBtn.classList.toggle('cursor-not-allowed', !isBothSelected);
-        xlsxBtn.classList.toggle('cursor-pointer', isBothSelected);
-        if (isBothSelected) {
-            xlsxBtn.className = 'marks-action-btn flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white border border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50/50 text-emerald-900 font-bold text-xs shadow-xs transition cursor-pointer';
-        } else {
-            xlsxBtn.className = 'marks-action-btn flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white border border-slate-200 text-slate-400 font-bold text-xs shadow-2xs transition opacity-50 cursor-not-allowed';
-        }
+        templateBtn.className = isBothSelected
+            ? 'marks-action-btn bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-2 transition cursor-pointer'
+            : 'marks-action-btn bg-white border border-slate-200 text-slate-400 px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-2 transition opacity-50 cursor-not-allowed';
     }
 
     if (fileInput) {
@@ -3544,22 +3988,17 @@ function updateMarksDownloadAndUploadState() {
             fileLabel.classList.add('border-slate-200');
             fileLabel.classList.remove('border-slate-300', 'hover:border-emerald-400');
             if (filenameSpan && !fileInput?.files?.length) {
-                filenameSpan.textContent = 'Choose CSV or Excel...';
-                filenameSpan.className = 'truncate text-slate-400 font-medium';
+                filenameSpan.textContent = 'Choose .xlsx, .xls, or .csv spreadsheet...';
+                filenameSpan.className = 'truncate text-slate-500';
             }
         }
     }
 
     if (uploadBtn) {
         uploadBtn.disabled = !isBothSelected;
-        uploadBtn.classList.toggle('opacity-50', !isBothSelected);
-        uploadBtn.classList.toggle('cursor-not-allowed', !isBothSelected);
-        uploadBtn.classList.toggle('cursor-pointer', isBothSelected);
-        if (isBothSelected) {
-            uploadBtn.className = 'marks-action-btn flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-sm cursor-pointer transition shrink-0';
-        } else {
-            uploadBtn.className = 'marks-action-btn flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-200 text-slate-400 font-extrabold text-xs shadow-2xs opacity-50 cursor-not-allowed transition shrink-0';
-        }
+        uploadBtn.className = isBothSelected
+            ? 'marks-action-btn flex items-center justify-center gap-1.5 py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer transition shrink-0'
+            : 'marks-action-btn flex items-center justify-center gap-1.5 py-2 px-4 rounded-xl bg-slate-200 text-slate-400 font-bold text-xs shadow-2xs opacity-50 cursor-not-allowed transition shrink-0';
     }
 };
 
@@ -3574,7 +4013,7 @@ const updateBulkStatus = (message = '', percent = 0, type = 'info') => {
     }
     if (pctEl) {
         pctEl.textContent = `${Math.round(percent)}%`;
-        pctEl.className = `font-extrabold shrink-0 font-mono text-xs ${type === 'error' ? 'text-red-600' : type === 'success' ? 'text-emerald-700' : 'text-indigo-700'}`;
+        pctEl.className = `font-extrabold shrink-0 font-mono tabular-nums text-xs ${type === 'error' ? 'text-red-600' : type === 'success' ? 'text-emerald-700' : 'text-indigo-700'}`;
     }
     if (iconEl) {
         iconEl.innerHTML = type === 'error' ? '<i class="fas fa-circle-exclamation text-red-500"></i>'
@@ -3584,12 +4023,318 @@ const updateBulkStatus = (message = '', percent = 0, type = 'info') => {
     }
     if (progressEl) {
         progressEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-        progressEl.className = `${type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-emerald-500' : 'bg-indigo-600'} h-2.5 rounded-full transition-all duration-300`;
+        progressEl.className = `${type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-emerald-500' : 'bg-indigo-600'} h-1.5 rounded-full transition-all duration-300`;
     }
 };
 
-// --- Marks Bulk Upload Review & Conflict System ---
+// Persist per-exam header max/pass marks onto schema + keep existing examResults synchronized if needed
+const buildSubjectMarksMap = (subjectRows = []) => {
+    const map = {};
+    subjectRows.forEach((sub) => {
+        if (!sub?.id) return;
+        map[sub.id] = {
+            name: sub.name || sub.id,
+            maxMarks: Number(sub.maxMarks || 100),
+            passMarks: Number(sub.passMarks ?? 35)
+        };
+    });
+    return map;
+};
+
+const syncSchemaAndOtherResultsWithHeaderMarks = async ({ batch, schema, examKey, subjectRows, touchedStudentIds = new Set() }) => {
+    if (!schema?.id || !examKey) return;
+    const nextSubjectMarks = buildSubjectMarksMap(subjectRows);
+    const prevSubjectMarks = schema.examConfigs?.[examKey]?.subjectMarks || {};
+    const changedMarkRules = JSON.stringify(prevSubjectMarks) !== JSON.stringify(nextSubjectMarks);
+
+    const existingConfig = schema.examConfigs?.[examKey] || {};
+    const nextExamConfigEntry = isDefaultExamKey(examKey)
+        ? { ...existingConfig, subjectMarks: nextSubjectMarks }
+        : { ...existingConfig, label: existingConfig.label || currentExamContext?.label || examKey, subjectMarks: nextSubjectMarks };
+
+    batch.set(doc(db, `${BASE_PATH}/resultSchemas`, schema.id), {
+        examConfigs: {
+            [examKey]: nextExamConfigEntry
+        },
+        updatedAt: Date.now()
+    }, { merge: true });
+
+    if (changedMarkRules) {
+        examResultsCache.forEach((rec) => {
+            if (!rec?.id || touchedStudentIds.has(rec.studentId)) return;
+            if ((rec.schemaId === schema.id || rec.classLabel === schema.classLabel) && (rec.examKey === examKey || parseExamValue(rec.examId).examKey === examKey)) {
+                const updatedMarks = {};
+                Object.entries(rec.marks || {}).forEach(([k, entry]) => {
+                    const matchedSub = subjectRows.find((s) => s.id === k || s.name.toLowerCase() === String(entry?.name || k).trim().toLowerCase());
+                    const val = getStoredMarkValue(entry);
+                    if (val !== '') {
+                        updatedMarks[matchedSub?.id || k] = {
+                            value: val,
+                            name: matchedSub?.name || entry?.name || k,
+                            maxMarks: matchedSub ? matchedSub.maxMarks : Number(entry?.maxMarks || 100),
+                            passMarks: matchedSub ? matchedSub.passMarks : Number(entry?.passMarks ?? 35)
+                        };
+                    }
+                });
+                const summary = buildResultSummary(updatedMarks, subjectRows);
+                batch.set(doc(db, `${BASE_PATH}/examResults`, rec.id), {
+                    marks: updatedMarks,
+                    grades: summary.grades,
+                    totals: summary.totals,
+                    updatedAt: Date.now()
+                }, { merge: true });
+            }
+        });
+    }
+};
+
+// --- Marks Bulk Upload Review & Inline Edit System (Admin-Style) ---
 let currentMarksReviewData = null;
+
+const getMarksMappingFieldOptions = (subjectRows = []) => [
+    { key: 'none', label: '-- Skip Column --' },
+    { key: 'student_id', label: 'Student ID' },
+    { key: 'adm_no', label: 'Adm No' },
+    { key: 'student_name', label: 'Student Name *' },
+    { key: 'total_attendance', label: 'Total Att.' },
+    { key: 'present_attendance', label: 'Present Att.' },
+    ...subjectRows.map((sub) => ({ key: `sub::${sub.id}`, label: `${sub.name} (Max ${sub.maxMarks})` }))
+];
+
+const getDuplicateMarksMappedFields = (columns = []) => {
+    const counts = {};
+    const duplicates = new Set();
+    columns.forEach((c) => {
+        if (c.mappedField && c.mappedField !== 'none') {
+            counts[c.mappedField] = (counts[c.mappedField] || 0) + 1;
+            if (counts[c.mappedField] > 1) duplicates.add(c.mappedField);
+        }
+    });
+    return duplicates;
+};
+
+const evaluateMarksReviewRow = (rowIdx) => {
+    if (!currentMarksReviewData) return null;
+    const { className, examId, subjectRows, columns, workingRows } = currentMarksReviewData;
+    const workingRow = workingRows[rowIdx] || {};
+
+    const scopedStudents = students.filter((s) => s.class === className && (s.academicYear === currentAcademicYear || !s.academicYear));
+    const studentMap = new Map();
+    const admMap = new Map();
+    scopedStudents.forEach((s) => {
+        if (s.id) studentMap.set(String(s.id).trim(), s);
+        const adm = String(s.adm || s.admissionNo || s.uid || '').trim().toLowerCase();
+        if (adm) admMap.set(adm, s);
+    });
+
+    const existingRecordMap = new Map();
+    examResultsCache.forEach((rec) => {
+        if (resultMatchesExam(rec, examId) && rec.classLabel === className && (!rec.academicYear || rec.academicYear === currentAcademicYear)) {
+            existingRecordMap.set(String(rec.studentId).trim(), rec);
+        }
+    });
+
+    const extractedByKey = {};
+    columns.forEach((col) => {
+        if (!col.mappedField || col.mappedField === 'none') return;
+        extractedByKey[col.mappedField] = String(workingRow[col.id] ?? '').trim();
+    });
+
+    const rawStudentId = extractedByKey.student_id || '';
+    const rawAdm = extractedByKey.adm_no || '';
+    const rawName = extractedByKey.student_name || '';
+
+    let matchedStudent = rawStudentId ? studentMap.get(rawStudentId) : null;
+    if (!matchedStudent && rawAdm && admMap.has(rawAdm.toLowerCase())) {
+        matchedStudent = admMap.get(rawAdm.toLowerCase());
+    }
+    if (!matchedStudent && rawName) {
+        matchedStudent = scopedStudents.find((s) => (s.name || '').trim().toLowerCase() === rawName.toLowerCase());
+    }
+
+    const studentId = matchedStudent ? matchedStudent.id : (rawStudentId || rawAdm);
+    const studentName = matchedStudent ? (matchedStudent.name || rawName) : (rawName || 'Unknown Student');
+    const admNo = matchedStudent ? (matchedStudent.adm || matchedStudent.admissionNo || matchedStudent.uid || rawAdm || '-') : (rawAdm || '-');
+
+    const rowIssues = [];
+    const fieldStatuses = {};
+    let hasFatalError = false;
+    let blankFieldCount = 0;
+
+    if (!studentId || !matchedStudent) {
+        rowIssues.push(!studentId ? 'Missing Student ID / Adm No / Name' : `Student not found in ${className}`);
+        hasFatalError = true;
+        if (columns.some((c) => c.mappedField === 'student_name')) fieldStatuses.student_name = { status: 'error', reason: rowIssues[0] };
+        if (columns.some((c) => c.mappedField === 'adm_no') && rawAdm) fieldStatuses.adm_no = { status: 'error', reason: rowIssues[0] };
+        if (columns.some((c) => c.mappedField === 'student_id') && rawStudentId) fieldStatuses.student_id = { status: 'error', reason: rowIssues[0] };
+    }
+
+    const isDuplicate = Boolean(matchedStudent && existingRecordMap.has(String(matchedStudent.id)));
+
+    const rawTotalAtt = extractedByKey.total_attendance ?? '';
+    const rawPresAtt = extractedByKey.present_attendance ?? '';
+    let workingDays = 0;
+    let presentDays = 0;
+    if (rawTotalAtt !== '') {
+        const parsedW = Number(rawTotalAtt);
+        if (!Number.isFinite(parsedW) || parsedW < 0) {
+            hasFatalError = true;
+            rowIssues.push('Invalid Total Attendance');
+            fieldStatuses.total_attendance = { status: 'error', reason: 'Must be 0 or greater' };
+        } else {
+            workingDays = parsedW;
+            fieldStatuses.total_attendance = { status: 'valid', value: rawTotalAtt };
+        }
+    } else {
+        fieldStatuses.total_attendance = { status: 'blank', value: '--' };
+    }
+
+    if (rawPresAtt !== '') {
+        const parsedP = Number(rawPresAtt);
+        if (!Number.isFinite(parsedP) || parsedP < 0) {
+            hasFatalError = true;
+            rowIssues.push('Invalid Present Attendance');
+            fieldStatuses.present_attendance = { status: 'error', reason: 'Must be 0 or greater' };
+        } else {
+            presentDays = parsedP;
+            fieldStatuses.present_attendance = { status: 'valid', value: rawPresAtt };
+        }
+    } else {
+        fieldStatuses.present_attendance = { status: 'blank', value: '--' };
+    }
+
+    const marks = {};
+    subjectRows.forEach((sub) => {
+        const mapKey = `sub::${sub.id}`;
+        const val = String(extractedByKey[mapKey] ?? '').trim();
+        if (val === '') {
+            fieldStatuses[mapKey] = { status: 'blank', value: '--' };
+            fieldStatuses[sub.id] = { status: 'blank', value: '--' };
+            blankFieldCount++;
+        } else {
+            const upper = val.toUpperCase();
+            const numeric = Number(val);
+            const max = Number(sub.maxMarks || 100);
+            const pass = Number(sub.passMarks ?? 35);
+            const isValid = upper === 'P' || upper === 'A' || upper === 'AB' || (Number.isFinite(numeric) && numeric >= 0 && numeric <= max);
+
+            if (isValid) {
+                marks[sub.id] = { value: val, name: sub.name, maxMarks: max, passMarks: pass };
+                fieldStatuses[mapKey] = { status: 'valid', value: val };
+                fieldStatuses[sub.id] = { status: 'valid', value: val };
+            } else {
+                hasFatalError = true;
+                const reason = `Invalid mark "${val}". Allowed: 0-${max}, P, or A`;
+                fieldStatuses[mapKey] = { status: 'error', value: val, reason };
+                fieldStatuses[sub.id] = { status: 'error', value: val, reason };
+                rowIssues.push(`${sub.name}: ${reason}`);
+            }
+        }
+    });
+
+    return {
+        rowIndex: rowIdx + 1,
+        studentId,
+        studentName,
+        admNo,
+        matchedStudent,
+        isDuplicate,
+        hasFatalError,
+        blankFieldCount,
+        rowIssues,
+        marks,
+        fieldStatuses,
+        attendance: { workingDays, presentDays }
+    };
+};
+
+const recalculateMarksReviewStats = () => {
+    if (!currentMarksReviewData) return;
+    const rows = currentMarksReviewData.rows || [];
+    const dupFields = getDuplicateMarksMappedFields(currentMarksReviewData.columns || []);
+    const hasDupMap = dupFields.size > 0;
+
+    let validCount = 0;
+    let issueRowCount = 0;
+    let totalBlankFields = 0;
+    let existingRowCount = 0;
+
+    rows.forEach((r) => {
+        totalBlankFields += Number(r.blankFieldCount || 0);
+        if (r.isDuplicate) existingRowCount++;
+        if (r.hasFatalError) issueRowCount++;
+        else validCount++;
+    });
+
+    currentMarksReviewData.totalRows = rows.length;
+    currentMarksReviewData.validCount = validCount;
+    currentMarksReviewData.issueRowCount = issueRowCount;
+    currentMarksReviewData.totalBlankFields = totalBlankFields;
+    currentMarksReviewData.existingRowCount = existingRowCount;
+
+    const totalEl = document.getElementById('marks-review-stat-total');
+    const validEl = document.getElementById('marks-review-stat-valid');
+    const issuesEl = document.getElementById('marks-review-stat-issues');
+    const blanksEl = document.getElementById('marks-review-stat-blanks');
+    const existingEl = document.getElementById('marks-review-stat-existing');
+    if (totalEl) totalEl.textContent = rows.length;
+    if (validEl) validEl.textContent = validCount;
+    if (issuesEl) issuesEl.textContent = issueRowCount;
+    if (blanksEl) blanksEl.textContent = totalBlankFields;
+    if (existingEl) existingEl.textContent = existingRowCount;
+
+    const conflictContainer = document.getElementById('marks-review-conflict-container');
+    if (conflictContainer) {
+        conflictContainer.classList.toggle('opacity-50', existingRowCount === 0);
+    }
+
+    const skipBtn = document.getElementById('marks-review-skip-issues-btn');
+    const skipCountEl = document.getElementById('marks-review-skip-count');
+    if (skipBtn && skipCountEl) {
+        if (!hasDupMap && issueRowCount > 0 && validCount > 0) {
+            skipBtn.classList.remove('hidden');
+            skipCountEl.textContent = validCount;
+        } else {
+            skipBtn.classList.add('hidden');
+        }
+    }
+
+    const confirmBtn = document.getElementById('marks-review-confirm-upload-btn');
+    const confirmLabel = document.getElementById('marks-review-confirm-upload-label');
+    if (confirmBtn && confirmLabel) {
+        confirmLabel.textContent = hasDupMap ? 'Resolve Duplicate Mapping' : `Upload All (${validCount})`;
+        const blocked = validCount === 0 || hasDupMap;
+        confirmBtn.disabled = blocked;
+        confirmBtn.classList.toggle('opacity-50', blocked);
+        confirmBtn.classList.toggle('cursor-not-allowed', blocked);
+    }
+};
+
+const rebuildAllMarksReviewDataAndRender = () => {
+    if (!currentMarksReviewData) return;
+    currentMarksReviewData.rows = (currentMarksReviewData.workingRows || []).map((_, idx) => evaluateMarksReviewRow(idx));
+    recalculateMarksReviewStats();
+    renderMarksReviewModalUI();
+};
+
+const setMarksReviewEditMode = (enabled) => {
+    if (!currentMarksReviewData) return;
+    currentMarksReviewData.isEditMode = Boolean(enabled);
+    const toggle = document.getElementById('marks-review-edit-switch');
+    const statusLabel = document.getElementById('marks-review-edit-status');
+    const banner = document.getElementById('marks-review-edit-banner');
+    if (toggle) toggle.checked = currentMarksReviewData.isEditMode;
+    if (statusLabel) {
+        statusLabel.textContent = currentMarksReviewData.isEditMode ? 'ON' : 'OFF';
+        statusLabel.className = currentMarksReviewData.isEditMode
+            ? 'text-[11px] font-extrabold uppercase tracking-wider text-emerald-700'
+            : 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500';
+    }
+    if (banner) {
+        banner.classList.toggle('hidden', !currentMarksReviewData.isEditMode);
+    }
+    renderMarksReviewModalUI();
+};
 
 const closeMarksReviewModal = () => {
     const modal = document.getElementById('marks-upload-review-modal');
@@ -3604,8 +4349,8 @@ const closeMarksReviewModal = () => {
     if (fileInput) fileInput.value = '';
     const filenameSpan = document.getElementById('marks-bulk-filename');
     if (filenameSpan) {
-        filenameSpan.textContent = 'Choose CSV or Excel...';
-        filenameSpan.className = 'truncate text-slate-400 font-medium';
+        filenameSpan.textContent = 'Choose .xlsx, .xls, or .csv spreadsheet...';
+        filenameSpan.className = 'truncate text-slate-500';
     }
 };
 
@@ -3619,131 +4364,178 @@ const openMarksReviewModal = () => {
     document.body.classList.add('modal-scroll-lock');
 };
 
+const updateMarksReviewRowDomAfterEdit = (rowIdx) => {
+    if (!currentMarksReviewData) return;
+    const tr = document.getElementById(`marks-review-row-${rowIdx}`);
+    const r = currentMarksReviewData.rows[rowIdx];
+    if (!tr || !r) return;
+
+    if (r.hasFatalError) {
+        tr.className = 'bg-rose-50/80 hover:bg-rose-100/70 transition-colors';
+    } else if (r.isDuplicate) {
+        tr.className = 'bg-sky-50/70 hover:bg-sky-100/70 transition-colors';
+    } else {
+        tr.className = 'hover:bg-slate-50 transition-colors';
+    }
+
+    const statusCell = tr.querySelector('.marks-review-status-cell');
+    if (statusCell) {
+        if (r.hasFatalError) {
+            statusCell.innerHTML = `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`;
+        } else if (r.isDuplicate) {
+            statusCell.innerHTML = `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Marks already exist for this student">EXISTING</span>`;
+        } else {
+            statusCell.innerHTML = `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`;
+        }
+    }
+
+    const resolvedCell = tr.querySelector('.marks-review-matched-cell');
+    if (resolvedCell) {
+        resolvedCell.innerHTML = r.matchedStudent
+            ? `<div class="font-bold text-slate-800 truncate max-w-[160px]">${escapeHtml(r.studentName)}</div><div class="text-[10px] text-slate-500 font-mono">${escapeHtml(r.admNo)}</div>`
+            : `<span class="text-rose-700 font-bold text-[11px]">Not matched</span>`;
+    }
+
+    (currentMarksReviewData.columns || []).forEach((col) => {
+        const td = tr.querySelector(`.marks-review-cell[data-col-id="${col.id}"]`);
+        if (!td) return;
+        const mapped = col.mappedField;
+        td.classList.remove('bg-rose-100', 'text-rose-950', 'border-rose-400', 'font-bold', 'bg-amber-100', 'text-amber-950', 'border-amber-300', 'bg-slate-50/60', 'text-slate-400', 'italic');
+        if (!mapped || mapped === 'none') {
+            td.classList.add('bg-slate-50/60', 'text-slate-400', 'italic');
+            td.title = 'Column skipped from import';
+            return;
+        }
+        const fStatus = r.fieldStatuses?.[mapped];
+        if (fStatus?.status === 'error') {
+            td.classList.add('bg-rose-100', 'text-rose-950', 'font-bold');
+            td.title = fStatus.reason || 'Invalid value';
+        } else if (fStatus?.status === 'blank') {
+            td.classList.add('bg-amber-100', 'text-amber-950');
+            td.title = 'Blank / Not provided';
+        } else {
+            td.title = '';
+        }
+    });
+
+    recalculateMarksReviewStats();
+};
+
 const renderMarksReviewModalUI = () => {
     if (!currentMarksReviewData) return;
-    const { className, subjectRows, rows, totalRows, validCount, issueRowCount, totalBlankFields, existingRowCount } = currentMarksReviewData;
+    const { className, subjectRows, columns, workingRows, rows, totalRows, isEditMode } = currentMarksReviewData;
 
     const examTitle = currentExamContext?.label || currentExamContext?.key || 'Exam';
     const titleEl = document.getElementById('marks-review-modal-title');
     const subtitleEl = document.getElementById('marks-review-modal-subtitle');
     if (titleEl) titleEl.textContent = `Review Marks Upload - ${className} (${examTitle})`;
-    if (subtitleEl) subtitleEl.textContent = `Academic Year: ${currentAcademicYear || 'N/A'} • ${totalRows} records loaded from file.`;
+    if (subtitleEl) subtitleEl.textContent = `Academic Year: ${currentAcademicYear || 'N/A'} · ${totalRows} rows loaded · Edit & verify before saving.`;
 
-    const totalEl = document.getElementById('marks-review-stat-total');
-    const validEl = document.getElementById('marks-review-stat-valid');
-    const issuesEl = document.getElementById('marks-review-stat-issues');
-    const blanksEl = document.getElementById('marks-review-stat-blanks');
-    const existingEl = document.getElementById('marks-review-stat-existing');
+    recalculateMarksReviewStats();
 
-    if (totalEl) totalEl.textContent = totalRows;
-    if (validEl) validEl.textContent = validCount;
-    if (issuesEl) issuesEl.textContent = issueRowCount;
-    if (blanksEl) blanksEl.textContent = totalBlankFields;
-    if (existingEl) existingEl.textContent = existingRowCount;
-
-    // Existing Records Conflict Container
-    const conflictContainer = document.getElementById('marks-review-conflict-container');
-    if (conflictContainer) {
-        if (existingRowCount > 0) {
-            conflictContainer.classList.remove('opacity-50');
-        } else {
-            conflictContainer.classList.add('opacity-50');
-        }
-    }
-
-    // Buttons
-    const skipBtn = document.getElementById('marks-review-skip-issues-btn');
-    const skipCountEl = document.getElementById('marks-review-skip-count');
-    if (skipBtn && skipCountEl) {
-        if (issueRowCount > 0 && validCount > 0) {
-            skipBtn.classList.remove('hidden');
-            skipCountEl.textContent = validCount;
-        } else {
-            skipBtn.classList.add('hidden');
-        }
-    }
-
-    const confirmBtn = document.getElementById('marks-review-confirm-upload-btn');
-    const confirmLabel = document.getElementById('marks-review-confirm-upload-label');
-    if (confirmBtn && confirmLabel) {
-        confirmLabel.textContent = `Start Upload (${validCount})`;
-        confirmBtn.disabled = validCount === 0;
-        confirmBtn.classList.toggle('opacity-50', validCount === 0);
-        confirmBtn.classList.toggle('cursor-not-allowed', validCount === 0);
-    }
-
-    // Render Preview Table
     const container = document.getElementById('marks-review-table-container');
     if (!container) return;
 
-    let tableHtml = `
-        <table class="w-full text-xs text-left text-slate-700 border-collapse bg-white">
-            <thead class="bg-slate-100 text-slate-700 font-bold uppercase sticky top-0 z-10 shadow-xs border-b border-slate-300">
-                <tr>
-                    <th class="p-2.5 border-b border-r border-slate-200 text-center w-12 bg-slate-100">#</th>
-                    <th class="p-2.5 border-b border-r border-slate-200 min-w-[85px] bg-slate-100">Status</th>
-                    <th class="p-2.5 border-b border-r border-slate-200 min-w-[100px] bg-slate-100">Adm No</th>
-                    <th class="p-2.5 border-b border-r border-slate-200 min-w-[160px] bg-slate-100">Student Name</th>
-                    <th class="p-2.5 border-b border-r border-slate-200 min-w-[80px] text-center bg-slate-100">Total Att.</th>
-                    <th class="p-2.5 border-b border-r border-slate-200 min-w-[80px] text-center bg-slate-100">Pres. Att.</th>
-    `;
+    const fieldOptions = getMarksMappingFieldOptions(subjectRows);
+    const duplicateFields = getDuplicateMarksMappedFields(columns);
+    const hasDupMap = duplicateFields.size > 0;
+    const dupLabels = Array.from(duplicateFields).map((k) => fieldOptions.find((f) => f.key === k)?.label || k);
 
-    subjectRows.forEach((sub) => {
-        tableHtml += `<th class="p-2.5 border-b border-r border-slate-200 text-center min-w-[110px] bg-slate-100">
-            ${escapeHtml(sub.name)}
-            <div class="text-[10px] text-slate-400 font-normal">Max: ${sub.maxMarks} | Pass: ${sub.passMarks}</div>
-        </th>`;
-    });
-
-    tableHtml += `</tr></thead><tbody class="divide-y divide-slate-100">`;
-
-    rows.forEach((r) => {
-        let rowBg = 'hover:bg-slate-50';
-        let statusBadge = '';
-
-        if (r.hasFatalError) {
-            rowBg = 'bg-rose-50/60 hover:bg-rose-100/60';
-            statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-200 text-rose-800" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`;
-        } else if (r.isDuplicate) {
-            rowBg = 'bg-sky-50/60 hover:bg-sky-100/60';
-            statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-200 text-sky-800" title="Marks already exist for this student">EXISTING</span>`;
-        } else {
-            statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">READY</span>`;
-        }
-
-        tableHtml += `
-            <tr class="${rowBg}">
-                <td class="p-2.5 text-center text-slate-400 border-b border-r border-slate-100 font-mono">${r.rowIndex}</td>
-                <td class="p-2.5 border-b border-r border-slate-100 whitespace-nowrap">${statusBadge}</td>
-                <td class="p-2.5 border-b border-r border-slate-100 font-mono font-semibold text-slate-600">${escapeHtml(r.admNo)}</td>
-                <td class="p-2.5 border-b border-r border-slate-100 font-bold text-slate-800">${escapeHtml(r.studentName)}</td>
-                <td class="p-2.5 border-b border-r border-slate-100 text-center font-mono">${r.attendance.workingDays || '--'}</td>
-                <td class="p-2.5 border-b border-r border-slate-100 text-center font-mono">${r.attendance.presentDays || '--'}</td>
+    let dupAlertHtml = '';
+    if (hasDupMap) {
+        dupAlertHtml = `
+            <div class="p-3 m-2 bg-red-600 text-white rounded-xl shadow-md flex items-center gap-2.5 text-xs font-bold">
+                <i class="fas fa-exclamation-triangle text-base shrink-0"></i>
+                <div>Duplicate Column Mapping Detected: <b>${escapeHtml(dupLabels.join(', '))}</b>. Turn ON Edit &amp; Mapping above and set duplicates to Skip or assign uniquely.</div>
+            </div>
         `;
+    }
 
-        subjectRows.forEach((sub) => {
-            const fStatus = r.fieldStatuses[sub.id] || { status: 'blank', value: '--' };
-            let cellClass = 'p-2.5 border-b border-r border-slate-100 text-center font-mono ';
-            let cellTitle = '';
+    let html = `
+        ${dupAlertHtml}
+        <table class="w-full text-xs text-left text-slate-700 border-collapse bg-white">
+            <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0 z-20 shadow-xs border-b-2 border-slate-300">
+                <tr>
+                    <th class="p-2 border-b border-r border-slate-200 text-center w-10 bg-slate-100">#</th>
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[82px] text-center bg-slate-100">Status</th>
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[155px] bg-slate-100">Matched Student</th>
+                    ${columns.map((col) => {
+                        const isDup = duplicateFields.has(col.mappedField);
+                        const isSkipped = !col.mappedField || col.mappedField === 'none';
+                        const headerBg = isDup
+                            ? 'bg-red-600 text-white border-red-700'
+                            : (isSkipped ? 'bg-slate-50 text-slate-500' : 'bg-slate-100 text-slate-800');
+                        const selectClass = isDup
+                            ? 'bg-red-700 text-white border border-white font-bold'
+                            : (!isEditMode
+                                ? 'opacity-65 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-500'
+                                : 'bg-white border-indigo-300 text-slate-800 font-bold');
+                        return `
+                        <th class="p-2 border-b border-r border-slate-200 min-w-[155px] max-w-[220px] ${headerBg}">
+                            <div class="flex items-center justify-between gap-1 mb-1">
+                                <span class="text-[11px] font-mono truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
+                                ${isDup ? '<span class="text-[9px] px-1 py-0.5 bg-white text-red-700 font-black rounded">DUP</span>' : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : '')}
+                            </div>
+                            <select data-smart-select="true" data-smart-floating="true" class="marks-review-col-map w-full p-1 rounded text-[11px] ${selectClass}" data-col-id="${col.id}" ${!isEditMode ? 'disabled' : ''}>
+                                ${fieldOptions.map((opt) => `<option value="${escapeHtml(opt.key)}" ${col.mappedField === opt.key ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+                            </select>
+                        </th>`;
+                    }).join('')}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-sans">
+                ${rows.map((r, idx) => {
+                    const workingRow = workingRows[idx] || {};
+                    const rowBg = r.hasFatalError
+                        ? 'bg-rose-50/80 hover:bg-rose-100/70'
+                        : (r.isDuplicate ? 'bg-sky-50/70 hover:bg-sky-100/70' : 'hover:bg-slate-50');
+                    const statusBadge = r.hasFatalError
+                        ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
+                        : (r.isDuplicate
+                            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Marks already exist for this student">EXISTING</span>`
+                            : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`);
 
-            if (fStatus.status === 'error') {
-                cellClass += 'bg-rose-100 text-rose-900 font-bold border-rose-300';
-                cellTitle = fStatus.reason || 'Invalid mark';
-            } else if (fStatus.status === 'blank') {
-                cellClass += 'bg-amber-100 text-amber-900 border-amber-200 italic font-semibold';
-                cellTitle = 'Blank / Not entered';
-            } else {
-                cellClass += 'font-semibold text-slate-700';
-            }
-
-            tableHtml += `<td class="${cellClass}" title="${escapeHtml(cellTitle)}">${escapeHtml(fStatus.value)}</td>`;
-        });
-
-        tableHtml += `</tr>`;
-    });
-
-    tableHtml += `</tbody></table>`;
-    container.innerHTML = tableHtml;
+                    return `
+                    <tr id="marks-review-row-${idx}" class="${rowBg} transition-colors">
+                        <td class="p-2 text-center text-slate-400 border-b border-r border-slate-100 font-mono tabular-nums">${idx + 1}</td>
+                        <td class="marks-review-status-cell p-2 border-b border-r border-slate-100 text-center whitespace-nowrap">${statusBadge}</td>
+                        <td class="marks-review-matched-cell p-2 border-b border-r border-slate-100">
+                            ${r.matchedStudent
+                                ? `<div class="font-bold text-slate-800 truncate max-w-[160px]">${escapeHtml(r.studentName)}</div><div class="text-[10px] text-slate-500 font-mono">${escapeHtml(r.admNo)}</div>`
+                                : `<span class="text-rose-700 font-bold text-[11px]">Not matched</span>`}
+                        </td>
+                        ${columns.map((col) => {
+                            const val = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
+                            const mapped = col.mappedField;
+                            const isSkipped = !mapped || mapped === 'none';
+                            let bgClass = '';
+                            let titleAttr = '';
+                            if (isSkipped) {
+                                bgClass = 'bg-slate-50/60 text-slate-400 italic';
+                                titleAttr = 'title="Column skipped from import"';
+                            } else {
+                                const fStatus = r.fieldStatuses?.[mapped];
+                                if (fStatus?.status === 'error') {
+                                    bgClass = 'bg-rose-100 text-rose-950 font-bold';
+                                    titleAttr = `title="${escapeHtml(fStatus.reason || 'Invalid value')}"`;
+                                } else if (fStatus?.status === 'blank' || !val.trim()) {
+                                    bgClass = 'bg-amber-100 text-amber-950';
+                                    titleAttr = 'title="Blank / Not provided"';
+                                }
+                            }
+                            const editableAttr = isEditMode
+                                ? 'contenteditable="true" class="marks-review-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white font-mono text-xs ' + bgClass + '"'
+                                : 'class="marks-review-cell p-2 border-b border-r border-slate-100 whitespace-nowrap font-mono text-xs ' + bgClass + '"';
+                            return `<td ${editableAttr} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${escapeHtml(val)}</td>`;
+                        }).join('')}
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    container.innerHTML = html;
+    enableSmartSelectWindowing(container, { visibleCount: 0 });
+    syncSmartSelectDisplay(container);
 };
 
 const parseAndReviewBulkMarks = async () => {
@@ -3754,41 +4546,21 @@ const parseAndReviewBulkMarks = async () => {
     if (roleScope === 'staff' && (!teacherAssignedClasses.length || !isClassInDutyScope(className, teacherAssignedClasses))) {
         return alert('You can only upload marks for your assigned classes.');
     }
-    if (!file) return alert('Choose a spreadsheet file (.csv or .xlsx) first.');
+    if (!file) return alert('Choose a spreadsheet file (.xlsx, .xls, or .csv) first.');
     if (!currentExamSchema) return alert('Schema not loaded for selected exam.');
-    if (!window.XLSX) return alert('Spreadsheet library is still loading. Try again in a moment.');
 
     updateBulkStatus('Reading spreadsheet file...', 20);
 
-    const subjectRows = getSchemaSubjectRows(currentExamSchema, currentExamContext?.key || '');
+    const subjectRows = getActiveHeaderSubjectRows(currentExamSchema, currentExamContext?.key || '');
     if (!subjectRows.length) return alert('No subjects configured for this class and exam.');
-
-    const scopedStudents = students.filter((s) => s.class === className && (s.academicYear === currentAcademicYear || !s.academicYear));
-    const studentMap = new Map();
-    const admMap = new Map();
-    scopedStudents.forEach((s) => {
-        if (s.id) studentMap.set(String(s.id).trim(), s);
-        const adm = String(s.adm || s.admissionNo || s.uid || '').trim();
-        if (adm) admMap.set(adm, s);
-    });
-
-    const existingRecordMap = new Map();
-    examResultsCache.forEach((rec) => {
-        if (resultMatchesExam(rec, examId) && rec.classLabel === className && (!rec.academicYear || rec.academicYear === currentAcademicYear)) {
-            existingRecordMap.set(String(rec.studentId).trim(), rec);
-        }
-    });
 
     let rawRows = [];
     try {
-        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-        const firstSheetName = wb.SheetNames[0];
-        if (!firstSheetName) throw new Error('Spreadsheet has no sheets');
-        rawRows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheetName], { defval: '' });
+        rawRows = await readSpreadsheetFileToObjects(file);
     } catch (err) {
         console.error('Error reading spreadsheet', err);
         updateBulkStatus('Failed to read spreadsheet file', 100, 'error');
-        alert('Could not read file. Please ensure it is a valid Excel (.xlsx) or CSV file.');
+        alert(err?.message || 'Could not read file. Ensure it is a valid .xlsx, .xls, or .csv file.');
         return;
     }
 
@@ -3799,139 +4571,104 @@ const parseAndReviewBulkMarks = async () => {
 
     updateBulkStatus('Analyzing records and verifying marks...', 50);
 
-    let totalBlankFields = 0;
-    let totalIssueFields = 0;
-    let validCount = 0;
-    let issueRowCount = 0;
-    let existingRowCount = 0;
+    const normalizeHdr = (val = '') => String(val || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const baseAliases = {
+        student_id: ['studentid', 'id', 'uid', 'stuid'],
+        adm_no: ['admno', 'adm', 'admissionno', 'admissionnumber', 'rollno', 'roll'],
+        student_name: ['studentname', 'name', 'fullname', 'student'],
+        total_attendance: ['totalattendance', 'workingdays', 'totalatt', 'maxattendance'],
+        present_attendance: ['presentattendance', 'presentdays', 'presentatt', 'attendeddays']
+    };
 
-    const parsedRows = rawRows.map((row, index) => {
-        const rawStudentId = String(row.student_id ?? row.studentId ?? row.STUDENT_ID ?? row.id ?? '').trim();
-        const rawAdm = String(row.adm ?? row.admission_no ?? row.admissionNo ?? row.roll_no ?? '').trim();
-        const rawName = String(row.student_name ?? row.studentName ?? row.name ?? '').trim();
-
-        // Match student
-        let matchedStudent = studentMap.get(rawStudentId);
-        if (!matchedStudent && rawAdm && admMap.has(rawAdm)) {
-            matchedStudent = admMap.get(rawAdm);
-        }
-        if (!matchedStudent && rawName) {
-            matchedStudent = scopedStudents.find((s) => (s.name || '').trim().toLowerCase() === rawName.toLowerCase());
-        }
-
-        const studentId = matchedStudent ? matchedStudent.id : (rawStudentId || rawAdm);
-        const studentName = matchedStudent ? (matchedStudent.name || rawName) : (rawName || 'Unknown Student');
-        const admNo = matchedStudent ? (matchedStudent.adm || matchedStudent.admissionNo || matchedStudent.uid || rawAdm || '-') : (rawAdm || '-');
-
-        const rowIssues = [];
-        let hasFatalError = false;
-
-        if (!studentId) {
-            rowIssues.push('Missing Student ID');
-            hasFatalError = true;
-        } else if (!matchedStudent) {
-            rowIssues.push(`Student not found in ${className}`);
-            hasFatalError = true;
-        }
-
-        const isDuplicate = Boolean(studentId && existingRecordMap.has(String(studentId)));
-        if (isDuplicate) {
-            existingRowCount++;
-        }
-
-        // Attendance
-        const rawTotalAtt = row.total_attendance ?? row.working_days ?? row.workingDays ?? '';
-        const rawPresAtt = row.present_attendance ?? row.present_days ?? row.presentDays ?? '';
-        const workingDays = Number(rawTotalAtt);
-        const presentDays = Number(rawPresAtt);
-
-        // Subject mark evaluation
-        const marks = {};
-        const fieldStatuses = {};
-
-        subjectRows.forEach((sub) => {
-            const rawVal = row[sub.name] ?? row[sub.id] ?? row[sub.name.toLowerCase()] ?? '';
-            const val = String(rawVal ?? '').trim();
-
-            if (val === '') {
-                fieldStatuses[sub.id] = { status: 'blank', value: '--' };
-                totalBlankFields++;
-            } else {
-                const upper = val.toUpperCase();
-                const numeric = Number(val);
-                const max = Number(sub.maxMarks || 100);
-                const pass = Number(sub.passMarks || 35);
-                const isValid = upper === 'P' || upper === 'A' || upper === 'AB' || (Number.isFinite(numeric) && numeric >= 0 && numeric <= max);
-
-                if (isValid) {
-                    marks[sub.id] = { value: val, name: sub.name, maxMarks: max, passMarks: pass };
-                    fieldStatuses[sub.id] = { status: 'valid', value: val };
-                } else {
-                    hasFatalError = true;
-                    totalIssueFields++;
-                    const reason = `Invalid mark "${val}". Must be 0-${max}, P, or A`;
-                    fieldStatuses[sub.id] = { status: 'error', value: val, reason };
-                    rowIssues.push(`${sub.name}: ${reason}`);
-                }
-            }
+    const detectedHeaders = [];
+    rawRows.forEach((row) => {
+        Object.keys(row).forEach((k) => {
+            if (!detectedHeaders.includes(k)) detectedHeaders.push(k);
         });
+    });
 
-        if (hasFatalError) {
-            issueRowCount++;
-        } else {
-            validCount++;
-        }
-
-        return {
-            rowIndex: index + 1,
-            studentId,
-            studentName,
-            admNo,
-            matchedStudent,
-            isDuplicate,
-            hasFatalError,
-            rowIssues,
-            marks,
-            fieldStatuses,
-            attendance: {
-                workingDays: Number.isFinite(workingDays) ? workingDays : 0,
-                presentDays: Number.isFinite(presentDays) ? presentDays : 0
+    const mappedTargets = new Set();
+    const columns = detectedHeaders.map((header, idx) => {
+        const norm = normalizeHdr(header);
+        let matchedKey = 'none';
+        for (const [targetKey, aliases] of Object.entries(baseAliases)) {
+            if (aliases.includes(norm) && !mappedTargets.has(targetKey)) {
+                matchedKey = targetKey;
+                mappedTargets.add(targetKey);
+                break;
             }
+        }
+        if (matchedKey === 'none') {
+            const matchedSub = subjectRows.find((sub) => {
+                const key = `sub::${sub.id}`;
+                if (mappedTargets.has(key)) return false;
+                const nSubName = normalizeHdr(sub.name);
+                const nSubId = normalizeHdr(sub.id);
+                return norm === nSubName || norm === nSubId || (nSubName && norm.startsWith(nSubName));
+            });
+            if (matchedSub) {
+                matchedKey = `sub::${matchedSub.id}`;
+                mappedTargets.add(matchedKey);
+            }
+        }
+        return {
+            id: `mcol_${idx}`,
+            header,
+            mappedField: matchedKey
         };
+    });
+
+    const workingRows = rawRows.map((rawRow) => {
+        const obj = {};
+        columns.forEach((c) => {
+            const v = rawRow[c.header];
+            obj[c.id] = v !== undefined && v !== null ? String(v).trim() : '';
+        });
+        return obj;
     });
 
     currentMarksReviewData = {
         className,
         examId,
         subjectRows,
-        rows: parsedRows,
-        totalRows: parsedRows.length,
-        validCount,
-        issueRowCount,
-        totalBlankFields,
-        totalIssueFields,
-        existingRowCount
+        columns,
+        workingRows,
+        isEditMode: false,
+        rows: [],
+        totalRows: workingRows.length,
+        validCount: 0,
+        issueRowCount: 0,
+        totalBlankFields: 0,
+        existingRowCount: 0
     };
 
-    renderMarksReviewModalUI();
+    setMarksReviewEditMode(false);
+    rebuildAllMarksReviewDataAndRender();
     openMarksReviewModal();
-    updateBulkStatus(`Spreadsheet parsed: ${validCount} valid records, ${issueRowCount} issues found.`, 100, issueRowCount > 0 ? 'info' : 'success');
+    updateBulkStatus(
+        `Spreadsheet parsed: ${currentMarksReviewData.validCount} ready, ${currentMarksReviewData.issueRowCount} issues found.`,
+        100,
+        currentMarksReviewData.issueRowCount > 0 ? 'info' : 'success'
+    );
 };
 
 const executeConfirmedMarksUpload = async (skipIssues = false) => {
     if (!currentMarksReviewData) return;
-    const { className, examId, subjectRows, rows } = currentMarksReviewData;
+    const { className, examId, subjectRows, rows, columns } = currentMarksReviewData;
+
+    if (getDuplicateMarksMappedFields(columns || []).size > 0) {
+        return alert('Duplicate column mappings detected. Turn ON Edit & Mapping to fix duplicate columns before uploading.');
+    }
 
     let targetRows = skipIssues ? rows.filter((r) => !r.hasFatalError) : rows;
     if (!skipIssues && targetRows.some((r) => r.hasFatalError)) {
-        return alert('Please resolve issues or click "Skip Issues & Upload Valid" to proceed with valid records only.');
+        return alert('Please fix highlighted issues (turn ON Edit & Mapping) or click "Upload Valid Only" to skip problematic rows.');
     }
 
     if (!targetRows.length) {
         return alert('No valid student records to upload.');
     }
 
-    // Conflict Resolution for Existing Records
     const duplicateAction = document.querySelector('input[name="marks-duplicate-action"]:checked')?.value || 'merge';
     if (duplicateAction === 'skip') {
         targetRows = targetRows.filter((r) => !r.isDuplicate);
@@ -3951,16 +4688,27 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
     try {
         const chunkSize = 100;
         let committedCount = 0;
+        const touchedStudentIds = new Set(targetRows.map((entry) => entry.studentId).filter(Boolean));
+        const examKey = currentExamContext?.key || '';
 
         for (let i = 0; i < targetRows.length; i += chunkSize) {
             const chunk = targetRows.slice(i, i + chunkSize);
             const batch = writeBatch(db);
 
+            if (i === 0) {
+                await syncSchemaAndOtherResultsWithHeaderMarks({
+                    batch,
+                    schema: currentExamSchema,
+                    examKey,
+                    subjectRows,
+                    touchedStudentIds
+                });
+            }
+
             chunk.forEach((entry) => {
-                const docId = sanitizeBulkDocId(`${currentExamSchema.id}_${currentExamContext?.key || ''}_${entry.studentId}`);
+                const docId = sanitizeBulkDocId(`${currentExamSchema.id}_${examKey}_${entry.studentId}`);
                 let finalMarks = entry.marks;
 
-                // Merge strategy: if student already has marks in system, merge new marks over existing
                 if (duplicateAction === 'merge' && entry.isDuplicate) {
                     const existingRec = examResultsCache.find((r) => resultMatchesExam(r, examId) && r.studentId === entry.studentId);
                     if (existingRec && existingRec.marks) {
@@ -3973,8 +4721,8 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
                     id: docId,
                     examId,
                     schemaId: currentExamSchema.id,
-                    examKey: currentExamContext?.key || '',
-                    examType: currentExamContext?.key || '',
+                    examKey,
+                    examType: examKey,
                     examLabel: currentExamContext?.label || '',
                     classLabel: className,
                     academicYear: currentAcademicYear || '',
@@ -4031,8 +4779,33 @@ document.getElementById('entry-class-select')?.addEventListener('change', () => 
     loadMarksTable();
 });
 
-document.getElementById('marks-template-csv-btn')?.addEventListener('click', () => downloadMarksTemplate(false));
-document.getElementById('marks-template-xlsx-btn')?.addEventListener('click', () => downloadMarksTemplate(true));
+// Admin-style Download Template Dropdown (Marks)
+const marksTemplateMenuBtn = document.getElementById('marks-template-menu-btn');
+const marksTemplateMenu = document.getElementById('marks-template-menu');
+const marksTemplateChevron = document.getElementById('marks-template-chevron');
+const setMarksTemplateMenuOpen = (open) => {
+    if (!marksTemplateMenu || !marksTemplateMenuBtn) return;
+    marksTemplateMenu.classList.toggle('hidden', !open);
+    marksTemplateMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (marksTemplateChevron) marksTemplateChevron.classList.toggle('rotate-180', open);
+};
+marksTemplateMenuBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (marksTemplateMenuBtn.disabled) return;
+    setMarksTemplateMenuOpen(marksTemplateMenu?.classList.contains('hidden'));
+});
+document.querySelectorAll('.marks-template-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        const fmt = btn.dataset.templateFormat;
+        setMarksTemplateMenuOpen(false);
+        downloadMarksTemplate(fmt === 'xlsx');
+    });
+});
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#marks-template-dropdown')) {
+        setMarksTemplateMenuOpen(false);
+    }
+});
 
 document.getElementById('marks-bulk-file')?.addEventListener('change', () => {
     const file = document.getElementById('marks-bulk-file')?.files?.[0];
@@ -4055,6 +4828,45 @@ document.getElementById('marks-bulk-upload-btn')?.addEventListener('click', asyn
         alert('File review failed. Check file format and try again.');
     }
 });
+
+document.getElementById('marks-review-edit-switch')?.addEventListener('change', (e) => {
+    setMarksReviewEditMode(e.target.checked);
+});
+
+const marksReviewTableContainer = document.getElementById('marks-review-table-container');
+if (marksReviewTableContainer) {
+    marksReviewTableContainer.addEventListener('change', (e) => {
+        const select = e.target.closest('.marks-review-col-map');
+        if (!select || !currentMarksReviewData) return;
+        const col = currentMarksReviewData.columns.find((c) => c.id === select.dataset.colId);
+        if (col) {
+            col.mappedField = select.value;
+            rebuildAllMarksReviewDataAndRender();
+        }
+    });
+    marksReviewTableContainer.addEventListener('blur', (e) => {
+        const cell = e.target.closest('.marks-review-cell');
+        if (!cell || !currentMarksReviewData?.isEditMode) return;
+        const rowIdx = parseInt(cell.dataset.rowIdx, 10);
+        const colId = cell.dataset.colId;
+        if (isNaN(rowIdx) || !colId || !currentMarksReviewData.workingRows[rowIdx]) return;
+        currentMarksReviewData.workingRows[rowIdx][colId] = cell.innerText.trim();
+        currentMarksReviewData.rows[rowIdx] = evaluateMarksReviewRow(rowIdx);
+        updateMarksReviewRowDomAfterEdit(rowIdx);
+    }, true);
+    marksReviewTableContainer.addEventListener('keydown', (e) => {
+        const cell = e.target.closest('.marks-review-cell');
+        if (!cell || !currentMarksReviewData?.isEditMode) return;
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const rowIdx = parseInt(cell.dataset.rowIdx, 10);
+            const colId = cell.dataset.colId;
+            const nextCell = marksReviewTableContainer.querySelector(`.marks-review-cell[data-row-idx="${rowIdx + 1}"][data-col-id="${colId}"]`);
+            if (nextCell) nextCell.focus();
+            else cell.blur();
+        }
+    });
+}
 
 document.getElementById('marks-review-modal-close-x')?.addEventListener('click', closeMarksReviewModal);
 document.getElementById('marks-review-cancel-btn')?.addEventListener('click', closeMarksReviewModal);
@@ -4104,6 +4916,15 @@ const bindMarksValidationEvents = () => {
 
 const saveMarksFromEntry = async (shouldPublish = false) => {
     if(!currentExamSchema || !currentExamContext) return;
+    const activeSubjects = getActiveHeaderSubjectRows(currentExamSchema, currentExamContext?.key || '');
+    for (const sub of activeSubjects) {
+        if (!Number.isFinite(sub.maxMarks) || sub.maxMarks <= 0) {
+            return alert(`Enter a valid Total Mark (> 0) for ${sub.name}.`);
+        }
+        if (!Number.isFinite(sub.passMarks) || sub.passMarks < 0 || sub.passMarks > sub.maxMarks) {
+            return alert(`Pass Mark for ${sub.name} cannot exceed Total Mark (${sub.maxMarks}).`);
+        }
+    }
     if(!validateMarksTable()) return alert('Please fix invalid marks before saving.');
 
     const selectedClass = document.getElementById('entry-class-select')?.value || '';
@@ -4118,9 +4939,9 @@ const saveMarksFromEntry = async (shouldPublish = false) => {
     const effectivePublish = shouldPublish && (isAdmin || isTeacherCustomPublish);
     
     const rows = document.querySelectorAll('#marks-table-body tr');
-    const subjectRows = getSchemaSubjectRows(currentExamSchema, currentExamContext?.key || '');
     const batch = writeBatch(db);
     let operationCount = 0;
+    const touchedStudentIds = new Set();
 
     rows.forEach(row => {
         const studentId = row.dataset.studentid;
@@ -4131,7 +4952,13 @@ const saveMarksFromEntry = async (shouldPublish = false) => {
             const sub = input.dataset.subject;
             const val = input.value.trim();
             if(val !== '') {
-                marks[sub] = { value: val, name: input.dataset.subjectName || sub, maxMarks: Number(input.dataset.max || 0), passMarks: Number(input.dataset.pass || 0) };
+                const activeSub = activeSubjects.find((s) => s.id === sub);
+                marks[sub] = {
+                    value: val,
+                    name: input.dataset.subjectName || sub,
+                    maxMarks: activeSub ? activeSub.maxMarks : Number(input.dataset.max || 100),
+                    passMarks: activeSub ? activeSub.passMarks : Number(input.dataset.pass || 35)
+                };
                 hasData = true;
             }
         });
@@ -4140,9 +4967,10 @@ const saveMarksFromEntry = async (shouldPublish = false) => {
         const ref = doc(db, `${BASE_PATH}/examResults`, docId);
 
         if(hasData) {
+            touchedStudentIds.add(studentId);
             const workingDays = Number(row.querySelector('.attendance-working')?.value || 0);
             const presentDays = Number(row.querySelector('.attendance-present')?.value || 0);
-            const summary = buildResultSummary(marks, subjectRows);
+            const summary = buildResultSummary(marks, activeSubjects);
             const recordPayload = {
                 examId: currentExamContext.value,
                 schemaId: currentExamSchema.id,
@@ -4170,7 +4998,21 @@ const saveMarksFromEntry = async (shouldPublish = false) => {
         }
     });
 
-    if(operationCount === 0) return alert("No marks entered to save.");
+    const prevHeaderMap = JSON.stringify(currentExamSchema.examConfigs?.[currentExamContext.key]?.subjectMarks || {});
+    const nextHeaderMap = JSON.stringify(buildSubjectMarksMap(activeSubjects));
+    const headerRulesChanged = prevHeaderMap !== nextHeaderMap;
+
+    if (operationCount === 0 && !headerRulesChanged) {
+        return alert("No marks entered to save.");
+    }
+
+    await syncSchemaAndOtherResultsWithHeaderMarks({
+        batch,
+        schema: currentExamSchema,
+        examKey: currentExamContext.key,
+        subjectRows: activeSubjects,
+        touchedStudentIds
+    });
 
     const draftBtn = document.getElementById('save-draft-btn');
     const publishBtn = document.getElementById('save-publish-btn');
@@ -4181,7 +5023,10 @@ const saveMarksFromEntry = async (shouldPublish = false) => {
 
     try {
         await batch.commit();
-        if (isTeacherCoreSubmit) {
+        if (operationCount === 0 && headerRulesChanged) {
+            activeBtn.innerHTML = `<i class="fas fa-check"></i> Saved Rules!`;
+            notify(`Updated Total & Pass marks for ${selectedClass} (${currentExamContext?.label || ''}).`);
+        } else if (isTeacherCoreSubmit) {
             activeBtn.innerHTML = `<i class="fas fa-check"></i> Submitted to Admin!`;
             notify(`Marks submitted to Admin for ${currentExamContext?.label || 'Core Exam'}. Admin will announce and publish via Publish Control.`);
         } else if (effectivePublish) {
@@ -4786,36 +5631,81 @@ const setSetupMode = (mode = 'subjects') => {
         }
     }
 };
+const syncClassSubjectsCollection = async (classLabel = '', subjects = []) => {
+    try {
+        const cleanY = String(currentAcademicYear || '').trim().replace(/[^\w-]/g, '_');
+        const cleanC = String(classLabel || '').trim().replace(/[^\w-]/g, '_');
+        if (!cleanY || !cleanC) return;
+        const classSubjDocId = `${cleanY}__${cleanC}`;
+        const classSubjRef = doc(db, `${BASE_PATH}/classSubjects`, classSubjDocId);
+        const classSubjSnap = await getDoc(classSubjRef);
+        let existingClassSubjects = [];
+        if (classSubjSnap.exists() && Array.isArray(classSubjSnap.data().subjects)) {
+            existingClassSubjects = classSubjSnap.data().subjects;
+        }
+        const updatedClassSubjects = subjects.map((subName, idx) => {
+            const trimmed = String(subName).trim();
+            const matched = existingClassSubjects.find((s) => String(s.name || '').trim().toLowerCase() === trimmed.toLowerCase());
+            if (matched) return matched;
+            const code = trimmed.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase() || `S${idx + 1}`;
+            return {
+                id: `subj_${Date.now()}_${idx}`,
+                name: trimmed,
+                code,
+                teacher: '',
+                weeklyPeriods: 5
+            };
+        });
+        await setDoc(classSubjRef, {
+            subjects: updatedClassSubjects,
+            updatedAt: Date.now()
+        }, { merge: true });
+    } catch (syncErr) {
+        console.warn('Class subjects sync error in result page:', syncErr);
+    }
+};
+
 const renderSubjectRowsEditor = (rows = []) => {
     const body = document.getElementById('subject-rows-body');
     if (!body) return;
-    const safeRows = rows.length ? rows : [{ name: '', maxMarks: 100, passMarks: 35 }];
+    const safeRows = rows.length ? rows : [{ name: '' }];
     body.innerHTML = safeRows.map((row) => buildSubjectRowHtml(row)).join('');
 };
+
+function syncSubjectSetupTargetUI() {
+    const select = document.getElementById('subject-class-select');
+    const val = select?.value || '';
+    const isAll = val === '__ALL__';
+    document.getElementById('subject-all-classes-hint')?.classList.toggle('hidden', !isAll);
+    document.getElementById('subject-single-class-hint')?.classList.toggle('hidden', isAll);
+    const saveLabel = document.getElementById('save-subject-schema-label');
+    if (saveLabel) {
+        saveLabel.textContent = isAll ? 'Add to All Classes' : 'Save Subjects';
+    }
+}
+
 document.getElementById('subject-class-select')?.addEventListener('change', () => {
     const cls = document.getElementById('subject-class-select').value;
+    syncSubjectSetupTargetUI();
+    if (cls === '__ALL__') {
+        renderSubjectRowsEditor([{ name: '' }]);
+        return;
+    }
     const schema = resultSchemas.find((entry) => entry.classLabel === cls && (entry.academicYear === currentAcademicYear || !entry.academicYear));
     renderSubjectRowsEditor(getSchemaSubjectRows(schema || {}));
 });
 document.getElementById('subject-add-row-btn')?.addEventListener('click', () => {
     const body = document.getElementById('subject-rows-body');
     if (!body) return;
-    body.insertAdjacentHTML('beforeend', buildSubjectRowHtml({ name: '', maxMarks: 100, passMarks: 35 }));
+    body.insertAdjacentHTML('beforeend', buildSubjectRowHtml({ name: '' }));
 });
 document.getElementById('subject-rows-body')?.addEventListener('click', (event) => {
     const btn = event.target.closest('.subject-remove-row');
     if (!btn) return;
+    const body = document.getElementById('subject-rows-body');
     btn.closest('tr')?.remove();
-});
-document.getElementById('subject-rows-body')?.addEventListener('change', (event) => {
-    const totalSelect = event.target.closest('.subject-total-input');
-    if (!totalSelect) return;
-    const rowEl = totalSelect.closest('.subject-row');
-    if (!rowEl) return;
-    const passInput = rowEl.querySelector('.subject-pass-input');
-    if (passInput) {
-        const newTotal = Number(totalSelect.value || 100);
-        passInput.value = getDefaultPassMarkForTotal(newTotal);
+    if (body && body.querySelectorAll('.subject-row').length === 0) {
+        renderSubjectRowsEditor([{ name: '' }]);
     }
 });
 document.getElementById('exam-max')?.addEventListener('change', (e) => {
@@ -4826,24 +5716,112 @@ document.getElementById('exam-max')?.addEventListener('change', (e) => {
 });
 document.getElementById('save-subject-schema-btn')?.addEventListener('click', async () => {
     if (!hasResultAccess) return alert('You do not have access to save schema.');
-    const classLabel = document.getElementById('subject-class-select').value;
-    if (!classLabel) return alert('Select class.');
+    const selectedTarget = document.getElementById('subject-class-select').value;
+    if (!selectedTarget) return alert('Select a class or All Classes.');
+    if (!currentAcademicYear) return alert('Set the current academic year first.');
+
+    const rawNames = Array.from(document.querySelectorAll('#subject-rows-body .subject-name-input'))
+        .map((inp) => inp.value.trim())
+        .filter(Boolean);
+    const dedupedNames = [];
+    const seenLower = new Set();
+    rawNames.forEach((name) => {
+        const lower = name.toLowerCase();
+        if (!seenLower.has(lower)) {
+            seenLower.add(lower);
+            dedupedNames.push(name);
+        }
+    });
+    if (!dedupedNames.length) return alert('Enter at least one subject name.');
+
     const isTeacherScope = (roleScope === 'staff');
+
+    if (selectedTarget === '__ALL__') {
+        const accessibleClasses = isTeacherScope
+            ? classes.filter((c) => isClassInDutyScope(c, teacherAssignedClasses))
+            : [...classes];
+        if (!accessibleClasses.length) return alert('No classes found for the current academic year.');
+        const ok = await showAppConfirm({
+            title: 'Add Subjects to All Classes',
+            message: `Add ${dedupedNames.length} subject(s) (${dedupedNames.join(', ')}) across ${accessibleClasses.length} class(es)?\n\nExisting subjects in each class will be kept safely and duplicates will be skipped.`,
+            confirmText: `Add to ${accessibleClasses.length} Classes`,
+            type: 'info'
+        });
+        if (!ok) return;
+
+        try {
+            let classesUpdatedCount = 0;
+            let totalNewSubjectsAdded = 0;
+            await withBusyButton('save-subject-schema-btn', 'Adding...', async () => {
+                const batch = writeBatch(db);
+                const syncTargets = [];
+
+                accessibleClasses.forEach((cls) => {
+                    const existingSchema = getSchemaForClass(currentAcademicYear, cls) || {};
+                    const existingRows = getSchemaSubjectRows(existingSchema);
+                    const mergedRows = [...existingRows];
+                    const existingLowerSet = new Set(existingRows.map((s) => s.name.trim().toLowerCase()));
+                    let addedHere = 0;
+                    dedupedNames.forEach((name) => {
+                        if (!existingLowerSet.has(name.toLowerCase())) {
+                            existingLowerSet.add(name.toLowerCase());
+                            const row = normalizeSubjectRow({ name }, mergedRows.length);
+                            if (row) {
+                                mergedRows.push(row);
+                                addedHere++;
+                            }
+                        }
+                    });
+                    if (addedHere > 0 || !existingSchema.id) {
+                        const docId = `${currentAcademicYear}_${cls}`.replace(/[^\w-]/g, '_');
+                        const mergedNames = mergedRows.map((s) => s.name);
+                        batch.set(doc(db, `${BASE_PATH}/resultSchemas`, docId), {
+                            classLabel: cls,
+                            academicYear: currentAcademicYear || '',
+                            subjects: mergedNames,
+                            subjectRows: mergedRows,
+                            examConfigs: preserveExamConfigs(existingSchema.examConfigs || {}),
+                            updatedAt: Date.now()
+                        }, { merge: true });
+                        classesUpdatedCount++;
+                        totalNewSubjectsAdded += addedHere;
+                        syncTargets.push({ cls, mergedNames });
+                    }
+                });
+
+                if (classesUpdatedCount > 0) {
+                    await batch.commit();
+                    await Promise.all(syncTargets.map((item) => syncClassSubjectsCollection(item.cls, item.mergedNames)));
+                }
+            });
+
+            if (classesUpdatedCount === 0) {
+                notify('All entered subjects already exist across your classes.', 'info');
+            } else {
+                notify(`Added ${totalNewSubjectsAdded} new subject entry(s) across ${classesUpdatedCount} class(es).`, 'success');
+                renderSubjectRowsEditor([{ name: '' }]);
+            }
+        } catch (saveErr) {
+            console.error('Error bulk adding subjects:', saveErr);
+            alert(saveErr?.message || 'Failed to add subjects to all classes.');
+        }
+        return;
+    }
+
+    const classLabel = selectedTarget;
     if (isTeacherScope && (!teacherAssignedClasses.length || !isClassInDutyScope(classLabel, teacherAssignedClasses))) {
         return alert('You can only configure subjects for your assigned class (' + (teacherAssignedClasses.join(', ') || 'None') + ').');
     }
-    if (!currentAcademicYear) return alert('Set the current academic year first.');
-    const subjectRows = Array.from(document.querySelectorAll('#subject-rows-body .subject-row')).map((rowEl, index) => {
-        const name = rowEl.querySelector('.subject-name-input')?.value?.trim() || '';
-        const total = Number(rowEl.querySelector('.subject-total-input')?.value || 100);
-        const pass = Number(rowEl.querySelector('.subject-pass-input')?.value || 35);
-        return normalizeSubjectRow({ name, maxMarks: total, passMarks: pass }, index);
+    const existingSchema = getSchemaForClass(currentAcademicYear, classLabel) || {};
+    const existingRows = getSchemaSubjectRows(existingSchema);
+    const subjectRows = dedupedNames.map((name, index) => {
+        const matchedExisting = existingRows.find((s) => s.name.trim().toLowerCase() === name.toLowerCase());
+        if (matchedExisting) return matchedExisting;
+        return normalizeSubjectRow({ name }, index);
     }).filter(Boolean);
     const subjects = subjectRows.map((subject) => subject.name);
-    if (!subjects.length) return alert('Enter subjects.');
-    if (subjectRows.some((subject) => subject.passMarks > subject.maxMarks)) return alert('Pass mark cannot be greater than total mark.');
-    const existingSchema = getSchemaForClass(currentAcademicYear, classLabel) || {};
     const docId = `${currentAcademicYear}_${classLabel}`.replace(/[^\w-]/g, '_');
+
     try {
         await withBusyButton('save-subject-schema-btn', 'Saving...', async () => {
             await setDoc(doc(db, `${BASE_PATH}/resultSchemas`, docId), {
@@ -4851,47 +5829,12 @@ document.getElementById('save-subject-schema-btn')?.addEventListener('click', as
                 academicYear: currentAcademicYear || '',
                 subjects,
                 subjectRows,
-                examConfigs: getCustomExamConfigs(existingSchema.examConfigs || {}),
+                examConfigs: preserveExamConfigs(existingSchema.examConfigs || {}),
                 updatedAt: Date.now()
             }, { merge: true });
-
-            // Concurrently synchronize with Academic Planning (classSubjects)
-            try {
-                const cleanY = String(currentAcademicYear || '').trim().replace(/[^\w-]/g, '_');
-                const cleanC = String(classLabel || '').trim().replace(/[^\w-]/g, '_');
-                const classSubjDocId = `${cleanY}__${cleanC}`;
-                const classSubjRef = doc(db, `${BASE_PATH}/classSubjects`, classSubjDocId);
-                const classSubjSnap = await getDoc(classSubjRef);
-                let existingClassSubjects = [];
-                if (classSubjSnap.exists() && Array.isArray(classSubjSnap.data().subjects)) {
-                    existingClassSubjects = classSubjSnap.data().subjects;
-                }
-
-                const updatedClassSubjects = subjects.map((subName, idx) => {
-                    const trimmed = String(subName).trim();
-                    const matched = existingClassSubjects.find(s => String(s.name || '').trim().toLowerCase() === trimmed.toLowerCase());
-                    if (matched) {
-                        return matched;
-                    }
-                    const code = trimmed.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase() || `S${idx + 1}`;
-                    return {
-                        id: `subj_${Date.now()}_${idx}`,
-                        name: trimmed,
-                        code: code,
-                        teacher: '',
-                        weeklyPeriods: 5
-                    };
-                });
-
-                await setDoc(classSubjRef, {
-                    subjects: updatedClassSubjects,
-                    updatedAt: Date.now()
-                }, { merge: true });
-            } catch (syncErr) {
-                console.warn('Class subjects sync error in result page:', syncErr);
-            }
+            await syncClassSubjectsCollection(classLabel, subjects);
         });
-        alert('Subjects saved for this academic year.');
+        notify(`Subjects saved for Class ${classLabel} (${currentAcademicYear}).`, 'success');
     } catch (saveErr) {
         console.error('Error saving subjects:', saveErr);
         const msg = saveErr?.code === 'permission-denied'
@@ -4900,6 +5843,715 @@ document.getElementById('save-subject-schema-btn')?.addEventListener('click', as
         alert(msg);
     }
 });
+
+// --- All-Classes Subjects & Exams Template Export + Admin-Style Bulk Upload & Review Modal ---
+let currentSubjectReviewData = null;
+
+const getAccessibleClassesSorted = () => {
+    const isTeacherScope = (roleScope === 'staff');
+    const base = isTeacherScope ? classes.filter((c) => isClassInDutyScope(c, teacherAssignedClasses)) : classes;
+    return [...base].sort(compareClassLabelsNatural);
+};
+
+const downloadSubjectsTemplate = (asXlsx = false) => {
+    const accessibleClasses = getAccessibleClassesSorted();
+    if (!accessibleClasses.length) {
+        return alert('No classes found for the current academic year.');
+    }
+    const rows = accessibleClasses.map((cls) => {
+        const schema = getSchemaForClass(currentAcademicYear, cls);
+        const subNames = schema ? getSchemaSubjectRows(schema).map((s) => s.name).join(', ') : '';
+        const customExamNames = schema
+            ? Object.values(getCustomExamConfigs(schema.examConfigs || {})).map((cfg) => cfg?.label || '').filter(Boolean).join(', ')
+            : '';
+        return {
+            Class: cls,
+            Subjects: subNames,
+            'Custom Exams': customExamNames
+        };
+    });
+    const yearTag = String(currentAcademicYear || 'current').replace(/[^\w-]/g, '_');
+    if (!asXlsx) {
+        const headers = ['Class', 'Subjects', 'Custom Exams'];
+        const csv = '\uFEFF' + [headers.map(csvEscape).join(','), ...rows.map((r) => headers.map((h) => csvEscape(r[h])).join(','))].join('\n');
+        downloadBlob(csv, `subjects_all_classes_${yearTag}.csv`, 'text/csv;charset=utf-8');
+        return;
+    }
+    if (!window.XLSX) return alert('Spreadsheet library is still loading. Try again in a moment, or download CSV.');
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Subjects_Setup');
+    XLSX.writeFile(wb, `subjects_all_classes_${yearTag}.xlsx`, { bookType: 'xlsx' });
+};
+
+const SUBJECT_BULK_FIELD_OPTIONS = [
+    { key: 'none', label: '-- Skip Column --' },
+    { key: 'classLabel', label: 'Class *' },
+    { key: 'subjects', label: 'Subjects (Comma separated) *' },
+    { key: 'customExams', label: 'Custom Exams (Comma separated)' }
+];
+
+const parseCommaList = (raw = '') => {
+    const out = [];
+    const seen = new Set();
+    String(raw || '').split(/[,;\n|]+/).forEach((part) => {
+        const clean = part.trim();
+        if (!clean) return;
+        const lower = clean.toLowerCase();
+        if (!seen.has(lower)) {
+            seen.add(lower);
+            out.push(clean);
+        }
+    });
+    return out;
+};
+
+const getDuplicateSubjectMappedFields = (columns = []) => {
+    const counts = {};
+    const dups = new Set();
+    columns.forEach((c) => {
+        if (c.mappedField && c.mappedField !== 'none') {
+            counts[c.mappedField] = (counts[c.mappedField] || 0) + 1;
+            if (counts[c.mappedField] > 1) dups.add(c.mappedField);
+        }
+    });
+    return dups;
+};
+
+const evaluateSubjectReviewRow = (rowIdx) => {
+    if (!currentSubjectReviewData) return null;
+    const { columns, workingRows } = currentSubjectReviewData;
+    const workingRow = workingRows[rowIdx] || {};
+    const accessibleClasses = getAccessibleClassesSorted();
+    const classLookup = new Map();
+    accessibleClasses.forEach((c) => classLookup.set(String(c).trim().toLowerCase(), c));
+
+    const extracted = { classLabel: '', subjects: '', customExams: '' };
+    columns.forEach((col) => {
+        if (col.mappedField && col.mappedField !== 'none' && Object.prototype.hasOwnProperty.call(extracted, col.mappedField)) {
+            extracted[col.mappedField] = String(workingRow[col.id] ?? '').trim();
+        }
+    });
+
+    const rowIssues = [];
+    const fieldStatuses = {};
+    let hasFatalError = false;
+
+    const rawCls = extracted.classLabel;
+    const canonicalClass = rawCls ? (classLookup.get(rawCls.toLowerCase()) || '') : '';
+    if (!rawCls) {
+        hasFatalError = true;
+        rowIssues.push('Missing Class');
+        fieldStatuses.classLabel = { status: 'error', reason: 'Class name is mandatory' };
+    } else if (!canonicalClass) {
+        hasFatalError = true;
+        rowIssues.push(`Unknown or inaccessible Class "${rawCls}"`);
+        fieldStatuses.classLabel = { status: 'error', reason: `Class "${rawCls}" not found in active classes` };
+    } else {
+        fieldStatuses.classLabel = { status: 'valid', value: canonicalClass };
+    }
+
+    const parsedSubjects = parseCommaList(extracted.subjects);
+    const parsedExams = parseCommaList(extracted.customExams);
+
+    if (!parsedSubjects.length && !parsedExams.length) {
+        hasFatalError = true;
+        rowIssues.push('Enter at least one Subject or Custom Exam');
+        fieldStatuses.subjects = { status: 'error', reason: 'No subjects or exams provided' };
+    } else if (!parsedSubjects.length) {
+        fieldStatuses.subjects = { status: 'blank', reason: 'No subjects entered in this row' };
+    } else {
+        fieldStatuses.subjects = { status: 'valid', value: parsedSubjects };
+    }
+
+    if (!parsedExams.length) {
+        fieldStatuses.customExams = { status: 'blank' };
+    } else {
+        fieldStatuses.customExams = { status: 'valid', value: parsedExams };
+    }
+
+    const existingSchema = canonicalClass ? getSchemaForClass(currentAcademicYear, canonicalClass) : null;
+    const isDuplicate = Boolean(existingSchema);
+
+    return {
+        rowIndex: rowIdx + 1,
+        rawClass: rawCls,
+        classLabel: canonicalClass || rawCls,
+        subjects: parsedSubjects,
+        customExams: parsedExams,
+        existingSchema,
+        isDuplicate,
+        hasFatalError,
+        rowIssues,
+        fieldStatuses
+    };
+};
+
+const recalculateSubjectReviewStats = () => {
+    if (!currentSubjectReviewData) return;
+    const rows = currentSubjectReviewData.rows || [];
+    const dupFields = getDuplicateSubjectMappedFields(currentSubjectReviewData.columns || []);
+    const hasDupMap = dupFields.size > 0;
+
+    let validCount = 0;
+    let issueRowCount = 0;
+    let existingRowCount = 0;
+    rows.forEach((r) => {
+        if (r.isDuplicate) existingRowCount++;
+        if (r.hasFatalError) issueRowCount++;
+        else validCount++;
+    });
+
+    currentSubjectReviewData.totalRows = rows.length;
+    currentSubjectReviewData.validCount = validCount;
+    currentSubjectReviewData.issueRowCount = issueRowCount;
+    currentSubjectReviewData.existingRowCount = existingRowCount;
+
+    const totalEl = document.getElementById('subject-review-stat-total');
+    const validEl = document.getElementById('subject-review-stat-valid');
+    const issuesEl = document.getElementById('subject-review-stat-issues');
+    const existingEl = document.getElementById('subject-review-stat-existing');
+    if (totalEl) totalEl.textContent = rows.length;
+    if (validEl) validEl.textContent = validCount;
+    if (issuesEl) issuesEl.textContent = issueRowCount;
+    if (existingEl) existingEl.textContent = existingRowCount;
+
+    const conflictContainer = document.getElementById('subject-review-conflict-container');
+    if (conflictContainer) {
+        conflictContainer.classList.toggle('opacity-50', existingRowCount === 0);
+    }
+
+    const skipBtn = document.getElementById('subject-review-skip-issues-btn');
+    const skipCountEl = document.getElementById('subject-review-skip-count');
+    if (skipBtn && skipCountEl) {
+        if (!hasDupMap && issueRowCount > 0 && validCount > 0) {
+            skipBtn.classList.remove('hidden');
+            skipCountEl.textContent = validCount;
+        } else {
+            skipBtn.classList.add('hidden');
+        }
+    }
+
+    const confirmBtn = document.getElementById('subject-review-confirm-upload-btn');
+    const confirmLabel = document.getElementById('subject-review-confirm-upload-label');
+    if (confirmBtn && confirmLabel) {
+        confirmLabel.textContent = hasDupMap ? 'Resolve Duplicate Mapping' : `Upload All (${validCount})`;
+        const blocked = validCount === 0 || hasDupMap;
+        confirmBtn.disabled = blocked;
+        confirmBtn.classList.toggle('opacity-50', blocked);
+        confirmBtn.classList.toggle('cursor-not-allowed', blocked);
+    }
+};
+
+const applyInFileDuplicateClassChecks = (rows = []) => {
+    const firstSeenByClass = new Map();
+    rows.forEach((r, idx) => {
+        if (!r || !r.fieldStatuses?.classLabel || r.fieldStatuses.classLabel.status !== 'valid') return;
+        const key = String(r.classLabel || '').trim().toLowerCase();
+        if (!key) return;
+        if (firstSeenByClass.has(key)) {
+            const firstRowNum = firstSeenByClass.get(key);
+            const reason = `Duplicate class "${r.classLabel}" (already listed on Row ${firstRowNum})`;
+            r.hasFatalError = true;
+            if (!r.rowIssues.includes(reason)) r.rowIssues.push(reason);
+            r.fieldStatuses.classLabel = { status: 'error', reason };
+        } else {
+            firstSeenByClass.set(key, idx + 1);
+        }
+    });
+};
+
+const rebuildAllSubjectReviewDataAndRender = () => {
+    if (!currentSubjectReviewData) return;
+    currentSubjectReviewData.rows = (currentSubjectReviewData.workingRows || []).map((_, idx) => evaluateSubjectReviewRow(idx));
+    applyInFileDuplicateClassChecks(currentSubjectReviewData.rows);
+    recalculateSubjectReviewStats();
+    renderSubjectReviewModalUI();
+};
+
+const setSubjectReviewEditMode = (enabled) => {
+    if (!currentSubjectReviewData) return;
+    currentSubjectReviewData.isEditMode = Boolean(enabled);
+    const toggle = document.getElementById('subject-review-edit-switch');
+    const statusLabel = document.getElementById('subject-review-edit-status');
+    const banner = document.getElementById('subject-review-edit-banner');
+    if (toggle) toggle.checked = currentSubjectReviewData.isEditMode;
+    if (statusLabel) {
+        statusLabel.textContent = currentSubjectReviewData.isEditMode ? 'ON' : 'OFF';
+        statusLabel.className = currentSubjectReviewData.isEditMode
+            ? 'text-[11px] font-extrabold uppercase tracking-wider text-emerald-700'
+            : 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500';
+    }
+    if (banner) {
+        banner.classList.toggle('hidden', !currentSubjectReviewData.isEditMode);
+    }
+    renderSubjectReviewModalUI();
+};
+
+const closeSubjectReviewModal = () => {
+    const modal = document.getElementById('subject-upload-review-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        modal.style.display = 'none';
+    }
+    document.body.classList.remove('modal-scroll-lock');
+    currentSubjectReviewData = null;
+    const fileInput = document.getElementById('subject-bulk-file');
+    if (fileInput) fileInput.value = '';
+    const filenameSpan = document.getElementById('subject-bulk-filename');
+    if (filenameSpan) {
+        filenameSpan.textContent = 'Choose .xlsx, .xls, or .csv file to upload subjects...';
+        filenameSpan.className = 'truncate text-slate-500';
+    }
+};
+
+const openSubjectReviewModal = () => {
+    const modal = document.getElementById('subject-upload-review-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        modal.style.display = 'flex';
+    }
+    document.body.classList.add('modal-scroll-lock');
+};
+
+const updateSubjectReviewRowDomAfterEdit = (rowIdx) => {
+    if (!currentSubjectReviewData) return;
+    const tr = document.getElementById(`subject-review-row-${rowIdx}`);
+    const r = currentSubjectReviewData.rows[rowIdx];
+    if (!tr || !r) return;
+
+    tr.className = r.hasFatalError
+        ? 'bg-rose-50/80 hover:bg-rose-100/70 transition-colors'
+        : (r.isDuplicate ? 'bg-sky-50/70 hover:bg-sky-100/70 transition-colors' : 'hover:bg-slate-50 transition-colors');
+
+    const statusCell = tr.querySelector('.subject-review-status-cell');
+    if (statusCell) {
+        statusCell.innerHTML = r.hasFatalError
+            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
+            : (r.isDuplicate
+                ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Class already has saved subjects">EXISTING</span>`
+                : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`);
+    }
+
+    const parsedSummaryCell = tr.querySelector('.subject-review-summary-cell');
+    if (parsedSummaryCell) {
+        parsedSummaryCell.innerHTML = `<span class="font-bold text-slate-700">${r.subjects.length}</span> subs · <span class="font-bold text-indigo-700">${r.customExams.length}</span> exams`;
+    }
+
+    (currentSubjectReviewData.columns || []).forEach((col) => {
+        const td = tr.querySelector(`.subject-review-cell[data-col-id="${col.id}"]`);
+        if (!td) return;
+        const mapped = col.mappedField;
+        td.classList.remove('bg-rose-100', 'text-rose-950', 'font-bold', 'bg-amber-100', 'text-amber-950', 'bg-slate-50/60', 'text-slate-400', 'italic');
+        if (!mapped || mapped === 'none') {
+            td.classList.add('bg-slate-50/60', 'text-slate-400', 'italic');
+            td.title = 'Column skipped';
+            return;
+        }
+        const fStatus = r.fieldStatuses?.[mapped];
+        if (fStatus?.status === 'error') {
+            td.classList.add('bg-rose-100', 'text-rose-950', 'font-bold');
+            td.title = fStatus.reason || 'Error';
+        } else if (fStatus?.status === 'blank') {
+            td.classList.add('bg-amber-100', 'text-amber-950');
+            td.title = fStatus.reason || 'Blank';
+        } else {
+            td.title = '';
+        }
+    });
+
+    recalculateSubjectReviewStats();
+};
+
+const renderSubjectReviewModalUI = () => {
+    if (!currentSubjectReviewData) return;
+    const { columns, workingRows, rows, totalRows, isEditMode } = currentSubjectReviewData;
+
+    const titleEl = document.getElementById('subject-review-modal-title');
+    const subtitleEl = document.getElementById('subject-review-modal-subtitle');
+    if (titleEl) titleEl.textContent = `Review All-Classes Subjects & Exams (${currentAcademicYear || 'Current'})`;
+    if (subtitleEl) subtitleEl.textContent = `${totalRows} class row(s) parsed · Inspect subjects, exams, or toggle Edit Mode to refine.`;
+
+    recalculateSubjectReviewStats();
+
+    const container = document.getElementById('subject-review-table-container');
+    if (!container) return;
+
+    const dupFields = getDuplicateSubjectMappedFields(columns);
+    const hasDupMap = dupFields.size > 0;
+    const dupLabels = Array.from(dupFields).map((k) => SUBJECT_BULK_FIELD_OPTIONS.find((f) => f.key === k)?.label || k);
+
+    const dupAlertHtml = hasDupMap
+        ? `<div class="p-3 m-2 bg-red-600 text-white rounded-xl shadow-md flex items-center gap-2.5 text-xs font-bold">
+            <i class="fas fa-exclamation-triangle text-base shrink-0"></i>
+            <div>Duplicate Column Mapping Detected: <b>${escapeHtml(dupLabels.join(', '))}</b>. Remap duplicate columns to Skip or assign uniquely.</div>
+        </div>`
+        : '';
+
+    container.innerHTML = `
+        ${dupAlertHtml}
+        <table class="w-full text-xs text-left text-slate-700 border-collapse bg-white">
+            <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0 z-20 shadow-xs border-b-2 border-slate-300">
+                <tr>
+                    <th class="p-2 border-b border-r border-slate-200 text-center w-10 bg-slate-100">#</th>
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[82px] text-center bg-slate-100">Status</th>
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[120px] bg-slate-100">Parsed Summary</th>
+                    ${columns.map((col) => {
+                        const isDup = dupFields.has(col.mappedField);
+                        const isSkipped = !col.mappedField || col.mappedField === 'none';
+                        const headerBg = isDup ? 'bg-red-600 text-white' : (isSkipped ? 'bg-slate-50 text-slate-500' : 'bg-slate-100 text-slate-800');
+                        const selectClass = isDup
+                            ? 'bg-red-700 text-white border border-white font-bold'
+                            : (!isEditMode
+                                ? 'opacity-65 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-500'
+                                : 'bg-white border-indigo-300 text-slate-800 font-bold');
+                        return `
+                        <th class="p-2 border-b border-r border-slate-200 min-w-[180px] ${headerBg}">
+                            <div class="flex items-center justify-between gap-1 mb-1">
+                                <span class="text-[11px] font-mono truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
+                                ${isDup ? '<span class="text-[9px] px-1 py-0.5 bg-white text-red-700 font-black rounded">DUP</span>' : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : '')}
+                            </div>
+                            <select data-smart-select="true" data-smart-floating="true" class="subject-review-col-map w-full p-1 rounded text-[11px] ${selectClass}" data-col-id="${col.id}" ${!isEditMode ? 'disabled' : ''}>
+                                ${SUBJECT_BULK_FIELD_OPTIONS.map((opt) => `<option value="${escapeHtml(opt.key)}" ${col.mappedField === opt.key ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+                            </select>
+                        </th>`;
+                    }).join('')}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-sans">
+                ${rows.map((r, idx) => {
+                    const workingRow = workingRows[idx] || {};
+                    const rowBg = r.hasFatalError
+                        ? 'bg-rose-50/80 hover:bg-rose-100/70'
+                        : (r.isDuplicate ? 'bg-sky-50/70 hover:bg-sky-100/70' : 'hover:bg-slate-50');
+                    const statusBadge = r.hasFatalError
+                        ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
+                        : (r.isDuplicate
+                            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Class already has saved subjects">EXISTING</span>`
+                            : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`);
+
+                    return `
+                    <tr id="subject-review-row-${idx}" class="${rowBg} transition-colors">
+                        <td class="p-2 text-center text-slate-400 border-b border-r border-slate-100 font-mono tabular-nums">${idx + 1}</td>
+                        <td class="subject-review-status-cell p-2 border-b border-r border-slate-100 text-center whitespace-nowrap">${statusBadge}</td>
+                        <td class="subject-review-summary-cell p-2 border-b border-r border-slate-100 whitespace-nowrap text-[11px] text-slate-600">
+                            <span class="font-bold text-slate-700">${r.subjects.length}</span> subs · <span class="font-bold text-indigo-700">${r.customExams.length}</span> exams
+                        </td>
+                        ${columns.map((col) => {
+                            const val = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
+                            const mapped = col.mappedField;
+                            const isSkipped = !mapped || mapped === 'none';
+                            let bgClass = '';
+                            let titleAttr = '';
+                            if (isSkipped) {
+                                bgClass = 'bg-slate-50/60 text-slate-400 italic';
+                                titleAttr = 'title="Column skipped from import"';
+                            } else {
+                                const fStatus = r.fieldStatuses?.[mapped];
+                                if (fStatus?.status === 'error') {
+                                    bgClass = 'bg-rose-100 text-rose-950 font-bold';
+                                    titleAttr = `title="${escapeHtml(fStatus.reason || 'Error')}"`;
+                                } else if (fStatus?.status === 'blank' || !val.trim()) {
+                                    bgClass = 'bg-amber-100 text-amber-950';
+                                    titleAttr = `title="${escapeHtml(fStatus?.reason || 'Blank')}"`;
+                                }
+                            }
+                            const editableAttr = isEditMode
+                                ? 'contenteditable="true" class="subject-review-cell p-2 border-b border-r border-slate-200 cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white text-xs ' + bgClass + '"'
+                                : 'class="subject-review-cell p-2 border-b border-r border-slate-100 text-xs ' + bgClass + '"';
+                            return `<td ${editableAttr} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${escapeHtml(val)}</td>`;
+                        }).join('')}
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    enableSmartSelectWindowing(container, { visibleCount: 0 });
+    syncSmartSelectDisplay(container);
+};
+
+const parseAndReviewBulkSubjects = async () => {
+    if (!hasResultAccess) return alert('You do not have access to import subjects.');
+    if (!currentAcademicYear) return alert('Set the current academic year first.');
+    const file = document.getElementById('subject-bulk-file')?.files?.[0];
+    if (!file) return alert('Choose an Excel (.xlsx, .xls) or CSV (.csv) file first.');
+
+    const statusEl = document.getElementById('subject-bulk-status');
+    if (statusEl) {
+        statusEl.textContent = 'Reading spreadsheet...';
+        statusEl.classList.remove('hidden');
+    }
+
+    let rawRows = [];
+    try {
+        rawRows = await readSpreadsheetFileToObjects(file);
+    } catch (err) {
+        console.error('Subject bulk read error:', err);
+        if (statusEl) statusEl.textContent = err?.message || 'Failed to read spreadsheet.';
+        alert(err?.message || 'Could not read spreadsheet.');
+        return;
+    }
+
+    if (!rawRows.length) {
+        if (statusEl) statusEl.textContent = 'The selected file is empty.';
+        return alert('The selected spreadsheet contains no class rows.');
+    }
+
+    const normHdr = (v = '') => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const aliasMap = {
+        classLabel: ['class', 'classname', 'classlabel', 'std', 'standard', 'grade'],
+        subjects: ['subjects', 'subject', 'subjectnames', 'subjectlist'],
+        customExams: ['customexams', 'exams', 'examnames', 'customexam', 'examlist']
+    };
+
+    const detectedHeaders = [];
+    rawRows.forEach((row) => {
+        Object.keys(row).forEach((k) => {
+            if (!detectedHeaders.includes(k)) detectedHeaders.push(k);
+        });
+    });
+
+    const mappedTargets = new Set();
+    const columns = detectedHeaders.map((header, idx) => {
+        const norm = normHdr(header);
+        let matchedKey = 'none';
+        for (const [targetKey, aliases] of Object.entries(aliasMap)) {
+            if (aliases.includes(norm) && !mappedTargets.has(targetKey)) {
+                matchedKey = targetKey;
+                mappedTargets.add(targetKey);
+                break;
+            }
+        }
+        return { id: `scol_${idx}`, header, mappedField: matchedKey };
+    });
+
+    const workingRows = rawRows.map((rawRow) => {
+        const obj = {};
+        columns.forEach((c) => {
+            const v = rawRow[c.header];
+            obj[c.id] = v !== undefined && v !== null ? String(v).trim() : '';
+        });
+        return obj;
+    });
+
+    currentSubjectReviewData = {
+        columns,
+        workingRows,
+        isEditMode: false,
+        rows: [],
+        totalRows: workingRows.length,
+        validCount: 0,
+        issueRowCount: 0,
+        existingRowCount: 0
+    };
+
+    setSubjectReviewEditMode(false);
+    rebuildAllSubjectReviewDataAndRender();
+    openSubjectReviewModal();
+    if (statusEl) {
+        statusEl.textContent = `Loaded ${currentSubjectReviewData.totalRows} rows (${currentSubjectReviewData.validCount} ready, ${currentSubjectReviewData.issueRowCount} issues).`;
+    }
+};
+
+const executeConfirmedSubjectUpload = async (skipIssues = false) => {
+    if (!currentSubjectReviewData) return;
+    const { rows, columns } = currentSubjectReviewData;
+    if (getDuplicateSubjectMappedFields(columns || []).size > 0) {
+        return alert('Duplicate column mappings detected. Turn ON Edit & Mapping to fix duplicate columns before uploading.');
+    }
+
+    let targetRows = skipIssues ? rows.filter((r) => !r.hasFatalError) : rows;
+    if (!skipIssues && targetRows.some((r) => r.hasFatalError)) {
+        return alert('Please fix highlighted issues or click "Upload Valid Only" to skip problematic rows.');
+    }
+    if (!targetRows.length) return alert('No valid class rows to upload.');
+
+    const conflictPolicy = document.querySelector('input[name="subject-duplicate-action"]:checked')?.value || 'merge';
+    if (conflictPolicy === 'skip') {
+        targetRows = targetRows.filter((r) => !r.isDuplicate);
+        if (!targetRows.length) {
+            closeSubjectReviewModal();
+            return alert('All classes in this file already have saved subjects and you chose "Skip Existing".');
+        }
+    }
+
+    const confirmBtn = document.getElementById('subject-review-confirm-upload-btn');
+    const oldHtml = confirmBtn ? confirmBtn.innerHTML : '';
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    }
+
+    try {
+        const batch = writeBatch(db);
+        const syncTargets = [];
+        let savedCount = 0;
+
+        targetRows.forEach((entry) => {
+            const cls = entry.classLabel;
+            const existingSchema = getSchemaForClass(currentAcademicYear, cls) || {};
+            const existingRows = getSchemaSubjectRows(existingSchema);
+            let finalSubjectRows = [];
+
+            if (conflictPolicy === 'replace') {
+                finalSubjectRows = entry.subjects.length
+                    ? entry.subjects.map((name, idx) => {
+                        const existingMatch = existingRows.find((s) => s.name.trim().toLowerCase() === name.toLowerCase());
+                        return existingMatch || normalizeSubjectRow({ name }, idx);
+                    }).filter(Boolean)
+                    : existingRows;
+            } else {
+                // Merge & append new subjects cleanly
+                finalSubjectRows = [...existingRows];
+                const seen = new Set(existingRows.map((s) => s.name.trim().toLowerCase()));
+                entry.subjects.forEach((name) => {
+                    if (!seen.has(name.toLowerCase())) {
+                        seen.add(name.toLowerCase());
+                        const row = normalizeSubjectRow({ name }, finalSubjectRows.length);
+                        if (row) finalSubjectRows.push(row);
+                    }
+                });
+            }
+
+            const nextExamConfigs = preserveExamConfigs(existingSchema.examConfigs || {});
+            entry.customExams.forEach((examLabel) => {
+                const alreadyExists = Object.values(nextExamConfigs).some((cfg) => String(cfg?.label || '').trim().toLowerCase() === examLabel.toLowerCase());
+                if (!alreadyExists) {
+                    const key = makeExamKey(examLabel);
+                    const uniqueKey = nextExamConfigs[key] ? `${key}_${Object.keys(nextExamConfigs).length + 1}` : key;
+                    nextExamConfigs[uniqueKey] = {
+                        label: examLabel,
+                        subjects: finalSubjectRows.map((s) => s.id),
+                        showMarksToStudents: true
+                    };
+                }
+            });
+
+            const finalNames = finalSubjectRows.map((s) => s.name);
+            const docId = `${currentAcademicYear}_${cls}`.replace(/[^\w-]/g, '_');
+            batch.set(doc(db, `${BASE_PATH}/resultSchemas`, docId), {
+                classLabel: cls,
+                academicYear: currentAcademicYear || '',
+                subjects: finalNames,
+                subjectRows: finalSubjectRows,
+                examConfigs: nextExamConfigs,
+                updatedAt: Date.now()
+            }, { merge: true });
+            syncTargets.push({ cls, finalNames });
+            savedCount++;
+        });
+
+        await batch.commit();
+        await Promise.all(syncTargets.map((item) => syncClassSubjectsCollection(item.cls, item.finalNames)));
+        closeSubjectReviewModal();
+        notify(`Saved subjects & exams for ${savedCount} class(es).`, 'success');
+        const statusEl = document.getElementById('subject-bulk-status');
+        if (statusEl) {
+            statusEl.textContent = `Uploaded ${savedCount} class configuration(s) successfully.`;
+            statusEl.classList.remove('hidden');
+        }
+    } catch (err) {
+        console.error('Error committing subjects bulk upload:', err);
+        alert('Upload failed: ' + (err?.message || 'Check permissions and try again.'));
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = oldHtml;
+        }
+    }
+};
+
+// Wire All-Classes Subjects Template & Bulk Review Controls
+const subjectTemplateMenuBtn = document.getElementById('subject-template-menu-btn');
+const subjectTemplateMenu = document.getElementById('subject-template-menu');
+const subjectTemplateChevron = document.getElementById('subject-template-chevron');
+const setSubjectTemplateMenuOpen = (open) => {
+    if (!subjectTemplateMenu || !subjectTemplateMenuBtn) return;
+    subjectTemplateMenu.classList.toggle('hidden', !open);
+    subjectTemplateMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (subjectTemplateChevron) subjectTemplateChevron.classList.toggle('rotate-180', open);
+};
+subjectTemplateMenuBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setSubjectTemplateMenuOpen(subjectTemplateMenu?.classList.contains('hidden'));
+});
+document.querySelectorAll('.subject-template-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        const fmt = btn.dataset.templateFormat;
+        setSubjectTemplateMenuOpen(false);
+        downloadSubjectsTemplate(fmt === 'xlsx');
+    });
+});
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#subject-template-dropdown')) {
+        setSubjectTemplateMenuOpen(false);
+    }
+});
+
+document.getElementById('subject-bulk-file')?.addEventListener('change', () => {
+    const file = document.getElementById('subject-bulk-file')?.files?.[0];
+    const filenameSpan = document.getElementById('subject-bulk-filename');
+    if (filenameSpan && file) {
+        filenameSpan.textContent = file.name;
+        filenameSpan.className = 'truncate text-emerald-800 font-bold';
+    }
+    if (file) {
+        parseAndReviewBulkSubjects();
+    }
+});
+document.getElementById('subject-bulk-upload-btn')?.addEventListener('click', parseAndReviewBulkSubjects);
+document.getElementById('subject-review-edit-switch')?.addEventListener('change', (e) => {
+    setSubjectReviewEditMode(e.target.checked);
+});
+const subjectReviewTableContainer = document.getElementById('subject-review-table-container');
+if (subjectReviewTableContainer) {
+    subjectReviewTableContainer.addEventListener('change', (e) => {
+        const select = e.target.closest('.subject-review-col-map');
+        if (!select || !currentSubjectReviewData) return;
+        const col = currentSubjectReviewData.columns.find((c) => c.id === select.dataset.colId);
+        if (col) {
+            col.mappedField = select.value;
+            rebuildAllSubjectReviewDataAndRender();
+        }
+    });
+    subjectReviewTableContainer.addEventListener('blur', (e) => {
+        const cell = e.target.closest('.subject-review-cell');
+        if (!cell || !currentSubjectReviewData?.isEditMode) return;
+        const rowIdx = parseInt(cell.dataset.rowIdx, 10);
+        const colId = cell.dataset.colId;
+        if (isNaN(rowIdx) || !colId || !currentSubjectReviewData.workingRows[rowIdx]) return;
+        currentSubjectReviewData.workingRows[rowIdx][colId] = cell.innerText.trim();
+        const colMeta = (currentSubjectReviewData.columns || []).find((c) => c.id === colId);
+        if (colMeta?.mappedField === 'classLabel') {
+            currentSubjectReviewData.rows = (currentSubjectReviewData.workingRows || []).map((_, idx) => evaluateSubjectReviewRow(idx));
+            applyInFileDuplicateClassChecks(currentSubjectReviewData.rows);
+            currentSubjectReviewData.rows.forEach((_, idx) => updateSubjectReviewRowDomAfterEdit(idx));
+        } else {
+            currentSubjectReviewData.rows[rowIdx] = evaluateSubjectReviewRow(rowIdx);
+            applyInFileDuplicateClassChecks(currentSubjectReviewData.rows);
+            updateSubjectReviewRowDomAfterEdit(rowIdx);
+        }
+    }, true);
+    subjectReviewTableContainer.addEventListener('keydown', (e) => {
+        const cell = e.target.closest('.subject-review-cell');
+        if (!cell || !currentSubjectReviewData?.isEditMode) return;
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const rowIdx = parseInt(cell.dataset.rowIdx, 10);
+            const colId = cell.dataset.colId;
+            const nextCell = subjectReviewTableContainer.querySelector(`.subject-review-cell[data-row-idx="${rowIdx + 1}"][data-col-id="${colId}"]`);
+            if (nextCell) nextCell.focus();
+            else cell.blur();
+        }
+    });
+}
+document.getElementById('subject-review-modal-close-x')?.addEventListener('click', closeSubjectReviewModal);
+document.getElementById('subject-review-cancel-btn')?.addEventListener('click', closeSubjectReviewModal);
+document.getElementById('subject-review-skip-issues-btn')?.addEventListener('click', () => executeConfirmedSubjectUpload(true));
+document.getElementById('subject-review-confirm-upload-btn')?.addEventListener('click', () => executeConfirmedSubjectUpload(false));
+
 document.querySelectorAll('.setup-mode-radio').forEach((radio) => {
     radio.addEventListener('change', () => setSetupMode(radio.value));
 });
@@ -4930,6 +6582,13 @@ document.getElementById('save-exam-config-btn')?.addEventListener('click', async
     const subjectRows = getSchemaSubjectRows(schema);
     if (!subjectRows.length) return alert('Save subjects for this class first.');
     const nextConfigs = {};
+    // Preserve default-exam subjectMarks configurations
+    DEFAULT_EXAM_DEFS.forEach((def) => {
+        const existingDef = schema.examConfigs?.[def.key];
+        if (existingDef?.subjectMarks && typeof existingDef.subjectMarks === 'object') {
+            nextConfigs[def.key] = { subjectMarks: existingDef.subjectMarks };
+        }
+    });
     const usedKeys = new Set();
     Array.from(document.querySelectorAll('#exam-config-rows-body .exam-config-row')).forEach((rowEl) => {
         const label = rowEl.querySelector('.exam-config-name-input')?.value?.trim() || '';
@@ -4938,13 +6597,16 @@ document.getElementById('save-exam-config-btn')?.addEventListener('click', async
         if (usedKeys.has(key) || nextConfigs[key]) key = `${key}_${usedKeys.size + 1}`;
         usedKeys.add(key);
         const selectedSubjects = Array.from(rowEl.querySelectorAll('.exam-subject-checkbox:checked')).map((input) => input.value);
+        const prevCustom = schema.examConfigs?.[key] || {};
         nextConfigs[key] = {
+            ...prevCustom,
             label,
             subjects: selectedSubjects.length ? selectedSubjects : subjectRows.map((subject) => subject.id),
             showMarksToStudents: true
         };
     });
-    if (!Object.keys(nextConfigs).length) {
+    const hasCustomExams = Object.keys(nextConfigs).some((k) => !isDefaultExamKey(k));
+    if (!hasCustomExams) {
         const ok = await showAppConfirm({
             title: 'Save Default Terminal Exams Only',
             message: 'No additional custom exams entered. Would you like to save this class with only the 3 default terminal examinations (Quarterly, Half-Yearly, Annual)?',
@@ -4965,7 +6627,7 @@ document.getElementById('save-exam-config-btn')?.addEventListener('click', async
                 updatedAt: Date.now()
             }, { merge: true });
         });
-        alert('Exams saved for this class.');
+        notify(`Exams saved for Class ${classLabel}.`, 'success');
     } catch (saveErr) {
         console.error('Error saving exams:', saveErr);
         const msg = saveErr?.code === 'permission-denied'
@@ -4996,7 +6658,10 @@ document.getElementById('exam-list-container')?.addEventListener('click', async 
         }
         document.querySelector('.setup-mode-radio[value="exams"]')?.click();
         const classSelect = document.getElementById('exam-config-class-select');
-        if (classSelect) classSelect.value = schema.classLabel || '';
+        if (classSelect) {
+            classSelect.value = schema.classLabel || '';
+            syncSmartSelectDisplay(classSelect);
+        }
         renderExamConfigRowsForSelectedClass();
         const row = Array.from(document.querySelectorAll('#exam-config-rows-body .exam-config-row')).find((entry) => entry.dataset.key === (customExamEditBtn.dataset.examKey || ''));
         row?.querySelector('.exam-config-name-input')?.focus();
@@ -5036,7 +6701,11 @@ document.getElementById('exam-list-container')?.addEventListener('click', async 
             return alert('You can only edit subjects for your assigned class.');
         }
         const classSelect = document.getElementById('subject-class-select');
-        if (classSelect) classSelect.value = schema.classLabel || '';
+        if (classSelect) {
+            classSelect.value = schema.classLabel || '';
+            syncSubjectSetupTargetUI();
+            syncSmartSelectDisplay(classSelect);
+        }
         document.querySelector('.setup-mode-radio[value="subjects"]')?.click();
         renderSubjectRowsEditor(getSchemaSubjectRows(schema));
         document.getElementById('subject-setup-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -5054,6 +6723,7 @@ document.getElementById('exam-list-container')?.addEventListener('click', async 
         const classSelect = document.getElementById('exam-config-class-select');
         if (classSelect) {
             classSelect.value = schema.classLabel || '';
+            syncSmartSelectDisplay(classSelect);
             renderExamConfigRowsForSelectedClass();
         }
         document.getElementById('exam-setup-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -5193,6 +6863,8 @@ document.getElementById('carryforward-modal-apply-btn')?.addEventListener('click
         const select = document.getElementById('subject-class-select');
         if (select) {
             select.value = selectedSchemas[0].classLabel;
+            syncSubjectSetupTargetUI();
+            syncSmartSelectDisplay(select);
             renderSubjectRowsEditor(getSchemaSubjectRows(selectedSchemas[0]));
         }
     }
@@ -5261,7 +6933,9 @@ document.getElementById('save-grade-rules-btn')?.addEventListener('click', async
     });
 
     renderGradeRules(total);
-    refreshSubjectTotalDropdowns(total);
+    if (!document.getElementById('marks-entry-container')?.classList.contains('hidden')) {
+        loadMarksTable();
+    }
     alert(`Grade scale for ${total} marks successfully saved.`);
 });
 
@@ -6111,7 +7785,7 @@ const renderIndividualCanvas = (canvasEl, data) => {
                     <button type="button" id="card-nav-prev" ${currentIdx <= 0 ? 'disabled' : ''} class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer">
                         <i class="fas fa-chevron-left mr-1"></i> Prev
                     </button>
-                    <select id="card-nav-select" class="flex-1 sm:flex-none p-1.5 sm:p-2 border border-slate-300 rounded-xl bg-white font-bold text-xs sm:text-sm text-slate-800 outline-none max-w-[280px]">
+                    <select id="card-nav-select" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 sm:flex-none min-w-[140px] max-w-[280px]" class="w-full p-1.5 sm:p-2 border border-slate-300 rounded-xl bg-white font-bold text-xs sm:text-sm text-slate-800 outline-none">
                         ${studentOptionsHtml}
                     </select>
                     <button type="button" id="card-nav-next" ${currentIdx >= allStudents.length - 1 ? 'disabled' : ''} class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer">
@@ -6130,6 +7804,9 @@ const renderIndividualCanvas = (canvasEl, data) => {
             <!-- Cards Container -->
             ${displayHtml}
         </div>`;
+
+    enableSmartSelectWindowing(canvasEl, { visibleCount: 0 });
+    syncSmartSelectDisplay(canvasEl);
 
     // Bind Navigation Events
     document.getElementById('card-nav-prev')?.addEventListener('click', () => {
@@ -7428,11 +9105,13 @@ const setupModalObserver = () => {
 // Initialize Session and Live Data Stream safely after full module evaluation
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
+        enableSmartSelectWindowing(document, { visibleCount: 0 });
         initSidebarState();
         setupModalObserver();
         bootstrapSessionAccess();
     }, { once: true });
 } else {
+    enableSmartSelectWindowing(document, { visibleCount: 0 });
     initSidebarState();
     setupModalObserver();
     bootstrapSessionAccess();
