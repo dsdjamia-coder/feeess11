@@ -223,6 +223,50 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .smart-select-list.active { display: block; }
 .smart-selected-option { background: #eff6ff; color: #1d4ed8; font-weight: 700; }
 .smart-active-option { background: #e0e7ff; color: #1e40af; }
+.smart-select-disabled .smart-select-input,
+body.collection-shell .smart-select-disabled .smart-select-input {
+    opacity: 0.65;
+    cursor: not-allowed;
+    pointer-events: none;
+    background-color: #f1f5f9;
+    color: #64748b;
+}
+.smart-select-disabled .smart-select-caret {
+    opacity: 0.45;
+}
+body.collection-shell .collection-bulk-col-map-wrap .smart-select-input {
+    border-radius: 6px;
+    padding: 0.25rem 1.45rem 0.25rem 0.45rem;
+    font-size: 11px;
+    line-height: 1.25;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+body.collection-shell .collection-bulk-col-map-wrap .smart-select-caret {
+    right: 0.45rem;
+    font-size: 0.6rem;
+}
+.collection-bulk-col-map-wrap .smart-select-list .suggestion-item {
+    padding: 7px 10px;
+    font-size: 12px;
+}
+.collection-bulk-dup-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 9999px;
+    background-color: #dc2626;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 17px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+    user-select: none;
+}
 .table-header { background-color: #f8fafc; color: #475569; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 
 body.collection-shell input:not([type="checkbox"]):not([type="radio"]),

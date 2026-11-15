@@ -281,13 +281,24 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         .filter((select) => !select.multiple && !select.dataset.smartWindowBound && select.dataset.nativeSelect !== 'true' && (select.dataset.smartSelect === 'true' || select.options.length > visibleCount));
 
     const closeAll = () => {
-        document.querySelectorAll('.smart-select-list.active').forEach((el) => el.classList.remove('active'));
+        document.querySelectorAll('.smart-select-list.active').forEach((el) => {
+            el.classList.remove('active');
+            if (el.dataset.smartFloatingList === 'true') {
+                el.style.position = '';
+                el.style.top = '';
+                el.style.left = '';
+                el.style.width = '';
+                el.style.zIndex = '';
+            }
+        });
     };
 
     selects.forEach((select) => {
         select.dataset.smartWindowBound = 'true';
+        const isFloating = select.dataset.smartFloating === 'true';
+        const extraWrapperClass = String(select.dataset.smartWrapperClass || '').trim();
         const wrapper = document.createElement('div');
-        wrapper.className = 'smart-select-wrapper relative w-full';
+        wrapper.className = `smart-select-wrapper relative w-full${extraWrapperClass ? ` ${extraWrapperClass}` : ''}`;
         select.parentNode.insertBefore(wrapper, select);
         wrapper.appendChild(select);
 
@@ -295,7 +306,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         input.type = 'text';
         input.className = select.className;
         input.classList.add('smart-select-input', 'pr-8');
-        input.placeholder = 'Type or select...';
+        input.placeholder = select.dataset.smartPlaceholder || 'Type or select...';
         input.autocomplete = 'off';
         if (select.id) input.setAttribute('aria-controls', `${select.id}-smart-list`);
         wrapper.insertBefore(input, select);
@@ -307,6 +318,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
 
         const list = document.createElement('div');
         list.className = 'suggestions-box smart-select-list';
+        if (isFloating) list.dataset.smartFloatingList = 'true';
         if (select.id) list.id = `${select.id}-smart-list`;
         wrapper.appendChild(list);
 
@@ -315,6 +327,39 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
 
         let activeIndex = -1;
         const getOptionItems = () => Array.from(list.querySelectorAll('.smart-select-option'));
+
+        const positionFloatingList = () => {
+            if (!isFloating) return;
+            const rect = input.getBoundingClientRect();
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const maxListHeight = 220;
+            const openUpwards = spaceBelow < 180 && rect.top > spaceBelow;
+            const width = Math.max(rect.width, 220);
+            const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+
+            list.style.position = 'fixed';
+            list.style.left = `${left}px`;
+            list.style.width = `${width}px`;
+            list.style.zIndex = '9500';
+
+            if (openUpwards) {
+                const topPos = Math.max(8, rect.top - Math.min(maxListHeight, rect.top - 12) - 4);
+                list.style.top = `${topPos}px`;
+                list.style.maxHeight = `${Math.min(maxListHeight, rect.top - 12)}px`;
+            } else {
+                list.style.top = `${rect.bottom + 4}px`;
+                list.style.maxHeight = `${Math.max(120, Math.min(maxListHeight, spaceBelow - 12))}px`;
+            }
+        };
+
+        const syncDisabledState = () => {
+            const isDisabled = Boolean(select.disabled);
+            input.disabled = isDisabled;
+            wrapper.classList.toggle('smart-select-disabled', isDisabled);
+            if (isDisabled) {
+                list.classList.remove('active');
+            }
+        };
 
         const highlightOption = (idx) => {
             const items = getOptionItems();
@@ -326,6 +371,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         };
 
         const renderList = (term = '') => {
+            if (select.disabled) return;
             const normalizedTerm = String(term || '').trim().toLowerCase();
             const options = Array.from(select.options);
             const filtered = options.filter((option) => String(option.textContent || '').toLowerCase().includes(normalizedTerm));
@@ -334,6 +380,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
                 ? filtered.map((option) => `<div class="suggestion-item smart-select-option ${option.value === select.value ? 'smart-selected-option' : ''}" data-value="${escapeHtml(option.value)}">${escapeHtml(option.textContent || '')}</div>`).join('')
                 : '<div class="suggestion-item text-gray-400">No matches</div>';
             list.classList.add('active');
+            positionFloatingList();
             const selectedIdx = filtered.findIndex((o) => o.value === select.value);
             if (selectedIdx >= 0) highlightOption(selectedIdx);
         };
@@ -343,7 +390,10 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             input.value = selectedOption ? selectedOption.textContent : '';
         };
 
-        select._syncSmartSelect = syncInputValue;
+        select._syncSmartSelect = () => {
+            syncDisabledState();
+            syncInputValue();
+        };
 
         // Keep visible text in sync when JS updates select.value programmatically
         try {
@@ -364,20 +414,27 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             // Fallback handled by explicit syncSmartSelectDisplay / change event
         }
 
+        syncDisabledState();
         syncInputValue();
         input.addEventListener('focus', () => {
+            if (select.disabled) return;
             closeAll();
             renderList('');
             input.select?.();
         });
-        input.addEventListener('input', () => renderList(input.value));
+        input.addEventListener('input', () => {
+            if (select.disabled) return;
+            renderList(input.value);
+        });
         input.addEventListener('click', (event) => {
             event.stopPropagation();
+            if (select.disabled) return;
             closeAll();
             renderList('');
             input.select?.();
         });
         input.addEventListener('keydown', (event) => {
+            if (select.disabled) return;
             const items = getOptionItems();
             if (event.key === 'ArrowDown') {
                 event.preventDefault();
@@ -401,11 +458,11 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
                     select.value = targetItem.dataset.value;
                     select.dispatchEvent(new Event('change', { bubbles: true }));
                     syncInputValue();
-                    list.classList.remove('active');
+                    closeAll();
                     input.blur();
                 }
             } else if (event.key === 'Escape') {
-                list.classList.remove('active');
+                closeAll();
                 syncInputValue();
                 input.blur();
             }
@@ -421,18 +478,21 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
 
         list.addEventListener('mousedown', (event) => {
             const optionEl = event.target.closest('.smart-select-option');
-            if (!optionEl) return;
+            if (!optionEl || select.disabled) return;
             event.preventDefault();
             select.value = optionEl.dataset.value;
             select.dispatchEvent(new Event('change', { bubbles: true }));
             syncInputValue();
-            list.classList.remove('active');
+            closeAll();
             input.blur();
         });
 
         select.addEventListener('change', syncInputValue);
-        const observer = new MutationObserver(() => syncInputValue());
-        observer.observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['value'] });
+        const observer = new MutationObserver(() => {
+            syncDisabledState();
+            syncInputValue();
+        });
+        observer.observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['value', 'disabled'] });
     });
 
     if (typeof document !== 'undefined' && !document.documentElement?.dataset?.smartSelectGlobalBound) {
@@ -441,6 +501,11 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             if (event.target.closest('.smart-select-wrapper')) return;
             closeAll();
         });
+        window.addEventListener('resize', () => closeAll());
+        document.addEventListener('scroll', (event) => {
+            if (event.target && event.target.classList && event.target.classList.contains('smart-select-list')) return;
+            closeAll();
+        }, true);
     }
 };
 

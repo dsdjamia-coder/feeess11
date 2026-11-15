@@ -3730,7 +3730,9 @@ let collectionBulkState = {
     year: '',
     targetClass: '',
     isEditMode: false,
-    fileName: ''
+    fileName: '',
+    duplicateReceiptMap: new Map(),
+    existingDbReceiptSet: new Set()
 };
 
 const getBulkStudentsForClassAndYear = (targetClass = '', year = '') => {
@@ -3820,7 +3822,9 @@ const setupBulkUploadUI = () => {
         year: '',
         targetClass: '',
         isEditMode: false,
-        fileName: ''
+        fileName: '',
+        duplicateReceiptMap: new Map(),
+        existingDbReceiptSet: new Set()
     };
     const switchEl = document.getElementById('collection-bulk-edit-switch');
     if (switchEl) switchEl.checked = false;
@@ -4381,6 +4385,112 @@ const recalculateCollectionBulkStats = () => {
     }
 };
 
+const normalizeBulkReceiptKey = (rawVal = '') => {
+    const trimmed = String(rawVal ?? '').trim();
+    if (!trimmed || !/^\d+$/.test(trimmed)) return '';
+    const parsed = parseInt(trimmed, 10);
+    return !Number.isNaN(parsed) && parsed > 0 ? String(parsed) : '';
+};
+
+const computeCollectionBulkDuplicateReceipts = () => {
+    const { columns = [], workingRows = [], parsedRows = [] } = collectionBulkState;
+    const collectorKey = typeof getCollectorKey === 'function' ? getCollectorKey() : '';
+    const existingDbReceiptSet = new Set();
+
+    (Array.isArray(allPayments) ? allPayments : []).forEach((p) => {
+        if (!p || p.receiptNo === undefined || p.receiptNo === null || p.receiptNo === '') return;
+        if (collectorKey && p.collectedBy && p.collectedBy !== collectorKey) return;
+        const key = normalizeBulkReceiptKey(p.receiptNo);
+        if (key) existingDbReceiptSet.add(key);
+    });
+
+    const receiptCols = columns.filter((col) => col.mappedField && col.mappedField.endsWith('::receiptNo'));
+    const receiptCounts = new Map();
+
+    workingRows.forEach((rowObj, rowIdx) => {
+        if (parsedRows[rowIdx]?.isSampleRow) return;
+        receiptCols.forEach((col) => {
+            const key = normalizeBulkReceiptKey(rowObj?.[col.id]);
+            if (!key) return;
+            receiptCounts.set(key, (receiptCounts.get(key) || 0) + 1);
+        });
+    });
+
+    const duplicateReceiptMap = new Map();
+    let groupNo = 1;
+    receiptCounts.forEach((count, key) => {
+        if (count >= 2) {
+            duplicateReceiptMap.set(key, {
+                groupNo: groupNo++,
+                count,
+                existsInDb: existingDbReceiptSet.has(key)
+            });
+        }
+    });
+
+    collectionBulkState.duplicateReceiptMap = duplicateReceiptMap;
+    collectionBulkState.existingDbReceiptSet = existingDbReceiptSet;
+    return { duplicateReceiptMap, existingDbReceiptSet };
+};
+
+const getCollectionBulkReceiptBadgeInfo = (col, rowValidation, rawVal) => {
+    if (!col?.mappedField?.endsWith('::receiptNo') || rowValidation?.isSampleRow) {
+        return { key: '', dupInfo: null, existsInDb: false, titleNote: '' };
+    }
+    const key = normalizeBulkReceiptKey(rawVal);
+    if (!key) {
+        return { key: '', dupInfo: null, existsInDb: false, titleNote: '' };
+    }
+    const dupInfo = collectionBulkState.duplicateReceiptMap?.get(key) || null;
+    const existsInDb = Boolean(collectionBulkState.existingDbReceiptSet?.has(key));
+    const notes = [];
+    if (dupInfo) {
+        notes.push(`Duplicate Receipt #${key} (${dupInfo.count} times in sheet • Group ${dupInfo.groupNo})`);
+    }
+    if (existsInDb) {
+        notes.push(`Receipt #${key} also exists in saved payments`);
+    }
+    return { key, dupInfo, existsInDb, titleNote: notes.join(' • ') };
+};
+
+const buildCollectionBulkCellInnerHtml = ({ col, rowIdx, rowValidation, rawVal, canEditCell, badgeInfo }) => {
+    const isReceiptCol = Boolean(col?.mappedField?.endsWith('::receiptNo'));
+    if (!isReceiptCol) {
+        return escapeHtml(rawVal);
+    }
+    const editorAttrs = canEditCell
+        ? `contenteditable="true" class="collection-bulk-cell-editor block w-full min-h-[1.15rem] outline-none font-mono cursor-text"`
+        : `class="collection-bulk-cell-editor block w-full min-h-[1.15rem]"`;
+    const badgeHtml = badgeInfo?.dupInfo
+        ? `<span class="collection-bulk-dup-badge" title="${escapeHtml(badgeInfo.titleNote)}">${badgeInfo.dupInfo.groupNo}</span>`
+        : '';
+    return `<span ${editorAttrs} data-row-idx="${rowIdx}" data-col-id="${col.id}">${escapeHtml(rawVal)}</span>${badgeHtml}`;
+};
+
+const getCollectionBulkDuplicateSummaryHtml = () => {
+    const count = collectionBulkState.duplicateReceiptMap?.size || 0;
+    if (count === 0) return '';
+    return `
+        <span class="w-4 h-4 rounded-full bg-red-600 text-white text-[10px] font-black inline-flex items-center justify-center">!</span>
+        <span>${count} Duplicate Receipt Group${count > 1 ? 's' : ''}</span>
+    `;
+};
+
+const updateCollectionBulkDuplicateSummaryDom = () => {
+    const summaryEl = document.getElementById('collection-bulk-dup-summary');
+    if (!summaryEl) return;
+    const html = getCollectionBulkDuplicateSummaryHtml();
+    if (html) {
+        summaryEl.innerHTML = html;
+        summaryEl.classList.remove('hidden');
+        summaryEl.classList.add('inline-flex');
+    } else {
+        summaryEl.innerHTML = '';
+        summaryEl.classList.add('hidden');
+        summaryEl.classList.remove('inline-flex');
+    }
+};
+
 function renderCollectionBulkPreviewTable() {
     const container = document.getElementById('collection-bulk-table-container');
     if (!container) return;
@@ -4400,6 +4510,7 @@ function renderCollectionBulkPreviewTable() {
 
     const mappedCount = columns.filter((c) => c.mappedField && c.mappedField !== 'none').length;
     const skippedCount = columns.length - mappedCount;
+    const dupSummaryHtml = getCollectionBulkDuplicateSummaryHtml();
 
     const duplicateAlertHtml = hasDuplicateMapping ? `
         <div class="p-3 bg-red-600 text-white flex items-center gap-3 text-xs font-bold">
@@ -4419,6 +4530,7 @@ function renderCollectionBulkPreviewTable() {
                 <span class="text-[11px] font-normal text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
                     ${mappedCount} Columns Mapped, ${skippedCount} Skipped
                 </span>
+                <span id="collection-bulk-dup-summary" class="${dupSummaryHtml ? 'inline-flex' : 'hidden'} items-center gap-1.5 text-[11px] font-bold text-red-700 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200" title="Repeated receipt numbers are grouped with numbered red circles (1, 2, 3...)">${dupSummaryHtml}</span>
             </div>
             <div class="text-xs">
                 ${isEditMode
@@ -4462,12 +4574,12 @@ function renderCollectionBulkPreviewTable() {
                             : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : ''));
 
                     return `
-                        <th class="p-2 border-b border-r ${headerBg} min-w-[145px] max-w-[220px]">
+                        <th class="p-2 border-b border-r ${headerBg} min-w-[165px] max-w-[230px]">
                             <div class="flex items-center justify-between gap-1 mb-1">
                                 <span class="text-[11px] font-mono ${isDup ? 'text-white font-extrabold' : 'text-slate-700'} truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
                                 ${badgeIcon}
                             </div>
-                            <select class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
+                            <select data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="collection-bulk-col-map-wrap" data-smart-placeholder="Search column..." class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
                                 ${mappingOptions.map((opt) => `
                                     <option value="${escapeHtml(opt.key)}" ${col.mappedField === opt.key ? 'selected' : ''}>${escapeHtml(opt.label)}</option>
                                 `).join('')}
@@ -4487,12 +4599,34 @@ function renderCollectionBulkPreviewTable() {
         const cellsHtml = columns.map((col) => {
             const rawVal = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
             const visual = getCollectionBulkCellVisual(col, rowVal);
+            const isReceiptCol = Boolean(col.mappedField?.endsWith('::receiptNo'));
             const canEditCell = isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid';
-            const editAttrs = canEditCell
-                ? `contenteditable="true" class="collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-all font-mono text-xs ${visual.bgClass}"`
-                : `class="collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}"`;
-            const titleAttr = visual.title ? `title="${escapeHtml(visual.title)}"` : '';
-            return `<td ${editAttrs} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${escapeHtml(rawVal)}</td>`;
+            const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
+            const combinedTitle = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
+            const titleAttr = combinedTitle ? `title="${escapeHtml(combinedTitle)}"` : '';
+            const receiptPadClass = isReceiptCol ? 'relative pr-7' : '';
+
+            let tdAttrs = '';
+            if (isReceiptCol) {
+                tdAttrs = canEditCell
+                    ? `class="collection-bulk-cell ${receiptPadClass} p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-all font-mono text-xs ${visual.bgClass}"`
+                    : `class="collection-bulk-cell ${receiptPadClass} p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}"`;
+            } else {
+                tdAttrs = canEditCell
+                    ? `contenteditable="true" class="collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-all font-mono text-xs ${visual.bgClass}"`
+                    : `class="collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}"`;
+            }
+
+            const innerHtml = buildCollectionBulkCellInnerHtml({
+                col,
+                rowIdx: idx,
+                rowValidation: rowVal,
+                rawVal,
+                canEditCell,
+                badgeInfo
+            });
+
+            return `<td ${tdAttrs} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${innerHtml}</td>`;
         }).join('');
 
         return `
@@ -4516,6 +4650,46 @@ function renderCollectionBulkPreviewTable() {
             </table>
         </div>
     `;
+
+    enableSmartSelectWindowing(container, { visibleCount: 0 });
+    syncSmartSelectDisplay(container);
+}
+
+function refreshAllCollectionBulkDuplicateBadges() {
+    const receiptCols = collectionBulkState.columns.filter((c) => c.mappedField?.endsWith('::receiptNo'));
+    if (receiptCols.length > 0) {
+        collectionBulkState.parsedRows.forEach((rowVal, rowIdx) => {
+            const tr = document.getElementById(`collection-bulk-row-${rowIdx}`);
+            if (!tr) return;
+            const workingRow = collectionBulkState.workingRows[rowIdx] || {};
+            receiptCols.forEach((col) => {
+                const td = tr.querySelector(`.collection-bulk-cell[data-col-id="${col.id}"]`);
+                if (!td) return;
+                const rawVal = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
+                const visual = getCollectionBulkCellVisual(col, rowVal);
+                const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
+                const combinedTitle = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
+                td.title = combinedTitle;
+
+                const existingBadge = td.querySelector('.collection-bulk-dup-badge');
+                if (badgeInfo.dupInfo) {
+                    if (existingBadge) {
+                        existingBadge.textContent = String(badgeInfo.dupInfo.groupNo);
+                        existingBadge.title = badgeInfo.titleNote;
+                    } else {
+                        const badgeEl = document.createElement('span');
+                        badgeEl.className = 'collection-bulk-dup-badge';
+                        badgeEl.title = badgeInfo.titleNote;
+                        badgeEl.textContent = String(badgeInfo.dupInfo.groupNo);
+                        td.appendChild(badgeEl);
+                    }
+                } else if (existingBadge) {
+                    existingBadge.remove();
+                }
+            });
+        });
+    }
+    updateCollectionBulkDuplicateSummaryDom();
 }
 
 function updateCollectionBulkRowDom(rowIdx) {
@@ -4529,19 +4703,42 @@ function updateCollectionBulkRowDom(rowIdx) {
         statusCell.innerHTML = getCollectionBulkRowBadgeHtml(rowVal);
     }
 
+    const workingRow = collectionBulkState.workingRows[rowIdx] || {};
+
     collectionBulkState.columns.forEach((col) => {
         const td = tr.querySelector(`.collection-bulk-cell[data-col-id="${col.id}"]`);
         if (!td) return;
+        const rawVal = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
         const visual = getCollectionBulkCellVisual(col, rowVal);
+        const isReceiptCol = Boolean(col.mappedField?.endsWith('::receiptNo'));
         const canEditCell = collectionBulkState.isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid';
-        if (canEditCell) {
-            td.setAttribute('contenteditable', 'true');
-            td.className = `collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-all font-mono text-xs ${visual.bgClass}`;
-        } else {
+        const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
+
+        if (isReceiptCol) {
             td.removeAttribute('contenteditable');
-            td.className = `collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}`;
+            td.className = canEditCell
+                ? `collection-bulk-cell relative pr-7 p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-all font-mono text-xs ${visual.bgClass}`
+                : `collection-bulk-cell relative pr-7 p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}`;
+            const editor = td.querySelector('.collection-bulk-cell-editor');
+            if (editor) {
+                if (canEditCell) {
+                    editor.setAttribute('contenteditable', 'true');
+                    editor.className = 'collection-bulk-cell-editor block w-full min-h-[1.15rem] outline-none font-mono cursor-text';
+                } else {
+                    editor.removeAttribute('contenteditable');
+                    editor.className = 'collection-bulk-cell-editor block w-full min-h-[1.15rem]';
+                }
+            }
+        } else {
+            if (canEditCell) {
+                td.setAttribute('contenteditable', 'true');
+                td.className = `collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-all font-mono text-xs ${visual.bgClass}`;
+            } else {
+                td.removeAttribute('contenteditable');
+                td.className = `collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}`;
+            }
         }
-        td.title = visual.title || '';
+        td.title = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
     });
 
     recalculateCollectionBulkStats();
@@ -4552,6 +4749,7 @@ function rebuildCollectionBulkStateAndRender() {
     collectionBulkState.parsedRows = collectionBulkState.workingRows.map((_, rowIdx) => (
         validateCollectionBulkRow(rowIdx, classStudents)
     ));
+    computeCollectionBulkDuplicateReceipts();
     recalculateCollectionBulkStats();
     renderCollectionBulkPreviewTable();
 }
@@ -4651,7 +4849,9 @@ const handleBulkFileSelection = (file) => {
                 year,
                 targetClass,
                 isEditMode: false,
-                fileName
+                fileName,
+                duplicateReceiptMap: new Map(),
+                existingDbReceiptSet: new Set()
             };
             window.bulkUploadParsedData = collectionBulkState;
 
@@ -4702,21 +4902,42 @@ if (collectionBulkTableContainer) {
         }
     });
 
+    collectionBulkTableContainer.addEventListener('click', (e) => {
+        if (!collectionBulkState.isEditMode) return;
+        const cell = e.target.closest('.collection-bulk-cell');
+        if (!cell) return;
+        const editor = cell.querySelector('.collection-bulk-cell-editor[contenteditable="true"]');
+        if (editor && e.target !== editor) {
+            editor.focus();
+        }
+    });
+
     collectionBulkTableContainer.addEventListener('blur', (e) => {
         const cell = e.target.closest('.collection-bulk-cell');
         if (!cell || !collectionBulkState.isEditMode) return;
-        if (cell.getAttribute('contenteditable') !== 'true') return;
+        const editor = cell.querySelector('.collection-bulk-cell-editor');
+        const activeEditable = editor ? editor.getAttribute('contenteditable') === 'true' : cell.getAttribute('contenteditable') === 'true';
+        if (!activeEditable) return;
+
         const rowIdx = parseInt(cell.dataset.rowIdx, 10);
         const colId = cell.dataset.colId;
         if (Number.isNaN(rowIdx) || !colId || !collectionBulkState.workingRows[rowIdx]) return;
 
-        const newText = cell.innerText.trim();
+        const newText = (editor ? editor.innerText : cell.innerText).trim();
         if (collectionBulkState.workingRows[rowIdx][colId] === newText) return;
         collectionBulkState.workingRows[rowIdx][colId] = newText;
 
         const classStudents = getBulkStudentsForClassAndYear(collectionBulkState.targetClass, collectionBulkState.year);
         collectionBulkState.parsedRows[rowIdx] = validateCollectionBulkRow(rowIdx, classStudents);
-        updateCollectionBulkRowDom(rowIdx);
+
+        const editedCol = collectionBulkState.columns.find((c) => c.id === colId);
+        if (editedCol?.mappedField?.endsWith('::receiptNo')) {
+            computeCollectionBulkDuplicateReceipts();
+            updateCollectionBulkRowDom(rowIdx);
+            refreshAllCollectionBulkDuplicateBadges();
+        } else {
+            updateCollectionBulkRowDom(rowIdx);
+        }
     }, true);
 
     collectionBulkTableContainer.addEventListener('keydown', (e) => {
@@ -4726,11 +4947,15 @@ if (collectionBulkTableContainer) {
             e.preventDefault();
             const rowIdx = parseInt(cell.dataset.rowIdx, 10);
             const colId = cell.dataset.colId;
-            const nextCell = collectionBulkTableContainer.querySelector(`.collection-bulk-cell[data-row-idx="${rowIdx + 1}"][data-col-id="${colId}"][contenteditable="true"]`);
-            if (nextCell) {
-                nextCell.focus();
+            const nextTd = collectionBulkTableContainer.querySelector(`.collection-bulk-cell[data-row-idx="${rowIdx + 1}"][data-col-id="${colId}"]`);
+            const nextEditor = nextTd?.querySelector('.collection-bulk-cell-editor[contenteditable="true"]');
+            if (nextEditor) {
+                nextEditor.focus();
+            } else if (nextTd && nextTd.getAttribute('contenteditable') === 'true') {
+                nextTd.focus();
             } else {
-                cell.blur();
+                const currentTarget = cell.querySelector('.collection-bulk-cell-editor[contenteditable="true"]') || cell;
+                currentTarget.blur();
             }
         }
     });
