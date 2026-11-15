@@ -732,17 +732,21 @@
                 </div>
 
                 <!-- Sub-View 2: Bulk Upload Page -->
-                <div id="bulk-upload-page" class="hidden">
-                    <div class="card p-5 mb-6 shadow-sm border-blue-200 bg-blue-50/30 max-w-4xl mx-auto">
-                        <div class="flex justify-between items-center mb-4 border-b border-blue-200 pb-2">
-                            <div class="flex items-center gap-2">
-                                <h2 class="text-xl font-bold text-blue-900"><i class="fas fa-download text-blue-600 mr-2"></i>1. Download Template</h2>
-                                <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Generate an Excel template pre-filled with student names and admission numbers for offline fee entry." title="Generate an Excel template pre-filled with student names and admission numbers for offline fee entry.">
+                <div id="bulk-upload-page" class="hidden space-y-6">
+                    <div class="card p-5 shadow-sm border-blue-200 bg-blue-50/30 max-w-5xl mx-auto">
+                        <div class="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-blue-200 pb-3">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h2 class="text-xl font-bold text-blue-900 flex items-center gap-2">
+                                    <i class="fas fa-download text-blue-600"></i>
+                                    <span>1. Download Template</span>
+                                </h2>
+                                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">Excel (.xlsx, .xls) &amp; CSV (.csv)</span>
+                                <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Generate a fee template pre-filled with student names and admission numbers in .xlsx, .xls, or .csv format." title="Generate a fee template pre-filled with student names and admission numbers in .xlsx, .xls, or .csv format.">
                                     <i class="fas fa-info-circle"></i>
                                 </button>
                             </div>
                         </div>
-                        <p class="text-sm text-gray-600 mb-4">Select an academic year and class to download a pre-filled Excel (.xlsx) template for those students. The first row will be a sample entry.</p>
+                        <p class="text-sm text-gray-600 mb-4">Select an Academic Year, Target Class, and Default Fee to download a pre-filled template in <b>.xlsx</b>, <b>.xls</b>, or <b>.csv</b> format. Row 1 is a sample guide row and is automatically skipped on upload.</p>
                         
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div>
@@ -758,52 +762,173 @@
                                 <input type="number" id="bulk-default-fee" class="w-full p-2.5 border rounded-lg bg-white" placeholder="e.g. 200">
                             </div>
                         </div>
-                        <div class="text-right">
-                            <button id="bulk-download-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-md transition inline-flex items-center gap-2">
-                                <i class="fas fa-file-excel"></i> Download Excel Template
-                            </button>
+                        <div class="flex justify-end">
+                            <div class="relative inline-block text-left" id="collection-bulk-template-dropdown">
+                                <button type="button" id="collection-bulk-template-menu-btn" aria-haspopup="true" aria-expanded="false" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-lg shadow-md transition inline-flex items-center gap-2 cursor-pointer">
+                                    <i class="fas fa-download"></i>
+                                    <span>Download Template</span>
+                                    <i class="fas fa-chevron-down text-xs text-blue-100 transition-transform" id="collection-bulk-template-chevron"></i>
+                                </button>
+                                <div id="collection-bulk-template-menu" role="menu" class="hidden absolute right-0 mt-2 w-64 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-40">
+                                    <div class="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">Choose Template Format</div>
+                                    <button type="button" role="menuitem" data-template-format="xlsx" class="collection-bulk-template-option w-full text-left px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                        <span class="flex items-center gap-2.5"><i class="fas fa-file-excel text-emerald-600 w-4 text-center"></i><span>Excel Workbook</span></span>
+                                        <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">.xlsx</span>
+                                    </button>
+                                    <button type="button" role="menuitem" data-template-format="xls" class="collection-bulk-template-option w-full text-left px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                        <span class="flex items-center gap-2.5"><i class="fas fa-file-excel text-teal-600 w-4 text-center"></i><span>Excel 97-2003</span></span>
+                                        <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">.xls</span>
+                                    </button>
+                                    <button type="button" role="menuitem" data-template-format="csv" class="collection-bulk-template-option w-full text-left px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-800 flex items-center justify-between gap-2 transition cursor-pointer">
+                                        <span class="flex items-center gap-2.5"><i class="fas fa-file-csv text-blue-600 w-4 text-center"></i><span>CSV (Comma Separated)</span></span>
+                                        <span class="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">.csv</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="card p-5 shadow-sm border-green-200 bg-green-50/20 max-w-4xl mx-auto">
-                        <div class="flex justify-between items-center mb-4 border-b border-green-200 pb-2">
-                            <div class="flex items-center gap-2">
-                                <h2 class="text-xl font-bold text-green-900"><i class="fas fa-upload text-green-600 mr-2"></i>2. Upload Data</h2>
-                                <button type="button" class="info-tooltip-btn text-slate-400 hover:text-green-700 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Upload the completed fee spreadsheet (.xlsx or .csv) to automatically record batch payments." title="Upload the completed fee spreadsheet (.xlsx or .csv) to automatically record batch payments.">
+                    <div class="card p-5 shadow-sm border-green-200 bg-green-50/20 max-w-7xl mx-auto">
+                        <div class="flex flex-wrap justify-between items-center gap-3 mb-4 border-b border-green-200 pb-2">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h2 class="text-xl font-bold text-green-900 flex items-center gap-2">
+                                    <i class="fas fa-upload text-green-600"></i>
+                                    <span>2. Upload &amp; Review Data</span>
+                                </h2>
+                                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">.xlsx • .xls • .csv</span>
+                                <button type="button" class="info-tooltip-btn text-slate-400 hover:text-green-700 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Upload any completed .xlsx, .xls, or .csv fee sheet to preview, edit Amount/Receipt No/Date inline, and record batch payments." title="Upload any completed .xlsx, .xls, or .csv fee sheet to preview, edit Amount/Receipt No/Date inline, and record batch payments.">
                                     <i class="fas fa-info-circle"></i>
                                 </button>
                             </div>
                         </div>
-                        <p class="text-sm text-gray-600 mb-4">Fill the downloaded template and upload it here. Supported formats: <b>.xlsx, .xls, .csv</b>.</p>
+                        <p class="text-sm text-gray-600 mb-4">Fill the downloaded template and upload it here. Dates in <b>DD-MM-YYYY</b> or <b>YYYY-MM-DD</b> format and Excel/CSV encodings are automatically normalized.</p>
                         
-                        <div class="upload-area" id="bulk-drop-zone">
-                            <input type="file" id="bulk-file-input" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="hidden">
+                        <div class="upload-area max-w-2xl mx-auto my-2" id="bulk-drop-zone">
+                            <input type="file" id="bulk-file-input" accept=".xlsx,.xls,.csv,text/csv,application/csv,text/comma-separated-values,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
                             <i class="fas fa-cloud-upload-alt text-4xl text-green-500 mb-3"></i>
-                            <p class="font-semibold text-gray-700">Click to select or drag and drop your Excel/CSV here</p>
+                            <p class="font-semibold text-gray-700">Click to select or drag and drop your Excel / CSV file here</p>
+                            <p class="text-xs text-slate-500 mt-1.5 font-medium">Supported formats: <span class="font-mono font-bold text-slate-700">.xlsx</span>, <span class="font-mono font-bold text-slate-700">.xls</span>, <span class="font-mono font-bold text-slate-700">.csv</span></p>
                         </div>
 
-                        <div id="bulk-preview-area" class="mt-4 hidden p-4 bg-white border rounded-lg shadow-sm">
-                            <div class="flex justify-between items-center mb-3 border-b pb-2">
-                                <span class="font-bold text-gray-800" id="bulk-file-name">filename.xlsx</span>
-                                <span class="text-sm font-bold bg-green-100 text-green-800 px-3 py-1 rounded-full" id="bulk-record-count">Found 0 records</span>
+                        <div id="bulk-preview-area" class="mt-4 hidden p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                            <!-- Top Header & Primary Action Toolbar -->
+                            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <i id="collection-bulk-file-icon" class="fas fa-file-excel text-emerald-600 text-lg"></i>
+                                        <span class="font-bold text-slate-800 text-sm sm:text-base break-all" id="bulk-file-name">filename.xlsx</span>
+                                    </div>
+                                    <div class="text-xs text-slate-500 mt-0.5" id="bulk-record-count">Review fee entries before saving payments</div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <label for="collection-bulk-edit-switch" class="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-all shadow-xs border border-slate-300 cursor-pointer select-none">
+                                        <span class="flex items-center gap-1.5 text-slate-700 font-bold">
+                                            <i class="fas fa-sliders-h text-emerald-600"></i>
+                                            <span>Edit &amp; Mapping:</span>
+                                        </span>
+                                        <div class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="collection-bulk-edit-switch" class="sr-only peer">
+                                            <div class="w-8 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+                                        </div>
+                                        <span id="collection-bulk-edit-status" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 font-mono">OFF</span>
+                                    </label>
+                                    <button type="button" id="bulk-cancel-btn" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+                                        <i class="fas fa-times"></i> Cancel
+                                    </button>
+                                    <button type="button" id="collection-bulk-skip-issues-btn" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm hidden cursor-pointer">
+                                        <i class="fas fa-check-circle"></i> Upload Valid Only (<span id="collection-bulk-valid-only-count">0</span>)
+                                    </button>
+                                    <button type="button" id="bulk-start-upload-btn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 font-bold text-xs rounded-lg shadow-sm flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <i class="fas fa-cloud-upload-alt"></i> <span id="collection-bulk-upload-all-text">Upload All (0)</span>
+                                    </button>
+                                </div>
                             </div>
-                            
+
+                            <!-- Edit Mode Instruction Banner -->
+                            <div id="collection-bulk-edit-banner" class="hidden my-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2.5">
+                                <i class="fas fa-pen-to-square text-emerald-600 text-sm mt-0.5 shrink-0"></i>
+                                <div>
+                                    <div class="font-bold">Edit &amp; Mapping Mode Active</div>
+                                    <div class="text-emerald-800/90 mt-0.5">Click any <b>Amount</b>, <b>Receipt No</b>, or <b>Date</b> cell to edit inline (press <b>Enter</b> to move down). Student ID, Admission No, and Student Name columns stay locked to keep student mapping safe. You can also adjust fee column header mappings if needed.</div>
+                                </div>
+                            </div>
+
+                            <!-- 4 Diagnostic Summary Badges -->
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 my-3" id="collection-bulk-diagnostic-stats">
+                                <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+                                    <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Rows</div>
+                                    <div class="text-base font-extrabold text-slate-800" id="collection-stat-total">0</div>
+                                </div>
+                                <div class="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                                    <div class="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Ready Entries
+                                    </div>
+                                    <div class="text-base font-extrabold text-emerald-800" id="collection-stat-ready">0</div>
+                                </div>
+                                <div class="p-2.5 rounded-lg bg-rose-50 border border-rose-200">
+                                    <div class="text-[11px] font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1">
+                                        <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> Issues / Skipped
+                                    </div>
+                                    <div class="text-base font-extrabold text-rose-800" id="collection-stat-issues">0</div>
+                                </div>
+                                <div class="p-2.5 rounded-lg bg-sky-50 border border-sky-200">
+                                    <div class="text-[11px] font-bold text-sky-700 uppercase tracking-wider flex items-center gap-1">
+                                        <span class="w-2 h-2 rounded-full bg-sky-500 inline-block"></span> Already Paid
+                                    </div>
+                                    <div class="text-base font-extrabold text-sky-800" id="collection-stat-paid">0</div>
+                                </div>
+                            </div>
+
+                            <!-- Interactive Spreadsheet Preview Table Container -->
+                            <div id="collection-bulk-table-container" class="border border-slate-200 rounded-xl overflow-hidden bg-white"></div>
+
                             <!-- Progress Area -->
-                            <div id="bulk-progress-container" class="hidden">
-                                <div class="flex justify-between text-xs font-bold text-gray-600 mb-1">
+                            <div id="bulk-progress-container" class="hidden mt-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                                <div class="flex justify-between text-xs font-bold text-emerald-800 mb-1.5">
                                     <span id="bulk-progress-text">Processing...</span>
                                     <span id="bulk-progress-pct">0%</span>
                                 </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2.5 mb-2 overflow-hidden">
-                                    <div id="bulk-progress-bar" class="bg-green-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                <div class="w-full bg-emerald-200/70 rounded-full h-2.5 overflow-hidden">
+                                    <div id="bulk-progress-bar" class="bg-emerald-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
 
-                            <div class="mt-4 text-right">
-                                <button id="bulk-cancel-btn" class="px-5 py-2.5 bg-gray-200 text-gray-700 font-bold rounded-lg mr-2 hover:bg-gray-300 transition">Cancel</button>
-                                <button id="bulk-start-upload-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-6 rounded-lg shadow-md transition inline-flex items-center gap-2">
-                                    <i class="fas fa-cogs"></i> Start Processing
-                                </button>
+                    <!-- Bulk Fee Upload Completion Modal -->
+                    <div id="collection-bulk-status-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+                        <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
+                            <div class="p-5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-base font-extrabold leading-tight">Bulk Fee Upload Complete</h3>
+                                    <p class="text-xs text-emerald-100">Batch fee payments have been recorded.</p>
+                                </div>
+                            </div>
+                            <div class="p-5 space-y-3">
+                                <div class="flex items-center justify-between text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                                    <span>Class &amp; Academic Year</span>
+                                    <span class="font-bold text-slate-900" id="collection-bulk-result-scope">--</span>
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 text-center">
+                                    <div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                                        <div class="text-[10px] font-bold uppercase text-emerald-700">Saved</div>
+                                        <div class="text-xl font-black text-emerald-800 mt-0.5" id="collection-bulk-result-saved">0</div>
+                                    </div>
+                                    <div class="p-3 rounded-xl bg-sky-50 border border-sky-200">
+                                        <div class="text-[10px] font-bold uppercase text-sky-700">Already Paid</div>
+                                        <div class="text-xl font-black text-sky-800 mt-0.5" id="collection-bulk-result-paid">0</div>
+                                    </div>
+                                    <div class="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                                        <div class="text-[10px] font-bold uppercase text-amber-700">Skipped</div>
+                                        <div class="text-xl font-black text-amber-800 mt-0.5" id="collection-bulk-result-skipped">0</div>
+                                    </div>
+                                </div>
+                                <div class="pt-2 text-right">
+                                    <button type="button" id="collection-bulk-result-ok-btn" class="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition cursor-pointer">OK</button>
+                                </div>
                             </div>
                         </div>
                     </div>
