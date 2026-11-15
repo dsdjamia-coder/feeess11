@@ -4579,7 +4579,7 @@ function renderCollectionBulkPreviewTable() {
                                 <span class="text-[11px] font-mono ${isDup ? 'text-white font-extrabold' : 'text-slate-700'} truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
                                 ${badgeIcon}
                             </div>
-                            <select data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="collection-bulk-col-map-wrap" data-smart-placeholder="Search column..." class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
+                            <select data-smart-select="true" data-smart-floating="true" data-smart-min-width="210" data-smart-wrapper-class="collection-bulk-col-map-wrap" data-smart-placeholder="Search column..." class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
                                 ${mappingOptions.map((opt) => `
                                     <option value="${escapeHtml(opt.key)}" ${col.mappedField === opt.key ? 'selected' : ''}>${escapeHtml(opt.label)}</option>
                                 `).join('')}

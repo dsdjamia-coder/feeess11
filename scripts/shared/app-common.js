@@ -283,13 +283,15 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
     const closeAll = () => {
         document.querySelectorAll('.smart-select-list.active').forEach((el) => {
             el.classList.remove('active');
-            if (el.dataset.smartFloatingList === 'true') {
-                el.style.position = '';
-                el.style.top = '';
-                el.style.left = '';
-                el.style.width = '';
-                el.style.zIndex = '';
-            }
+            el.style.position = '';
+            el.style.top = '';
+            el.style.left = '';
+            el.style.right = '';
+            el.style.width = '';
+            el.style.minWidth = '';
+            el.style.maxWidth = '';
+            el.style.maxHeight = '';
+            el.style.zIndex = '';
         });
     };
 
@@ -332,19 +334,56 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         let activeIndex = -1;
         const getOptionItems = () => Array.from(list.querySelectorAll('.smart-select-option'));
 
+        const getSmartSelectBounds = () => {
+            const vpLeft = 8;
+            const vpRight = Math.max(vpLeft + 120, window.innerWidth - 8);
+            let boundLeft = vpLeft;
+            let boundRight = vpRight;
+            const container = input.closest('.modal-box, .card, #app, main');
+            if (container) {
+                const cRect = container.getBoundingClientRect();
+                if (cRect.width > 0) {
+                    boundLeft = Math.max(vpLeft, cRect.left + 8);
+                    boundRight = Math.min(vpRight, cRect.right - 8);
+                }
+            }
+            if (boundRight <= boundLeft) {
+                boundLeft = vpLeft;
+                boundRight = vpRight;
+            }
+            const maxAllowedWidth = Math.max(80, Math.min(260, boundRight - boundLeft));
+            return { boundLeft, boundRight, maxAllowedWidth };
+        };
+
         const positionFloatingList = () => {
             if (!isFloating) return;
             const rect = input.getBoundingClientRect();
             const spaceBelow = window.innerHeight - rect.bottom;
             const maxListHeight = 220;
             const openUpwards = spaceBelow < 180 && rect.top > spaceBelow;
-            const width = Math.max(rect.width, 220);
-            const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+            const { boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
+            const explicitMin = Number(select.dataset.smartMinWidth || 0);
+            const minWidth = Math.min(maxAllowedWidth, Math.max(rect.width, explicitMin));
 
             list.style.position = 'fixed';
+            list.style.right = 'auto';
+            list.style.minWidth = `${minWidth}px`;
+            list.style.width = 'max-content';
+            list.style.maxWidth = `${maxAllowedWidth}px`;
+            list.style.left = `${boundLeft}px`;
+            list.style.zIndex = '10020';
+
+            const measuredWidth = Math.ceil(list.getBoundingClientRect().width || rect.width);
+            const width = Math.max(minWidth, Math.min(measuredWidth, maxAllowedWidth));
+
+            let left = rect.left;
+            if (left + width > boundRight) {
+                left = rect.right - width;
+            }
+            left = Math.max(boundLeft, Math.min(left, boundRight - width));
+
             list.style.left = `${left}px`;
             list.style.width = `${width}px`;
-            list.style.zIndex = '10020';
 
             if (openUpwards) {
                 const topPos = Math.max(8, rect.top - Math.min(maxListHeight, rect.top - 12) - 4);
@@ -353,6 +392,23 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             } else {
                 list.style.top = `${rect.bottom + 4}px`;
                 list.style.maxHeight = `${Math.max(120, Math.min(maxListHeight, spaceBelow - 12))}px`;
+            }
+        };
+
+        const positionStaticList = () => {
+            if (isFloating) return;
+            const rect = input.getBoundingClientRect();
+            const { boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
+            list.style.left = '0px';
+            list.style.right = 'auto';
+            list.style.minWidth = '100%';
+            list.style.width = 'max-content';
+            list.style.maxWidth = `${maxAllowedWidth}px`;
+
+            const listRect = list.getBoundingClientRect();
+            if (listRect.right > boundRight && (rect.right - listRect.width) >= boundLeft) {
+                list.style.left = 'auto';
+                list.style.right = '0px';
             }
         };
 
@@ -392,7 +448,8 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
                 ? filtered.map((option) => `<div class="suggestion-item smart-select-option ${option.value === select.value ? 'smart-selected-option' : ''}" data-value="${escapeHtml(option.value)}">${escapeHtml(option.textContent || '')}</div>`).join('')
                 : '<div class="suggestion-item text-gray-400">No matches</div>';
             list.classList.add('active');
-            positionFloatingList();
+            if (isFloating) positionFloatingList();
+            else positionStaticList();
             const selectedIdx = filtered.findIndex((o) => o.value === select.value);
             if (selectedIdx >= 0) highlightOption(selectedIdx);
         };
