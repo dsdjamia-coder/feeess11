@@ -2677,6 +2677,320 @@ const sumReportPaymentsOnce = (payments = [], predicate = () => true) => {
 
 const getGroupMemberStudents = (group = {}) => (group.memberIds || []).map((id) => getStudentById(id)).filter(Boolean);
 
+const getStudentClassForFeeYear = (student = {}, academicYear = '') => {
+    if (!student) return '';
+    return student.academicYears?.[academicYear]?.class
+        || (student.class !== 'Alumni' && student.class !== 'ALUMNI_DUES' ? student.class : '')
+        || '';
+};
+
+const getCustomFeeConfigForStudent = (item = {}, student = {}, academicYear = '') => {
+    if (!item || item.type !== 'custom' || !student) {
+        return { amount: 0, rawAmount: '', locked: false, applicable: true };
+    }
+    const stuClass = getStudentClassForFeeYear(student, academicYear);
+    let rawAmt = '';
+    if (item.scope === 'global') {
+        rawAmt = item.amount ?? '';
+    } else if (item.scope === 'class-wise' && item.classValues) {
+        rawAmt = item.classValues[stuClass] ?? item.classValues[student.class] ?? '';
+    } else if (item.scope === 'specific') {
+        if (stuClass && item.targetClass && stuClass !== item.targetClass) {
+            return { amount: 0, rawAmount: '', locked: true, applicable: false };
+        }
+        rawAmt = item.amount ?? '';
+    }
+    const hasConfigured = rawAmt !== '' && rawAmt !== null && rawAmt !== undefined;
+    const numericAmt = hasConfigured ? Math.max(0, Number(rawAmt) || 0) : 0;
+    return {
+        amount: numericAmt,
+        rawAmount: hasConfigured ? rawAmt : '',
+        locked: hasConfigured,
+        applicable: true
+    };
+};
+
+const getSelectedMembersCustomFeeConfig = (item = {}, selectedIdsSet = null, academicYear = '') => {
+    const st = getStudentById(selectedStudentId);
+    const group = st ? getStudentBillingGroup(st.id) : null;
+    const members = group ? getGroupMemberStudents(group) : [];
+    const targetIds = (group && members.length > 1)
+        ? (selectedIdsSet && selectedIdsSet.size > 0 ? [...selectedIdsSet] : members.map(m => m.id))
+        : (st ? [st.id] : []);
+
+    const perMemberAmounts = {};
+    let total = 0;
+    let allLocked = targetIds.length > 0;
+    let anyConfigured = false;
+
+    targetIds.forEach((id) => {
+        const member = getStudentById(id);
+        const cfg = getCustomFeeConfigForStudent(item, member, academicYear);
+        perMemberAmounts[id] = cfg.amount;
+        total += cfg.amount;
+        if (cfg.locked) anyConfigured = true;
+        else allLocked = false;
+    });
+
+    return {
+        defaultAmount: anyConfigured ? roundMoney(total) : '',
+        amountLocked: targetIds.length > 0 && allLocked && anyConfigured,
+        perMemberAmounts
+    };
+};
+
+const getFeeItemGroupState = (item = {}, academicYear = '', selectedMemberIdsSet = null, options = {}) => {
+    const st = getStudentById(selectedStudentId);
+    const group = st ? getStudentBillingGroup(st.id) : null;
+    const members = group ? getGroupMemberStudents(group) : [];
+    if (!group || members.length <= 1) {
+        return {
+            isGroup: false,
+            group: null,
+            members: st ? [st] : [],
+            paidMembers: [],
+            unpaidMembers: st ? [st] : [],
+            checkedPaidMembers: [],
+            checkedUnpaidMembers: st ? [st] : [],
+            isAllPaid: false,
+            isPartial: false,
+            isLockedByCheckedPaid: false,
+            isLocked: false
+        };
+    }
+
+    const excludeTxnId = options?.excludeTxnId || '';
+    const itemType = item?.type || 'month';
+    const targetObj = {
+        key: item?.key || item?.itemKey || '',
+        type: itemType,
+        name: item?.name || item?.key || ''
+    };
+
+    const paidMembers = [];
+    const unpaidMembers = [];
+
+    members.forEach((member) => {
+        const memberPay = (allPayments || []).find((payment) => {
+            if (excludeTxnId && getPaymentGroupKey(payment) === excludeTxnId) return false;
+            const matchesItem = payment.itemKey === targetObj.key || isFeeItemMatch(payment.itemKey, targetObj);
+            if (!matchesItem) return false;
+            if ((payment.academicYear || '') !== (academicYear || '')) return false;
+
+            if (payment.studentId === member.id) return true;
+            if (itemType === 'month' && payment.billingGroupId && payment.billingGroupId === group.id) {
+                if (Array.isArray(payment.targetGroupMemberIds) && payment.targetGroupMemberIds.length > 0) {
+                    return payment.targetGroupMemberIds.includes(member.id);
+                }
+                return true;
+            }
+            return false;
+        });
+
+        if (memberPay) {
+            paidMembers.push({
+                member,
+                payment: memberPay,
+                receiptNo: memberPay.receiptNo !== undefined && memberPay.receiptNo !== null && memberPay.receiptNo !== '' ? String(memberPay.receiptNo) : ''
+            });
+        } else {
+            unpaidMembers.push(member);
+        }
+    });
+
+    const checkedIds = selectedMemberIdsSet && selectedMemberIdsSet.size > 0
+        ? selectedMemberIdsSet
+        : new Set(members.map(m => m.id));
+
+    const checkedPaidMembers = paidMembers.filter(entry => checkedIds.has(entry.member.id));
+    const checkedUnpaidMembers = unpaidMembers.filter(member => checkedIds.has(member.id));
+
+    const isAllPaid = unpaidMembers.length === 0;
+    const isPartial = paidMembers.length > 0 && unpaidMembers.length > 0;
+    const isLockedByCheckedPaid = !isAllPaid && checkedPaidMembers.length > 0;
+    const isLocked = isAllPaid || isLockedByCheckedPaid;
+
+    return {
+        isGroup: true,
+        group,
+        members,
+        paidMembers,
+        unpaidMembers,
+        checkedPaidMembers,
+        checkedUnpaidMembers,
+        isAllPaid,
+        isPartial,
+        isLockedByCheckedPaid,
+        isLocked
+    };
+};
+
+const buildFeeItemGroupMembersMarkup = (groupState) => {
+    if (!groupState?.isGroup || !Array.isArray(groupState.members) || groupState.members.length <= 1) {
+        return '';
+    }
+    const paidMap = new Map(groupState.paidMembers.map(entry => [entry.member.id, entry]));
+    const rowsHtml = groupState.members.map((member) => {
+        const paidInfo = paidMap.get(member.id);
+        const memberName = member.name || 'Student';
+        if (paidInfo) {
+            const rcptBadge = paidInfo.receiptNo ? `#${paidInfo.receiptNo}` : 'Paid';
+            return `<div class="fee-member-row is-paid" title="${escapeHtml(memberName)} - Paid${paidInfo.receiptNo ? ` (Rcpt: ${escapeHtml(paidInfo.receiptNo)})` : ''}">
+                <span class="fee-member-name">✓ ${escapeHtml(memberName)}</span>
+                <span class="fee-member-tag">${escapeHtml(rcptBadge)}</span>
+            </div>`;
+        }
+        return `<div class="fee-member-row is-due" title="${escapeHtml(memberName)} - Due">
+            <span class="fee-member-name">• ${escapeHtml(memberName)}</span>
+            <span class="fee-member-tag">Due</span>
+        </div>`;
+    }).join('');
+    return `<div class="fee-item-group-members">${rowsHtml}</div>`;
+};
+
+const getVisibleFeeItemsForCurrentStudentAndYear = () => {
+    const st = getStudentById(selectedStudentId);
+    if (!st) return [];
+    const studentClassInSelectedYear = getStudentClassForFeeYear(st, selectedFeeAcademicYear);
+    return feeItems.filter((i) => {
+        const itemYear = i.academicYear || getAcademicYearFromDate();
+        if (selectedFeeAcademicYear && itemYear !== selectedFeeAcademicYear) return false;
+        if (i.isVisible === false) return false;
+        if (i.type === 'custom' && st) {
+            if (i.scope === 'specific' && studentClassInSelectedYear && i.targetClass !== studentClassInSelectedYear) return false;
+        }
+        return true;
+    });
+};
+
+const syncFeeItemCardsGroupState = (options = {}) => {
+    const st = getStudentById(selectedStudentId);
+    if (!st) return;
+
+    const excludeTxnId = options?.excludeTxnId ?? (isEditMode ? editingPaymentGroup?.txnId || '' : '');
+    const isEdit = options?.isEdit ?? isEditMode;
+    const visibleItems = getVisibleFeeItemsForCurrentStudentAndYear().filter(i => i.key !== STUDENT_DONATION_ITEM_KEY);
+    const itemLookup = new Map(visibleItems.map(i => [i.key, i]));
+
+    document.querySelectorAll('.fee-item-checkbox').forEach((cb) => {
+        const itemKey = cb.dataset.itemKey || '';
+        const itemType = cb.dataset.itemType || 'month';
+        if (itemKey === STUDENT_DONATION_ITEM_KEY) return;
+
+        const currentItemObj = itemLookup.get(itemKey) || { key: itemKey, type: itemType, name: itemKey };
+        const card = cb.closest('.fee-month-item-card');
+        const labelEl = cb.nextElementSibling;
+        const receiptEl = labelEl?.querySelector('.fee-item-receipt');
+        const membersContainer = labelEl?.querySelector('.fee-item-group-members');
+        const groupState = getFeeItemGroupState(currentItemObj, selectedFeeAcademicYear, selectedGroupMemberIds, { excludeTxnId });
+
+        if (!groupState.isGroup) {
+            if (membersContainer) membersContainer.remove();
+            return;
+        }
+
+        const membersMarkup = buildFeeItemGroupMembersMarkup(groupState);
+        if (membersContainer) {
+            membersContainer.outerHTML = membersMarkup;
+        } else if (labelEl && membersMarkup) {
+            labelEl.querySelector('.leading-tight')?.insertAdjacentHTML('beforeend', membersMarkup);
+        }
+
+        const isPaidHereInEdit = Boolean(isEdit && editingPaymentGroup?.itemKeys?.has(`${itemKey}__${selectedFeeAcademicYear || ''}`));
+
+        if (isEdit && isPaidHereInEdit) {
+            cb.disabled = false;
+            if (receiptEl) {
+                receiptEl.textContent = groupState.isPartial
+                    ? `${groupState.paidMembers.length}/${groupState.members.length} Paid elsewhere`
+                    : 'Editing';
+                receiptEl.className = 'fee-item-receipt text-[9.5px] sm:text-[10px] opacity-90 mt-0.5 leading-tight';
+            }
+            return;
+        }
+
+        labelEl?.classList.remove('fee-item-paid-elsewhere', 'fee-item-partial-locked', 'fee-item-editing-yellow', 'fee-item-new-green');
+
+        if (receiptEl) {
+            if (groupState.isAllPaid) {
+                receiptEl.textContent = 'All Paid';
+                receiptEl.className = 'fee-item-receipt text-[9.5px] sm:text-[10px] font-bold text-emerald-700 mt-0.5 leading-tight';
+            } else if (groupState.isLockedByCheckedPaid) {
+                receiptEl.textContent = `${groupState.paidMembers.length}/${groupState.members.length} Paid · Uncheck paid`;
+                receiptEl.className = 'fee-item-receipt text-[9px] sm:text-[10px] font-bold text-amber-800 mt-0.5 leading-tight';
+            } else if (groupState.isPartial) {
+                receiptEl.textContent = `${groupState.paidMembers.length}/${groupState.members.length} Paid · Due open`;
+                receiptEl.className = 'fee-item-receipt text-[9px] sm:text-[10px] font-bold mt-0.5 leading-tight';
+            } else {
+                receiptEl.textContent = `0/${groupState.members.length} Paid`;
+                receiptEl.className = 'fee-item-receipt text-[9px] sm:text-[10px] opacity-75 mt-0.5 leading-tight';
+            }
+        }
+
+        if (groupState.isLocked) {
+            cb.disabled = true;
+            cb.checked = groupState.isAllPaid;
+            labelEl?.classList.add(groupState.isAllPaid ? 'fee-item-paid-elsewhere' : 'fee-item-partial-locked');
+
+            if (pendingFeeSelectionsByYear[selectedFeeAcademicYear]?.[itemKey]) {
+                pendingFeeSelectionsByYear[selectedFeeAcademicYear][itemKey].checked = false;
+            }
+            if (itemType === 'custom') {
+                const customInput = card?.querySelector('.custom-fee-amount-input');
+                if (customInput) {
+                    customInput.classList.add('hidden');
+                    if (customInput.dataset.locked !== 'true') customInput.value = '';
+                }
+            } else {
+                const monthWrap = card?.querySelector('.month-amount-wrapper');
+                const monthInput = card?.querySelector('.month-fee-amount-input');
+                if (monthWrap) monthWrap.classList.add('hidden');
+                if (monthInput) monthInput.value = '';
+            }
+            return;
+        }
+
+        cb.disabled = false;
+        const pending = pendingFeeSelectionsByYear[selectedFeeAcademicYear]?.[itemKey];
+        if (pending?.checked || cb.checked) {
+            cb.checked = true;
+            if (isEdit && !editTouchedItemKeys.has(itemKey)) {
+                labelEl?.classList.add('fee-item-new-green');
+            }
+            if (itemType === 'custom') {
+                const customInput = card?.querySelector('.custom-fee-amount-input');
+                const customCfg = getSelectedMembersCustomFeeConfig(currentItemObj, selectedGroupMemberIds, selectedFeeAcademicYear);
+                if (customInput) {
+                    customInput.dataset.locked = customCfg.amountLocked ? 'true' : 'false';
+                    customInput.readOnly = customCfg.amountLocked;
+                    customInput.classList.remove('hidden');
+                    if (customCfg.amountLocked) {
+                        customInput.value = customCfg.defaultAmount;
+                    } else if (Number.isFinite(Number(pending?.amount))) {
+                        customInput.value = pending.amount;
+                    }
+                }
+            } else {
+                const monthWrap = card?.querySelector('.month-amount-wrapper');
+                const monthInput = card?.querySelector('.month-fee-amount-input');
+                if (monthWrap) monthWrap.classList.remove('hidden');
+                if (monthInput) {
+                    monthInput.value = getCurrentEffectiveMonthlyFee();
+                }
+            }
+        } else if (itemType === 'custom') {
+            const customInput = card?.querySelector('.custom-fee-amount-input');
+            const customCfg = getSelectedMembersCustomFeeConfig(currentItemObj, selectedGroupMemberIds, selectedFeeAcademicYear);
+            if (customInput) {
+                customInput.dataset.locked = customCfg.amountLocked ? 'true' : 'false';
+                customInput.readOnly = customCfg.amountLocked;
+                customInput.classList.add('hidden');
+                if (customCfg.amountLocked) customInput.value = customCfg.defaultAmount;
+            }
+        }
+    });
+};
+
 const renderGroupedStudentsPanel = () => {
     const panel = document.getElementById('grouped-students-panel');
     if (!panel) return;
@@ -2698,28 +3012,50 @@ const renderGroupedStudentsPanel = () => {
     const isSingleSelected = selectedGroupMemberIds.size === 1;
     const singleStudent = isSingleSelected ? getStudentById([...selectedGroupMemberIds][0]) : null;
 
+    const visibleItems = getVisibleFeeItemsForCurrentStudentAndYear().filter(i => i.key !== STUDENT_DONATION_ITEM_KEY);
+    const excludeTxnId = isEditMode ? editingPaymentGroup?.txnId || '' : '';
+    const itemGroupStates = visibleItems.map(item => ({
+        item,
+        state: getFeeItemGroupState(item, selectedFeeAcademicYear, selectedGroupMemberIds, { excludeTxnId })
+    }));
+    const hasPartialLockedItems = itemGroupStates.some(({ state }) => state.isLockedByCheckedPaid);
+
     const memberRows = members.map((student, index) => {
         const isChecked = selectedGroupMemberIds.has(student.id);
         const hasConcession = student.concessionFee !== undefined && student.concessionFee !== null && student.concessionFee !== '';
         const indRate = hasConcession ? parseFloat(student.concessionFee) : defaultFee;
         const rateBadge = hasConcession
-            ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Concession: ${formatCurrency(indRate)}</span>`
-            : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">Normal: ${formatCurrency(indRate)}</span>`;
+            ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Concession: ${formatCurrency(indRate)}</span>`
+            : `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">Normal: ${formatCurrency(indRate)}</span>`;
+
+        let memberPaidCount = 0;
+        let memberDueCount = 0;
+        itemGroupStates.forEach(({ state }) => {
+            if (state.paidMembers.some(entry => entry.member.id === student.id)) {
+                memberPaidCount += 1;
+            } else {
+                memberDueCount += 1;
+            }
+        });
+        const progressText = visibleItems.length > 0
+            ? `<span class="text-emerald-700 font-bold">✓ ${memberPaidCount} Paid</span><span class="text-slate-300">·</span><span class="text-red-600 font-bold">• ${memberDueCount} Due</span>`
+            : '';
 
         return `
-        <li class="flex items-center justify-between gap-2 rounded-xl bg-white border ${isChecked ? 'border-emerald-300 shadow-sm' : 'border-gray-200 opacity-60'} p-2.5 transition">
-            <div class="flex items-center gap-2.5 min-w-0">
+        <li class="flex items-center justify-between gap-2 rounded-xl bg-white border ${isChecked ? 'border-emerald-300 shadow-sm' : 'border-gray-200 opacity-65'} p-2 sm:p-2.5 transition">
+            <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
                 <input type="checkbox" id="grp-stu-${student.id}" data-grp-student-id="${student.id}"
-                       class="group-member-checkbox w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer"
+                       class="group-member-checkbox w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer flex-shrink-0"
                        ${isChecked ? 'checked' : ''}>
                 <label for="grp-stu-${student.id}" class="cursor-pointer min-w-0">
                     <div class="font-bold text-gray-900 text-xs sm:text-sm truncate">${index + 1}. ${escapeHtml(student.name || 'Student')}</div>
-                    <div class="text-[11px] text-gray-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <div class="text-[10.5px] sm:text-[11px] text-gray-500 flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span class="font-semibold text-emerald-700">Class: ${escapeHtml(student.class || '--')}</span>
                         <span>•</span>
                         <span>Adm: ${escapeHtml(student.adm || '--')}</span>
                         <span>•</span>
                         ${rateBadge}
+                        ${progressText ? `<span>•</span>${progressText}` : ''}
                     </div>
                 </label>
             </div>
@@ -2735,27 +3071,34 @@ const renderGroupedStudentsPanel = () => {
 
     let statusNote = '';
     if (isAllSelected) {
-        statusNote = `<div class="text-[11px] font-medium text-emerald-800 bg-emerald-100/70 p-2 rounded-lg border border-emerald-200 flex items-center justify-between">
+        statusNote = `<div class="text-[11px] font-medium text-emerald-800 bg-emerald-100/70 p-2 rounded-lg border border-emerald-200 flex items-center justify-between gap-2">
             <span><i class="fas fa-users mr-1"></i><b>All ${members.length} members selected</b> (Group rate: ${formatCurrency(groupCollectiveFee)}/month applied)</span>
-            <span class="font-mono font-bold text-emerald-900">${formatCurrency(groupCollectiveFee)}/mo</span>
+            <span class="font-mono font-bold text-emerald-900 shrink-0">${formatCurrency(groupCollectiveFee)}/mo</span>
         </div>`;
     } else if (isSingleSelected && singleStudent) {
         statusNote = `<div class="text-[11px] font-medium text-blue-800 bg-blue-50 p-2 rounded-lg border border-blue-200">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between gap-2">
                 <span><i class="fas fa-user mr-1"></i><b>Only ${escapeHtml(singleStudent.name)} selected</b></span>
-                <span class="font-mono font-bold text-blue-900">${formatCurrency(effectiveBaseFee)}/mo</span>
+                <span class="font-mono font-bold text-blue-900 shrink-0">${formatCurrency(effectiveBaseFee)}/mo</span>
             </div>
             <p class="text-[10px] text-blue-600 mt-1">Individual rate applies. Unchecked siblings remain due without any balance carry-over.</p>
         </div>`;
     } else {
-        statusNote = `<div class="text-[11px] font-medium text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 flex items-center justify-between">
+        statusNote = `<div class="text-[11px] font-medium text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 flex items-center justify-between gap-2">
             <span><i class="fas fa-user-friends mr-1"></i><b>${selectedGroupMemberIds.size} members selected</b></span>
-            <span class="font-mono font-bold text-amber-900">${formatCurrency(effectiveBaseFee)}/mo</span>
+            <span class="font-mono font-bold text-amber-900 shrink-0">${formatCurrency(effectiveBaseFee)}/mo</span>
         </div>`;
     }
 
+    const partialLockNotice = hasPartialLockedItems
+        ? `<div class="text-[11px] font-semibold text-amber-900 bg-amber-50 border border-amber-300 rounded-lg px-2.5 py-1.5 flex items-start gap-2">
+            <i class="fas fa-lock text-amber-600 mt-0.5"></i>
+            <span>Partially paid fee items are locked while an already-paid member is checked. Uncheck the paid member(s) or tap <b>Only</b> on a due member to collect.</span>
+        </div>`
+        : '';
+
     panel.innerHTML = `
-        <div class="space-y-2.5">
+        <div class="space-y-2">
             <div class="flex items-center justify-between gap-2 border-b border-emerald-200 pb-2">
                 <div class="flex items-center gap-2">
                     <span class="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs"><i class="fas fa-users"></i></span>
@@ -2772,24 +3115,27 @@ const renderGroupedStudentsPanel = () => {
                 </div>
             </div>
             <ol class="space-y-1.5">${memberRows}</ol>
+            ${partialLockNotice}
             ${statusNote}
         </div>`;
     panel.classList.remove('hidden');
 };
 
 const onGroupMemberSelectionChanged = () => {
+    syncFeeItemCardsGroupState();
     const effectiveFee = getCurrentEffectiveMonthlyFee();
-    captureCurrentYearFeeSelections();
     if (pendingFeeSelectionsByYear[selectedFeeAcademicYear]) {
         Object.entries(pendingFeeSelectionsByYear[selectedFeeAcademicYear]).forEach(([key, sel]) => {
             if (sel?.checked && sel.type === 'month') {
-                sel.amount = effectiveFee;
-                const monthInput = document.querySelector(`.month-fee-amount-input[data-item-key="${key}"]`);
-                if (monthInput) monthInput.value = effectiveFee;
+                const cb = document.querySelector(`.fee-item-checkbox[data-item-key="${key}"]`);
+                if (cb && !cb.disabled) {
+                    sel.amount = effectiveFee;
+                    const monthInput = document.querySelector(`.month-fee-amount-input[data-item-key="${key}"]`);
+                    if (monthInput) monthInput.value = effectiveFee;
+                }
             }
         });
     }
-    renderGroupedStudentsPanel();
     updateTotalAmount();
 };
 
@@ -2841,6 +3187,7 @@ const setupGroupPanelListeners = () => {
 
 const syncGroupedStudentsForSelectedStudent = () => {
     setupGroupPanelListeners();
+    syncFeeItemCardsGroupState();
     renderGroupedStudentsPanel();
 };
 
@@ -3352,15 +3699,7 @@ const populateFeeItemSelection = () => {
     const studentClassInSelectedYear = st.academicYears?.[selectedFeeAcademicYear]?.class || 
         (st.class !== 'Alumni' && st.class !== 'ALUMNI_DUES' ? st.class : '') || '';
 
-    const visibleItems = feeItems.filter(i => {
-        const itemYear = i.academicYear || getAcademicYearFromDate();
-        if (selectedFeeAcademicYear && itemYear !== selectedFeeAcademicYear) return false;
-        if(i.isVisible === false) return false;
-        if(i.type === 'custom' && st) {
-            if(i.scope === 'specific' && studentClassInSelectedYear && i.targetClass !== studentClassInSelectedYear) return false;
-        }
-        return true;
-    });
+    const visibleItems = getVisibleFeeItemsForCurrentStudentAndYear();
 
     if (visibleItems.length === 0) {
          container.innerHTML = '<div class="col-span-3 text-center text-xs font-semibold text-gray-400 py-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">No fee items available</div>';
@@ -3368,14 +3707,16 @@ const populateFeeItemSelection = () => {
          return;
     }
 
+    const activeGroup = getStudentBillingGroup(st.id);
+    const isGroupedStudent = Boolean(activeGroup && getGroupMemberStudents(activeGroup).length > 1);
+
     const renderFeeOption = (item) => {
         let defaultAmt = '';
         let amountLocked = false;
-        if(item.type === 'custom' && st) {
-            if(item.scope === 'global') defaultAmt = item.amount || '';
-            else if(item.scope === 'class-wise' && item.classValues) defaultAmt = item.classValues[studentClassInSelectedYear] || item.classValues[st.class] || '';
-            else if(item.scope === 'specific') defaultAmt = item.amount || '';
-            amountLocked = defaultAmt !== '' && defaultAmt !== null && defaultAmt !== undefined;
+        if (item.type === 'custom' && st) {
+            const customCfg = getSelectedMembersCustomFeeConfig(item, selectedGroupMemberIds, selectedFeeAcademicYear);
+            defaultAmt = customCfg.defaultAmount;
+            amountLocked = customCfg.amountLocked;
         }
 
         const itemYear = item.academicYear || '--';
@@ -3388,7 +3729,7 @@ const populateFeeItemSelection = () => {
                 <div class="leading-tight">
                     <div class="font-bold break-words">${displayName}</div>
                     <div class="text-[10px] opacity-80 mt-0.5 sm:mt-1 block">${itemYear}</div>
-                    <div class="fee-item-receipt text-[10px] opacity-70 mt-0.5 sm:mt-1 h-3"></div>
+                    <div class="fee-item-receipt text-[10px] opacity-70 mt-0.5 sm:mt-1 ${isGroupedStudent ? 'min-h-[12px]' : 'h-3'}"></div>
                 </div>
             </label>
             ${isMonth ? `
@@ -3418,48 +3759,52 @@ const populateFeeItemSelection = () => {
         buildSection('Other Fees', otherItems, 'text-amber-600')
     ].filter(Boolean).join('');
 
-    if(st) {
-        document.querySelectorAll('.fee-item-checkbox').forEach(cb => {
-            const isDonationItem = cb.dataset.itemKey === STUDENT_DONATION_ITEM_KEY;
-            const currentItemObj = visibleItems.find(i => i.key === cb.dataset.itemKey);
-            const pay = allPayments.find((payment) => {
-                if (payment.studentId !== st.id) return false;
-                const matchesItem = payment.itemKey === cb.dataset.itemKey || isFeeItemMatch(payment.itemKey, currentItemObj || { key: cb.dataset.itemKey, type: cb.dataset.itemType, name: cb.dataset.itemKey });
-                if (!matchesItem) return false;
-                return (payment.academicYear || '') === (selectedFeeAcademicYear || '');
-            });
-            const donationCount = isDonationItem
-                ? allPayments.filter((payment) => payment.studentId === st.id && payment.itemKey === STUDENT_DONATION_ITEM_KEY && (payment.academicYear || '') === (selectedFeeAcademicYear || '')).length
-                : 0;
-            cb.checked = false; cb.disabled = isDonationItem ? false : !!pay;
-            const receiptEl = cb.nextElementSibling.querySelector('.fee-item-receipt');
-            if (receiptEl) receiptEl.textContent = isDonationItem ? (donationCount ? `${donationCount} donation(s)` : '') : (pay?.receiptNo ? `Rcpt: ${pay.receiptNo}` : '');
-            
-            // Clear custom colors
-            const labelEl = cb.nextElementSibling;
-            labelEl.classList.remove('fee-item-paid-elsewhere', 'fee-item-editing-yellow', 'fee-item-new-green');
+    if (st) {
+        if (isGroupedStudent) {
+            syncFeeItemCardsGroupState();
+        } else {
+            document.querySelectorAll('.fee-item-checkbox').forEach(cb => {
+                const isDonationItem = cb.dataset.itemKey === STUDENT_DONATION_ITEM_KEY;
+                const currentItemObj = visibleItems.find(i => i.key === cb.dataset.itemKey);
+                const pay = allPayments.find((payment) => {
+                    if (payment.studentId !== st.id) return false;
+                    const matchesItem = payment.itemKey === cb.dataset.itemKey || isFeeItemMatch(payment.itemKey, currentItemObj || { key: cb.dataset.itemKey, type: cb.dataset.itemType, name: cb.dataset.itemKey });
+                    if (!matchesItem) return false;
+                    return (payment.academicYear || '') === (selectedFeeAcademicYear || '');
+                });
+                const donationCount = isDonationItem
+                    ? allPayments.filter((payment) => payment.studentId === st.id && payment.itemKey === STUDENT_DONATION_ITEM_KEY && (payment.academicYear || '') === (selectedFeeAcademicYear || '')).length
+                    : 0;
+                cb.checked = false; cb.disabled = isDonationItem ? false : !!pay;
+                const receiptEl = cb.nextElementSibling.querySelector('.fee-item-receipt');
+                if (receiptEl) receiptEl.textContent = isDonationItem ? (donationCount ? `${donationCount} donation(s)` : '') : (pay?.receiptNo ? `Rcpt: ${pay.receiptNo}` : '');
 
-            if(pay && !isDonationItem) { 
-                labelEl.classList.add('fee-item-paid-elsewhere');
-                cb.checked = true; 
-            }
-            const pending = pendingFeeSelectionsByYear[selectedFeeAcademicYear]?.[cb.dataset.itemKey];
-            if (!cb.disabled && pending?.checked) {
-                cb.checked = true;
-                if (cb.dataset.itemType === 'custom') {
-                    const customInput = cb.closest('.fee-month-item-card')?.querySelector('.custom-fee-amount-input');
-                    if (customInput) {
-                        customInput.classList.remove('hidden');
-                        if (Number.isFinite(Number(pending.amount))) customInput.value = pending.amount;
-                    }
-                } else {
-                    const monthWrap = cb.closest('.fee-month-item-card')?.querySelector('.month-amount-wrapper');
-                    const monthInput = cb.closest('.fee-month-item-card')?.querySelector('.month-fee-amount-input');
-                    if (monthWrap) monthWrap.classList.remove('hidden');
-                    if (monthInput) monthInput.value = Number.isFinite(Number(pending.amount)) ? pending.amount : getCurrentEffectiveMonthlyFee();
+                // Clear custom colors
+                const labelEl = cb.nextElementSibling;
+                labelEl.classList.remove('fee-item-paid-elsewhere', 'fee-item-partial-locked', 'fee-item-editing-yellow', 'fee-item-new-green');
+
+                if (pay && !isDonationItem) {
+                    labelEl.classList.add('fee-item-paid-elsewhere');
+                    cb.checked = true;
                 }
-            }
-        });
+                const pending = pendingFeeSelectionsByYear[selectedFeeAcademicYear]?.[cb.dataset.itemKey];
+                if (!cb.disabled && pending?.checked) {
+                    cb.checked = true;
+                    if (cb.dataset.itemType === 'custom') {
+                        const customInput = cb.closest('.fee-month-item-card')?.querySelector('.custom-fee-amount-input');
+                        if (customInput) {
+                            customInput.classList.remove('hidden');
+                            if (Number.isFinite(Number(pending.amount))) customInput.value = pending.amount;
+                        }
+                    } else {
+                        const monthWrap = cb.closest('.fee-month-item-card')?.querySelector('.month-amount-wrapper');
+                        const monthInput = cb.closest('.fee-month-item-card')?.querySelector('.month-fee-amount-input');
+                        if (monthWrap) monthWrap.classList.remove('hidden');
+                        if (monthInput) monthInput.value = Number.isFinite(Number(pending.amount)) ? pending.amount : getCurrentEffectiveMonthlyFee();
+                    }
+                }
+            });
+        }
     }
     const dueNotice = document.getElementById('fee-due-notice');
     if (dueNotice) {
@@ -3479,9 +3824,9 @@ document.getElementById('fee-item-selection-container')?.addEventListener('chang
         const cb = e.target;
         const card = cb.closest('.fee-month-item-card');
         const itemType = cb.dataset.itemType || 'month';
+        const itemKey = cb.dataset.itemKey || '';
 
         if (isEditMode) {
-            const itemKey = cb.dataset.itemKey;
             if (itemKey) editTouchedItemKeys.add(itemKey);
             const labelEl = cb.nextElementSibling;
             labelEl.classList.remove('fee-item-editing-yellow', 'fee-item-new-green');
@@ -3493,6 +3838,15 @@ document.getElementById('fee-item-selection-container')?.addEventListener('chang
         if(itemType === 'custom') {
             const input = card?.querySelector('.custom-fee-amount-input');
             if(input) {
+                const itemObj = feeItems.find(i => i.key === itemKey);
+                if (itemObj) {
+                    const customCfg = getSelectedMembersCustomFeeConfig(itemObj, selectedGroupMemberIds, selectedFeeAcademicYear);
+                    input.dataset.locked = customCfg.amountLocked ? 'true' : 'false';
+                    input.readOnly = customCfg.amountLocked;
+                    if (cb.checked && customCfg.amountLocked) {
+                        input.value = customCfg.defaultAmount;
+                    }
+                }
                 const isLocked = input.dataset.locked === 'true';
                 input.classList.toggle('hidden', !cb.checked);
                 if(!cb.checked && !isLocked) input.value = '';
@@ -3660,29 +4014,38 @@ const startEditingPayment = (studentId, txnId) => {
         syncGroupedStudentsForSelectedStudent();
     }
 
+    const activeGroup = getStudentBillingGroup(studentId);
+    const isGroupedStudent = Boolean(activeGroup && getGroupMemberStudents(activeGroup).length > 1);
+
     document.querySelectorAll('.fee-item-checkbox').forEach(cb => {
         const isPaidHere = editingPaymentGroup.itemKeys.has(`${cb.dataset.itemKey}__${selectedFeeAcademicYear || ''}`);
-        const isPaidElsewhere = allPayments.some((payment) => {
-            if (payment.studentId !== studentId || payment.itemKey !== cb.dataset.itemKey) return false;
-            if ((payment.academicYear || '') !== (selectedFeeAcademicYear || '')) return false;
-            return getPaymentGroupKey(payment) !== txnId;
-        });
-        
-        cb.checked = isPaidHere; 
+        const itemObj = feeItems.find(i => i.key === cb.dataset.itemKey) || { key: cb.dataset.itemKey, type: cb.dataset.itemType || 'month', name: cb.dataset.itemKey };
+        const groupState = isGroupedStudent
+            ? getFeeItemGroupState(itemObj, selectedFeeAcademicYear, selectedGroupMemberIds, { excludeTxnId: txnId })
+            : null;
+        const isPaidElsewhere = isGroupedStudent
+            ? (!isPaidHere && groupState.isLocked)
+            : allPayments.some((payment) => {
+                if (payment.studentId !== studentId || payment.itemKey !== cb.dataset.itemKey) return false;
+                if ((payment.academicYear || '') !== (selectedFeeAcademicYear || '')) return false;
+                return getPaymentGroupKey(payment) !== txnId;
+            });
+
+        cb.checked = isPaidHere;
         cb.disabled = isPaidElsewhere;
-        
+
         const labelEl = cb.nextElementSibling;
-        labelEl.classList.remove('fee-item-paid-elsewhere', 'fee-item-editing-yellow', 'fee-item-new-green');
-        
-        if(isPaidHere) {
+        labelEl.classList.remove('fee-item-paid-elsewhere', 'fee-item-partial-locked', 'fee-item-editing-yellow', 'fee-item-new-green');
+
+        if (isPaidHere) {
             labelEl.classList.add('fee-item-editing-yellow');
             const matchedPayment = grp.find((p) => p.itemKey === cb.dataset.itemKey && (p.academicYear || '') === (selectedFeeAcademicYear || ''));
             const card = cb.closest('.fee-month-item-card') || cb.closest('.relative');
-            if(cb.dataset.itemType === 'custom') { 
-                const input = card?.querySelector('.custom-fee-amount-input'); 
+            if (cb.dataset.itemType === 'custom') {
+                const input = card?.querySelector('.custom-fee-amount-input');
                 if (input) {
-                    input.value = matchedPayment?.amount || ''; 
-                    input.classList.remove('hidden'); 
+                    input.value = matchedPayment?.amount || '';
+                    input.classList.remove('hidden');
                 }
             } else {
                 const monthWrap = card?.querySelector('.month-amount-wrapper');
@@ -3690,9 +4053,14 @@ const startEditingPayment = (studentId, txnId) => {
                 if (monthWrap) monthWrap.classList.remove('hidden');
                 if (monthInput) monthInput.value = matchedPayment?.groupMonthAmount || matchedPayment?.amount || '';
             }
-        } else if(isPaidElsewhere) { 
-            labelEl.classList.add('fee-item-paid-elsewhere');
-            cb.checked = true; // Visual check for disabled item
+        } else if (isPaidElsewhere) {
+            if (isGroupedStudent && groupState?.isLockedByCheckedPaid) {
+                labelEl.classList.add('fee-item-partial-locked');
+                cb.checked = false;
+            } else {
+                labelEl.classList.add('fee-item-paid-elsewhere');
+                cb.checked = true; // Visual check for disabled item
+            }
         }
     });
     checkReceiptMandatory();
@@ -3713,6 +4081,20 @@ const processPaymentSubmit = async (isUpdate) => {
     const isSingleMemberOnly = targetGroupMemberIds.length === 1;
     const isAllGroupMembers = selectedGroup && targetGroupMemberIds.length === selectedGroup.memberIds.length;
     const effectiveBillingGroupId = isAllGroupMembers ? selectedGroup.id : null;
+
+    // Guard against double-paying an item already paid by any checked group member
+    if (selectedGroup && Array.isArray(selectedGroup.memberIds) && selectedGroup.memberIds.length > 1 && !isMultiEntryMode()) {
+        const excludeTxnId = isUpdate ? editingPaymentGroup?.txnId || '' : '';
+        const targetSet = new Set(targetGroupMemberIds);
+        for (const selItem of selected) {
+            const feeObj = feeItems.find(i => i.key === selItem.itemKey) || { key: selItem.itemKey, type: selItem.itemType || 'month', name: selItem.itemKey };
+            const state = getFeeItemGroupState(feeObj, selItem.year || selectedFeeAcademicYear, targetSet, { excludeTxnId });
+            if (state.isLocked && !(isUpdate && editingPaymentGroup?.itemKeys?.has(`${selItem.itemKey}__${selItem.year || selectedFeeAcademicYear || ''}`))) {
+                const paidNames = state.checkedPaidMembers.map(e => e.member.name).filter(Boolean).join(', ');
+                return alert(`"${feeObj.name || selItem.itemKey}" is already paid for ${paidNames || 'selected member(s)'}. Uncheck paid member(s) before saving.`);
+            }
+        }
+    }
 
     const primaryEntry = selectedStudentId ? {
         studentId: isSingleMemberOnly ? targetGroupMemberIds[0] : selectedStudentId,
@@ -3843,23 +4225,54 @@ const processPaymentSubmit = async (isUpdate) => {
                     classLabel: studentClass
                 };
 
-                // Write custom fee items
+                const targets = entry.targetGroupMemberIds && entry.targetGroupMemberIds.length > 0
+                    ? entry.targetGroupMemberIds
+                    : [entry.studentId];
+
+                // Write custom fee items (individually per checked group member)
                 customCbs.forEach((item) => {
-                    queuePaymentWrite(batch, {
-                        ...common,
-                        academicYear: item.year || common.academicYear,
-                        studentId: entry.studentId,
-                        itemKey: item.itemKey,
-                        amount: Number(item.amount || 0),
-                        billingGroupId: null
-                    });
+                    const itemYear = item.year || common.academicYear;
+                    const enteredCustomTotal = Number(item.amount || 0);
+                    if (targets.length === 1) {
+                        const singleId = targets[0];
+                        const singleClass = students.find((student) => student.id === singleId)?.class || studentClass;
+                        queuePaymentWrite(batch, {
+                            ...common,
+                            academicYear: itemYear,
+                            studentId: singleId,
+                            classLabel: singleClass,
+                            itemKey: item.itemKey,
+                            amount: enteredCustomTotal,
+                            billingGroupId: null
+                        });
+                    } else {
+                        const feeObj = feeItems.find(i => i.key === item.itemKey);
+                        const customCfg = feeObj ? getSelectedMembersCustomFeeConfig(feeObj, new Set(targets), itemYear) : { amountLocked: false, perMemberAmounts: {} };
+                        const configuredSum = Object.values(customCfg.perMemberAmounts || {}).reduce((s, v) => s + Number(v || 0), 0);
+                        const useConfiguredShares = customCfg.amountLocked && Math.abs(configuredSum - enteredCustomTotal) < 0.01;
+                        const evenShare = roundMoney(enteredCustomTotal / targets.length);
+
+                        targets.forEach((memberId, idx) => {
+                            const memberClass = students.find((student) => student.id === memberId)?.class || studentClass;
+                            const isFirst = idx === 0;
+                            const memberAmt = useConfiguredShares
+                                ? Number(customCfg.perMemberAmounts[memberId] || 0)
+                                : (isFirst ? roundMoney(enteredCustomTotal - (evenShare * (targets.length - 1))) : evenShare);
+                            queuePaymentWrite(batch, {
+                                ...common,
+                                academicYear: itemYear,
+                                studentId: memberId,
+                                classLabel: memberClass,
+                                itemKey: item.itemKey,
+                                amount: Math.max(0, memberAmt),
+                                billingGroupId: null
+                            });
+                        });
+                    }
                 });
 
                 // Write monthly fee items
                 if (monthlyCbs.length > 0) {
-                    const targets = entry.targetGroupMemberIds && entry.targetGroupMemberIds.length > 0
-                        ? entry.targetGroupMemberIds
-                        : [entry.studentId];
 
                     monthlyCbs.forEach((item) => {
                         const itemYear = item.year || common.academicYear;

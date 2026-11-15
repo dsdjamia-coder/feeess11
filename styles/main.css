@@ -332,6 +332,74 @@ body.collection-shell .fee-item-paid-elsewhere {
     cursor: not-allowed;
 }
 
+body.collection-shell .fee-item-partial-locked {
+    background: #fffbeb !important;
+    border-color: #f59e0b !important;
+    color: #92400e !important;
+    cursor: not-allowed;
+}
+
+body.collection-shell .fee-item-group-members {
+    margin-top: 4px;
+    padding: 3px 4px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5px;
+}
+
+body.collection-shell .fee-member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3px;
+    font-size: 9px;
+    line-height: 1.2;
+    font-weight: 700;
+    min-width: 0;
+}
+
+body.collection-shell .fee-member-row.is-paid {
+    color: #15803d;
+}
+
+body.collection-shell .fee-member-row.is-due {
+    color: #dc2626;
+}
+
+body.collection-shell .fee-member-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.collection-shell .fee-member-tag {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    font-size: 8.5px;
+    font-weight: 700;
+    opacity: 0.9;
+}
+
+@media (min-width: 640px) {
+    body.collection-shell .fee-item-group-members {
+        padding: 4px 6px;
+        gap: 2px;
+    }
+
+    body.collection-shell .fee-member-row {
+        font-size: 10px;
+    }
+
+    body.collection-shell .fee-member-tag {
+        font-size: 9.5px;
+    }
+}
+
 body.collection-shell .fee-item-editing-yellow {
     background: #eab308 !important;
     border-color: #ca8a04 !important;
