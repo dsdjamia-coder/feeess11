@@ -193,10 +193,24 @@ img { display: block; max-width: 100%; }
 input, select, textarea { background-color: #ffffff; border-color: #d1d5db; color: #1f2937; transition: border 0.2s; outline: none; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
 .smart-select-wrapper { position: relative; min-width: 0; }
+:where(.smart-select-input) {
+    background-color: #ffffff;
+    border: 1px solid #d1d5db;
+    color: #1f2937;
+}
 .smart-select-input {
     width: 100%;
-    cursor: text;
+    display: block;
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.smart-select-trigger.smart-select-placeholder {
+    color: #64748b;
 }
 .smart-select-caret {
     position: absolute;
@@ -222,6 +236,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
     max-height: 220px;
     overflow-y: auto;
     overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     z-index: 6000;
 }
 .smart-select-list .suggestion-item {

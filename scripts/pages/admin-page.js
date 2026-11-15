@@ -9744,19 +9744,25 @@ const findStudentFromTypedGroupValue = (value, className, gender, excludedIds = 
 const renderGroupStudentDatalist = (idx) => {
     const className = document.querySelector(`.grp-cls[data-idx="${idx}"]`)?.value || '';
     const gender = document.querySelector(`.grp-gen[data-idx="${idx}"]`)?.value || '';
-    const datalist = document.getElementById(`grp-stu-options-${idx}`);
-    const input = document.getElementById(`grp-stu-${idx}`);
-    if(!datalist || !input) return;
-    if(!className || !gender) {
-        datalist.innerHTML = '';
-        input.value = '';
-        input.placeholder = 'Select class and gender first...';
+    const stuSelect = document.getElementById(`grp-stu-${idx}`);
+    if (!stuSelect) return;
+    if (!className || !gender) {
+        stuSelect.innerHTML = '<option value="">Select class and gender first...</option>';
+        stuSelect.value = '';
+        syncSmartSelectDisplay(stuSelect);
         return;
     }
-    datalist.innerHTML = getGroupStudentOptions(className, gender)
-        .map((student) => `<option value="${escapeHtml(getStudentDisplayLabel(student))}"></option>`)
-        .join('');
-    input.placeholder = 'Type student name...';
+    const matches = getGroupStudentOptions(className, gender);
+    const prevVal = stuSelect.value || '';
+    if (matches.length === 0) {
+        stuSelect.innerHTML = '<option value="">No eligible students found</option>';
+        stuSelect.value = '';
+    } else {
+        stuSelect.innerHTML = '<option value="">-- Select Student --</option>' +
+            matches.map((student) => `<option value="${escapeHtml(student.id)}">${escapeHtml(getStudentDisplayLabel(student))}</option>`).join('');
+        stuSelect.value = matches.some((m) => m.id === prevVal) ? prevVal : '';
+    }
+    syncSmartSelectDisplay(stuSelect);
 };
 
 const populateExistingGroupClassFilter = () => {
@@ -10022,19 +10028,23 @@ const populateEditGroupClassFilter = () => {
 const populateEditGroupStudentOptions = () => {
     const cls = document.getElementById('e-grp-class-filter').value;
     const gen = document.getElementById('e-grp-gender-filter').value;
-    const studentInput = document.getElementById('e-grp-student-select');
-    const studentOptions = document.getElementById('e-grp-student-options');
-    if(!studentInput || !studentOptions) return;
+    const studentSelect = document.getElementById('e-grp-student-select');
+    if(!studentSelect) return;
     if(!cls) {
-        studentInput.value = '';
-        studentInput.placeholder = 'Select class first...';
-        studentOptions.innerHTML = '';
+        studentSelect.innerHTML = '<option value="">Select class first...</option>';
+        studentSelect.value = '';
+        syncSmartSelectDisplay(studentSelect);
         return;
     }
-    studentOptions.innerHTML = getGroupStudentOptions(cls, gen, editGroupWorkingMembers)
-        .map((student) => `<option value="${escapeHtml(getStudentDisplayLabel(student))}"></option>`)
-        .join('');
-    studentInput.placeholder = 'Type student name...';
+    const matches = getGroupStudentOptions(cls, gen, editGroupWorkingMembers);
+    if (matches.length === 0) {
+        studentSelect.innerHTML = '<option value="">No eligible students found</option>';
+    } else {
+        studentSelect.innerHTML = '<option value="">-- Select Student --</option>' +
+            matches.map((student) => `<option value="${escapeHtml(student.id)}">${escapeHtml(getStudentDisplayLabel(student))}</option>`).join('');
+    }
+    studentSelect.value = '';
+    syncSmartSelectDisplay(studentSelect);
 };
 document.getElementById('student-groups-list').addEventListener('click', e => {
     const delBtn = e.target.closest('.del-grp'), editBtn = e.target.closest('.edit-grp');
@@ -10060,16 +10070,13 @@ document.getElementById('student-groups-list').addEventListener('click', e => {
     }
 });
 document.getElementById('edit-group-cancel').onclick = () => document.getElementById('edit-group-popup').classList.add('hidden');
-document.getElementById('e-grp-class-filter').addEventListener('change', () => { document.getElementById('e-grp-student-select').value = ''; populateEditGroupStudentOptions(); });
-document.getElementById('e-grp-gender-filter').addEventListener('change', () => { document.getElementById('e-grp-student-select').value = ''; populateEditGroupStudentOptions(); });
+document.getElementById('e-grp-class-filter').addEventListener('change', () => { populateEditGroupStudentOptions(); });
+document.getElementById('e-grp-gender-filter').addEventListener('change', () => { populateEditGroupStudentOptions(); });
 document.getElementById('e-grp-add-member').addEventListener('click', () => {
-    const studentInput = document.getElementById('e-grp-student-select');
-    const cls = document.getElementById('e-grp-class-filter').value;
-    const gen = document.getElementById('e-grp-gender-filter').value;
-    const studentId = findStudentFromTypedGroupValue(studentInput.value, cls, gen, editGroupWorkingMembers)?.id || '';
-    if(!studentId || editGroupWorkingMembers.includes(studentId)) return alert('Please select a valid student from the suggestions.');
+    const studentSelect = document.getElementById('e-grp-student-select');
+    const studentId = studentSelect?.value || '';
+    if(!studentId || editGroupWorkingMembers.includes(studentId)) return alert('Please select a valid student from the dropdown.');
     editGroupWorkingMembers.push(studentId);
-    studentInput.value = '';
     renderEditGroupMembers();
     populateEditGroupStudentOptions();
 });
@@ -10121,14 +10128,15 @@ document.getElementById('num-of-students-group').addEventListener('input', e => 
     if(count < 2) return;
     const clsOpts = `<option value="">Select Class</option>` + classes.map(c=>`<option value="${c}">${c}</option>`).join('');
     for(let i=0; i<count; i++) {
-        cont.innerHTML += `<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-4 border-b border-gray-100 mb-2"><select class="grp-cls p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}">${clsOpts}</select><select class="grp-gen p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}"><option value="Male">Male</option><option value="Female">Female</option></select><div class="sm:col-span-3"><input id="grp-stu-${i}" list="grp-stu-options-${i}" class="grp-stu p-2.5 border rounded-lg text-sm font-semibold bg-white w-full" data-idx="${i}" autocomplete="off" placeholder="Select class and gender first..."><datalist id="grp-stu-options-${i}"></datalist><p class="text-xs text-gray-500 mt-1">Type a student name and pick from suggestions.</p></div></div>`;
+        cont.innerHTML += `<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-4 border-b border-gray-100 mb-2"><select class="grp-cls p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-smart-select="true" data-idx="${i}">${clsOpts}</select><select class="grp-gen p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-smart-select="true" data-idx="${i}"><option value="Male">Male</option><option value="Female">Female</option></select><div class="sm:col-span-3"><select id="grp-stu-${i}" data-smart-select="true" class="grp-stu p-2.5 border rounded-lg text-sm font-semibold bg-white w-full" data-idx="${i}"><option value="">Select class and gender first...</option></select><p class="text-xs text-gray-500 mt-1">Select class and gender, then choose a student from the dropdown.</p></div></div>`;
     }
+    enableSmartSelectWindowing(cont, { visibleCount: 0 });
 });
 document.getElementById('group-creation-container').addEventListener('change', e => {
     if(e.target.classList.contains('grp-cls') || e.target.classList.contains('grp-gen')) {
         const idx = e.target.dataset.idx;
-        const input = document.getElementById(`grp-stu-${idx}`);
-        if(input) input.value = '';
+        const stuSelect = document.getElementById(`grp-stu-${idx}`);
+        if(stuSelect) stuSelect.value = '';
         renderGroupStudentDatalist(idx);
     }
 });
@@ -10432,15 +10440,10 @@ document.getElementById('unify-family-confirm-btn')?.addEventListener('click', h
 document.getElementById('create-group-btn').addEventListener('click', async () => {
     if(!requirePermission('groups.manage')) return;
 
-    const selects = Array.from(document.querySelectorAll('.grp-stu')).map((input) => {
-        const idx = input.dataset.idx;
-        const className = document.querySelector(`.grp-cls[data-idx="${idx}"]`)?.value || '';
-        const gender = document.querySelector(`.grp-gen[data-idx="${idx}"]`)?.value || '';
-        return findStudentFromTypedGroupValue(input.value, className, gender)?.id || '';
-    }).filter(Boolean);
+    const selects = Array.from(document.querySelectorAll('.grp-stu')).map((sel) => sel.value).filter(Boolean);
 
     if (selects.length < 2 || new Set(selects).size !== selects.length) {
-        return alert("Please select at least 2 unique valid students from the suggestions.");
+        return alert("Please select at least 2 unique valid students from the dropdown.");
     }
 
     const feeInput = document.getElementById('group-monthly-fee');

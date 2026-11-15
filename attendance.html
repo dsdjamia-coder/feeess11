@@ -393,7 +393,8 @@
     }
     .suggestion-item:hover { background: #ecfdf5; color: #047857; }
     .smart-select-wrapper { position: relative; width: 100%; }
-    .smart-select-input { width: 100%; cursor: text; text-overflow: ellipsis; }
+    :where(.smart-select-input) { background-color: #ffffff; border: 1px solid #d1d5db; color: #1f2937; }
+    .smart-select-input { width: 100%; display: block; text-align: left; cursor: pointer; user-select: none; -webkit-user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .smart-select-caret {
       position: absolute;
       right: 0.7rem;
@@ -410,7 +411,7 @@
       width: 1px !important;
       height: 1px !important;
     }
-    .smart-select-list { display: none; max-height: 220px; overflow-y: auto; z-index: 6000; }
+    .smart-select-list { display: none; max-height: 220px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; z-index: 6000; }
     .smart-select-list.active { display: block; }
     .smart-selected-option { background: #ecfdf5; color: #047857; font-weight: 800; }
     .smart-active-option { background: #d1fae5; color: #065f46; }

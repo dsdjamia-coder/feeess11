@@ -299,12 +299,16 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             el.style.maxHeight = '';
             el.style.zIndex = '';
         });
+        document.querySelectorAll('.smart-select-trigger[aria-expanded="true"]').forEach((btn) => {
+            btn.setAttribute('aria-expanded', 'false');
+        });
     };
 
     selects.forEach((select) => {
         select.dataset.smartWindowBound = 'true';
         const isFloating = select.dataset.smartFloating === 'true';
         const extraWrapperClass = String(select.dataset.smartWrapperClass || '').trim();
+        const placeholderText = String(select.dataset.smartPlaceholder || 'Select option...').trim();
         const wrapper = document.createElement('div');
         wrapper.className = `smart-select-wrapper relative w-full${extraWrapperClass ? ` ${extraWrapperClass}` : ''}`;
         if (select.classList.contains('hidden')) {
@@ -313,15 +317,15 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         select.parentNode.insertBefore(wrapper, select);
         wrapper.appendChild(select);
 
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = select.className;
-        input.classList.remove('hidden', 'smart-select-native-hidden');
-        input.classList.add('smart-select-input', 'pr-8');
-        input.placeholder = select.dataset.smartPlaceholder || 'Type or select...';
-        input.autocomplete = 'off';
-        if (select.id) input.setAttribute('aria-controls', `${select.id}-smart-list`);
-        wrapper.insertBefore(input, select);
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = select.className;
+        trigger.classList.remove('hidden', 'smart-select-native-hidden');
+        trigger.classList.add('smart-select-input', 'smart-select-trigger', 'pr-8', 'text-left', 'truncate');
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        if (select.id) trigger.setAttribute('aria-controls', `${select.id}-smart-list`);
+        wrapper.insertBefore(trigger, select);
 
         const caret = document.createElement('i');
         caret.className = 'fas fa-chevron-down smart-select-caret';
@@ -330,6 +334,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
 
         const list = document.createElement('div');
         list.className = 'suggestions-box smart-select-list';
+        list.setAttribute('role', 'listbox');
         if (isFloating) list.dataset.smartFloatingList = 'true';
         if (select.id) list.id = `${select.id}-smart-list`;
         wrapper.appendChild(list);
@@ -363,7 +368,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         };
 
         const getSmartSelectBounds = () => {
-            const rotatedRoot = input.closest('.spreadsheet-css-rotated');
+            const rotatedRoot = trigger.closest('.spreadsheet-css-rotated');
             const spaceWidth = rotatedRoot
                 ? Math.max(160, rotatedRoot.clientWidth || window.innerHeight || 0)
                 : Math.max(160, window.innerWidth || 0);
@@ -371,7 +376,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             const vpRight = Math.max(vpLeft + 120, spaceWidth - 8);
             let boundLeft = vpLeft;
             let boundRight = vpRight;
-            const container = input.closest('.modal-box, .card, #app, main');
+            const container = trigger.closest('.modal-box, .card, #app, main');
             if (container) {
                 const cRect = toLocalRect(container.getBoundingClientRect(), rotatedRoot);
                 if (cRect.width > 0) {
@@ -390,7 +395,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         const positionFloatingList = () => {
             if (!isFloating) return;
             const { rotatedRoot, boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
-            const rect = toLocalRect(input.getBoundingClientRect(), rotatedRoot);
+            const rect = toLocalRect(trigger.getBoundingClientRect(), rotatedRoot);
             const spaceHeight = rotatedRoot
                 ? Math.max(160, rotatedRoot.clientHeight || window.innerWidth || 0)
                 : Math.max(160, window.innerHeight || 0);
@@ -434,7 +439,7 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         const positionStaticList = () => {
             if (isFloating) return;
             const { rotatedRoot, boundLeft, boundRight, maxAllowedWidth } = getSmartSelectBounds();
-            const rect = toLocalRect(input.getBoundingClientRect(), rotatedRoot);
+            const rect = toLocalRect(trigger.getBoundingClientRect(), rotatedRoot);
             list.style.left = '0px';
             list.style.right = 'auto';
             list.style.minWidth = '100%';
@@ -453,15 +458,17 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             wrapper.classList.toggle('hidden', isHidden);
             if (isHidden) {
                 list.classList.remove('active');
+                trigger.setAttribute('aria-expanded', 'false');
             }
         };
 
         const syncDisabledState = () => {
             const isDisabled = Boolean(select.disabled);
-            input.disabled = isDisabled;
+            trigger.disabled = isDisabled;
             wrapper.classList.toggle('smart-select-disabled', isDisabled);
             if (isDisabled) {
                 list.classList.remove('active');
+                trigger.setAttribute('aria-expanded', 'false');
             }
         };
 
@@ -474,25 +481,31 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
             }
         };
 
-        const renderList = (term = '') => {
+        const renderList = () => {
             if (select.disabled) return;
-            const normalizedTerm = String(term || '').trim().toLowerCase();
             const options = Array.from(select.options);
-            const filtered = options.filter((option) => String(option.textContent || '').toLowerCase().includes(normalizedTerm));
             activeIndex = -1;
-            list.innerHTML = filtered.length
-                ? filtered.map((option) => `<div class="suggestion-item smart-select-option ${option.value === select.value ? 'smart-selected-option' : ''}" data-value="${escapeHtml(option.value)}">${escapeHtml(option.textContent || '')}</div>`).join('')
-                : '<div class="suggestion-item text-gray-400">No matches</div>';
+            list.innerHTML = options.length
+                ? options.map((option) => `<div class="suggestion-item smart-select-option ${option.value === select.value ? 'smart-selected-option' : ''}" role="option" aria-selected="${option.value === select.value ? 'true' : 'false'}" data-value="${escapeHtml(option.value)}">${escapeHtml(option.textContent || '')}</div>`).join('')
+                : '<div class="suggestion-item text-gray-400">No options available</div>';
             list.classList.add('active');
+            trigger.setAttribute('aria-expanded', 'true');
             if (isFloating) positionFloatingList();
             else positionStaticList();
-            const selectedIdx = filtered.findIndex((o) => o.value === select.value);
+            const selectedIdx = options.findIndex((o) => o.value === select.value);
             if (selectedIdx >= 0) highlightOption(selectedIdx);
         };
 
         const syncInputValue = () => {
             const selectedOption = select.options[select.selectedIndex];
-            input.value = selectedOption ? selectedOption.textContent : '';
+            const label = selectedOption ? String(selectedOption.textContent || '').trim() : '';
+            if (label) {
+                trigger.textContent = label;
+                trigger.classList.remove('smart-select-placeholder');
+            } else {
+                trigger.textContent = placeholderText;
+                trigger.classList.add('smart-select-placeholder');
+            }
         };
 
         select._syncSmartSelect = () => {
@@ -523,75 +536,64 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
         syncVisibilityState();
         syncDisabledState();
         syncInputValue();
-        input.addEventListener('focus', () => {
-            if (select.disabled) return;
-            closeAll();
-            renderList('');
-            input.select?.();
-        });
-        input.addEventListener('input', () => {
-            if (select.disabled) return;
-            renderList(input.value);
-        });
-        input.addEventListener('click', (event) => {
+
+        trigger.addEventListener('click', (event) => {
+            event.preventDefault();
             event.stopPropagation();
             if (select.disabled) return;
+            const wasOpen = list.classList.contains('active');
             closeAll();
-            renderList('');
-            input.select?.();
+            if (!wasOpen) {
+                renderList();
+            }
         });
-        input.addEventListener('keydown', (event) => {
+
+        trigger.addEventListener('keydown', (event) => {
             if (select.disabled) return;
             const items = getOptionItems();
             if (event.key === 'ArrowDown') {
                 event.preventDefault();
-                if (!list.classList.contains('active')) renderList('');
-                const nextItems = getOptionItems();
-                if (nextItems.length > 0) {
-                    highlightOption((activeIndex + 1) % nextItems.length);
+                if (!list.classList.contains('active')) {
+                    closeAll();
+                    renderList();
+                } else if (items.length > 0) {
+                    highlightOption((activeIndex + 1) % items.length);
                 }
             } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
-                if (!list.classList.contains('active')) renderList('');
-                const nextItems = getOptionItems();
-                if (nextItems.length > 0) {
-                    highlightOption(activeIndex <= 0 ? nextItems.length - 1 : activeIndex - 1);
+                if (!list.classList.contains('active')) {
+                    closeAll();
+                    renderList();
+                } else if (items.length > 0) {
+                    highlightOption(activeIndex <= 0 ? items.length - 1 : activeIndex - 1);
                 }
-            } else if (event.key === 'Enter') {
-                if (!list.classList.contains('active')) return;
+            } else if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
+                if (!list.classList.contains('active')) {
+                    closeAll();
+                    renderList();
+                    return;
+                }
                 const targetItem = (activeIndex >= 0 && items[activeIndex]) ? items[activeIndex] : items[0];
                 if (targetItem) {
                     select.value = targetItem.dataset.value;
                     select.dispatchEvent(new Event('change', { bubbles: true }));
                     syncInputValue();
                     closeAll();
-                    input.blur();
                 }
             } else if (event.key === 'Escape') {
                 closeAll();
-                syncInputValue();
-                input.blur();
             }
         });
-        input.addEventListener('blur', () => {
-            setTimeout(() => {
-                if (!list.matches(':hover')) {
-                    list.classList.remove('active');
-                    syncInputValue();
-                }
-            }, 160);
-        });
 
-        list.addEventListener('mousedown', (event) => {
+        list.addEventListener('click', (event) => {
+            event.stopPropagation();
             const optionEl = event.target.closest('.smart-select-option');
             if (!optionEl || select.disabled) return;
-            event.preventDefault();
             select.value = optionEl.dataset.value;
             select.dispatchEvent(new Event('change', { bubbles: true }));
             syncInputValue();
             closeAll();
-            input.blur();
         });
 
         select.addEventListener('change', syncInputValue);
@@ -606,6 +608,10 @@ export const enableSmartSelectWindowing = (root = document, { visibleCount = 6 }
     if (typeof document !== 'undefined' && !document.documentElement?.dataset?.smartSelectGlobalBound) {
         if (document.documentElement?.dataset) document.documentElement.dataset.smartSelectGlobalBound = 'true';
         document.addEventListener('click', (event) => {
+            if (event.target.closest('.smart-select-wrapper')) return;
+            closeAll();
+        });
+        document.addEventListener('focusin', (event) => {
             if (event.target.closest('.smart-select-wrapper')) return;
             closeAll();
         });
