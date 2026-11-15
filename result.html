@@ -371,18 +371,6 @@
         font-weight: 700 !important;
       }
 
-      /* Select-all and bulk toggle buttons on mobile */
-      #draft-select-toggle-btn,
-      #published-select-toggle-btn {
-        min-height: 40px !important;
-        padding: 8px 14px !important;
-        border: 1.5px solid #cbd5e1 !important;
-        border-radius: 12px !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
-        font-weight: 700 !important;
-        background-color: #ffffff !important;
-      }
-
       /* Bulk action buttons in Draft & Published tabs */
       #draft-bulk-publish-btn,
       #draft-bulk-delete-btn,
@@ -886,7 +874,7 @@
 
                     <!-- Filter & Sorting Toolbar -->
                     <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 space-y-2">
-                        <div class="grid grid-cols-2 lg:grid-cols-5 gap-2">
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
                             <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
                                 <i class="fas fa-chalkboard text-slate-400 shrink-0"></i>
                                 <label for="draft-class-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Class:</label>
@@ -924,9 +912,6 @@
                                     <option value="mixed">Mixed</option>
                                 </select>
                             </div>
-                            <button id="draft-select-toggle-btn" class="col-span-2 lg:col-span-1 w-full bg-white hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 transition flex items-center justify-center gap-1.5">
-                                <i class="fas fa-check-square text-indigo-500"></i> Select All
-                            </button>
                         </div>
                         <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80" data-role-scope="admin-only">
                             <span class="text-[11px] font-bold text-slate-500">Bulk Actions</span>
@@ -955,7 +940,7 @@
                     </div>
                     <!-- Filter & Sorting Toolbar -->
                     <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-3 space-y-2">
-                        <div class="grid grid-cols-2 lg:grid-cols-5 gap-2">
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
                             <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus-within:border-indigo-400 min-w-0">
                                 <i class="fas fa-chalkboard text-slate-400 shrink-0"></i>
                                 <label for="published-class-filter" class="font-bold text-slate-600 whitespace-nowrap shrink-0">Class:</label>
@@ -993,9 +978,6 @@
                                     <option value="mixed">Mixed</option>
                                 </select>
                             </div>
-                            <button id="published-select-toggle-btn" class="col-span-2 lg:col-span-1 w-full bg-white hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs border border-slate-200 transition flex items-center justify-center gap-1.5">
-                                <i class="fas fa-check-square text-indigo-500"></i> Select All
-                            </button>
                         </div>
                         <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80">
                             <span class="text-[11px] font-bold text-slate-500">Bulk Actions</span>

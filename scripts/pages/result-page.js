@@ -2921,10 +2921,24 @@ const renderPublishedDraftTables = () => {
 // --- Exam Setup Logic ---
 const getDefaultPassMarkForTotal = (total) => {
     const t = Number(total);
+    if (Number.isFinite(t) && t > 0) {
+        const scales = getEffectiveGradeScales();
+        const scaleRules = scales[t];
+        if (Array.isArray(scaleRules) && scaleRules.length) {
+            const passingMins = scaleRules
+                .filter((rule) => {
+                    const grade = String(rule?.grade || '').trim().toUpperCase();
+                    return grade && grade !== 'F' && grade !== 'FAIL';
+                })
+                .map((rule) => Number(rule?.min))
+                .filter((minVal) => Number.isFinite(minVal) && minVal > 0);
+            if (passingMins.length) {
+                return Math.min(...passingMins);
+            }
+        }
+    }
     if (t === 50) return 18;
     if (t === 100) return 35;
-    if (t === 75) return 27;
-    if (t === 25) return 9;
     if (t > 0) return Math.ceil(t * 0.35);
     return 35;
 };
@@ -3633,7 +3647,7 @@ const loadMarksTable = () => {
             passMarks: Number.isFinite(pPass) && pPass >= 0 ? pPass : sub.passMarks
         };
     });
-    const totalPresets = Array.from(new Set([...getAvailableSubjectTotals(), 75, 25])).sort((a, b) => b - a);
+    const totalPresets = getAvailableSubjectTotals();
 
     // Build Headers with Hybrid Total Mark + Auto/Editable Pass Mark
     let headHtml = `<tr>
@@ -8913,23 +8927,14 @@ document.getElementById('visibility-modal-close')?.addEventListener('click', () 
     }
     document.body.classList.remove('modal-scroll-lock');
 });
-const updateSelectToggleBtnLabel = (btn, isDeselectState) => {
-    if (!btn) return;
-    btn.innerHTML = isDeselectState
-        ? '<i class="fas fa-square-minus text-indigo-500"></i> Deselect All'
-        : '<i class="fas fa-check-square text-indigo-500"></i> Select All';
+const syncTableSelectAllCheckbox = (headerCheckboxId, rowCheckboxClass) => {
+    const headerCb = document.getElementById(headerCheckboxId);
+    if (!headerCb) return;
+    const boxes = Array.from(document.querySelectorAll(`.${rowCheckboxClass}`));
+    const checkedCount = boxes.filter((cb) => cb.checked).length;
+    headerCb.checked = boxes.length > 0 && checkedCount === boxes.length;
+    headerCb.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
 };
-const bindSelectToggle = (btnId, checkboxClass) => {
-    document.getElementById(btnId)?.addEventListener('click', () => {
-        const btn = document.getElementById(btnId);
-        const boxes = Array.from(document.querySelectorAll(`.${checkboxClass}`));
-        const allChecked = boxes.length && boxes.every((box) => box.checked);
-        boxes.forEach((box) => { box.checked = !allChecked; });
-        updateSelectToggleBtnLabel(btn, !allChecked && boxes.length > 0);
-    });
-};
-bindSelectToggle('published-select-toggle-btn', 'published-select-checkbox');
-bindSelectToggle('draft-select-toggle-btn', 'draft-select-checkbox');
 
 // Single status filter dropdown listeners (Default: All)
 document.getElementById('published-status-filter')?.addEventListener('change', (e) => {
@@ -8945,16 +8950,20 @@ document.getElementById('draft-status-filter')?.addEventListener('change', (e) =
 document.addEventListener('change', (e) => {
     if (e.target.id === 'draft-table-select-all') {
         const isChecked = e.target.checked;
+        e.target.indeterminate = false;
         document.querySelectorAll('.draft-select-checkbox').forEach((cb) => {
             cb.checked = isChecked;
         });
-        updateSelectToggleBtnLabel(document.getElementById('draft-select-toggle-btn'), isChecked);
     } else if (e.target.id === 'published-table-select-all') {
         const isChecked = e.target.checked;
+        e.target.indeterminate = false;
         document.querySelectorAll('.published-select-checkbox').forEach((cb) => {
             cb.checked = isChecked;
         });
-        updateSelectToggleBtnLabel(document.getElementById('published-select-toggle-btn'), isChecked);
+    } else if (e.target.classList.contains('draft-select-checkbox')) {
+        syncTableSelectAllCheckbox('draft-table-select-all', 'draft-select-checkbox');
+    } else if (e.target.classList.contains('published-select-checkbox')) {
+        syncTableSelectAllCheckbox('published-table-select-all', 'published-select-checkbox');
     }
 });
 
