@@ -2279,27 +2279,72 @@ body.worksheet-fullscreen-mode .excel-status-bar {
     z-index: 1;
 }
 
-/* Lock exact widths and sticky offsets for NO (48px), CLASS (64px), STUDENT NAME (112px+) */
+/* Responsive sticky column widths: roomy on desktop (>=640px), dynamically compact on mobile (<640px) */
+#master-ledger-table-container .master-ledger-sticky-table {
+    --ledger-sticky-col1-w: 48px;
+    --ledger-sticky-col2-w: 64px;
+    --ledger-sticky-col3-w: 220px;
+}
+
 #master-ledger-table-container .master-ledger-sticky-table th:nth-child(1),
 #master-ledger-table-container .master-ledger-sticky-table td:nth-child(1) {
-    width: 48px;
-    min-width: 48px;
-    max-width: 48px;
+    width: var(--ledger-sticky-col1-w);
+    min-width: var(--ledger-sticky-col1-w);
+    max-width: var(--ledger-sticky-col1-w);
     left: 0 !important;
+    font-variant-numeric: tabular-nums;
 }
 
 #master-ledger-table-container .master-ledger-sticky-table th:nth-child(2),
 #master-ledger-table-container .master-ledger-sticky-table td:nth-child(2) {
-    width: 64px;
-    min-width: 64px;
-    max-width: 64px;
-    left: 48px !important;
+    width: var(--ledger-sticky-col2-w);
+    min-width: var(--ledger-sticky-col2-w);
+    max-width: var(--ledger-sticky-col2-w);
+    left: var(--ledger-sticky-col1-w) !important;
+    font-variant-numeric: tabular-nums;
 }
 
 #master-ledger-table-container .master-ledger-sticky-table th:nth-child(3),
 #master-ledger-table-container .master-ledger-sticky-table td:nth-child(3) {
-    min-width: 220px;
-    left: 112px !important;
+    min-width: var(--ledger-sticky-col3-w);
+    left: calc(var(--ledger-sticky-col1-w) + var(--ledger-sticky-col2-w)) !important;
+}
+
+@media (max-width: 639px) {
+    #master-ledger-table-container .master-ledger-sticky-table {
+        --ledger-sticky-col1-w: var(--ledger-mobile-col1-w, 28px);
+        --ledger-sticky-col2-w: var(--ledger-mobile-col2-w, 36px);
+        --ledger-sticky-col3-w: 120px;
+    }
+
+    #master-ledger-table-container .master-ledger-sticky-table thead th {
+        font-size: 9.5px;
+        letter-spacing: 0.02em;
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+
+    #master-ledger-table-container .master-ledger-sticky-table th:nth-child(1),
+    #master-ledger-table-container .master-ledger-sticky-table td:nth-child(1),
+    #master-ledger-table-container .master-ledger-sticky-table th:nth-child(2),
+    #master-ledger-table-container .master-ledger-sticky-table td:nth-child(2) {
+        padding-left: 3px !important;
+        padding-right: 3px !important;
+    }
+
+    #master-ledger-table-container .master-ledger-sticky-table th:nth-child(3),
+    #master-ledger-table-container .master-ledger-sticky-table td:nth-child(3) {
+        width: var(--ledger-sticky-col3-w);
+        min-width: var(--ledger-sticky-col3-w);
+        max-width: var(--ledger-sticky-col3-w);
+        padding-left: 6px !important;
+        padding-right: 5px !important;
+    }
+
+    #master-ledger-table-container .master-ledger-sticky-table tbody td {
+        padding-top: 6px;
+        padding-bottom: 6px;
+    }
 }
 
 /* Left-fixed data columns (Number, Class, Student Name): 100% solid pure white */

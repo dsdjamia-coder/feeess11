@@ -665,18 +665,27 @@ const renderLedgerTable = (options = {}) => {
     const startNumber = totalUnitsCount > 0 ? (isAll ? 1 : ledgerPageOffset + 1) : 0;
     const endNumber = isAll ? totalUnitsCount : (ledgerPageOffset + visibleList.length);
 
+    // Dynamic mobile column widths scaled strictly to visible serial digits and class text length
+    const maxSerialDigits = String(Math.max(1, endNumber || visibleList.length)).length;
+    const mobileCol1WidthPx = maxSerialDigits <= 2 ? 26 : (maxSerialDigits === 3 ? 32 : 38);
+    const maxClassChars = visibleList.reduce((maxLen, u) => {
+        const clsLongest = (u.classes || []).reduce((m, c) => Math.max(m, String(c || '').trim().length), 0);
+        return Math.max(maxLen, clsLongest);
+    }, 1);
+    const mobileCol2WidthPx = maxClassChars <= 2 ? 34 : (maxClassChars === 3 ? 40 : (maxClassChars === 4 ? 46 : 52));
+
     let html = `
-        <table class="min-w-full text-xs text-left border-collapse border border-slate-200 bg-white shadow-sm master-ledger-sticky-table">
+        <table class="min-w-full text-xs text-left border-collapse border border-slate-200 bg-white shadow-sm master-ledger-sticky-table" style="--ledger-mobile-col1-w: ${mobileCol1WidthPx}px; --ledger-mobile-col2-w: ${mobileCol2WidthPx}px;">
             <thead class="bg-slate-50 text-[11px] font-black text-slate-700 uppercase tracking-wider border-b border-slate-200 sticky top-0 z-30 shadow-xs">
                 <tr>
-                    <th class="px-2.5 py-3.5 text-center border-r border-slate-200 w-[48px] min-w-[48px] max-w-[48px] sticky left-0 bg-slate-50 z-40">NO</th>
-                    <th class="px-2.5 py-3.5 text-center border-r border-slate-200 w-[64px] min-w-[64px] max-w-[64px] sticky left-[48px] bg-slate-50 z-40">CLASS</th>
-                    <th class="px-3.5 py-3.5 border-r border-slate-300 min-w-[220px] sticky left-[112px] bg-slate-50 z-40">STUDENT NAME</th>
-                    <th class="px-3.5 py-3.5 border-r border-slate-200 min-w-[190px]">GUARDIAN & CONTACT</th>
-                    <th class="px-3 py-3.5 text-center border-r border-slate-200 min-w-[130px] text-slate-800 bg-slate-100/70">FEE SETUP</th>
-                    <th class="px-3 py-3.5 text-center border-r border-slate-200 min-w-[125px] text-rose-900 bg-rose-50/70">TOTAL DUE</th>
+                    <th class="px-1 sm:px-2.5 py-2.5 sm:py-3.5 text-center border-r border-slate-200 sticky left-0 bg-slate-50 z-40">NO</th>
+                    <th class="px-1 sm:px-2.5 py-2.5 sm:py-3.5 text-center border-r border-slate-200 sticky bg-slate-50 z-40"><span class="hidden sm:inline">CLASS</span><span class="sm:hidden">CLS</span></th>
+                    <th class="px-1.5 sm:px-3.5 py-2.5 sm:py-3.5 border-r border-slate-300 sticky bg-slate-50 z-40"><span class="hidden sm:inline">STUDENT NAME</span><span class="sm:hidden">STUDENT</span></th>
+                    <th class="px-3.5 py-3.5 border-r border-slate-200 min-w-[170px] sm:min-w-[190px]">GUARDIAN & CONTACT</th>
+                    <th class="px-2.5 sm:px-3 py-3 sm:py-3.5 text-center border-r border-slate-200 min-w-[105px] sm:min-w-[130px] text-slate-800 bg-slate-100/70">FEE SETUP</th>
+                    <th class="px-2 sm:px-3 py-3 sm:py-3.5 text-center border-r border-slate-200 min-w-[102px] sm:min-w-[125px] text-rose-900 bg-rose-50/70">TOTAL DUE</th>
                     ${ledgerAcademicMonths.map(m => `
-                        <th class="px-2 py-2.5 text-center border-r border-slate-200 min-w-[98px]">
+                        <th class="px-1.5 sm:px-2 py-2 sm:py-2.5 text-center border-r border-slate-200 min-w-[84px] sm:min-w-[98px]">
                             <div class="flex flex-col items-center gap-1">
                                 <span>${m.toUpperCase()}</span>
                                 <input type="checkbox" class="ledger-col-select-all-cb w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" data-month="${m}" title="Select all unpaid in ${m}">
@@ -693,41 +702,57 @@ const renderLedgerTable = (options = {}) => {
         const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50';
         const isRowAllSelected = ledgerAcademicMonths.every(m => selectedLedgerCells.has(`${unit.id}__${m}`));
 
-        // Student Names markup with numbering and gender badges
+        // Student Names markup: mobile stacks 2-line Name + (Adm + M/F below); desktop keeps single-row Name + (M/F)
         const studentNamesHtml = unit.students.map((s, sIdx) => {
             const genderVal = (s.gender || '').toUpperCase();
             const isFem = genderVal === 'F' || genderVal === 'FEMALE';
-            const genderBadge = isFem
-                ? `<span class="text-[10px] font-extrabold text-pink-600 bg-pink-50 px-1 py-0.5 rounded border border-pink-100 ml-1.5 shrink-0">(F)</span>`
-                : `<span class="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-100 ml-1.5 shrink-0">(M)</span>`;
-            const prefix = unit.isGroup ? `<span class="text-blue-600 font-bold">${sIdx + 1}. </span>` : '';
+            const genderDesktopBadge = isFem
+                ? `<span class="hidden sm:inline-block text-[10px] font-extrabold text-pink-600 bg-pink-50 px-1 py-0.5 rounded border border-pink-100 ml-1.5 shrink-0">(F)</span>`
+                : `<span class="hidden sm:inline-block text-[10px] font-extrabold text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-100 ml-1.5 shrink-0">(M)</span>`;
+            const genderMobileBadge = isFem
+                ? `<span class="text-[9.5px] font-extrabold text-pink-600 shrink-0">(F)</span>`
+                : `<span class="text-[9.5px] font-extrabold text-blue-600 shrink-0">(M)</span>`;
+            const prefix = unit.isGroup ? `<span class="text-blue-600 font-bold text-[10.5px] sm:text-xs shrink-0">${sIdx + 1}. </span>` : '';
 
-            const subBadges = [];
+            const desktopSubBadges = [];
             if (s.adm) {
-                subBadges.push(`<span class="font-mono text-slate-500 font-semibold text-[10px]">Adm: ${escapeHtml(s.adm)}</span>`);
+                desktopSubBadges.push(`<span class="font-mono text-slate-500 font-semibold text-[10px]">Adm: ${escapeHtml(s.adm)}</span>`);
             }
             if (unit.isGroupMember) {
-                subBadges.push(`<span class="text-purple-700 font-bold text-[10px] inline-flex items-center gap-0.5"><i class="fas fa-users text-[8px]"></i> ${escapeHtml(unit.groupName)}</span>`);
+                desktopSubBadges.push(`<span class="text-purple-700 font-bold text-[10px] inline-flex items-center gap-0.5"><i class="fas fa-users text-[8px]"></i> ${escapeHtml(unit.groupName)}</span>`);
             }
             if (unit.isConcession) {
-                subBadges.push(`<span class="text-emerald-700 font-bold text-[10px] inline-flex items-center gap-0.5"><i class="fas fa-tag text-[8px]"></i> Concession</span>`);
+                desktopSubBadges.push(`<span class="text-emerald-700 font-bold text-[10px] inline-flex items-center gap-0.5"><i class="fas fa-tag text-[8px]"></i> Concession</span>`);
+            }
+
+            const mobileSubParts = [];
+            if (s.adm) {
+                mobileSubParts.push(`<span class="font-mono text-slate-500 font-semibold text-[9.5px]">Adm: ${escapeHtml(s.adm)}</span>`);
+            }
+            mobileSubParts.push(genderMobileBadge);
+            if (unit.isGroupMember) {
+                mobileSubParts.push(`<span class="text-purple-700 font-bold text-[9.5px] inline-flex items-center gap-0.5"><i class="fas fa-users text-[8px]"></i>${escapeHtml(unit.groupName)}</span>`);
+            }
+            if (unit.isConcession) {
+                mobileSubParts.push(`<span class="text-emerald-700 font-bold text-[9.5px] inline-flex items-center gap-0.5"><i class="fas fa-tag text-[8px]"></i>Conc</span>`);
             }
 
             return `
-                <div class="leading-snug py-0.5">
-                    <div class="flex items-center gap-1 min-w-0">
+                <div class="leading-tight sm:leading-snug py-0.5">
+                    <div class="flex items-start sm:items-center gap-0.5 sm:gap-1 min-w-0">
                         ${prefix}
-                        <span class="font-bold text-slate-800 uppercase hover:text-blue-600 cursor-pointer ledger-student-name truncate" data-student-id="${escapeHtml(s.id)}" title="Adm: ${escapeHtml(s.adm || '--')}">${escapeHtml(s.name || 'Student')}</span>
-                        ${genderBadge}
+                        <span class="font-bold text-[10.5px] sm:text-xs text-slate-800 uppercase hover:text-blue-600 cursor-pointer ledger-student-name line-clamp-2 sm:line-clamp-none break-words whitespace-normal sm:truncate" data-student-id="${escapeHtml(s.id)}" title="${escapeHtml(s.name || 'Student')} (Adm: ${escapeHtml(s.adm || '--')})">${escapeHtml(s.name || 'Student')}</span>
+                        ${genderDesktopBadge}
                     </div>
-                    ${subBadges.length > 0 ? `<div class="flex flex-wrap items-center gap-1.5 mt-0.5">${subBadges.join('<span class="text-slate-300">•</span>')}</div>` : ''}
+                    <div class="flex sm:hidden flex-wrap items-center gap-x-1 gap-y-0.5 mt-0.5 leading-tight">${mobileSubParts.join('')}</div>
+                    ${desktopSubBadges.length > 0 ? `<div class="hidden sm:flex flex-wrap items-center gap-1.5 mt-0.5">${desktopSubBadges.join('<span class="text-slate-300">•</span>')}</div>` : ''}
                 </div>
             `;
         }).join('');
 
         // Classes markup
         const classesHtml = unit.classes.map(c => `
-            <div class="font-bold text-slate-800 text-[11px] leading-snug py-0.5">${escapeHtml(c)}</div>
+            <div class="font-bold text-slate-800 text-[10px] sm:text-[11px] leading-tight sm:leading-snug py-0.5 whitespace-nowrap">${escapeHtml(c)}</div>
         `).join('');
 
         // Fee Setup badge
@@ -763,22 +788,22 @@ const renderLedgerTable = (options = {}) => {
         html += `
             <tr class="${rowBg} hover:bg-blue-50/40 transition-colors">
                 <!-- NO -->
-                <td class="px-2.5 py-3 text-center font-bold text-slate-500 border-r border-slate-200 sticky left-0 w-[48px] min-w-[48px] max-w-[48px] bg-white z-20">
+                <td class="px-1 sm:px-2.5 py-2 sm:py-3 text-center text-[10.5px] sm:text-xs font-bold text-slate-500 border-r border-slate-200 sticky left-0 bg-white z-20 tabular-nums">
                     ${serialNo}
                 </td>
 
                 <!-- CLASS -->
-                <td class="px-2.5 py-3 text-center font-black border-r border-slate-200 sticky left-[48px] w-[64px] min-w-[64px] max-w-[64px] bg-white z-20">
+                <td class="px-1 sm:px-2.5 py-2 sm:py-3 text-center font-black border-r border-slate-200 sticky bg-white z-20 tabular-nums">
                     ${classesHtml}
                 </td>
 
                 <!-- STUDENT NAME -->
-                <td class="px-3.5 py-3 border-r border-slate-300 sticky left-[112px] bg-white z-20">
-                    <div class="flex items-center justify-between gap-2">
-                        <div class="space-y-0.5 min-w-0">
+                <td class="px-1.5 sm:px-3.5 py-2 sm:py-3 border-r border-slate-300 sticky bg-white z-20">
+                    <div class="flex items-start sm:items-center justify-between gap-1 sm:gap-2">
+                        <div class="space-y-0.5 min-w-0 flex-1">
                             ${studentNamesHtml}
                         </div>
-                        <input type="checkbox" class="ledger-row-select-all-cb w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0" data-unit-id="${escapeHtml(unit.id)}" ${isRowAllSelected ? 'checked' : ''} title="Select all months for this student/group">
+                        <input type="checkbox" class="ledger-row-select-all-cb w-3.5 h-3.5 mt-0.5 sm:mt-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0" data-unit-id="${escapeHtml(unit.id)}" ${isRowAllSelected ? 'checked' : ''} title="Select all months for this student/group">
                     </div>
                 </td>
 
