@@ -717,6 +717,123 @@ const removeClassFromActiveAcademicYear = async (className) => {
     await persistAcademicYears();
     return true;
 };
+const deriveAcademicYearFromDate = (dateInput = null) => {
+    if (!dateInput) return '';
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (Number.isNaN(d.getTime())) return '';
+    const month = d.getMonth();
+    const year = d.getFullYear();
+    return month < 5 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
+};
+const sanitizeFirestoreValue = (val) => {
+    if (val === undefined) return undefined;
+    if (val === null) return null;
+    if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+    if (typeof val === 'string' || typeof val === 'boolean') return val;
+    if (val instanceof Date) return val.toISOString();
+    if (Array.isArray(val)) {
+        return val
+            .map((item) => sanitizeFirestoreValue(item))
+            .map((item) => (item === undefined ? null : item));
+    }
+    if (typeof val === 'object') {
+        const sec = typeof val.seconds === 'number' ? val.seconds : (typeof val._seconds === 'number' ? val._seconds : null);
+        const nsec = typeof val.nanoseconds === 'number' ? val.nanoseconds : (typeof val._nanoseconds === 'number' ? val._nanoseconds : 0);
+        if (sec !== null && Object.keys(val).length <= 4) {
+            const ms = (sec * 1000) + Math.floor((nsec || 0) / 1e6);
+            return Number.isFinite(ms) ? new Date(ms).toISOString() : new Date().toISOString();
+        }
+        const out = {};
+        for (const [k, v] of Object.entries(val)) {
+            if (!k) continue;
+            const cleaned = sanitizeFirestoreValue(v);
+            if (cleaned !== undefined) out[k] = cleaned;
+        }
+        return out;
+    }
+    return String(val);
+};
+
+const extractTimestampMillis = (val, fallbackMs = Date.now()) => {
+    if (typeof val === 'number' && Number.isFinite(val)) return val;
+    if (val && typeof val === 'object') {
+        const sec = typeof val.seconds === 'number' ? val.seconds : (typeof val._seconds === 'number' ? val._seconds : null);
+        const nsec = typeof val.nanoseconds === 'number' ? val.nanoseconds : (typeof val._nanoseconds === 'number' ? val._nanoseconds : 0);
+        if (sec !== null) {
+            const ms = (sec * 1000) + Math.floor((nsec || 0) / 1e6);
+            if (Number.isFinite(ms)) return ms;
+        }
+    }
+    if (typeof val === 'string' && val.trim()) {
+        const asNum = Number(val.trim());
+        if (Number.isFinite(asNum) && asNum > 0) return asNum;
+        const parsed = Date.parse(val.trim());
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return fallbackMs;
+};
+
+const sanitizeCollectionRecord = (collectionName, record = {}) => {
+    const { id, ...rawData } = record || {};
+    const clean = sanitizeFirestoreValue(rawData) || {};
+    const shortName = String(collectionName || '').split('/').pop();
+
+    if (shortName === 'payments') {
+        clean.studentId = String(clean.studentId || clean.adm || id || 'unknown').trim() || 'unknown';
+        const parsedAmt = Number(clean.amount ?? clean.paidAmount ?? 0);
+        clean.amount = Number.isFinite(parsedAmt) && parsedAmt >= 0 ? parsedAmt : 0;
+        if (typeof clean.paymentDate !== 'string' || !clean.paymentDate.trim()) {
+            clean.paymentDate = (typeof clean.date === 'string' && clean.date.trim())
+                ? clean.date.trim()
+                : new Date().toISOString().slice(0, 10);
+        }
+        clean.timestamp = extractTimestampMillis(rawData.timestamp, extractTimestampMillis(clean.createdAt, Date.now()));
+        if (clean.updatedAt !== undefined && typeof clean.updatedAt !== 'string' && typeof clean.updatedAt !== 'number') {
+            clean.updatedAt = extractTimestampMillis(rawData.updatedAt, Date.now());
+        }
+    } else if (shortName === 'studentNotificationState') {
+        const sanitizedState = {};
+        if (clean.lastMarkedAllReadAt !== undefined) {
+            sanitizedState.lastMarkedAllReadAt = extractTimestampMillis(rawData.lastMarkedAllReadAt, 0);
+        }
+        if (Array.isArray(clean.readIds)) {
+            sanitizedState.readIds = clean.readIds.map((x) => String(x || '')).filter(Boolean);
+        }
+        return sanitizedState;
+    } else if (shortName === 'staff') {
+        delete clean.password;
+        delete clean.passwordHash;
+        delete clean.password_hash;
+    } else if (shortName === 'staffAccess') {
+        delete clean.password;
+        delete clean.passwordHash;
+        delete clean.password_hash;
+    }
+    return clean;
+};
+
+const countNestedMapDocs = (mapObj) => {
+    if (!mapObj || typeof mapObj !== 'object') return 0;
+    return Object.values(mapObj).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+};
+
+const hasNestedMapDocs = (mapObj) => {
+    if (!mapObj || typeof mapObj !== 'object') return false;
+    return Object.values(mapObj).some((arr) => Array.isArray(arr) && arr.length > 0);
+};
+
+const countSettingsObjects = (arr = []) => arr.filter((item) => item && typeof item === 'object' && Object.keys(item).length > 0).length;
+
+const mergeRestoreStats = (target, incoming) => {
+    target.attempted += incoming.attempted || 0;
+    target.succeeded += incoming.succeeded || 0;
+    target.skipped += incoming.skipped || 0;
+    if (Array.isArray(incoming.failed) && incoming.failed.length) {
+        target.failed.push(...incoming.failed);
+    }
+    return target;
+};
+
 const BACKUP_CATEGORIES_CONFIG = {
     students: {
         key: 'students',
@@ -724,19 +841,119 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-user-graduate',
         colorClass: 'bg-blue-100 text-blue-700',
         badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
-        description: 'Student profiles, parent contacts, continuous history & enrollments',
+        description: 'Student profiles, photos, TCs, notification states & year enrollments',
         getItemCount: (payload) => {
-            const list = payload?.collections?.students || payload?.students;
-            return Array.isArray(list) ? list.length : 0;
+            const c = payload?.collections || {};
+            const list = c.students || payload?.students || [];
+            const photos = c.studentPhotoSubmissions || [];
+            const tcs = c.transferCertificates || [];
+            const notif = c.studentNotificationState || [];
+            const enr = countNestedMapDocs(payload?.subcollections?.academicYearEnrollments);
+            return (Array.isArray(list) ? list.length : 0)
+                + (Array.isArray(photos) ? photos.length : 0)
+                + (Array.isArray(tcs) ? tcs.length : 0)
+                + (Array.isArray(notif) ? notif.length : 0)
+                + enr;
         },
         hasData: (payload) => {
-            const list = payload?.collections?.students || payload?.students;
-            return Array.isArray(list) && list.length > 0;
+            const c = payload?.collections || {};
+            const list = c.students || payload?.students;
+            return (Array.isArray(list) && list.length > 0)
+                || (Array.isArray(c.studentPhotoSubmissions) && c.studentPhotoSubmissions.length > 0)
+                || (Array.isArray(c.transferCertificates) && c.transferCertificates.length > 0)
+                || (Array.isArray(c.studentNotificationState) && c.studentNotificationState.length > 0)
+                || hasNestedMapDocs(payload?.subcollections?.academicYearEnrollments);
         },
         restore: async (payload, onProgress) => {
-            const list = payload?.collections?.students || payload?.students || [];
-            onProgress?.('Restoring student records and enrollments...');
-            await restoreCollectionFromPayload('students', list);
+            const c = payload?.collections || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const list = c.students || payload?.students || [];
+            const photos = c.studentPhotoSubmissions || [];
+            const tcs = c.transferCertificates || [];
+            const notif = c.studentNotificationState || [];
+            const enrMap = payload?.subcollections?.academicYearEnrollments || {};
+            const totalUnits = list.length + photos.length + tcs.length + notif.length + countNestedMapDocs(enrMap);
+            let doneUnits = 0;
+
+            const stepProgress = (label) => {
+                const pct = totalUnits > 0 ? Math.min(95, Math.round((doneUnits / totalUnits) * 90)) : 50;
+                onProgress?.({ text: label, done: doneUnits, total: totalUnits, pct });
+            };
+
+            if (Array.isArray(list) && list.length > 0) {
+                stepProgress(`Restoring ${list.length} student records...`);
+                const res = await restoreCollectionFromPayload('students', list, {
+                    onProgress: ({ done }) => {
+                        const cur = doneUnits + done;
+                        onProgress?.({ text: `Restoring students (${cur}/${totalUnits})...`, done: cur, total: totalUnits, pct: Math.min(92, Math.round((cur / Math.max(1, totalUnits)) * 90)) });
+                    }
+                });
+                doneUnits += list.length;
+                mergeRestoreStats(stats, res);
+
+                stepProgress('Rebuilding student login index...');
+                try {
+                    await syncAllStudentsLookupIndex(list);
+                } catch (err) {
+                    stats.failed.push({ collection: 'studentAuthLookup', id: 'index', error: err?.message || 'Failed to sync student login index' });
+                }
+            }
+
+            if (hasNestedMapDocs(enrMap)) {
+                for (const [yrId, yrList] of Object.entries(enrMap)) {
+                    if (!yrId || !Array.isArray(yrList) || yrList.length === 0) continue;
+                    stepProgress(`Restoring ${yrId} enrollments...`);
+                    const res = await restoreCollectionFromPayload(`academicYears/${yrId}/enrollments`, yrList, {
+                        collectionPath: `${BASE_PATH}/academicYears/${yrId}/enrollments`
+                    });
+                    doneUnits += yrList.length;
+                    mergeRestoreStats(stats, res);
+                }
+            } else if (Array.isArray(list) && list.length > 0) {
+                const byYear = {};
+                list.forEach((st) => {
+                    if (!st?.id) return;
+                    const yr = toAcademicYearDocId(st.academicYear || getActiveAcademicYearLabel() || '');
+                    if (!yr) return;
+                    if (!byYear[yr]) byYear[yr] = [];
+                    byYear[yr].push({
+                        id: st.id,
+                        studentId: st.id,
+                        adm: st.adm || st.admNo || '',
+                        name: st.name || '',
+                        class: st.class || '',
+                        status: st.status || 'Active',
+                        academicYear: st.academicYear || yr,
+                        updatedAt: Date.now()
+                    });
+                });
+                for (const [yrId, yrList] of Object.entries(byYear)) {
+                    const res = await restoreCollectionFromPayload(`academicYears/${yrId}/enrollments`, yrList, {
+                        collectionPath: `${BASE_PATH}/academicYears/${yrId}/enrollments`
+                    });
+                    mergeRestoreStats(stats, res);
+                }
+            }
+
+            if (Array.isArray(photos) && photos.length > 0) {
+                stepProgress('Restoring student photo submissions...');
+                const res = await restoreCollectionFromPayload('studentPhotoSubmissions', photos);
+                doneUnits += photos.length;
+                mergeRestoreStats(stats, res);
+            }
+            if (Array.isArray(tcs) && tcs.length > 0) {
+                stepProgress('Restoring transfer certificates...');
+                const res = await restoreCollectionFromPayload('transferCertificates', tcs);
+                doneUnits += tcs.length;
+                mergeRestoreStats(stats, res);
+            }
+            if (Array.isArray(notif) && notif.length > 0) {
+                stepProgress('Restoring student notification states...');
+                const res = await restoreCollectionFromPayload('studentNotificationState', notif);
+                doneUnits += notif.length;
+                mergeRestoreStats(stats, res);
+            }
+            return stats;
         }
     },
     payments: {
@@ -745,19 +962,113 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-receipt',
         colorClass: 'bg-emerald-100 text-emerald-700',
         badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        description: 'Fee collection transactions, receipts, concessions & fee structures',
+        description: 'Fee transactions, donations, collector preferences & receipt sequences',
         getItemCount: (payload) => {
-            const list = payload?.collections?.payments || payload?.payments;
-            return Array.isArray(list) ? list.length : 0;
+            const c = payload?.collections || {};
+            const list = c.payments || payload?.payments || [];
+            const donations = c.donations || [];
+            const prefs = c.collectorPreferences || [];
+            const yrPay = countNestedMapDocs(payload?.subcollections?.academicYearPayments);
+            const legPay = countNestedMapDocs(payload?.subcollections?.legacyYearPayments);
+            const seq = payload?.settings?.receiptSequence ? 1 : 0;
+            return (Array.isArray(list) ? list.length : 0)
+                + (Array.isArray(donations) ? donations.length : 0)
+                + (Array.isArray(prefs) ? prefs.length : 0)
+                + yrPay + legPay + seq;
         },
         hasData: (payload) => {
-            const list = payload?.collections?.payments || payload?.payments;
-            return Array.isArray(list) && list.length > 0;
+            const c = payload?.collections || {};
+            const list = c.payments || payload?.payments;
+            return (Array.isArray(list) && list.length > 0)
+                || (Array.isArray(c.donations) && c.donations.length > 0)
+                || (Array.isArray(c.collectorPreferences) && c.collectorPreferences.length > 0)
+                || hasNestedMapDocs(payload?.subcollections?.academicYearPayments)
+                || hasNestedMapDocs(payload?.subcollections?.legacyYearPayments)
+                || Boolean(payload?.settings?.receiptSequence);
         },
         restore: async (payload, onProgress) => {
-            const list = payload?.collections?.payments || payload?.payments || [];
-            onProgress?.('Restoring fee payments and transaction receipts...');
-            await restoreCollectionFromPayload('payments', list);
+            const c = payload?.collections || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const list = c.payments || payload?.payments || [];
+            const donations = c.donations || [];
+            const prefs = c.collectorPreferences || [];
+            const yrPayMap = payload?.subcollections?.academicYearPayments || {};
+            const legPayMap = payload?.subcollections?.legacyYearPayments || {};
+            const seq = payload?.settings?.receiptSequence;
+            const totalUnits = list.length + donations.length + prefs.length + countNestedMapDocs(yrPayMap) + countNestedMapDocs(legPayMap) + (seq ? 1 : 0);
+            let doneUnits = 0;
+
+            if (Array.isArray(list) && list.length > 0) {
+                onProgress?.({ text: `Restoring ${list.length} fee payment records...`, done: 0, total: totalUnits, pct: 5 });
+                const res = await restoreCollectionFromPayload('payments', list, {
+                    onProgress: ({ done }) => {
+                        onProgress?.({ text: `Restoring payments (${done}/${totalUnits})...`, done, total: totalUnits, pct: Math.min(90, Math.round((done / Math.max(1, totalUnits)) * 90)) });
+                    }
+                });
+                doneUnits += list.length;
+                mergeRestoreStats(stats, res);
+            }
+
+            if (Array.isArray(donations) && donations.length > 0) {
+                onProgress?.({ text: 'Restoring donation records...', done: doneUnits, total: totalUnits, pct: Math.min(92, Math.round((doneUnits / Math.max(1, totalUnits)) * 90)) });
+                const res = await restoreCollectionFromPayload('donations', donations);
+                doneUnits += donations.length;
+                mergeRestoreStats(stats, res);
+            }
+
+            if (Array.isArray(prefs) && prefs.length > 0) {
+                onProgress?.({ text: 'Restoring collector preferences...', done: doneUnits, total: totalUnits, pct: Math.min(94, Math.round((doneUnits / Math.max(1, totalUnits)) * 90)) });
+                const res = await restoreCollectionFromPayload('collectorPreferences', prefs);
+                doneUnits += prefs.length;
+                mergeRestoreStats(stats, res);
+            }
+
+            if (hasNestedMapDocs(yrPayMap)) {
+                for (const [yrId, yrList] of Object.entries(yrPayMap)) {
+                    if (!yrId || !Array.isArray(yrList) || yrList.length === 0) continue;
+                    onProgress?.({ text: `Restoring ${yrId} year payments...`, done: doneUnits, total: totalUnits, pct: Math.min(96, Math.round((doneUnits / Math.max(1, totalUnits)) * 90)) });
+                    const res = await restoreCollectionFromPayload(`academicYears/${yrId}/payments`, yrList, {
+                        collectionPath: `${BASE_PATH}/academicYears/${yrId}/payments`
+                    });
+                    doneUnits += yrList.length;
+                    mergeRestoreStats(stats, res);
+                }
+            } else if (Array.isArray(list) && list.length > 0) {
+                const byYear = {};
+                list.forEach((p) => {
+                    if (!p?.id) return;
+                    const yr = toAcademicYearDocId(p.academicYear || deriveAcademicYearFromDate(p.paymentDate) || getActiveAcademicYearLabel() || '');
+                    if (!yr) return;
+                    if (!byYear[yr]) byYear[yr] = [];
+                    byYear[yr].push(p);
+                });
+                for (const [yrId, yrList] of Object.entries(byYear)) {
+                    const res = await restoreCollectionFromPayload(`academicYears/${yrId}/payments`, yrList, {
+                        collectionPath: `${BASE_PATH}/academicYears/${yrId}/payments`
+                    });
+                    mergeRestoreStats(stats, res);
+                }
+            }
+
+            if (hasNestedMapDocs(legPayMap)) {
+                for (const [yrId, yrList] of Object.entries(legPayMap)) {
+                    if (!yrId || !Array.isArray(yrList) || yrList.length === 0) continue;
+                    const res = await restoreCollectionFromPayload(`years/${yrId}/payments`, yrList, {
+                        collectionPath: `${BASE_PATH}/years/${yrId}/payments`
+                    });
+                    doneUnits += yrList.length;
+                    mergeRestoreStats(stats, res);
+                }
+            }
+
+            if (seq && typeof seq === 'object') {
+                onProgress?.({ text: 'Restoring receipt sequence settings...', done: doneUnits, total: totalUnits, pct: 98 });
+                const sRes = await restoreSettingsDocSafe('receiptSequence', seq, { merge: false });
+                stats.attempted++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
+            }
+            return stats;
         }
     },
     results: {
@@ -766,34 +1077,83 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-poll-h',
         colorClass: 'bg-purple-100 text-purple-700',
         badgeClass: 'bg-purple-50 text-purple-700 border-purple-200',
-        description: 'Student exam marks, published results & grading schemas',
+        description: 'Exam marks, grading schemas, promotion decisions & result settings',
         getItemCount: (payload) => {
-            const results = payload?.collections?.examResults || payload?.examResults || payload?.results || [];
-            const schemas = payload?.collections?.resultSchemas || payload?.resultSchemas || [];
-            return (Array.isArray(results) ? results.length : 0) + (Array.isArray(schemas) ? schemas.length : 0);
+            const c = payload?.collections || {};
+            const results = c.examResults || payload?.examResults || payload?.results || [];
+            const schemas = c.resultSchemas || payload?.resultSchemas || [];
+            const promos = c.promotionDecisions || [];
+            const yrRes = countNestedMapDocs(payload?.subcollections?.academicYearResults);
+            const rc = (payload?.settings?.resultCenter || payload?.resultCenter) ? 1 : 0;
+            return (Array.isArray(results) ? results.length : 0)
+                + (Array.isArray(schemas) ? schemas.length : 0)
+                + (Array.isArray(promos) ? promos.length : 0)
+                + yrRes + rc;
         },
         hasData: (payload) => {
-            const results = payload?.collections?.examResults || payload?.examResults || payload?.results;
-            const schemas = payload?.collections?.resultSchemas || payload?.resultSchemas;
+            const c = payload?.collections || {};
+            const results = c.examResults || payload?.examResults || payload?.results;
+            const schemas = c.resultSchemas || payload?.resultSchemas;
+            const promos = c.promotionDecisions;
             const rc = payload?.settings?.resultCenter || payload?.resultCenter;
-            return (Array.isArray(results) && results.length > 0) || (Array.isArray(schemas) && schemas.length > 0) || Boolean(rc);
+            return (Array.isArray(results) && results.length > 0)
+                || (Array.isArray(schemas) && schemas.length > 0)
+                || (Array.isArray(promos) && promos.length > 0)
+                || hasNestedMapDocs(payload?.subcollections?.academicYearResults)
+                || Boolean(rc);
         },
         restore: async (payload, onProgress) => {
-            const results = payload?.collections?.examResults || payload?.examResults || payload?.results || [];
-            const schemas = payload?.collections?.resultSchemas || payload?.resultSchemas || [];
+            const c = payload?.collections || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const results = c.examResults || payload?.examResults || payload?.results || [];
+            const schemas = c.resultSchemas || payload?.resultSchemas || [];
+            const promos = c.promotionDecisions || [];
+            const yrResMap = payload?.subcollections?.academicYearResults || {};
             const rc = payload?.settings?.resultCenter || payload?.resultCenter;
+            const totalUnits = results.length + schemas.length + promos.length + countNestedMapDocs(yrResMap) + (rc ? 1 : 0);
+            let doneUnits = 0;
+
             if (Array.isArray(results) && results.length > 0) {
-                onProgress?.('Restoring student exam marks...');
-                await restoreCollectionFromPayload('examResults', results);
+                onProgress?.({ text: `Restoring ${results.length} exam results...`, done: doneUnits, total: totalUnits, pct: 10 });
+                const res = await restoreCollectionFromPayload('examResults', results, {
+                    onProgress: ({ done }) => {
+                        const cur = doneUnits + done;
+                        onProgress?.({ text: `Restoring exam results (${cur}/${totalUnits})...`, done: cur, total: totalUnits, pct: Math.min(90, Math.round((cur / Math.max(1, totalUnits)) * 90)) });
+                    }
+                });
+                doneUnits += results.length;
+                mergeRestoreStats(stats, res);
             }
             if (Array.isArray(schemas) && schemas.length > 0) {
-                onProgress?.('Restoring exam result schemas...');
-                await restoreCollectionFromPayload('resultSchemas', schemas);
+                onProgress?.({ text: 'Restoring exam result schemas...', done: doneUnits, total: totalUnits, pct: Math.min(92, Math.round((doneUnits / Math.max(1, totalUnits)) * 90)) });
+                const res = await restoreCollectionFromPayload('resultSchemas', schemas);
+                doneUnits += schemas.length;
+                mergeRestoreStats(stats, res);
+            }
+            if (Array.isArray(promos) && promos.length > 0) {
+                onProgress?.({ text: 'Restoring promotion decisions...', done: doneUnits, total: totalUnits, pct: Math.min(95, Math.round((doneUnits / Math.max(1, totalUnits)) * 90)) });
+                const res = await restoreCollectionFromPayload('promotionDecisions', promos);
+                doneUnits += promos.length;
+                mergeRestoreStats(stats, res);
+            }
+            if (hasNestedMapDocs(yrResMap)) {
+                for (const [yrId, yrList] of Object.entries(yrResMap)) {
+                    if (!yrId || !Array.isArray(yrList) || yrList.length === 0) continue;
+                    const res = await restoreCollectionFromPayload(`academicYears/${yrId}/results`, yrList, {
+                        collectionPath: `${BASE_PATH}/academicYears/${yrId}/results`
+                    });
+                    doneUnits += yrList.length;
+                    mergeRestoreStats(stats, res);
+                }
             }
             if (rc && typeof rc === 'object') {
-                onProgress?.('Restoring result center configuration...');
-                await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), rc, { merge: true });
+                onProgress?.({ text: 'Restoring result center configuration...', done: doneUnits, total: totalUnits, pct: 98 });
+                const sRes = await restoreSettingsDocSafe('resultCenter', rc, { merge: true });
+                stats.attempted++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
             }
+            return stats;
         }
     },
     staff: {
@@ -802,19 +1162,69 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-users-cog',
         colorClass: 'bg-amber-100 text-amber-700',
         badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
-        description: 'Non-admin staff, teachers, roles, and PIN logins (Super Admin protected)',
+        description: 'Staff profiles, roles & staffAccess permissions (Super Admin protected)',
         getItemCount: (payload) => {
-            const list = payload?.collections?.staff || payload?.staff;
-            return Array.isArray(list) ? list.length : 0;
+            const c = payload?.collections || {};
+            const list = c.staff || payload?.staff || [];
+            const access = c.staffAccess || [];
+            return (Array.isArray(list) ? list.length : 0) + (Array.isArray(access) ? access.length : 0);
         },
         hasData: (payload) => {
-            const list = payload?.collections?.staff || payload?.staff;
-            return Array.isArray(list) && list.length > 0;
+            const c = payload?.collections || {};
+            const list = c.staff || payload?.staff;
+            const access = c.staffAccess;
+            return (Array.isArray(list) && list.length > 0) || (Array.isArray(access) && access.length > 0);
         },
         restore: async (payload, onProgress) => {
-            const list = payload?.collections?.staff || payload?.staff || [];
-            onProgress?.('Restoring staff directory & sub-accounts...');
-            await restoreCollectionFromPayload('staff', list);
+            const c = payload?.collections || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const list = c.staff || payload?.staff || [];
+            const accessList = c.staffAccess || [];
+            const superEmail = normalizeEmail(auth.currentUser?.email || currentAdminEmail || '');
+            const totalUnits = list.length + accessList.length;
+            let doneUnits = 0;
+
+            const isSuperAdminDoc = (docSnap) => {
+                const data = docSnap.data() || {};
+                const em = normalizeEmail(data.email || docSnap.id || '');
+                return Boolean(superEmail && em === superEmail) || data.role === 'super_admin';
+            };
+
+            if (Array.isArray(list) && list.length > 0) {
+                onProgress?.({ text: `Restoring ${list.length} staff profiles...`, done: 0, total: totalUnits, pct: 10 });
+                const res = await restoreCollectionFromPayload('staff', list, {
+                    preserveFilterFn: isSuperAdminDoc,
+                    onProgress: ({ done }) => {
+                        onProgress?.({ text: `Restoring staff (${done}/${totalUnits})...`, done, total: totalUnits, pct: Math.min(75, Math.round((done / Math.max(1, totalUnits)) * 75)) });
+                    }
+                });
+                doneUnits += list.length;
+                mergeRestoreStats(stats, res);
+            }
+
+            if (Array.isArray(accessList) && accessList.length > 0) {
+                onProgress?.({ text: 'Restoring staff access permissions...', done: doneUnits, total: totalUnits, pct: 80 });
+                const res = await restoreCollectionFromPayload('staffAccess', accessList, {
+                    preserveFilterFn: isSuperAdminDoc
+                });
+                doneUnits += accessList.length;
+                mergeRestoreStats(stats, res);
+            }
+
+            if (Array.isArray(list) && list.length > 0) {
+                onProgress?.({ text: 'Rebuilding staff access index...', done: doneUnits, total: totalUnits, pct: 92 });
+                try {
+                    const mergedForIndex = [...list];
+                    if (superEmail && !mergedForIndex.some((s) => normalizeEmail(s?.email) === superEmail)) {
+                        const curSuper = (allStaff || []).find((s) => normalizeEmail(s?.email) === superEmail);
+                        if (curSuper) mergedForIndex.push(curSuper);
+                    }
+                    await rebuildStaffAccessIndex(mergedForIndex);
+                } catch (err) {
+                    stats.failed.push({ collection: 'staffAccess', id: 'rebuild_index', error: err?.message || 'Failed to rebuild staffAccess index' });
+                }
+            }
+            return stats;
         }
     },
     groups: {
@@ -834,8 +1244,12 @@ const BACKUP_CATEGORIES_CONFIG = {
         },
         restore: async (payload, onProgress) => {
             const list = payload?.collections?.studentGroups || payload?.studentGroups || [];
-            onProgress?.('Restoring student groups & batch designations...');
-            await restoreCollectionFromPayload('studentGroups', list);
+            onProgress?.({ text: 'Restoring student groups & batch designations...', done: 0, total: list.length, pct: 20 });
+            return await restoreCollectionFromPayload('studentGroups', list, {
+                onProgress: ({ done, total }) => {
+                    onProgress?.({ text: `Restoring groups (${done}/${total})...`, done, total, pct: Math.min(95, Math.round((done / Math.max(1, total)) * 95)) });
+                }
+            });
         }
     },
     website: {
@@ -844,32 +1258,100 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-globe',
         colorClass: 'bg-indigo-100 text-indigo-700',
         badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-        description: 'Notice boards, photo galleries, directory categories, and entries',
+        description: 'Notices, gallery, directory entries, auth configs, page access & notifications',
         getItemCount: (payload) => {
-            const content = payload?.settings?.content || payload?.content;
-            const entries = payload?.collections?.publicDirectory || payload?.publicDirectory || [];
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const content = s.content || payload?.content;
+            const entries = c.publicDirectory || payload?.publicDirectory || [];
+            const dirAuth = c.directoryAuth || [];
+            const overrides = c.pageAccessOverrides || [];
+            const sysNotifs = c.systemNotifications || [];
             const notices = Array.isArray(content?.notices) ? content.notices.length : 0;
             const gallery = Array.isArray(content?.gallery) ? content.gallery.length : 0;
             const dirCats = Array.isArray(content?.directoryCategories) ? content.directoryCategories.length : 0;
-            const dirEntries = Array.isArray(entries) ? entries.length : 0;
-            return notices + gallery + dirCats + dirEntries;
+            const settingCount = countSettingsObjects([s.categoryAuthConfig, s.pageAccess]);
+            return notices + gallery + dirCats
+                + (Array.isArray(entries) ? entries.length : 0)
+                + (Array.isArray(dirAuth) ? dirAuth.length : 0)
+                + (Array.isArray(overrides) ? overrides.length : 0)
+                + (Array.isArray(sysNotifs) ? sysNotifs.length : 0)
+                + settingCount;
         },
         hasData: (payload) => {
-            const content = payload?.settings?.content || payload?.content;
-            const entries = payload?.collections?.publicDirectory || payload?.publicDirectory;
-            return Boolean(content) || (Array.isArray(entries) && entries.length > 0);
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const content = s.content || payload?.content;
+            const entries = c.publicDirectory || payload?.publicDirectory;
+            return Boolean(content)
+                || Boolean(s.categoryAuthConfig)
+                || Boolean(s.pageAccess)
+                || (Array.isArray(entries) && entries.length > 0)
+                || (Array.isArray(c.directoryAuth) && c.directoryAuth.length > 0)
+                || (Array.isArray(c.pageAccessOverrides) && c.pageAccessOverrides.length > 0)
+                || (Array.isArray(c.systemNotifications) && c.systemNotifications.length > 0);
         },
         restore: async (payload, onProgress) => {
-            const content = payload?.settings?.content || payload?.content;
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const content = s.content || payload?.content;
+            const entries = c.publicDirectory || payload?.publicDirectory || [];
+            const dirAuth = c.directoryAuth || [];
+            const overrides = c.pageAccessOverrides || [];
+            const sysNotifs = c.systemNotifications || [];
+            const totalUnits = (content ? 1 : 0) + (s.categoryAuthConfig ? 1 : 0) + (s.pageAccess ? 1 : 0) + entries.length + dirAuth.length + overrides.length + sysNotifs.length;
+            let doneUnits = 0;
+
             if (content && typeof content === 'object') {
-                onProgress?.('Restoring website content & notices...');
-                await setDoc(doc(db, `${BASE_PATH}/settings`, 'content'), content, { merge: false });
+                onProgress?.({ text: 'Restoring website content, notices & gallery...', done: doneUnits, total: totalUnits, pct: 15 });
+                const sRes = await restoreSettingsDocSafe('content', content, { merge: false });
+                stats.attempted++;
+                doneUnits++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
             }
-            const entries = payload?.collections?.publicDirectory || payload?.publicDirectory || [];
+            if (s.categoryAuthConfig && typeof s.categoryAuthConfig === 'object') {
+                onProgress?.({ text: 'Restoring directory login configuration...', done: doneUnits, total: totalUnits, pct: 25 });
+                const sRes = await restoreSettingsDocSafe('categoryAuthConfig', s.categoryAuthConfig, { merge: false });
+                stats.attempted++;
+                doneUnits++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
+            }
+            if (s.pageAccess && typeof s.pageAccess === 'object') {
+                onProgress?.({ text: 'Restoring page access permissions...', done: doneUnits, total: totalUnits, pct: 35 });
+                const sRes = await restoreSettingsDocSafe('pageAccess', s.pageAccess, { merge: false });
+                stats.attempted++;
+                doneUnits++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
+            }
             if (Array.isArray(entries) && entries.length > 0) {
-                onProgress?.('Restoring public directory entries...');
-                await restoreCollectionFromPayload('publicDirectory', entries);
+                onProgress?.({ text: 'Restoring public directory entries...', done: doneUnits, total: totalUnits, pct: 50 });
+                const res = await restoreCollectionFromPayload('publicDirectory', entries);
+                doneUnits += entries.length;
+                mergeRestoreStats(stats, res);
             }
+            if (Array.isArray(dirAuth) && dirAuth.length > 0) {
+                onProgress?.({ text: 'Restoring directory auth metadata...', done: doneUnits, total: totalUnits, pct: 70 });
+                const res = await restoreCollectionFromPayload('directoryAuth', dirAuth);
+                doneUnits += dirAuth.length;
+                mergeRestoreStats(stats, res);
+            }
+            if (Array.isArray(overrides) && overrides.length > 0) {
+                onProgress?.({ text: 'Restoring page access overrides...', done: doneUnits, total: totalUnits, pct: 85 });
+                const res = await restoreCollectionFromPayload('pageAccessOverrides', overrides);
+                doneUnits += overrides.length;
+                mergeRestoreStats(stats, res);
+            }
+            if (Array.isArray(sysNotifs) && sysNotifs.length > 0) {
+                onProgress?.({ text: 'Restoring system notifications...', done: doneUnits, total: totalUnits, pct: 95 });
+                const res = await restoreCollectionFromPayload('systemNotifications', sysNotifs);
+                doneUnits += sysNotifs.length;
+                mergeRestoreStats(stats, res);
+            }
+            return stats;
         }
     },
     years: {
@@ -878,22 +1360,60 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-calendar-alt',
         colorClass: 'bg-cyan-100 text-cyan-700',
         badgeClass: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-        description: 'Academic calendars, year sessions, and class configurations',
+        description: 'Academic calendars, year sessions, classes & year fee items',
         getItemCount: (payload) => {
             const yearsObj = payload?.settings?.academicYears || payload?.academicYears;
             const yearsArr = Array.isArray(yearsObj) ? yearsObj : (yearsObj?.years || []);
-            return Array.isArray(yearsArr) ? yearsArr.length : (yearsObj ? 1 : 0);
+            const yrClasses = countNestedMapDocs(payload?.subcollections?.academicYearClasses);
+            const yrFees = countNestedMapDocs(payload?.subcollections?.academicYearFeeItems);
+            const clsMirror = payload?.settings?.classes ? 1 : 0;
+            return (Array.isArray(yearsArr) ? yearsArr.length : (yearsObj ? 1 : 0)) + yrClasses + yrFees + clsMirror;
         },
         hasData: (payload) => {
             const yearsObj = payload?.settings?.academicYears || payload?.academicYears;
-            return Boolean(yearsObj);
+            return Boolean(yearsObj)
+                || Boolean(payload?.settings?.classes)
+                || hasNestedMapDocs(payload?.subcollections?.academicYearClasses)
+                || hasNestedMapDocs(payload?.subcollections?.academicYearFeeItems);
         },
         restore: async (payload, onProgress) => {
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
             const yearsObj = payload?.settings?.academicYears || payload?.academicYears;
+            const classesDoc = payload?.settings?.classes;
+            const yrClassesMap = payload?.subcollections?.academicYearClasses || {};
+            const yrFeesMap = payload?.subcollections?.academicYearFeeItems || {};
+
             if (yearsObj && typeof yearsObj === 'object') {
-                onProgress?.('Restoring academic years & class schedules...');
-                await setDoc(doc(db, `${BASE_PATH}/settings`, 'academicYears'), yearsObj, { merge: false });
+                onProgress?.({ text: 'Restoring academic years & class schedules...', done: 0, total: 1, pct: 30 });
+                const sRes = await restoreSettingsDocSafe('academicYears', yearsObj, { merge: false });
+                stats.attempted++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
             }
+            if (classesDoc && typeof classesDoc === 'object') {
+                onProgress?.({ text: 'Restoring class ladder configuration...', done: stats.succeeded, total: stats.attempted + 1, pct: 45 });
+                const sRes = await restoreSettingsDocSafe('classes', classesDoc, { merge: false });
+                stats.attempted++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
+            }
+            for (const [yrId, clsList] of Object.entries(yrClassesMap)) {
+                if (!yrId || !Array.isArray(clsList) || clsList.length === 0) continue;
+                onProgress?.({ text: `Restoring classes for ${yrId}...`, done: stats.succeeded, total: stats.attempted + clsList.length, pct: 65 });
+                const res = await restoreCollectionFromPayload(`academicYears/${yrId}/classes`, clsList, {
+                    collectionPath: `${BASE_PATH}/academicYears/${yrId}/classes`
+                });
+                mergeRestoreStats(stats, res);
+            }
+            for (const [yrId, fList] of Object.entries(yrFeesMap)) {
+                if (!yrId || !Array.isArray(fList) || fList.length === 0) continue;
+                onProgress?.({ text: `Restoring fee items for ${yrId}...`, done: stats.succeeded, total: stats.attempted + fList.length, pct: 85 });
+                const res = await restoreCollectionFromPayload(`academicYears/${yrId}/feeItems`, fList, {
+                    collectionPath: `${BASE_PATH}/academicYears/${yrId}/feeItems`
+                });
+                mergeRestoreStats(stats, res);
+            }
+            return stats;
         }
     },
     config: {
@@ -902,21 +1422,52 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-sliders-h',
         colorClass: 'bg-slate-100 text-slate-700',
         badgeClass: 'bg-slate-50 text-slate-700 border-slate-200',
-        description: 'Institution branding, fee schedule windows, default fees & UPI details',
+        description: 'Branding, fee items, concessions, institution config & session controls',
         getItemCount: (payload) => {
-            const cfg = payload?.settings?.config || payload?.config;
-            return cfg && typeof cfg === 'object' ? Object.keys(cfg).length : 0;
+            const s = payload?.settings || {};
+            const cfg = s.config || payload?.config;
+            const extraCount = countSettingsObjects([s.institution, s.institutionConfig, s.websiteContent, s.feeSettings, s.concessions, s.sessionControl]);
+            const cfgKeys = cfg && typeof cfg === 'object' ? Object.keys(cfg).length : 0;
+            return cfgKeys + extraCount;
         },
         hasData: (payload) => {
-            const cfg = payload?.settings?.config || payload?.config;
-            return Boolean(cfg && typeof cfg === 'object' && Object.keys(cfg).length > 0);
+            const s = payload?.settings || {};
+            const cfg = s.config || payload?.config;
+            return Boolean(cfg && typeof cfg === 'object' && Object.keys(cfg).length > 0)
+                || Boolean(s.institution)
+                || Boolean(s.institutionConfig)
+                || Boolean(s.websiteContent)
+                || Boolean(s.feeSettings)
+                || Boolean(s.concessions)
+                || Boolean(s.sessionControl);
         },
         restore: async (payload, onProgress) => {
-            const cfg = payload?.settings?.config || payload?.config;
-            if (cfg && typeof cfg === 'object') {
-                onProgress?.('Restoring app settings & branding configuration...');
-                await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), cfg, { merge: true });
+            const s = payload?.settings || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const cfg = s.config || payload?.config;
+            const docsToRestore = [
+                { id: 'config', data: cfg, merge: false },
+                { id: 'institution', data: s.institution, merge: false },
+                { id: 'institutionConfig', data: s.institutionConfig, merge: false },
+                { id: 'websiteContent', data: s.websiteContent, merge: false },
+                { id: 'feeSettings', data: s.feeSettings, merge: false },
+                { id: 'concessions', data: s.concessions, merge: false },
+                { id: 'sessionControl', data: s.sessionControl, merge: true }
+            ].filter((item) => item.data && typeof item.data === 'object');
+
+            for (let i = 0; i < docsToRestore.length; i++) {
+                const item = docsToRestore[i];
+                onProgress?.({ text: `Restoring settings/${item.id}...`, done: i, total: docsToRestore.length, pct: Math.round(((i + 0.5) / Math.max(1, docsToRestore.length)) * 90) });
+                let payloadData = { ...item.data };
+                if (item.id === 'config' && !payloadData.adminProfile && institutionConfig?.adminProfile) {
+                    payloadData.adminProfile = institutionConfig.adminProfile;
+                }
+                const sRes = await restoreSettingsDocSafe(item.id, payloadData, { merge: item.merge });
+                stats.attempted++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
             }
+            return stats;
         }
     },
     audit: {
@@ -925,7 +1476,7 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-clipboard-list',
         colorClass: 'bg-rose-100 text-rose-700',
         badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
-        description: 'Historical audit trail entries and administrative operation logs',
+        description: 'Historical audit logs (restores missing entries without erasing existing logs)',
         getItemCount: (payload) => {
             const list = payload?.collections?.auditLogs || payload?.auditLogs;
             return Array.isArray(list) ? list.length : 0;
@@ -936,8 +1487,13 @@ const BACKUP_CATEGORIES_CONFIG = {
         },
         restore: async (payload, onProgress) => {
             const list = payload?.collections?.auditLogs || payload?.auditLogs || [];
-            onProgress?.('Restoring audit logs...');
-            await restoreCollectionFromPayload('auditLogs', list);
+            onProgress?.({ text: 'Appending missing audit trail entries...', done: 0, total: list.length, pct: 20 });
+            return await restoreCollectionFromPayload('auditLogs', list, {
+                appendOnly: true,
+                onProgress: ({ done, total }) => {
+                    onProgress?.({ text: `Restoring audit logs (${done}/${total})...`, done, total, pct: Math.min(95, Math.round((done / Math.max(1, total)) * 95)) });
+                }
+            });
         }
     },
     attendance: {
@@ -948,8 +1504,9 @@ const BACKUP_CATEGORIES_CONFIG = {
         badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
         description: 'Daily session attendance registers and calendar off-day configurations',
         getItemCount: (payload) => {
-            const list = payload?.collections?.attendance || payload?.attendance;
-            return Array.isArray(list) ? list.length : 0;
+            const list = payload?.collections?.attendance || payload?.attendance || [];
+            const hasCfg = payload?.settings?.attendanceConfig || payload?.settings?.attendanceSettings || payload?.attendanceConfig || payload?.attendanceSettings;
+            return (Array.isArray(list) ? list.length : 0) + (hasCfg ? 1 : 0);
         },
         hasData: (payload) => {
             const list = payload?.collections?.attendance || payload?.attendance;
@@ -957,16 +1514,34 @@ const BACKUP_CATEGORIES_CONFIG = {
             return (Array.isArray(list) && list.length > 0) || Boolean(settings);
         },
         restore: async (payload, onProgress) => {
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
             const list = payload?.collections?.attendance || payload?.attendance || [];
-            const settings = payload?.settings?.attendanceConfig || payload?.settings?.attendanceSettings || payload?.attendanceConfig || payload?.attendanceSettings;
+            const attCfg = payload?.settings?.attendanceConfig || payload?.attendanceConfig;
+            const attSet = payload?.settings?.attendanceSettings || payload?.attendanceSettings;
             if (Array.isArray(list) && list.length > 0) {
-                onProgress?.('Restoring attendance registers...');
-                await restoreCollectionFromPayload('attendance', list);
+                onProgress?.({ text: 'Restoring attendance registers...', done: 0, total: list.length, pct: 20 });
+                const res = await restoreCollectionFromPayload('attendance', list, {
+                    onProgress: ({ done, total }) => {
+                        onProgress?.({ text: `Restoring attendance (${done}/${total})...`, done, total, pct: Math.min(88, Math.round((done / Math.max(1, total)) * 88)) });
+                    }
+                });
+                mergeRestoreStats(stats, res);
             }
-            if (settings && typeof settings === 'object') {
-                onProgress?.('Restoring attendance configuration...');
-                await setDoc(doc(db, `${BASE_PATH}/settings`, 'attendanceConfig'), settings, { merge: true });
+            if (attCfg && typeof attCfg === 'object') {
+                onProgress?.({ text: 'Restoring attendance configuration...', done: stats.succeeded, total: stats.attempted + 1, pct: 92 });
+                const sRes = await restoreSettingsDocSafe('attendanceConfig', attCfg, { merge: false });
+                stats.attempted++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
             }
+            if (attSet && typeof attSet === 'object') {
+                onProgress?.({ text: 'Restoring attendance settings...', done: stats.succeeded, total: stats.attempted + 1, pct: 96 });
+                const sRes = await restoreSettingsDocSafe('attendanceSettings', attSet, { merge: false });
+                stats.attempted++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
+            }
+            return stats;
         }
     },
     academicPlan: {
@@ -975,35 +1550,55 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-calendar-days',
         colorClass: 'bg-indigo-100 text-indigo-700',
         badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-        description: 'Class subjects, routine master timetables, syllabus year plans, and exam schedules',
+        description: 'Subjects, timetables, year plans, syllabus logs, exam schedules & configs',
         getItemCount: (payload) => {
-            const sub = payload?.collections?.classSubjects || payload?.classSubjects || [];
-            const tt = payload?.collections?.timetables || payload?.timetables || [];
-            const yp = payload?.collections?.yearPlans || payload?.yearPlans || [];
-            const logs = payload?.collections?.syllabusDailyLogs || payload?.syllabusDailyLogs || [];
-            const examTt = payload?.collections?.examTimetables || payload?.examTimetables || [];
-            return (Array.isArray(sub) ? sub.length : 0) +
-                   (Array.isArray(tt) ? tt.length : 0) +
-                   (Array.isArray(yp) ? yp.length : 0) +
-                   (Array.isArray(logs) ? logs.length : 0) +
-                   (Array.isArray(examTt) ? examTt.length : 0);
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const cols = ['classSubjects', 'timetables', 'yearPlans', 'syllabusDailyLogs', 'examTimetables'];
+            const docSum = cols.reduce((acc, col) => acc + (Array.isArray(c[col] || payload?.[col]) ? (c[col] || payload?.[col]).length : 0), 0);
+            const settingCount = countSettingsObjects([s.timetableStructure, s.yearPlanConfig, s.academicPlanningConfig]);
+            return docSum + settingCount;
         },
         hasData: (payload) => {
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
             const cols = ['classSubjects', 'timetables', 'yearPlans', 'syllabusDailyLogs', 'examTimetables'];
-            return cols.some(c => {
-                const list = payload?.collections?.[c] || payload?.[c];
+            return cols.some((col) => {
+                const list = c[col] || payload?.[col];
                 return Array.isArray(list) && list.length > 0;
-            });
+            }) || Boolean(s.timetableStructure) || Boolean(s.yearPlanConfig) || Boolean(s.academicPlanningConfig);
         },
         restore: async (payload, onProgress) => {
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
             const cols = ['classSubjects', 'timetables', 'yearPlans', 'syllabusDailyLogs', 'examTimetables'];
+            const totalUnits = cols.reduce((acc, col) => acc + (Array.isArray(c[col] || payload?.[col]) ? (c[col] || payload?.[col]).length : 0), 0);
+            let doneUnits = 0;
+
             for (const col of cols) {
-                const list = payload?.collections?.[col] || payload?.[col] || [];
+                const list = c[col] || payload?.[col] || [];
                 if (Array.isArray(list) && list.length > 0) {
-                    onProgress?.(`Restoring academic ${col}...`);
-                    await restoreCollectionFromPayload(col, list);
+                    onProgress?.({ text: `Restoring academic ${col}...`, done: doneUnits, total: totalUnits, pct: Math.min(88, Math.round((doneUnits / Math.max(1, totalUnits)) * 88)) });
+                    const res = await restoreCollectionFromPayload(col, list);
+                    doneUnits += list.length;
+                    mergeRestoreStats(stats, res);
                 }
             }
+            for (const [docId, docData] of [
+                ['timetableStructure', s.timetableStructure],
+                ['yearPlanConfig', s.yearPlanConfig],
+                ['academicPlanningConfig', s.academicPlanningConfig]
+            ]) {
+                if (docData && typeof docData === 'object') {
+                    onProgress?.({ text: `Restoring ${docId}...`, done: doneUnits, total: totalUnits, pct: 95 });
+                    const sRes = await restoreSettingsDocSafe(docId, docData, { merge: false });
+                    stats.attempted++;
+                    if (sRes.ok) stats.succeeded++;
+                    else stats.failed.push(sRes.failure);
+                }
+            }
+            return stats;
         }
     },
     activities: {
@@ -1012,48 +1607,66 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-award',
         colorClass: 'bg-amber-100 text-amber-700',
         badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
-        description: 'House points, routine tasks, ibadah tracking, custom badges, and bonus scores',
+        description: 'House points, tasks, ibadah, badges, bonus scores, reward & prayer configs',
         getItemCount: (payload) => {
-            const acts = payload?.collections?.activities || payload?.activities || [];
-            const ib = payload?.collections?.ibadah || payload?.ibadah || [];
-            const tc = payload?.collections?.taskCompletions || payload?.taskCompletions || [];
-            const badges = payload?.collections?.studentCustomBadges || payload?.studentCustomBadges || [];
-            const pts = payload?.collections?.studentBonusPoints || payload?.studentBonusPoints || [];
-            return (Array.isArray(acts) ? acts.length : 0) +
-                   (Array.isArray(ib) ? ib.length : 0) +
-                   (Array.isArray(tc) ? tc.length : 0) +
-                   (Array.isArray(badges) ? badges.length : 0) +
-                   (Array.isArray(pts) ? pts.length : 0);
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const cols = ['activities', 'ibadah', 'taskCompletions', 'studentCustomBadges', 'studentBonusPoints', 'rewardSettings', 'prayerSettings'];
+            const docSum = cols.reduce((acc, col) => acc + (Array.isArray(c[col] || payload?.[col]) ? (c[col] || payload?.[col]).length : 0), 0);
+            const settingCount = countSettingsObjects([
+                s.rewardSettings || payload?.rewardSettings,
+                s.prayerSettings || payload?.prayerSettings,
+                s.activityConfig,
+                s.taskDefinitions
+            ]);
+            return docSum + settingCount;
         },
         hasData: (payload) => {
-            const cols = ['activities', 'ibadah', 'taskCompletions', 'studentCustomBadges', 'studentBonusPoints'];
-            const hasCols = cols.some(c => {
-                const list = payload?.collections?.[c] || payload?.[c];
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const cols = ['activities', 'ibadah', 'taskCompletions', 'studentCustomBadges', 'studentBonusPoints', 'rewardSettings', 'prayerSettings'];
+            const hasCols = cols.some((col) => {
+                const list = c[col] || payload?.[col];
                 return Array.isArray(list) && list.length > 0;
             });
-            const rSettings = payload?.settings?.rewardSettings || payload?.rewardSettings;
-            const pSettings = payload?.settings?.prayerSettings || payload?.prayerSettings;
-            return hasCols || Boolean(rSettings) || Boolean(pSettings);
+            return hasCols
+                || Boolean(s.rewardSettings || payload?.rewardSettings)
+                || Boolean(s.prayerSettings || payload?.prayerSettings)
+                || Boolean(s.activityConfig)
+                || Boolean(s.taskDefinitions);
         },
         restore: async (payload, onProgress) => {
-            const cols = ['activities', 'ibadah', 'taskCompletions', 'studentCustomBadges', 'studentBonusPoints'];
+            const c = payload?.collections || {};
+            const s = payload?.settings || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const cols = ['activities', 'ibadah', 'taskCompletions', 'studentCustomBadges', 'studentBonusPoints', 'rewardSettings', 'prayerSettings'];
+            const totalUnits = cols.reduce((acc, col) => acc + (Array.isArray(c[col] || payload?.[col]) ? (c[col] || payload?.[col]).length : 0), 0);
+            let doneUnits = 0;
+
             for (const col of cols) {
-                const list = payload?.collections?.[col] || payload?.[col] || [];
+                const list = c[col] || payload?.[col] || [];
                 if (Array.isArray(list) && list.length > 0) {
-                    onProgress?.(`Restoring ${col}...`);
-                    await restoreCollectionFromPayload(col, list);
+                    onProgress?.({ text: `Restoring ${col}...`, done: doneUnits, total: totalUnits, pct: Math.min(88, Math.round((doneUnits / Math.max(1, totalUnits)) * 88)) });
+                    const res = await restoreCollectionFromPayload(col, list);
+                    doneUnits += list.length;
+                    mergeRestoreStats(stats, res);
                 }
             }
-            const rSettings = payload?.settings?.rewardSettings || payload?.rewardSettings;
-            if (rSettings && typeof rSettings === 'object') {
-                onProgress?.('Restoring reward settings...');
-                await setDoc(doc(db, `${BASE_PATH}/settings`, 'rewardSettings'), rSettings, { merge: true });
+            for (const [docId, docData] of [
+                ['rewardSettings', s.rewardSettings || payload?.rewardSettings],
+                ['prayerSettings', s.prayerSettings || payload?.prayerSettings],
+                ['activityConfig', s.activityConfig],
+                ['taskDefinitions', s.taskDefinitions]
+            ]) {
+                if (docData && typeof docData === 'object') {
+                    onProgress?.({ text: `Restoring ${docId}...`, done: doneUnits, total: totalUnits, pct: 95 });
+                    const sRes = await restoreSettingsDocSafe(docId, docData, { merge: false });
+                    stats.attempted++;
+                    if (sRes.ok) stats.succeeded++;
+                    else stats.failed.push(sRes.failure);
+                }
             }
-            const pSettings = payload?.settings?.prayerSettings || payload?.prayerSettings;
-            if (pSettings && typeof pSettings === 'object') {
-                onProgress?.('Restoring prayer settings...');
-                await setDoc(doc(db, `${BASE_PATH}/settings`, 'prayerSettings'), pSettings, { merge: true });
-            }
+            return stats;
         }
     },
     evaluation: {
@@ -1062,31 +1675,52 @@ const BACKUP_CATEGORIES_CONFIG = {
         icon: 'fa-chalkboard-user',
         colorClass: 'bg-rose-100 text-rose-700',
         badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
-        description: 'Daily student evaluation, oral/reading assessments, impositions, and worksheets',
+        description: 'Daily evaluations, impositions, worksheets, templates & per-class configs',
         getItemCount: (payload) => {
-            const ev = payload?.collections?.evaluations || payload?.evaluations || [];
-            const imp = payload?.collections?.impositions || payload?.impositions || [];
-            const ws = payload?.collections?.worksheets || payload?.worksheets || [];
-            return (Array.isArray(ev) ? ev.length : 0) +
-                   (Array.isArray(imp) ? imp.length : 0) +
-                   (Array.isArray(ws) ? ws.length : 0);
+            const c = payload?.collections || {};
+            const cols = ['evaluations', 'impositions', 'worksheets', 'worksheetTemplates'];
+            const docSum = cols.reduce((acc, col) => acc + (Array.isArray(c[col] || payload?.[col]) ? (c[col] || payload?.[col]).length : 0), 0);
+            const evCfgMap = payload?.settings?.evaluationConfigs;
+            const cfgCount = (evCfgMap && typeof evCfgMap === 'object') ? Object.keys(evCfgMap).length : 0;
+            return docSum + cfgCount;
         },
         hasData: (payload) => {
-            const cols = ['evaluations', 'impositions', 'worksheets'];
-            return cols.some(c => {
-                const list = payload?.collections?.[c] || payload?.[c];
+            const c = payload?.collections || {};
+            const cols = ['evaluations', 'impositions', 'worksheets', 'worksheetTemplates'];
+            const hasCols = cols.some((col) => {
+                const list = c[col] || payload?.[col];
                 return Array.isArray(list) && list.length > 0;
             });
+            const evCfgMap = payload?.settings?.evaluationConfigs;
+            return hasCols || Boolean(evCfgMap && typeof evCfgMap === 'object' && Object.keys(evCfgMap).length > 0);
         },
         restore: async (payload, onProgress) => {
-            const cols = ['evaluations', 'impositions', 'worksheets'];
+            const c = payload?.collections || {};
+            const stats = { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+            const cols = ['evaluations', 'impositions', 'worksheets', 'worksheetTemplates'];
+            const evCfgMap = payload?.settings?.evaluationConfigs || {};
+            const totalUnits = cols.reduce((acc, col) => acc + (Array.isArray(c[col] || payload?.[col]) ? (c[col] || payload?.[col]).length : 0), 0) + Object.keys(evCfgMap).length;
+            let doneUnits = 0;
+
             for (const col of cols) {
-                const list = payload?.collections?.[col] || payload?.[col] || [];
+                const list = c[col] || payload?.[col] || [];
                 if (Array.isArray(list) && list.length > 0) {
-                    onProgress?.(`Restoring ${col}...`);
-                    await restoreCollectionFromPayload(col, list);
+                    onProgress?.({ text: `Restoring ${col}...`, done: doneUnits, total: totalUnits, pct: Math.min(88, Math.round((doneUnits / Math.max(1, totalUnits)) * 88)) });
+                    const res = await restoreCollectionFromPayload(col, list);
+                    doneUnits += list.length;
+                    mergeRestoreStats(stats, res);
                 }
             }
+            for (const [docId, docData] of Object.entries(evCfgMap)) {
+                if (!docId || !docData || typeof docData !== 'object') continue;
+                const safeDocId = docId.startsWith('evaluationConfig_') ? docId : `evaluationConfig_${docId}`;
+                const sRes = await restoreSettingsDocSafe(safeDocId, docData, { merge: false });
+                stats.attempted++;
+                doneUnits++;
+                if (sRes.ok) stats.succeeded++;
+                else stats.failed.push(sRes.failure);
+            }
+            return stats;
         }
     }
 };
@@ -1100,155 +1734,344 @@ const summarizeBackupCounts = (payload = {}) => {
 
 const validateBackupPayload = (payload = {}) => {
     if (!payload || typeof payload !== 'object') return { valid: false, reason: 'Backup payload is empty or not valid JSON.' };
-    
-    // Check if at least one valid category exists
     let detectedCategories = 0;
-    for (const [key, meta] of Object.entries(BACKUP_CATEGORIES_CONFIG)) {
+    for (const meta of Object.values(BACKUP_CATEGORIES_CONFIG)) {
         if (meta.hasData(payload)) {
             detectedCategories++;
         }
     }
-    if (payload.collections && typeof payload.collections === 'object') {
+    if (payload.collections && typeof payload.collections === 'object' && Object.keys(payload.collections).length > 0) {
         detectedCategories++;
     }
-
     if (detectedCategories === 0) {
         return { valid: false, reason: 'No recognized institutional collections or settings found in this backup file.' };
     }
     return { valid: true, reason: '' };
 };
 
-const buildBackupPayload = async (targetCategories = null) => {
+const collectAllKnownYearDocIds = (yearsDocData = null) => {
+    const ids = new Set();
+    const addLabel = (lbl) => {
+        const clean = toAcademicYearDocId(lbl || '');
+        if (clean) ids.add(clean);
+    };
+    (academicYears || []).forEach((y) => addLabel(y?.label || y?.id || ''));
+    if (yearsDocData && typeof yearsDocData === 'object') {
+        addLabel(yearsDocData.activeYear);
+        (yearsDocData.years || []).forEach((y) => addLabel(y?.label || y?.id || ''));
+    }
+    addLabel(activeAcademicYear);
+    addLabel(currentAcademicYear);
+    return Array.from(ids);
+};
+
+const collectAllKnownClassKeysForEval = (yearsDocData = null, extraStudents = []) => {
+    const keys = new Set();
+    const addClass = (cls) => {
+        const raw = String(cls || '').trim();
+        if (!raw) return;
+        keys.add(raw);
+        keys.add(raw.toUpperCase());
+        keys.add(raw.replace(/[\/\s]+/g, '_'));
+    };
+    (classes || []).forEach(addClass);
+    (academicYears || []).forEach((y) => (y?.classes || []).forEach(addClass));
+    (yearsDocData?.years || []).forEach((y) => (y?.classes || []).forEach(addClass));
+    (extraStudents || []).forEach((s) => addClass(s?.class));
+    return Array.from(keys).filter(Boolean);
+};
+
+const buildBackupPayload = async (targetCategories = null, onCategoryStatus = null) => {
     const allCategoryKeys = Object.keys(BACKUP_CATEGORIES_CONFIG);
     const selected = Array.isArray(targetCategories) && targetCategories.length
         ? targetCategories
         : allCategoryKeys;
 
-    const wants = (key) => selected.includes(key);
-
-    const [
-        studentsSnap,
-        staffSnap,
-        groupsSnap,
-        paymentsSnap,
-        auditSnap,
-        examResultsSnap,
-        resultSchemasSnap,
-        publicDirSnap,
-        configSnap,
-        contentSnap,
-        adminAuthSnap,
-        academicYearsSnap,
-        resultCenterSnap,
-        // Attendance
-        attendanceSnap,
-        attendanceSettingsSnap,
-        // Academic Plan
-        classSubjectsSnap,
-        timetablesSnap,
-        yearPlansSnap,
-        syllabusDailyLogsSnap,
-        examTimetablesSnap,
-        // Activities
-        activitiesSnap,
-        ibadahSnap,
-        taskCompletionsSnap,
-        studentCustomBadgesSnap,
-        studentBonusPointsSnap,
-        rewardSettingsSnap,
-        prayerSettingsSnap,
-        // Evaluation
-        evaluationsSnap,
-        impositionsSnap,
-        worksheetsSnap
-    ] = await Promise.all([
-        wants('students') ? getDocs(collection(db, `${BASE_PATH}/students`)) : Promise.resolve({ docs: [] }),
-        wants('staff') ? getDocs(collection(db, `${BASE_PATH}/staff`)) : Promise.resolve({ docs: [] }),
-        wants('groups') ? getDocs(collection(db, `${BASE_PATH}/studentGroups`)) : Promise.resolve({ docs: [] }),
-        wants('payments') ? getDocs(collection(db, `${BASE_PATH}/payments`)) : Promise.resolve({ docs: [] }),
-        wants('audit') ? getDocs(collection(db, `${BASE_PATH}/auditLogs`)) : Promise.resolve({ docs: [] }),
-        wants('results') ? getDocs(collection(db, `${BASE_PATH}/examResults`)) : Promise.resolve({ docs: [] }),
-        wants('results') ? getDocs(collection(db, `${BASE_PATH}/resultSchemas`)) : Promise.resolve({ docs: [] }),
-        wants('website') ? getDocs(collection(db, `${BASE_PATH}/publicDirectory`)) : Promise.resolve({ docs: [] }),
-        wants('config') ? getDoc(doc(db, `${BASE_PATH}/settings`, 'config')) : Promise.resolve({ exists: () => false }),
-        wants('website') ? getDoc(doc(db, `${BASE_PATH}/settings`, 'content')) : Promise.resolve({ exists: () => false }),
-        wants('staff') ? getDoc(getAdminAuthRef()) : Promise.resolve({ exists: () => false }),
-        wants('years') ? getDoc(doc(db, `${BASE_PATH}/settings`, 'academicYears')) : Promise.resolve({ exists: () => false }),
-        wants('results') ? getDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter')) : Promise.resolve({ exists: () => false }),
-        // Attendance
-        wants('attendance') ? getDocs(collection(db, `${BASE_PATH}/attendance`)) : Promise.resolve({ docs: [] }),
-        wants('attendance') ? getDoc(doc(db, `${BASE_PATH}/settings`, 'attendanceConfig')) : Promise.resolve({ exists: () => false }),
-        // Academic Plan
-        wants('academicPlan') ? getDocs(collection(db, `${BASE_PATH}/classSubjects`)) : Promise.resolve({ docs: [] }),
-        wants('academicPlan') ? getDocs(collection(db, `${BASE_PATH}/timetables`)) : Promise.resolve({ docs: [] }),
-        wants('academicPlan') ? getDocs(collection(db, `${BASE_PATH}/yearPlans`)) : Promise.resolve({ docs: [] }),
-        wants('academicPlan') ? getDocs(collection(db, `${BASE_PATH}/syllabusDailyLogs`)) : Promise.resolve({ docs: [] }),
-        wants('academicPlan') ? getDocs(collection(db, `${BASE_PATH}/examTimetables`)) : Promise.resolve({ docs: [] }),
-        // Activities
-        wants('activities') ? getDocs(collection(db, `${BASE_PATH}/activities`)) : Promise.resolve({ docs: [] }),
-        wants('activities') ? getDocs(collection(db, `${BASE_PATH}/ibadah`)) : Promise.resolve({ docs: [] }),
-        wants('activities') ? getDocs(collection(db, `${BASE_PATH}/taskCompletions`)) : Promise.resolve({ docs: [] }),
-        wants('activities') ? getDocs(collection(db, `${BASE_PATH}/studentCustomBadges`)) : Promise.resolve({ docs: [] }),
-        wants('activities') ? getDocs(collection(db, `${BASE_PATH}/studentBonusPoints`)) : Promise.resolve({ docs: [] }),
-        wants('activities') ? getDoc(doc(db, `${BASE_PATH}/settings`, 'rewardSettings')) : Promise.resolve({ exists: () => false }),
-        wants('activities') ? getDoc(doc(db, `${BASE_PATH}/settings`, 'prayerSettings')) : Promise.resolve({ exists: () => false }),
-        // Evaluation
-        wants('evaluation') ? getDocs(collection(db, `${BASE_PATH}/evaluations`)) : Promise.resolve({ docs: [] }),
-        wants('evaluation') ? getDocs(collection(db, `${BASE_PATH}/impositions`)) : Promise.resolve({ docs: [] }),
-        wants('evaluation') ? getDocs(collection(db, `${BASE_PATH}/worksheets`)) : Promise.resolve({ docs: [] })
-    ]);
-
     const collections = {};
-    if (wants('students')) collections.students = studentsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (wants('staff')) collections.staff = staffSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (wants('groups')) collections.studentGroups = groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (wants('payments')) collections.payments = paymentsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (wants('results')) {
-        collections.examResults = examResultsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.resultSchemas = resultSchemasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    }
-    if (wants('website')) collections.publicDirectory = publicDirSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (wants('audit')) collections.auditLogs = auditSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (wants('attendance')) collections.attendance = attendanceSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (wants('academicPlan')) {
-        collections.classSubjects = classSubjectsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.timetables = timetablesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.yearPlans = yearPlansSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.syllabusDailyLogs = syllabusDailyLogsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.examTimetables = examTimetablesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    }
-    if (wants('activities')) {
-        collections.activities = activitiesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.ibadah = ibadahSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.taskCompletions = taskCompletionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.studentCustomBadges = studentCustomBadgesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.studentBonusPoints = studentBonusPointsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    }
-    if (wants('evaluation')) {
-        collections.evaluations = evaluationsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.impositions = impositionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        collections.worksheets = worksheetsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    }
-
     const settings = {};
-    if (wants('config') && configSnap.exists()) settings.config = configSnap.data();
-    if (wants('website') && contentSnap.exists()) settings.content = contentSnap.data();
-    if (wants('staff') && adminAuthSnap.exists()) settings.adminAuth = adminAuthSnap.data();
-    if (wants('years') && academicYearsSnap.exists()) settings.academicYears = academicYearsSnap.data();
-    if (wants('results') && resultCenterSnap.exists()) settings.resultCenter = resultCenterSnap.data();
-    if (wants('attendance') && attendanceSettingsSnap.exists()) settings.attendanceConfig = attendanceSettingsSnap.data();
-    if (wants('activities')) {
-        if (rewardSettingsSnap.exists()) settings.rewardSettings = rewardSettingsSnap.data();
-        if (prayerSettingsSnap.exists()) settings.prayerSettings = prayerSettingsSnap.data();
+    const subcollections = {};
+    const exportReport = {};
+
+    const safeGetDocs = async (colPath) => {
+        try {
+            const snap = await getDocs(collection(db, colPath));
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        } catch (err) {
+            console.warn(`Backup read notice (${colPath}):`, err?.message || err);
+            return [];
+        }
+    };
+    const safeGetDoc = async (docId) => {
+        try {
+            const snap = await getDoc(doc(db, `${BASE_PATH}/settings`, docId));
+            return snap.exists() ? snap.data() : null;
+        } catch (err) {
+            console.warn(`Backup doc read notice (settings/${docId}):`, err?.message || err);
+            return null;
+        }
+    };
+
+    const yearsSnapData = await safeGetDoc('academicYears');
+    const yearIds = collectAllKnownYearDocIds(yearsSnapData);
+
+    for (let i = 0; i < selected.length; i++) {
+        const catKey = selected[i];
+        onCategoryStatus?.(catKey, { status: 'loading', index: i, total: selected.length, text: 'Reading database...' });
+        try {
+            let itemCount = 0;
+            if (catKey === 'students') {
+                const [studentsList, photosList, tcsList, notifList] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/students`),
+                    safeGetDocs(`${BASE_PATH}/studentPhotoSubmissions`),
+                    safeGetDocs(`${BASE_PATH}/transferCertificates`),
+                    safeGetDocs(`${BASE_PATH}/studentNotificationState`)
+                ]);
+                collections.students = studentsList;
+                collections.studentPhotoSubmissions = photosList;
+                collections.transferCertificates = tcsList;
+                collections.studentNotificationState = notifList;
+                const enrMap = {};
+                let enrCount = 0;
+                for (const yrId of yearIds) {
+                    const enrDocs = await safeGetDocs(`${BASE_PATH}/academicYears/${yrId}/enrollments`);
+                    if (enrDocs.length > 0) {
+                        enrMap[yrId] = enrDocs;
+                        enrCount += enrDocs.length;
+                    }
+                }
+                if (Object.keys(enrMap).length > 0) subcollections.academicYearEnrollments = enrMap;
+                itemCount = studentsList.length + photosList.length + tcsList.length + notifList.length + enrCount;
+            } else if (catKey === 'payments') {
+                const [payList, donList, prefList, seqData] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/payments`),
+                    safeGetDocs(`${BASE_PATH}/donations`),
+                    safeGetDocs(`${BASE_PATH}/collectorPreferences`),
+                    safeGetDoc('receiptSequence')
+                ]);
+                collections.payments = payList;
+                collections.donations = donList;
+                collections.collectorPreferences = prefList;
+                if (seqData) settings.receiptSequence = seqData;
+                const yrPayMap = {};
+                const legPayMap = {};
+                let subPayCount = 0;
+                for (const yrId of yearIds) {
+                    const yrDocs = await safeGetDocs(`${BASE_PATH}/academicYears/${yrId}/payments`);
+                    if (yrDocs.length > 0) {
+                        yrPayMap[yrId] = yrDocs;
+                        subPayCount += yrDocs.length;
+                    }
+                    const legDocs = await safeGetDocs(`${BASE_PATH}/years/${yrId}/payments`);
+                    if (legDocs.length > 0) {
+                        legPayMap[yrId] = legDocs;
+                        subPayCount += legDocs.length;
+                    }
+                }
+                if (Object.keys(yrPayMap).length > 0) subcollections.academicYearPayments = yrPayMap;
+                if (Object.keys(legPayMap).length > 0) subcollections.legacyYearPayments = legPayMap;
+                itemCount = payList.length + donList.length + prefList.length + subPayCount + (seqData ? 1 : 0);
+            } else if (catKey === 'results') {
+                const [resList, schList, promoList, rcData] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/examResults`),
+                    safeGetDocs(`${BASE_PATH}/resultSchemas`),
+                    safeGetDocs(`${BASE_PATH}/promotionDecisions`),
+                    safeGetDoc('resultCenter')
+                ]);
+                collections.examResults = resList;
+                collections.resultSchemas = schList;
+                collections.promotionDecisions = promoList;
+                if (rcData) settings.resultCenter = rcData;
+                const yrResMap = {};
+                let yrResCount = 0;
+                for (const yrId of yearIds) {
+                    const yrDocs = await safeGetDocs(`${BASE_PATH}/academicYears/${yrId}/results`);
+                    if (yrDocs.length > 0) {
+                        yrResMap[yrId] = yrDocs;
+                        yrResCount += yrDocs.length;
+                    }
+                }
+                if (Object.keys(yrResMap).length > 0) subcollections.academicYearResults = yrResMap;
+                itemCount = resList.length + schList.length + promoList.length + yrResCount + (rcData ? 1 : 0);
+            } else if (catKey === 'staff') {
+                const [staffList, accessList] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/staff`),
+                    safeGetDocs(`${BASE_PATH}/staffAccess`)
+                ]);
+                collections.staff = staffList.map((s) => {
+                    const copy = { ...s };
+                    delete copy.password;
+                    delete copy.passwordHash;
+                    delete copy.password_hash;
+                    return copy;
+                });
+                collections.staffAccess = accessList.map((a) => {
+                    const copy = { ...a };
+                    delete copy.password;
+                    delete copy.passwordHash;
+                    delete copy.password_hash;
+                    return copy;
+                });
+                itemCount = collections.staff.length + collections.staffAccess.length;
+            } else if (catKey === 'groups') {
+                collections.studentGroups = await safeGetDocs(`${BASE_PATH}/studentGroups`);
+                itemCount = collections.studentGroups.length;
+            } else if (catKey === 'website') {
+                const [dirList, dirAuthList, overrideList, notifList, contentData, catAuthData, pageAccessData] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/publicDirectory`),
+                    safeGetDocs(`${BASE_PATH}/directoryAuth`),
+                    safeGetDocs(`${BASE_PATH}/pageAccessOverrides`),
+                    safeGetDocs(`${BASE_PATH}/systemNotifications`),
+                    safeGetDoc('content'),
+                    safeGetDoc('categoryAuthConfig'),
+                    safeGetDoc('pageAccess')
+                ]);
+                collections.publicDirectory = dirList;
+                collections.directoryAuth = dirAuthList;
+                collections.pageAccessOverrides = overrideList;
+                collections.systemNotifications = notifList;
+                if (contentData) settings.content = contentData;
+                if (catAuthData) settings.categoryAuthConfig = catAuthData;
+                if (pageAccessData) settings.pageAccess = pageAccessData;
+                itemCount = dirList.length + dirAuthList.length + overrideList.length + notifList.length
+                    + (contentData?.notices?.length || 0) + (contentData?.gallery?.length || 0) + (contentData?.directoryCategories?.length || 0)
+                    + (catAuthData ? 1 : 0) + (pageAccessData ? 1 : 0);
+            } else if (catKey === 'years') {
+                const clsMirror = await safeGetDoc('classes');
+                if (yearsSnapData) settings.academicYears = yearsSnapData;
+                if (clsMirror) settings.classes = clsMirror;
+                const clsMap = {};
+                const feeMap = {};
+                let subCount = 0;
+                for (const yrId of yearIds) {
+                    const [clsDocs, feeDocs] = await Promise.all([
+                        safeGetDocs(`${BASE_PATH}/academicYears/${yrId}/classes`),
+                        safeGetDocs(`${BASE_PATH}/academicYears/${yrId}/feeItems`)
+                    ]);
+                    if (clsDocs.length > 0) { clsMap[yrId] = clsDocs; subCount += clsDocs.length; }
+                    if (feeDocs.length > 0) { feeMap[yrId] = feeDocs; subCount += feeDocs.length; }
+                }
+                if (Object.keys(clsMap).length > 0) subcollections.academicYearClasses = clsMap;
+                if (Object.keys(feeMap).length > 0) subcollections.academicYearFeeItems = feeMap;
+                const yrsArr = Array.isArray(yearsSnapData?.years) ? yearsSnapData.years : [];
+                itemCount = yrsArr.length + subCount + (clsMirror ? 1 : 0);
+            } else if (catKey === 'config') {
+                const [cfgData, instData, instCfgData, webCfgData, feeSetData, concData, sesCtrlData] = await Promise.all([
+                    safeGetDoc('config'),
+                    safeGetDoc('institution'),
+                    safeGetDoc('institutionConfig'),
+                    safeGetDoc('websiteContent'),
+                    safeGetDoc('feeSettings'),
+                    safeGetDoc('concessions'),
+                    safeGetDoc('sessionControl')
+                ]);
+                if (cfgData) settings.config = cfgData;
+                if (instData) settings.institution = instData;
+                if (instCfgData) settings.institutionConfig = instCfgData;
+                if (webCfgData) settings.websiteContent = webCfgData;
+                if (feeSetData) settings.feeSettings = feeSetData;
+                if (concData) settings.concessions = concData;
+                if (sesCtrlData) settings.sessionControl = sesCtrlData;
+                itemCount = (cfgData ? Object.keys(cfgData).length : 0)
+                    + countSettingsObjects([instData, instCfgData, webCfgData, feeSetData, concData, sesCtrlData]);
+            } else if (catKey === 'audit') {
+                collections.auditLogs = await safeGetDocs(`${BASE_PATH}/auditLogs`);
+                itemCount = collections.auditLogs.length;
+            } else if (catKey === 'attendance') {
+                const [attList, attCfg, attSet] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/attendance`),
+                    safeGetDoc('attendanceConfig'),
+                    safeGetDoc('attendanceSettings')
+                ]);
+                collections.attendance = attList;
+                if (attCfg) settings.attendanceConfig = attCfg;
+                if (attSet) settings.attendanceSettings = attSet;
+                itemCount = attList.length + countSettingsObjects([attCfg, attSet]);
+            } else if (catKey === 'academicPlan') {
+                const [cs, tt, yp, logs, extt, ttStruct, ypCfg, apCfg] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/classSubjects`),
+                    safeGetDocs(`${BASE_PATH}/timetables`),
+                    safeGetDocs(`${BASE_PATH}/yearPlans`),
+                    safeGetDocs(`${BASE_PATH}/syllabusDailyLogs`),
+                    safeGetDocs(`${BASE_PATH}/examTimetables`),
+                    safeGetDoc('timetableStructure'),
+                    safeGetDoc('yearPlanConfig'),
+                    safeGetDoc('academicPlanningConfig')
+                ]);
+                collections.classSubjects = cs;
+                collections.timetables = tt;
+                collections.yearPlans = yp;
+                collections.syllabusDailyLogs = logs;
+                collections.examTimetables = extt;
+                if (ttStruct) settings.timetableStructure = ttStruct;
+                if (ypCfg) settings.yearPlanConfig = ypCfg;
+                if (apCfg) settings.academicPlanningConfig = apCfg;
+                itemCount = cs.length + tt.length + yp.length + logs.length + extt.length + countSettingsObjects([ttStruct, ypCfg, apCfg]);
+            } else if (catKey === 'activities') {
+                const [acts, ib, tc, bdg, pts, rwCol, prCol, rwSet, prSet, actCfg, tDef] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/activities`),
+                    safeGetDocs(`${BASE_PATH}/ibadah`),
+                    safeGetDocs(`${BASE_PATH}/taskCompletions`),
+                    safeGetDocs(`${BASE_PATH}/studentCustomBadges`),
+                    safeGetDocs(`${BASE_PATH}/studentBonusPoints`),
+                    safeGetDocs(`${BASE_PATH}/rewardSettings`),
+                    safeGetDocs(`${BASE_PATH}/prayerSettings`),
+                    safeGetDoc('rewardSettings'),
+                    safeGetDoc('prayerSettings'),
+                    safeGetDoc('activityConfig'),
+                    safeGetDoc('taskDefinitions')
+                ]);
+                collections.activities = acts;
+                collections.ibadah = ib;
+                collections.taskCompletions = tc;
+                collections.studentCustomBadges = bdg;
+                collections.studentBonusPoints = pts;
+                collections.rewardSettings = rwCol;
+                collections.prayerSettings = prCol;
+                if (rwSet) settings.rewardSettings = rwSet;
+                if (prSet) settings.prayerSettings = prSet;
+                if (actCfg) settings.activityConfig = actCfg;
+                if (tDef) settings.taskDefinitions = tDef;
+                itemCount = acts.length + ib.length + tc.length + bdg.length + pts.length + rwCol.length + prCol.length
+                    + countSettingsObjects([rwSet, prSet, actCfg, tDef]);
+            } else if (catKey === 'evaluation') {
+                const [ev, imp, ws, wsTpl] = await Promise.all([
+                    safeGetDocs(`${BASE_PATH}/evaluations`),
+                    safeGetDocs(`${BASE_PATH}/impositions`),
+                    safeGetDocs(`${BASE_PATH}/worksheets`),
+                    safeGetDocs(`${BASE_PATH}/worksheetTemplates`)
+                ]);
+                collections.evaluations = ev;
+                collections.impositions = imp;
+                collections.worksheets = ws;
+                collections.worksheetTemplates = wsTpl;
+                const evalClassKeys = collectAllKnownClassKeysForEval(yearsSnapData, collections.students || rawStudents);
+                const evConfigs = {};
+                await Promise.all(evalClassKeys.map(async (clsKey) => {
+                    const docId = `evaluationConfig_${clsKey}`;
+                    const cfg = await safeGetDoc(docId);
+                    if (cfg) evConfigs[docId] = cfg;
+                }));
+                if (Object.keys(evConfigs).length > 0) settings.evaluationConfigs = evConfigs;
+                itemCount = ev.length + imp.length + ws.length + wsTpl.length + Object.keys(evConfigs).length;
+            }
+
+            exportReport[catKey] = { status: 'done', count: itemCount };
+            onCategoryStatus?.(catKey, { status: 'done', index: i, total: selected.length, count: itemCount, text: `${itemCount} items exported` });
+        } catch (err) {
+            console.error(`Backup export failed for category ${catKey}:`, err);
+            exportReport[catKey] = { status: 'error', count: 0, error: err?.message || 'Export failed' };
+            onCategoryStatus?.(catKey, { status: 'error', index: i, total: selected.length, count: 0, error: err?.message || 'Export failed' });
+        }
     }
 
     return {
         exportedAt: new Date().toISOString(),
         institution: BASE_PATH,
-        version: '2.0',
-        releaseStage: 'Phase 3',
+        version: '3.0',
+        releaseStage: 'Phase 4 Full Snapshot',
         selectedCategories: selected,
         collections,
+        subcollections,
         settings
     };
 };
@@ -1561,24 +2384,236 @@ const renderStudentCountsTab = () => {
     if (footFemale) footFemale.textContent = stats.female;
 };
 
-const restoreCollectionFromPayload = async (collectionName, records = []) => {
+const estimateJsonByteLength = (obj) => {
+    try {
+        const json = JSON.stringify(obj);
+        return typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(json).length : json.length * 2;
+    } catch (_) {
+        return 1024;
+    }
+};
+
+const restoreSettingsDocSafe = async (docId, rawData, { merge = false } = {}) => {
+    try {
+        const cleanData = sanitizeFirestoreValue(rawData) || {};
+        await setDoc(doc(db, `${BASE_PATH}/settings`, docId), cleanData, { merge });
+        return { ok: true, docId };
+    } catch (err) {
+        console.error(`Settings restore failed (settings/${docId}):`, err);
+        return {
+            ok: false,
+            docId,
+            failure: {
+                collection: 'settings',
+                id: docId,
+                label: `settings/${docId}`,
+                error: err?.message || 'Permission or validation error'
+            }
+        };
+    }
+};
+
+const restoreCollectionFromPayload = async (collectionName, records = [], options = {}) => {
+    const {
+        appendOnly = false,
+        preserveFilterFn = null,
+        onProgress = null,
+        collectionPath = null
+    } = options;
+    const targetPath = collectionPath || `${BASE_PATH}/${collectionName}`;
+    const result = { collection: collectionName, total: Array.isArray(records) ? records.length : 0, attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+
     if (!Array.isArray(records) || records.length === 0) {
-        console.warn(`Restore skipped for ${collectionName}: payload is empty or invalid.`);
-        return;
+        return result;
     }
-    const validRecords = records.filter((r) => r && typeof r === 'object' && r.id);
+
+    const validRecords = records.filter((r) => r && typeof r === 'object' && r.id && !String(r.id).includes('/'));
     if (validRecords.length === 0) {
-        console.warn(`Restore aborted for ${collectionName}: no records with valid IDs.`);
-        return;
+        result.failed.push({ collection: collectionName, id: 'invalid_records', label: collectionName, error: 'Records in snapshot are missing valid document IDs.' });
+        return result;
     }
-    const existing = await getDocs(collection(db, `${BASE_PATH}/${collectionName}`));
-    const operations = [];
-    existing.forEach((record) => operations.push((batch) => batch.delete(record.ref)));
-    validRecords.forEach((record) => {
-        const { id, ...data } = record;
-        operations.push((batch) => batch.set(doc(db, `${BASE_PATH}/${collectionName}`, id), data));
-    });
-    await runBatchedWrites(operations);
+
+    let existingIds = new Set();
+    try {
+        const existingSnap = await getDocs(collection(db, targetPath));
+        existingIds = new Set(existingSnap.docs.map((d) => d.id));
+        if (!appendOnly) {
+            const toDelete = existingSnap.docs.filter((docSnap) => !(preserveFilterFn && preserveFilterFn(docSnap)));
+            const delChunkSize = 250;
+            for (let i = 0; i < toDelete.length; i += delChunkSize) {
+                const chunk = toDelete.slice(i, i + delChunkSize);
+                const batch = writeBatch(db);
+                chunk.forEach((docSnap) => batch.delete(docSnap.ref));
+                try {
+                    await batch.commit();
+                } catch (delErr) {
+                    for (const docSnap of chunk) {
+                        try {
+                            await deleteDoc(docSnap.ref);
+                        } catch (singleDelErr) {
+                            console.warn(`Could not delete pre-existing doc ${targetPath}/${docSnap.id}:`, singleDelErr?.message || singleDelErr);
+                        }
+                    }
+                }
+            }
+        }
+    } catch (readErr) {
+        console.warn(`Existing collection read warning (${targetPath}):`, readErr?.message || readErr);
+    }
+
+    const toWrite = appendOnly
+        ? validRecords.filter((rec) => !existingIds.has(String(rec.id)))
+        : validRecords;
+    result.skipped = validRecords.length - toWrite.length;
+    result.attempted = toWrite.length;
+
+    if (toWrite.length === 0) {
+        onProgress?.({ done: validRecords.length, total: validRecords.length, succeeded: 0, failed: 0 });
+        return result;
+    }
+
+    const MAX_BATCH_OPS = 120;
+    const MAX_BATCH_BYTES = 2400000;
+    const MAX_DOC_BYTES = 980000;
+
+    let currentChunk = [];
+    let currentBytes = 0;
+
+    const commitChunk = async (chunk) => {
+        if (!chunk.length) return;
+        try {
+            const batch = writeBatch(db);
+            chunk.forEach((item) => {
+                batch.set(doc(db, targetPath, item.id), item.data);
+            });
+            await batch.commit();
+            result.succeeded += chunk.length;
+            onProgress?.({ done: result.succeeded + result.failed.length, total: toWrite.length, succeeded: result.succeeded, failed: result.failed.length });
+        } catch (batchErr) {
+            console.warn(`Batch write fallback triggered for ${targetPath} (${chunk.length} items):`, batchErr?.message || batchErr);
+            for (const item of chunk) {
+                try {
+                    await setDoc(doc(db, targetPath, item.id), item.data);
+                    result.succeeded++;
+                } catch (singleErr) {
+                    result.failed.push({
+                        collection: collectionName,
+                        id: item.id,
+                        label: item.label,
+                        error: singleErr?.message || batchErr?.message || 'Failed to write document'
+                    });
+                }
+                onProgress?.({ done: result.succeeded + result.failed.length, total: toWrite.length, succeeded: result.succeeded, failed: result.failed.length });
+            }
+        }
+    };
+
+    for (const record of toWrite) {
+        const docId = String(record.id).trim();
+        const cleanData = sanitizeCollectionRecord(collectionName, record);
+        const bytes = estimateJsonByteLength(cleanData);
+        const label = String(cleanData.name || cleanData.studentName || cleanData.title || cleanData.adm || docId);
+
+        if (bytes > MAX_DOC_BYTES) {
+            result.failed.push({
+                collection: collectionName,
+                id: docId,
+                label,
+                error: `Document size (${Math.round(bytes / 1024)} KB) exceeds Firestore 1 MB limit`
+            });
+            onProgress?.({ done: result.succeeded + result.failed.length, total: toWrite.length, succeeded: result.succeeded, failed: result.failed.length });
+            continue;
+        }
+
+        if (currentChunk.length >= MAX_BATCH_OPS || (currentChunk.length > 0 && currentBytes + bytes > MAX_BATCH_BYTES)) {
+            await commitChunk(currentChunk);
+            currentChunk = [];
+            currentBytes = 0;
+        }
+        currentChunk.push({ id: docId, data: cleanData, label });
+        currentBytes += bytes;
+    }
+
+    if (currentChunk.length > 0) {
+        await commitChunk(currentChunk);
+    }
+
+    return result;
+};
+
+let lastFailedRestoreCategories = [];
+
+const setRestoreCardVisualState = (catKey, state, info = {}) => {
+    const card = document.getElementById(`restore-cat-card-${catKey}`);
+    const iconWrap = document.getElementById(`restore-cat-icon-${catKey}`);
+    const badge = document.getElementById(`restore-cat-badge-${catKey}`);
+    const statusEl = document.getElementById(`restore-cat-status-${catKey}`);
+    const barWrap = document.getElementById(`restore-cat-bar-wrap-${catKey}`);
+    const bar = document.getElementById(`restore-cat-bar-${catKey}`);
+    const titleEl = document.getElementById(`restore-cat-title-${catKey}`);
+    if (!card) return;
+
+    const cfg = BACKUP_CATEGORIES_CONFIG[catKey];
+    const baseIcon = cfg?.icon || 'fa-database';
+
+    if (state === 'ready') {
+        card.className = 'flex flex-col gap-2 p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 text-emerald-950 transition-all';
+        if (titleEl) titleEl.className = 'text-xs font-bold truncate text-emerald-950';
+        if (iconWrap) iconWrap.innerHTML = `<i class="fas ${baseIcon} text-xs text-emerald-600"></i>`;
+        if (badge) {
+            badge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300 shrink-0';
+            badge.textContent = info.count > 0 ? `${info.count} items • Ready` : 'Ready';
+        }
+        if (statusEl) {
+            statusEl.className = 'text-[10px] text-emerald-700/80 font-medium truncate';
+            statusEl.textContent = info.text || 'Queued for restore';
+        }
+        if (barWrap) barWrap.classList.add('hidden');
+        if (bar) { bar.style.width = '0%'; bar.className = 'h-full bg-emerald-500 transition-all duration-200 rounded-full'; }
+    } else if (state === 'uploading') {
+        const pct = Math.min(99, Math.max(5, Math.round(info.pct ?? 10)));
+        card.className = 'flex flex-col gap-2 p-2.5 rounded-xl border-2 border-blue-500 bg-blue-50 text-blue-950 ring-2 ring-blue-200/80 transition-all shadow-xs';
+        if (titleEl) titleEl.className = 'text-xs font-bold truncate text-blue-950';
+        if (iconWrap) iconWrap.innerHTML = '<i class="fas fa-spinner fa-spin text-xs text-blue-600"></i>';
+        if (badge) {
+            badge.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-blue-600 text-white border-blue-700 shrink-0';
+            badge.textContent = `${pct}%`;
+        }
+        if (statusEl) {
+            statusEl.className = 'text-[10px] text-blue-700 font-semibold truncate';
+            statusEl.textContent = info.text || 'Uploading to database...';
+        }
+        if (barWrap) barWrap.classList.remove('hidden');
+        if (bar) { bar.style.width = `${pct}%`; bar.className = 'h-full bg-blue-600 transition-all duration-200 rounded-full'; }
+    } else if (state === 'completed') {
+        card.className = 'flex flex-col gap-2 p-2.5 rounded-xl border-2 border-emerald-900 bg-emerald-800 text-white transition-all shadow-sm';
+        if (titleEl) titleEl.className = 'text-xs font-bold truncate text-white';
+        if (iconWrap) iconWrap.innerHTML = '<i class="fas fa-check-circle text-xs text-emerald-200"></i>';
+        if (badge) {
+            badge.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-950/70 text-emerald-100 border-emerald-600 shrink-0';
+            badge.textContent = '100% Completed';
+        }
+        if (statusEl) {
+            statusEl.className = 'text-[10px] text-emerald-100 font-semibold truncate';
+            statusEl.textContent = info.text || 'Fully uploaded';
+        }
+        if (barWrap) barWrap.classList.remove('hidden');
+        if (bar) { bar.style.width = '100%'; bar.className = 'h-full bg-emerald-300 transition-all duration-300 rounded-full'; }
+    } else if (state === 'failed') {
+        card.className = 'flex flex-col gap-2 p-2.5 rounded-xl border-2 border-rose-500 bg-rose-50 text-rose-950 transition-all shadow-xs';
+        if (titleEl) titleEl.className = 'text-xs font-bold truncate text-rose-950';
+        if (iconWrap) iconWrap.innerHTML = '<i class="fas fa-exclamation-triangle text-xs text-rose-600"></i>';
+        if (badge) {
+            badge.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-rose-600 text-white border-rose-700 shrink-0';
+            badge.textContent = info.badgeText || 'Incomplete';
+        }
+        if (statusEl) {
+            statusEl.className = 'text-[10px] text-rose-700 font-semibold truncate';
+            statusEl.textContent = info.text || 'Failed to upload';
+        }
+        if (barWrap) barWrap.classList.remove('hidden');
+        if (bar) { bar.style.width = `${Math.max(10, Math.round(info.pct ?? 100))}%`; bar.className = 'h-full bg-rose-600 transition-all duration-300 rounded-full'; }
+    }
 };
 
 const executeCategorizedRestore = async (payload, targetCategories) => {
@@ -1588,71 +2623,219 @@ const executeCategorizedRestore = async (payload, targetCategories) => {
     const progressBar = document.getElementById('restore-progress-bar');
     const progressPct = document.getElementById('restore-progress-pct');
     const progressStatus = document.getElementById('restore-progress-status');
+    const resultReport = document.getElementById('restore-result-report');
+    const retryBtn = document.getElementById('retry-failed-restore-btn');
     const selectiveBtn = document.getElementById('run-selective-restore-btn');
     const fullBtn = document.getElementById('run-restore-btn');
 
     if (progressContainer) progressContainer.classList.remove('hidden');
+    if (resultReport) { resultReport.classList.add('hidden'); resultReport.innerHTML = ''; }
+    if (retryBtn) retryBtn.classList.add('hidden');
     if (selectiveBtn) selectiveBtn.disabled = true;
     if (fullBtn) fullBtn.disabled = true;
+    lastFailedRestoreCategories = [];
+
+    targetCategories.forEach((catKey) => {
+        const cfg = BACKUP_CATEGORIES_CONFIG[catKey];
+        if (cfg) {
+            setRestoreCardVisualState(catKey, 'ready', { count: cfg.getItemCount(payload), text: 'Waiting in queue...' });
+        }
+    });
 
     const total = targetCategories.length;
-    let completed = 0;
+    let processedCount = 0;
+    let totalRecordsSucceeded = 0;
+    let totalRecordsSkipped = 0;
+    const categoryReports = [];
+    const failedCategories = [];
 
-    const updateProgress = (pct, text) => {
+    const updateProgress = (pct, text, isError = false, isDone = false) => {
         const clamped = Math.min(100, Math.max(0, Math.round(pct)));
-        if (progressBar) progressBar.style.width = `${clamped}%`;
-        if (progressPct) progressPct.textContent = `${clamped}%`;
-        if (progressStatus) progressStatus.innerHTML = `<i class="fas fa-spinner fa-spin text-blue-600 mr-1.5"></i> ${escapeHtml(text)}`;
+        if (progressBar) {
+            progressBar.style.width = `${clamped}%`;
+            progressBar.className = `h-full transition-all duration-300 rounded-full ${isError ? 'bg-rose-600' : (isDone ? 'bg-emerald-700' : 'bg-blue-600')}`;
+        }
+        if (progressPct) {
+            progressPct.textContent = `${clamped}%`;
+            progressPct.className = `shrink-0 font-extrabold ${isError ? 'text-rose-700' : (isDone ? 'text-emerald-800' : 'text-blue-700')}`;
+        }
+        if (progressStatus) {
+            progressStatus.innerHTML = isDone
+                ? `<i class="fas ${isError ? 'fa-exclamation-triangle text-rose-600' : 'fa-check-circle text-emerald-700'} mr-1.5"></i> ${escapeHtml(text)}`
+                : `<i class="fas fa-spinner fa-spin text-blue-600 mr-1.5"></i> ${escapeHtml(text)}`;
+        }
     };
 
-    updateProgress(5, 'Validating Super Admin session & backup snapshot...');
+    updateProgress(2, 'Validating Super Admin session & backup snapshot...');
 
-    try {
-        for (const catKey of targetCategories) {
-            const config = BACKUP_CATEGORIES_CONFIG[catKey];
-            if (!config) continue;
-
-            const basePct = 5 + ((completed / total) * 90);
-            updateProgress(basePct, `Restoring ${config.label}...`);
-
-            await config.restore(payload, (msg) => updateProgress(basePct + 2, msg));
-            completed++;
+    for (const catKey of targetCategories) {
+        const config = BACKUP_CATEGORIES_CONFIG[catKey];
+        if (!config) {
+            processedCount++;
+            continue;
         }
 
-        updateProgress(100, 'All selected categories restored successfully!');
+        const basePct = 2 + ((processedCount / total) * 95);
+        const stepSpan = 95 / total;
+        updateProgress(basePct, `Restoring ${config.label}...`);
+        setRestoreCardVisualState(catKey, 'uploading', { pct: 8, text: 'Preparing records...' });
 
-        await logAuditEvent({
-            category: 'backup',
-            action: 'backup.restore_modular',
-            entityType: 'backup',
-            message: `Modular backup restore completed for ${completed} categories: ${targetCategories.join(', ')}.`,
-            metadata: {
-                categories: targetCategories,
-                exportedAt: payload.exportedAt || '',
-                institution: payload.institution || ''
+        try {
+            const catRes = await config.restore(payload, (progInfo) => {
+                if (typeof progInfo === 'string') {
+                    setRestoreCardVisualState(catKey, 'uploading', { pct: 35, text: progInfo });
+                    updateProgress(basePct + (stepSpan * 0.35), progInfo);
+                } else if (progInfo && typeof progInfo === 'object') {
+                    const cardPct = progInfo.pct ?? 35;
+                    setRestoreCardVisualState(catKey, 'uploading', { pct: cardPct, text: progInfo.text || 'Uploading...' });
+                    updateProgress(basePct + (stepSpan * (Math.min(98, cardPct) / 100)), `${config.label}: ${progInfo.text || 'Uploading...'}`);
+                }
+            }) || { attempted: 0, succeeded: 0, skipped: 0, failed: [] };
+
+            const failedList = Array.isArray(catRes.failed) ? catRes.failed : [];
+            const succeededNum = catRes.succeeded || 0;
+            const skippedNum = catRes.skipped || 0;
+            totalRecordsSucceeded += succeededNum;
+            totalRecordsSkipped += skippedNum;
+
+            if (failedList.length === 0) {
+                const detailMsg = succeededNum > 0
+                    ? `${succeededNum} record${succeededNum === 1 ? '' : 's'} uploaded${skippedNum > 0 ? ` (${skippedNum} existing kept)` : ''}`
+                    : (skippedNum > 0 ? `${skippedNum} existing records preserved` : 'Completed');
+                setRestoreCardVisualState(catKey, 'completed', { text: detailMsg });
+                categoryReports.push({ catKey, label: config.label, status: 'completed', succeeded: succeededNum, skipped: skippedNum, failed: [] });
+            } else {
+                failedCategories.push(catKey);
+                const firstErr = failedList[0]?.error || 'Write rejected';
+                const totalItems = Math.max(1, succeededNum + failedList.length);
+                const okPct = Math.round((succeededNum / totalItems) * 100);
+                setRestoreCardVisualState(catKey, 'failed', {
+                    pct: okPct,
+                    badgeText: `${okPct}% • ${failedList.length} Failed`,
+                    text: `${succeededNum} uploaded, ${failedList.length} failed: ${firstErr}`
+                });
+                categoryReports.push({ catKey, label: config.label, status: 'failed', succeeded: succeededNum, skipped: skippedNum, failed: failedList });
             }
-        });
+        } catch (err) {
+            console.error(`Failed to restore category ${catKey}:`, err);
+            failedCategories.push(catKey);
+            const msg = err?.message || 'Unexpected error during restore';
+            setRestoreCardVisualState(catKey, 'failed', {
+                pct: 0,
+                badgeText: 'Failed',
+                text: msg
+            });
+            categoryReports.push({
+                catKey,
+                label: config.label,
+                status: 'failed',
+                succeeded: 0,
+                skipped: 0,
+                failed: [{ collection: catKey, id: 'category', label: config.label, error: msg }]
+            });
+        }
 
-        setTimeout(() => {
-            if (progressContainer) progressContainer.classList.add('hidden');
-            document.getElementById('restore-preview')?.classList.add('hidden');
-            const fileInput = document.getElementById('restore-file-input');
-            if (fileInput) fileInput.value = '';
-            pendingRestorePayload = null;
-            alert(`Restore completed successfully!\n\n${completed} categories restored: ${targetCategories.map(k => BACKUP_CATEGORIES_CONFIG[k]?.label || k).join(', ')}.`);
-        }, 600);
-
-    } catch (err) {
-        console.error('Failed to restore categorized backup:', err);
-        if (progressStatus) progressStatus.innerHTML = `<span class="text-rose-600 font-bold"><i class="fas fa-exclamation-triangle mr-1"></i> Restore error: ${escapeHtml(err?.message || 'Unknown error')}</span>`;
-        if (selectiveBtn) selectiveBtn.disabled = false;
-        if (fullBtn) fullBtn.disabled = false;
-        alert(`Restore encountered an error: ${err?.message || 'Please check the console for details.'}`);
+        processedCount++;
+        updateProgress(2 + ((processedCount / total) * 95), `Processed ${processedCount} of ${total} categories...`);
     }
+
+    lastFailedRestoreCategories = [...failedCategories];
+    const hasFailures = failedCategories.length > 0;
+    const allFailedItems = categoryReports.flatMap((r) => (r.failed || []).map((f) => ({ category: r.label, ...f })));
+
+    updateProgress(
+        100,
+        hasFailures
+            ? `Restore finished with ${failedCategories.length} incomplete categor${failedCategories.length === 1 ? 'y' : 'ies'}`
+            : `All ${total} categories restored successfully (100%)!`,
+        hasFailures,
+        true
+    );
+
+    await logAuditEvent({
+        category: 'backup',
+        action: hasFailures ? 'backup.restore_partial' : 'backup.restore_modular',
+        entityType: 'backup',
+        message: `Restore finished for ${total} categories. Succeeded records: ${totalRecordsSucceeded}. Failed items: ${allFailedItems.length}.`,
+        metadata: {
+            categories: targetCategories,
+            failedCategories,
+            succeededRecords: totalRecordsSucceeded,
+            failedRecords: allFailedItems.length,
+            exportedAt: payload.exportedAt || ''
+        }
+    });
+
+    if (resultReport) {
+        resultReport.classList.remove('hidden');
+        if (!hasFailures) {
+            resultReport.className = 'rounded-xl border-2 border-emerald-700 bg-emerald-900 text-white p-4 space-y-2 shadow-sm';
+            resultReport.innerHTML = `
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-check-circle text-emerald-300 text-base"></i>
+                        <span class="font-extrabold text-sm">Full Restore Completed — 100% Uploaded</span>
+                    </div>
+                    <span class="text-[11px] font-bold bg-emerald-800 border border-emerald-600 px-2.5 py-0.5 rounded-full">
+                        ${totalRecordsSucceeded} record${totalRecordsSucceeded === 1 ? '' : 's'} restored${totalRecordsSkipped > 0 ? ` • ${totalRecordsSkipped} existing kept` : ''}
+                    </span>
+                </div>
+                <p class="text-[11px] text-emerald-100">All selected categories and indexes have been synchronized to the database. You can close this panel anytime.</p>
+            `;
+        } else {
+            resultReport.className = 'rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-950 p-4 space-y-2.5';
+            resultReport.innerHTML = `
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-exclamation-triangle text-rose-600 text-base"></i>
+                        <span class="font-extrabold text-sm text-rose-900">Restore Partially Completed — ${allFailedItems.length} Item(s) Failed</span>
+                    </div>
+                    <span class="text-[11px] font-bold bg-white border border-rose-200 text-rose-800 px-2.5 py-0.5 rounded-full">
+                        Uploaded: ${totalRecordsSucceeded} • Failed: ${allFailedItems.length}
+                    </span>
+                </div>
+                <div class="text-[11px] text-rose-800 font-semibold">The following items did not upload (all other categories continued and finished):</div>
+                <div class="max-h-44 overflow-y-auto bg-white border border-rose-200 rounded-lg divide-y divide-rose-100 text-[11px]">
+                    ${allFailedItems.map((item) => `
+                        <div class="px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                            <div class="font-bold text-slate-800">
+                                <span class="text-rose-700">${escapeHtml(item.category)}</span> &rsaquo; ${escapeHtml(item.collection)} <span class="text-slate-500">(${escapeHtml(item.label || item.id)})</span>
+                            </div>
+                            <div class="text-rose-600 font-semibold">${escapeHtml(item.error)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            if (retryBtn) {
+                retryBtn.classList.remove('hidden');
+                retryBtn.innerHTML = `<i class="fas fa-rotate-right text-xs"></i> <span>Retry Failed Categories (${failedCategories.length})</span>`;
+            }
+        }
+    }
+
+    if (selectiveBtn) selectiveBtn.disabled = false;
+    if (fullBtn) fullBtn.disabled = false;
+
+    try {
+        await Promise.all([
+            fetchExamResultsAndSchemasCount(),
+            fetchExtraModulesCounts()
+        ]);
+        renderBackupCategoryCounts();
+        renderDashboard();
+        renderAuditLogList();
+        renderStudentList();
+        renderStaffList();
+        renderAcademicYears();
+        renderStudentGroups();
+        renderDirectoryCategories();
+        renderDirectoryEntries();
+        if (typeof renderResultManagement === 'function') renderResultManagement();
+    } catch (_) {}
 };
 
 const restoreFromBackupPayload = async (payload) => {
-    const availableCategories = Object.keys(BACKUP_CATEGORIES_CONFIG).filter(k => BACKUP_CATEGORIES_CONFIG[k].hasData(payload));
+    const availableCategories = Object.keys(BACKUP_CATEGORIES_CONFIG).filter((k) => BACKUP_CATEGORIES_CONFIG[k].hasData(payload));
     await executeCategorizedRestore(payload, availableCategories);
 };
 const logAuditEvent = async ({ category = 'system', action, entityType = '', entityId = '', message = '', metadata = {} }) => {
@@ -15619,19 +16802,26 @@ document.getElementById('force-logout-btn').addEventListener('click', async () =
     await setDoc(doc(db, `${BASE_PATH}/settings`, 'sessionControl'), payload, { merge: true });
     await logAuditEvent({ category: 'security', action: 'session.force_logout', entityType: 'settings', entityId: 'sessionControl', message: 'Global force logout triggered for staff/admin sessions.' });
 });
-const renderModularRestorePreview = (payload) => {
+const renderModularRestorePreview = (payload, fileName = '') => {
     const previewEl = document.getElementById('restore-preview');
     const metaEl = document.getElementById('restore-preview-meta');
+    const previewBadgeEl = document.getElementById('restore-preview-badge');
     const categoryListEl = document.getElementById('restore-category-list');
-    const selectAllCb = document.getElementById('restore-select-all');
+    const progressContainer = document.getElementById('restore-progress-container');
+    const resultReport = document.getElementById('restore-result-report');
+    const retryBtn = document.getElementById('retry-failed-restore-btn');
     if (!previewEl || !categoryListEl) return;
 
     previewEl.classList.remove('hidden');
+    if (progressContainer) progressContainer.classList.add('hidden');
+    if (resultReport) { resultReport.classList.add('hidden'); resultReport.innerHTML = ''; }
+    if (retryBtn) retryBtn.classList.add('hidden');
+    lastFailedRestoreCategories = [];
 
-    const formattedDate = payload.exportedAt ? formatDateTime(payload.exportedAt) : 'Unknown date';
-    const sourceInst = payload.institution || BASE_PATH;
+    const formattedDate = payload?.exportedAt ? formatDateTime(payload.exportedAt) : 'Unknown date';
+    const sourceInst = payload?.institution || BASE_PATH;
     if (metaEl) {
-        metaEl.textContent = `Snapshot Date: ${formattedDate} • Source: ${sourceInst}`;
+        metaEl.textContent = `${fileName ? `File: ${fileName} • ` : ''}Snapshot Date: ${formattedDate} • Source: ${sourceInst}`;
     }
 
     let html = '';
@@ -15643,37 +16833,38 @@ const renderModularRestorePreview = (payload) => {
         const isPresent = hasData || count > 0;
         if (isPresent) availableCategoriesCount++;
 
-        const countBadge = isPresent
-            ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${cat.badgeClass}">${count > 0 ? `${count} records` : 'Available'}</span>`
-            : `<span class="text-[10px] text-slate-400 italic">Not in snapshot</span>`;
+        const cardCls = isPresent
+            ? 'flex flex-col gap-2 p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 text-emerald-950 transition-all'
+            : 'flex flex-col gap-2 p-2.5 rounded-xl border border-slate-100 bg-slate-50/70 text-slate-400 opacity-60 transition-all';
+        const iconMarkup = `<i class="fas ${cat.icon} text-xs ${isPresent ? 'text-emerald-600' : 'text-slate-400'}"></i>`;
+        const badgeCls = isPresent
+            ? 'text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300 shrink-0'
+            : 'text-[10px] font-bold px-2 py-0.5 rounded-full border bg-slate-100 text-slate-400 border-slate-200 shrink-0';
+        const badgeText = isPresent ? (count > 0 ? `${count} items • Ready` : 'Ready') : 'Not in file';
+        const statusText = isPresent ? 'Detected in snapshot — ready to upload' : 'No records in snapshot';
 
         html += `
-            <label class="flex items-center justify-between p-2.5 rounded-lg border ${isPresent ? 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/20 cursor-pointer' : 'border-slate-100 bg-slate-50/50 opacity-60 cursor-not-allowed'} select-none transition group">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <input type="checkbox" class="restore-category-cb w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer shrink-0" 
-                        data-category="${cat.key}" ${isPresent ? 'checked' : 'disabled'}>
-                    <div class="w-6 h-6 rounded-md ${cat.colorClass} flex items-center justify-center text-[11px] shrink-0">
-                        <i class="fas ${cat.icon}"></i>
+            <div id="restore-cat-card-${cat.key}" class="${cardCls}">
+                <div class="flex items-center justify-between gap-2 min-w-0">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span id="restore-cat-icon-${cat.key}" class="shrink-0 w-5 text-center">${iconMarkup}</span>
+                        <span id="restore-cat-title-${cat.key}" class="text-xs font-bold truncate ${isPresent ? 'text-emerald-950' : 'text-slate-500'}">${escapeHtml(cat.label)}</span>
                     </div>
-                    <div class="min-w-0">
-                        <div class="text-xs font-bold text-slate-800 group-hover:text-blue-900 truncate">${escapeHtml(cat.label)}</div>
-                        <div class="text-[10px] text-slate-500 truncate">${escapeHtml(cat.description)}</div>
-                    </div>
+                    <span id="restore-cat-badge-${cat.key}" class="${badgeCls}">${badgeText}</span>
                 </div>
-                <div class="shrink-0 ml-2">
-                    ${countBadge}
+                <div id="restore-cat-status-${cat.key}" class="text-[10px] ${isPresent ? 'text-emerald-700/80' : 'text-slate-400'} font-medium truncate">${escapeHtml(statusText)}</div>
+                <div id="restore-cat-bar-wrap-${cat.key}" class="hidden w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
+                    <div id="restore-cat-bar-${cat.key}" class="h-full bg-emerald-500 transition-all duration-200 rounded-full" style="width: 0%;"></div>
                 </div>
-            </label>
+            </div>
         `;
     });
 
     categoryListEl.innerHTML = html;
 
-    if (selectAllCb) {
-        selectAllCb.checked = availableCategoriesCount > 0;
-        selectAllCb.indeterminate = false;
+    if (previewBadgeEl) {
+        previewBadgeEl.textContent = `${availableCategoriesCount} / ${Object.keys(BACKUP_CATEGORIES_CONFIG).length} Categories Detected`;
     }
-    updateRestoreSelectionUI();
 };
 
 async function fetchExamResultsAndSchemasCount() {
@@ -15845,8 +17036,88 @@ document.addEventListener('change', (e) => {
     }
 });
 
+const renderBackupExportProgressCards = (selectedCategories = []) => {
+    const panel = document.getElementById('backup-export-progress-panel');
+    const titleEl = document.getElementById('backup-export-progress-title');
+    const subtitleEl = document.getElementById('backup-export-progress-subtitle');
+    const pctEl = document.getElementById('backup-export-progress-pct');
+    const barEl = document.getElementById('backup-export-progress-bar');
+    const closeBtn = document.getElementById('backup-export-progress-close');
+    const listEl = document.getElementById('backup-export-category-list');
+    if (!panel || !listEl) return;
+
+    panel.classList.remove('hidden');
+    if (closeBtn) closeBtn.classList.add('hidden');
+    if (titleEl) {
+        titleEl.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-600"></i> <span>Exporting Complete Institutional Backup...</span>';
+    }
+    if (subtitleEl) {
+        subtitleEl.textContent = `Reading ${selectedCategories.length} selected categories and subcollections`;
+    }
+    if (pctEl) {
+        pctEl.textContent = '0%';
+        pctEl.className = 'text-xs font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg';
+    }
+    if (barEl) {
+        barEl.style.width = '4%';
+        barEl.className = 'h-full bg-blue-600 transition-all duration-300 rounded-full';
+    }
+
+    listEl.innerHTML = selectedCategories.map((catKey) => {
+        const cfg = BACKUP_CATEGORIES_CONFIG[catKey] || { label: catKey, icon: 'fa-database' };
+        return `
+            <div id="export-cat-card-${catKey}" class="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-slate-700 transition-all">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span id="export-cat-icon-${catKey}" class="w-5 text-center shrink-0"><i class="fas ${cfg.icon} text-xs text-slate-400"></i></span>
+                    <div class="min-w-0">
+                        <div id="export-cat-title-${catKey}" class="text-xs font-bold truncate">${escapeHtml(cfg.label)}</div>
+                        <div id="export-cat-status-${catKey}" class="text-[10px] text-slate-500 truncate">Queued...</div>
+                    </div>
+                </div>
+                <span id="export-cat-badge-${catKey}" class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-white text-slate-500 border-slate-200 shrink-0">Queued</span>
+            </div>
+        `;
+    }).join('');
+};
+
+const setBackupExportCardState = (catKey, info = {}) => {
+    const card = document.getElementById(`export-cat-card-${catKey}`);
+    const iconEl = document.getElementById(`export-cat-icon-${catKey}`);
+    const titleEl = document.getElementById(`export-cat-title-${catKey}`);
+    const statusEl = document.getElementById(`export-cat-status-${catKey}`);
+    const badgeEl = document.getElementById(`export-cat-badge-${catKey}`);
+    if (!card) return;
+
+    const cfg = BACKUP_CATEGORIES_CONFIG[catKey] || { icon: 'fa-database' };
+    if (info.status === 'reading') {
+        card.className = 'flex items-center justify-between gap-2 p-2.5 rounded-xl border-2 border-blue-500 bg-blue-50 text-blue-950 transition-all shadow-xs';
+        if (iconEl) iconEl.innerHTML = '<i class="fas fa-spinner fa-spin text-xs text-blue-600"></i>';
+        if (titleEl) titleEl.className = 'text-xs font-bold truncate text-blue-950';
+        if (statusEl) { statusEl.className = 'text-[10px] text-blue-700 font-semibold truncate'; statusEl.textContent = 'Reading records...'; }
+        if (badgeEl) { badgeEl.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-blue-600 text-white border-blue-700 shrink-0'; badgeEl.textContent = 'Reading'; }
+    } else if (info.status === 'done') {
+        card.className = 'flex items-center justify-between gap-2 p-2.5 rounded-xl border-2 border-emerald-900 bg-emerald-800 text-white transition-all shadow-sm';
+        if (iconEl) iconEl.innerHTML = '<i class="fas fa-check-circle text-xs text-emerald-200"></i>';
+        if (titleEl) titleEl.className = 'text-xs font-bold truncate text-white';
+        if (statusEl) { statusEl.className = 'text-[10px] text-emerald-100 font-semibold truncate'; statusEl.textContent = info.text || `${info.count || 0} items exported`; }
+        if (badgeEl) { badgeEl.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-emerald-950/70 text-emerald-100 border-emerald-600 shrink-0'; badgeEl.textContent = `${info.count || 0} items`; }
+    } else if (info.status === 'error') {
+        card.className = 'flex items-center justify-between gap-2 p-2.5 rounded-xl border-2 border-rose-500 bg-rose-50 text-rose-950 transition-all';
+        if (iconEl) iconEl.innerHTML = '<i class="fas fa-exclamation-triangle text-xs text-rose-600"></i>';
+        if (titleEl) titleEl.className = 'text-xs font-bold truncate text-rose-950';
+        if (statusEl) { statusEl.className = 'text-[10px] text-rose-700 font-semibold truncate'; statusEl.textContent = info.error || 'Failed to read'; }
+        if (badgeEl) { badgeEl.className = 'text-[10px] font-extrabold px-2 py-0.5 rounded-full border bg-rose-600 text-white border-rose-700 shrink-0'; badgeEl.textContent = 'Error'; }
+    } else {
+        if (iconEl) iconEl.innerHTML = `<i class="fas ${cfg.icon} text-xs text-slate-400"></i>`;
+    }
+};
+
+document.getElementById('backup-export-progress-close')?.addEventListener('click', () => {
+    document.getElementById('backup-export-progress-panel')?.classList.add('hidden');
+});
+
 document.getElementById('backup-export-btn')?.addEventListener('click', async () => {
-    if(!requirePermission('backup.export')) return;
+    if (!requirePermission('backup.export')) return;
     const selected = getSelectedBackupCategories();
     if (!selected.length) return alert('Please select at least one category to export.');
 
@@ -15857,9 +17128,31 @@ document.getElementById('backup-export-btn')?.addEventListener('click', async ()
         exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs mr-1"></i> <span>Exporting...</span>';
     }
 
+    renderBackupExportProgressCards(selected);
+    const titleEl = document.getElementById('backup-export-progress-title');
+    const subtitleEl = document.getElementById('backup-export-progress-subtitle');
+    const pctEl = document.getElementById('backup-export-progress-pct');
+    const barEl = document.getElementById('backup-export-progress-bar');
+    const closeBtn = document.getElementById('backup-export-progress-close');
+
+    let finishedSteps = 0;
+    let exportErrors = 0;
+
     try {
-        const payload = await buildBackupPayload(selected);
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const payload = await buildBackupPayload(selected, (catKey, info) => {
+            setBackupExportCardState(catKey, info);
+            if (info.status === 'done' || info.status === 'error') {
+                finishedSteps++;
+                if (info.status === 'error') exportErrors++;
+                const pct = Math.min(98, Math.round((finishedSteps / Math.max(1, selected.length)) * 96));
+                if (pctEl) pctEl.textContent = `${pct}%`;
+                if (barEl) barEl.style.width = `${pct}%`;
+            }
+        });
+
+        const jsonStr = JSON.stringify(payload, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const sizeKb = Math.round(blob.size / 1024);
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -15869,14 +17162,36 @@ document.getElementById('backup-export-btn')?.addEventListener('click', async ()
         link.click();
         link.remove();
         URL.revokeObjectURL(url);
-        await logAuditEvent({ 
-            category: 'backup', 
-            action: 'backup.export', 
-            entityType: 'backup', 
-            message: `JSON backup exported (${selected.length} categories: ${selected.join(', ')}).` 
+
+        if (pctEl) {
+            pctEl.textContent = '100%';
+            pctEl.className = `text-xs font-extrabold px-2.5 py-1 rounded-lg border ${exportErrors > 0 ? 'text-amber-800 bg-amber-50 border-amber-200' : 'text-emerald-800 bg-emerald-50 border-emerald-200'}`;
+        }
+        if (barEl) {
+            barEl.style.width = '100%';
+            barEl.className = `h-full transition-all duration-300 rounded-full ${exportErrors > 0 ? 'bg-amber-500' : 'bg-emerald-700'}`;
+        }
+        if (titleEl) {
+            titleEl.innerHTML = exportErrors > 0
+                ? `<i class="fas fa-exclamation-triangle text-amber-600"></i> <span>Backup Exported (${exportErrors} categor${exportErrors === 1 ? 'y' : 'ies'} had read warnings)</span>`
+                : '<i class="fas fa-check-circle text-emerald-700"></i> <span>Backup Exported Successfully (100%)</span>';
+        }
+        if (subtitleEl) {
+            subtitleEl.textContent = `Downloaded ${selected.length} categories (${sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(2)} MB` : `${sizeKb} KB`})`;
+        }
+        if (closeBtn) closeBtn.classList.remove('hidden');
+
+        await logAuditEvent({
+            category: 'backup',
+            action: 'backup.export',
+            entityType: 'backup',
+            message: `JSON backup exported (${selected.length} categories, ${sizeKb} KB: ${selected.join(', ')}).`
         });
     } catch (err) {
         console.error('Export error:', err);
+        if (titleEl) titleEl.innerHTML = '<i class="fas fa-times-circle text-rose-600"></i> <span>Backup Export Failed</span>';
+        if (subtitleEl) subtitleEl.textContent = err?.message || 'Unknown error';
+        if (closeBtn) closeBtn.classList.remove('hidden');
         alert('Failed to export backup: ' + (err?.message || 'Unknown error'));
     } finally {
         if (exportBtn) {
@@ -15887,7 +17202,7 @@ document.getElementById('backup-export-btn')?.addEventListener('click', async ()
 });
 
 document.getElementById('restore-file-input')?.addEventListener('change', async (e) => {
-    if(!requirePermission('backup.restore')) return;
+    if (!requirePermission('backup.restore')) return;
     const file = e.target.files?.[0];
     if (!file) return;
     try {
@@ -15901,36 +17216,7 @@ document.getElementById('restore-file-input')?.addEventListener('change', async 
         }
 
         pendingRestorePayload = parsedPayload;
-
-        const previewEl = document.getElementById('restore-preview');
-        const metaEl = document.getElementById('restore-preview-meta');
-        const listEl = document.getElementById('restore-category-list');
-        if (previewEl) previewEl.classList.remove('hidden');
-
-        const formattedDate = parsedPayload.exportedAt ? formatDateTime(parsedPayload.exportedAt) : 'Unknown date';
-        const sourceInst = parsedPayload.institution || BASE_PATH;
-        if (metaEl) {
-            metaEl.textContent = `File: ${escapeHtml(file.name)} • Snapshot Date: ${formattedDate} • Source: ${sourceInst}`;
-        }
-
-        if (listEl) {
-            listEl.innerHTML = Object.values(BACKUP_CATEGORIES_CONFIG).map((cat) => {
-                const hasData = cat.hasData(parsedPayload);
-                const count = cat.getItemCount(parsedPayload);
-                const isPresent = hasData || count > 0;
-                return `
-                    <div class="flex items-center justify-between p-2 rounded-lg border ${isPresent ? 'border-emerald-200 bg-emerald-50/50 text-emerald-950' : 'border-slate-100 bg-slate-50 text-slate-400 opacity-60'}">
-                        <div class="flex items-center gap-2 truncate">
-                            <i class="fas ${cat.icon} text-xs ${isPresent ? 'text-emerald-600' : 'text-slate-400'}"></i>
-                            <span class="text-xs font-bold truncate">${escapeHtml(cat.label)}</span>
-                        </div>
-                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${isPresent ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-400 border-slate-200'} shrink-0">
-                            ${isPresent ? (count > 0 ? `${count} records` : 'Available') : 'Not in file'}
-                        </span>
-                    </div>
-                `;
-            }).join('');
-        }
+        renderModularRestorePreview(parsedPayload, file.name);
 
         document.querySelectorAll('.backup-category-cb').forEach((cb) => {
             const catKey = cb.dataset.category;
@@ -15951,13 +17237,30 @@ document.getElementById('restore-file-input')?.addEventListener('change', async 
 
 const dismissRestorePreview = () => {
     pendingRestorePayload = null;
+    lastFailedRestoreCategories = [];
     document.getElementById('restore-preview')?.classList.add('hidden');
+    document.getElementById('restore-progress-container')?.classList.add('hidden');
+    const resultReport = document.getElementById('restore-result-report');
+    if (resultReport) {
+        resultReport.classList.add('hidden');
+        resultReport.innerHTML = '';
+    }
+    document.getElementById('retry-failed-restore-btn')?.classList.add('hidden');
     const fileInput = document.getElementById('restore-file-input');
     if (fileInput) fileInput.value = '';
 };
 
 document.getElementById('restore-cancel-btn')?.addEventListener('click', dismissRestorePreview);
 document.getElementById('restore-cancel-btn-2')?.addEventListener('click', dismissRestorePreview);
+
+document.getElementById('retry-failed-restore-btn')?.addEventListener('click', async () => {
+    if (!requirePermission('backup.restore')) return;
+    if (!pendingRestorePayload) return alert('Snapshot file is no longer loaded. Please re-select the backup file.');
+    if (!lastFailedRestoreCategories.length) return alert('No failed categories to retry.');
+    const retryList = [...lastFailedRestoreCategories];
+    await executeCategorizedRestore(pendingRestorePayload, retryList);
+    renderBackupCategoryCounts();
+});
 
 document.getElementById('run-selective-restore-btn')?.addEventListener('click', async () => {
     if (!requirePermission('backup.restore')) return;
@@ -15966,7 +17269,7 @@ document.getElementById('run-selective-restore-btn')?.addEventListener('click', 
     if (!selected.length) return alert('None of the selected categories exist in this backup file.');
 
     const selectedLabels = selected.map(k => BACKUP_CATEGORIES_CONFIG[k]?.label || k).join('\n• ');
-    const confirmed = confirm(`Are you sure you want to restore the selected categories?\n\n• ${selectedLabels}\n\nExisting records in these categories will be replaced with snapshot data. Unselected categories will NOT be affected.`);
+    const confirmed = confirm(`Are you sure you want to restore the selected categories?\n\n• ${selectedLabels}\n\nExisting records in these categories will be replaced with snapshot data (audit logs append missing entries). Unselected categories will NOT be affected.`);
     if (!confirmed) return;
 
     await executeCategorizedRestore(pendingRestorePayload, selected);
@@ -15979,7 +17282,7 @@ document.getElementById('run-restore-btn')?.addEventListener('click', async () =
     const availableCategories = Object.keys(BACKUP_CATEGORIES_CONFIG).filter(k => BACKUP_CATEGORIES_CONFIG[k].hasData(pendingRestorePayload));
     if (!availableCategories.length) return alert('No valid categories found in this backup file.');
 
-    const confirmed = confirm(`This will perform a FULL restore of all ${availableCategories.length} categories found in the backup snapshot.\n\nExisting records in these categories will be replaced. Continue?`);
+    const confirmed = confirm(`This will perform a FULL restore of all ${availableCategories.length} categories found in the backup snapshot.\n\nExisting records in these categories will be replaced (audit logs append missing entries). Continue?`);
     if (!confirmed) return;
 
     await executeCategorizedRestore(pendingRestorePayload, availableCategories);
@@ -16141,7 +17444,12 @@ const PURGE_CATEGORY_META = {
     evaluation: {
         label: 'Classroom Evaluation & Impositions',
         badgeClass: 'bg-rose-100 text-rose-800 border-rose-200',
-        description: 'Daily evaluations, student oral/reading scores, impositions, and worksheets'
+        description: 'Daily evaluations, student oral/reading scores, impositions, worksheets, and templates'
+    },
+    config: {
+        label: 'Settings, Fee Items & Config',
+        badgeClass: 'bg-slate-200 text-slate-800 border-slate-300',
+        description: 'Fee items, concessions, website config, and session controls (Super Admin preserved)'
     }
 };
 
@@ -16407,20 +17715,24 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
             const stepWeight = 90 / totalSteps;
             const currentBasePct = 5 + (completedSteps * stepWeight);
 
+            const knownPurgeYearIds = collectAllKnownYearDocIds();
             switch (catKey) {
                 case 'students': {
-                    updatePurgeProgressState(currentBasePct + 5, 'Purging student records and enrollments...');
-                    appendPurgeProgressLog('Purging students collection...');
+                    updatePurgeProgressState(currentBasePct + 5, 'Purging student records, lookup & enrollments...');
+                    appendPurgeProgressLog('Purging students, studentAuthLookup, photo submissions, TCs & notification state...');
                     const purgedStudents = await batchDeleteCollection(`${BASE_PATH}/students`);
-                    appendPurgeProgressLog(`Deleted ${purgedStudents} student documents.`);
+                    let extraStudentsPurged = 0;
+                    for (const col of ['studentAuthLookup', 'studentPhotoSubmissions', 'transferCertificates', 'studentNotificationState']) {
+                        try {
+                            extraStudentsPurged += await batchDeleteCollection(`${BASE_PATH}/${col}`);
+                        } catch (e) {
+                            console.warn(`Purge notice (${col}):`, e?.message || e);
+                        }
+                    }
 
                     try {
-                        const yearsToScan = Array.isArray(academicYears) && academicYears.length ? academicYears : [{ label: activeAcademicYear || '2025-2026' }];
-                        for (const yr of yearsToScan) {
-                            const yrId = toAcademicYearDocId(yr.label || yr.id || '');
-                            if (yrId) {
-                                await batchDeleteCollection(`${BASE_PATH}/academicYears/${yrId}/enrollments`);
-                            }
+                        for (const yrId of knownPurgeYearIds) {
+                            await batchDeleteCollection(`${BASE_PATH}/academicYears/${yrId}/enrollments`);
                         }
                         appendPurgeProgressLog('Academic year enrollments purged.');
                     } catch (e) {
@@ -16430,24 +17742,40 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
                     students = [];
                     rawStudents = [];
                     editingStudentId = null;
-                    appendPurgeProgressLog('Student records & admissions purged successfully.', true);
+                    appendPurgeProgressLog(`Purged ${purgedStudents} students and ${extraStudentsPurged} student auxiliary records.`, true);
                     break;
                 }
 
                 case 'payments': {
-                    updatePurgeProgressState(currentBasePct + 5, 'Purging fee records and payments...');
-                    appendPurgeProgressLog('Purging payments collection...');
+                    updatePurgeProgressState(currentBasePct + 5, 'Purging fee records, donations & year ledgers...');
+                    appendPurgeProgressLog('Purging payments, donations, collector preferences & receipt sequence...');
                     const purgedPayments = await batchDeleteCollection(`${BASE_PATH}/payments`);
+                    let purgedDonations = 0;
+                    let purgedPrefs = 0;
+                    let purgedSubPay = 0;
+                    try { purgedDonations = await batchDeleteCollection(`${BASE_PATH}/donations`); } catch (e) { console.warn('Donations purge notice:', e?.message || e); }
+                    try { purgedPrefs = await batchDeleteCollection(`${BASE_PATH}/collectorPreferences`); } catch (e) { console.warn('Collector preferences purge notice:', e?.message || e); }
+                    for (const yrId of knownPurgeYearIds) {
+                        try { purgedSubPay += await batchDeleteCollection(`${BASE_PATH}/academicYears/${yrId}/payments`); } catch (_) {}
+                        try { purgedSubPay += await batchDeleteCollection(`${BASE_PATH}/years/${yrId}/payments`); } catch (_) {}
+                    }
+                    try { await deleteDoc(doc(db, `${BASE_PATH}/settings`, 'receiptSequence')); } catch (_) {}
                     allPayments = [];
-                    appendPurgeProgressLog(`Purged ${purgedPayments} payment transaction records.`, true);
+                    appendPurgeProgressLog(`Purged ${purgedPayments} payments, ${purgedDonations} donations, ${purgedPrefs} preferences & ${purgedSubPay} year-ledger entries.`, true);
                     break;
                 }
 
                 case 'results': {
-                    updatePurgeProgressState(currentBasePct + 5, 'Purging exam results & schemas...');
-                    appendPurgeProgressLog('Purging examResults and resultSchemas collections...');
+                    updatePurgeProgressState(currentBasePct + 5, 'Purging exam results, schemas & promotion decisions...');
+                    appendPurgeProgressLog('Purging examResults, resultSchemas, promotionDecisions & year results...');
                     const purgedResults = await batchDeleteCollection(`${BASE_PATH}/examResults`);
                     const purgedSchemas = await batchDeleteCollection(`${BASE_PATH}/resultSchemas`);
+                    let purgedPromos = 0;
+                    let purgedYrRes = 0;
+                    try { purgedPromos = await batchDeleteCollection(`${BASE_PATH}/promotionDecisions`); } catch (_) {}
+                    for (const yrId of knownPurgeYearIds) {
+                        try { purgedYrRes += await batchDeleteCollection(`${BASE_PATH}/academicYears/${yrId}/results`); } catch (_) {}
+                    }
 
                     await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
                         academicYear: getActiveAcademicYearLabel(),
@@ -16460,37 +17788,45 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
                         gradeRules: DEFAULT_GRADE_RULES,
                         classProgressionMap: {},
                         updatedAt: new Date().toISOString()
-                    }, { merge: true });
+                    }, { merge: false });
 
                     examResultsCache = [];
                     resultSchemas = [];
-                    appendPurgeProgressLog(`Purged ${purgedResults} exam result entries and ${purgedSchemas} schemas.`, true);
+                    examResultsCountCache = 0;
+                    appendPurgeProgressLog(`Purged ${purgedResults} exam results, ${purgedSchemas} schemas, ${purgedPromos} promotion decisions & ${purgedYrRes} year results.`, true);
                     break;
                 }
 
                 case 'staff': {
                     updatePurgeProgressState(currentBasePct + 5, 'Purging non-admin staff records...');
-                    appendPurgeProgressLog('Purging staff directory (Preserving Super Admin)...');
+                    appendPurgeProgressLog('Purging staff & staffAccess collections (Preserving Super Admin)...');
+
+                    const isProtectedSuperAdminRecord = (data = {}, docId = '') => {
+                        const staffEmail = normalizeEmail(data.email || '');
+                        const docIdEmail = normalizeEmail(docId);
+                        return staffEmail === superAdminEmail
+                            || staffEmail === normalizeEmail(currentAdminEmail)
+                            || docIdEmail === superAdminEmail
+                            || docIdEmail === normalizeEmail(currentAdminEmail)
+                            || data.role === 'super_admin'
+                            || data.isSuperAdmin === true;
+                    };
 
                     const purgedStaff = await batchDeleteCollection(`${BASE_PATH}/staff`, (docSnap) => {
-                        const data = docSnap.data() || {};
-                        const staffEmail = normalizeEmail(data.email || '');
-                        const isSuper = staffEmail === superAdminEmail || staffEmail === normalizeEmail(currentAdminEmail) || data.role === 'super_admin';
-                        return !isSuper;
+                        return !isProtectedSuperAdminRecord(docSnap.data() || {}, docSnap.id);
                     });
 
+                    let purgedAccess = 0;
                     try {
-                        await batchDeleteCollection(`${BASE_PATH}/staffAccess`, (docSnap) => {
-                            const data = docSnap.data() || {};
-                            const keyEmail = normalizeEmail(data.email || docSnap.id || '');
-                            return keyEmail !== superAdminEmail && keyEmail !== normalizeEmail(currentAdminEmail);
+                        purgedAccess = await batchDeleteCollection(`${BASE_PATH}/staffAccess`, (docSnap) => {
+                            return !isProtectedSuperAdminRecord(docSnap.data() || {}, docSnap.id);
                         });
                     } catch (e) {
                         console.warn('Staff access purge notice:', e);
                     }
 
-                    allStaff = allStaff.filter(s => normalizeEmail(s.email) === superAdminEmail || normalizeEmail(s.email) === normalizeEmail(currentAdminEmail));
-                    appendPurgeProgressLog(`Purged ${purgedStaff} staff records. Super Admin credentials preserved.`, true);
+                    allStaff = allStaff.filter((s) => isProtectedSuperAdminRecord(s, s.id));
+                    appendPurgeProgressLog(`Purged ${purgedStaff} staff & ${purgedAccess} staffAccess records. Super Admin preserved.`, true);
                     break;
                 }
 
@@ -16499,28 +17835,42 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
                     appendPurgeProgressLog('Purging studentGroups collection...');
                     const purgedGroups = await batchDeleteCollection(`${BASE_PATH}/studentGroups`);
                     studentGroups = [];
+                    allStudentGroups = [];
                     appendPurgeProgressLog(`Purged ${purgedGroups} student groups.`, true);
                     break;
                 }
 
                 case 'website': {
-                    updatePurgeProgressState(currentBasePct + 5, 'Resetting website content and directory...');
-                    appendPurgeProgressLog('Purging public directory entries...');
+                    updatePurgeProgressState(currentBasePct + 5, 'Resetting website, directory, auth & notifications...');
+                    appendPurgeProgressLog('Purging publicDirectory, directoryAuth, pageAccessOverrides & systemNotifications...');
                     const purgedDir = await batchDeleteCollection(`${BASE_PATH}/publicDirectory`);
+                    let extraWeb = 0;
+                    for (const col of ['directoryAuth', 'pageAccessOverrides', 'systemNotifications']) {
+                        try { extraWeb += await batchDeleteCollection(`${BASE_PATH}/${col}`); } catch (_) {}
+                    }
 
                     webContent = { notices: [], gallery: [], directoryCategories: [] };
                     publicDirectoryEntries = [];
-                    await setDoc(doc(db, `${BASE_PATH}/settings`, 'content'), webContent, { merge: true });
+                    categoryAuthConfig = { categories: {} };
+                    pageAccessConfig = { categories: {}, overrides: {} };
+                    await setDoc(doc(db, `${BASE_PATH}/settings`, 'content'), webContent, { merge: false });
+                    try { await deleteDoc(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig')); } catch (_) {}
+                    try { await deleteDoc(doc(db, `${BASE_PATH}/settings`, 'pageAccess')); } catch (_) {}
 
-                    appendPurgeProgressLog(`Reset website notices, gallery, and removed ${purgedDir} directory entries.`, true);
+                    appendPurgeProgressLog(`Reset website content, category auth, page access, ${purgedDir} directory entries & ${extraWeb} portal auth/notification docs.`, true);
                     break;
                 }
 
                 case 'years': {
-                    updatePurgeProgressState(currentBasePct + 5, 'Resetting academic years calendar...');
-                    appendPurgeProgressLog('Resetting academic years to clean baseline active year...');
+                    updatePurgeProgressState(currentBasePct + 5, 'Resetting academic years & subcollections...');
+                    appendPurgeProgressLog('Purging year classes/feeItems subcollections and resetting academic years...');
+                    let purgedYrSubs = 0;
+                    for (const yrId of knownPurgeYearIds) {
+                        try { purgedYrSubs += await batchDeleteCollection(`${BASE_PATH}/academicYears/${yrId}/classes`); } catch (_) {}
+                        try { purgedYrSubs += await batchDeleteCollection(`${BASE_PATH}/academicYears/${yrId}/feeItems`); } catch (_) {}
+                    }
 
-                    const baseActiveYear = activeAcademicYear || '2025-2026';
+                    const baseActiveYear = activeAcademicYear || getActiveAcademicYearLabel() || '2025-2026';
                     const cleanYearsPayload = {
                         activeYear: baseActiveYear,
                         years: [{
@@ -16533,18 +17883,45 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
                     };
 
                     await setDoc(doc(db, `${BASE_PATH}/settings`, 'academicYears'), cleanYearsPayload, { merge: false });
+                    try { await deleteDoc(doc(db, `${BASE_PATH}/settings`, 'classes')); } catch (_) {}
                     academicYears = cleanYearsPayload.years;
                     activeAcademicYear = baseActiveYear;
-                    appendPurgeProgressLog(`Academic years reset to clean active session: ${baseActiveYear}.`, true);
+                    appendPurgeProgressLog(`Academic years reset to ${baseActiveYear} (${purgedYrSubs} year subcollection docs cleared).`, true);
+                    break;
+                }
+
+                case 'config': {
+                    updatePurgeProgressState(currentBasePct + 5, 'Resetting system settings, fee items & concessions...');
+                    appendPurgeProgressLog('Clearing operational settings while preserving Super Admin credentials...');
+                    let preservedProfile = institutionConfig?.adminProfile || null;
+                    try {
+                        const curCfgSnap = await getDoc(doc(db, `${BASE_PATH}/settings`, 'config'));
+                        if (curCfgSnap.exists() && curCfgSnap.data()?.adminProfile) {
+                            preservedProfile = curCfgSnap.data().adminProfile;
+                        }
+                    } catch (_) {}
+
+                    const cleanCfg = preservedProfile ? { adminProfile: preservedProfile, updatedAt: new Date().toISOString() } : { updatedAt: new Date().toISOString() };
+                    await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), cleanCfg, { merge: false });
+                    for (const cfgDocId of ['institution', 'institutionConfig', 'websiteContent', 'feeSettings', 'concessions', 'sessionControl']) {
+                        try { await deleteDoc(doc(db, `${BASE_PATH}/settings`, cfgDocId)); } catch (_) {}
+                    }
+                    feeItems = [];
+                    appendPurgeProgressLog('System settings, fee items & concessions reset (Super Admin credentials preserved).', true);
                     break;
                 }
 
                 case 'audit': {
-                    updatePurgeProgressState(currentBasePct + 5, 'Purging audit logs...');
-                    appendPurgeProgressLog('Purging past audit log records...');
-                    const purgedLogs = await batchDeleteCollection(`${BASE_PATH}/auditLogs`);
-                    auditLogs = [];
-                    appendPurgeProgressLog(`Purged ${purgedLogs} past audit records.`, true);
+                    updatePurgeProgressState(currentBasePct + 5, 'Checking audit logs...');
+                    appendPurgeProgressLog('Attempting to clear past audit log records...');
+                    try {
+                        const purgedLogs = await batchDeleteCollection(`${BASE_PATH}/auditLogs`);
+                        auditLogs = [];
+                        appendPurgeProgressLog(`Purged ${purgedLogs} past audit records.`, true);
+                    } catch (auditErr) {
+                        console.warn('Audit logs protected by Firestore security rules:', auditErr?.message || auditErr);
+                        appendPurgeProgressLog('Existing audit trail entries are immutable under security rules and were retained; recording purge checkpoint.');
+                    }
                     break;
                 }
 
@@ -16573,6 +17950,7 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
                     try {
                         await deleteDoc(doc(db, `${BASE_PATH}/settings`, 'timetableStructure'));
                         await deleteDoc(doc(db, `${BASE_PATH}/settings`, 'yearPlanConfig'));
+                        await deleteDoc(doc(db, `${BASE_PATH}/settings`, 'academicPlanningConfig'));
                     } catch (e) {
                         console.warn('Timetable / yearPlan settings purge notice:', e);
                     }
@@ -16603,12 +17981,18 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
                 }
 
                 case 'evaluation': {
-                    updatePurgeProgressState(currentBasePct + 5, 'Purging classroom evaluations and impositions...');
-                    appendPurgeProgressLog('Purging evaluations, impositions, and worksheets...');
+                    updatePurgeProgressState(currentBasePct + 5, 'Purging classroom evaluations, impositions & worksheets...');
+                    appendPurgeProgressLog('Purging evaluations, impositions, worksheets, templates & evaluation configs...');
                     const p1 = await batchDeleteCollection(`${BASE_PATH}/evaluations`);
                     const p2 = await batchDeleteCollection(`${BASE_PATH}/impositions`);
                     const p3 = await batchDeleteCollection(`${BASE_PATH}/worksheets`);
-                    appendPurgeProgressLog(`Purged ${p1 + p2 + p3} evaluation records and registers.`, true);
+                    let p4 = 0;
+                    try { p4 = await batchDeleteCollection(`${BASE_PATH}/worksheetTemplates`); } catch (_) {}
+                    const evalClassKeys = collectAllKnownClassKeysForEval(null, rawStudents);
+                    await Promise.all(evalClassKeys.map(async (clsKey) => {
+                        try { await deleteDoc(doc(db, `${BASE_PATH}/settings`, `evaluationConfig_${clsKey}`)); } catch (_) {}
+                    }));
+                    appendPurgeProgressLog(`Purged ${p1 + p2 + p3 + p4} evaluation records, worksheets & templates.`, true);
                     break;
                 }
 
