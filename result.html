@@ -572,6 +572,25 @@
                     <span class="text-indigo-700 font-bold text-[11px]">Class Teacher Access</span>
                 </div>
                 
+                <div class="card p-2.5 sm:px-3.5 rounded-xl shadow-xs border border-slate-200 mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0 flex-wrap">
+                        <h2 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
+                            <i class="fas fa-chart-pie text-indigo-600"></i>
+                            <span>Exam Analytics</span>
+                        </h2>
+                        <span class="text-slate-300 hidden sm:inline" aria-hidden="true">&middot;</span>
+                        <span id="dash-exam-scope-note" class="text-xs font-semibold text-slate-500 truncate">Loading latest published exam...</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus-within:border-indigo-400 focus-within:bg-white transition w-full sm:w-auto sm:min-w-[215px]">
+                        <label for="dashboard-exam-filter" class="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0">Exam:</label>
+                        <select id="dashboard-exam-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="flex-1 min-w-0" class="w-full text-xs font-bold bg-transparent border-none outline-none py-1 text-slate-800 cursor-pointer">
+                            <option value="quarterly">Quarterly</option>
+                            <option value="halfYearly">Half-Yearly</option>
+                            <option value="annual">Annual</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 mb-3">
                     <div class="bg-gradient-to-br from-indigo-600 to-indigo-500 text-white p-3 rounded-xl shadow-xs flex items-center justify-between">
                         <div class="min-w-0">
@@ -615,9 +634,9 @@
                 </div>
 
                 <div class="card p-3 rounded-xl shadow-xs border border-slate-200 mb-3">
-                    <div class="flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
-                        <span>Overall Academic Year Pass Health</span>
-                        <span id="dash-health-label" class="font-mono tabular-nums font-bold text-slate-900">0%</span>
+                    <div class="flex items-center justify-between text-xs sm:text-sm font-semibold text-slate-700 mb-1.5 gap-2">
+                        <span id="dash-health-title" class="truncate">Overall Academic Year Pass Health</span>
+                        <span id="dash-health-label" class="font-mono tabular-nums font-bold text-slate-900 shrink-0">0%</span>
                     </div>
                     <div class="w-full bg-slate-200 rounded-full h-2.5"><div id="dash-health-bar" class="bg-emerald-500 h-2.5 rounded-full transition-all duration-300" style="width:0%"></div></div>
                 </div>
@@ -629,7 +648,7 @@
                             <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
                                 <i class="fas fa-layer-group text-indigo-600"></i> Class Performance
                             </h3>
-                            <span class="text-xs font-medium text-slate-500">Pass Rates</span>
+                            <span id="dash-class-perf-subtitle" class="text-xs font-medium text-slate-500">Pass Rates</span>
                         </div>
                         <div id="dash-class-breakdown" class="grid grid-cols-3 gap-2 sm:gap-2.5">
                             <p class="col-span-3 text-slate-400 text-xs">Loading class breakdown...</p>
@@ -643,6 +662,7 @@
                                 <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
                                     <i class="fas fa-venus-mars text-indigo-600"></i> Gender Analytics
                                 </h3>
+                                <span id="dash-gender-subtitle" class="text-xs font-medium text-slate-500"></span>
                             </div>
                             <div id="dash-gender-stats" class="grid grid-cols-2 gap-2.5 text-center">
                                 <div class="p-2.5 bg-blue-50 border border-blue-100 rounded-lg">

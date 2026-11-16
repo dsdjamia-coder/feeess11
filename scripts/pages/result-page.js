@@ -1334,6 +1334,7 @@ function initializeDataListeners() {
         const shouldForceReset = !hasLoadedResultAcademicYears || (prevCurrent && prevCurrent !== currentAcademicYear);
         hasLoadedResultAcademicYears = true;
         if (shouldForceReset) {
+            dashboardExamUserSelected = false;
             ['publish-academic-year', 'report-academic-year'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.dataset.userChangedYear = 'false';
@@ -2393,6 +2394,124 @@ function populateDropdowns() {
 };
 
 // --- Dashboard ---
+let selectedDashboardExamKey = '';
+let dashboardExamUserSelected = false;
+
+const getRowCoreExamKey = (row = {}) => {
+    const candidates = [
+        row.examKey,
+        row.examType,
+        parseExamValue(row.examId || '').examKey,
+        row.examId
+    ];
+    for (const raw of candidates) {
+        const clean = String(raw || '').trim();
+        if (!clean) continue;
+        const lower = clean.toLowerCase();
+        const exact = DEFAULT_EXAM_DEFS.find((def) =>
+            def.key.toLowerCase() === lower
+            || def.label.toLowerCase() === lower
+            || lower.endsWith(`::${def.key.toLowerCase()}`)
+            || lower.endsWith(`_${def.key.toLowerCase()}`)
+        );
+        if (exact) return exact.key;
+    }
+    return '';
+};
+
+const getPublishHistoryEntryForCoreExam = (examKey = '', academicYear = currentAcademicYear) => {
+    const records = getPublishHistoryRecords();
+    return records.find((r) =>
+        (!r.academicYear || r.academicYear === academicYear)
+        && getRowCoreExamKey({ examKey: r.examKey, examId: r.examKey }) === examKey
+    ) || null;
+};
+
+const resolveDashboardDefaultExamState = (yearRows = []) => {
+    const nowTs = Date.now();
+    const candidates = DEFAULT_EXAM_DEFS.map((def, idx) => {
+        const matchingRows = yearRows.filter((row) => getRowCoreExamKey(row) === def.key);
+        const publishedRows = matchingRows.filter((row) => row.published === true);
+        const historyRec = getPublishHistoryEntryForCoreExam(def.key, currentAcademicYear);
+
+        const isHistoryUnpublished = historyRec && (historyRec.publishType === 'unpublished' || historyRec.status === 'Unpublished');
+        const historySchedTs = historyRec?.publishAt ? new Date(historyRec.publishAt).getTime() : 0;
+        const isHistoryScheduledFuture = Boolean(historyRec && historyRec.publishType === 'scheduled' && historySchedTs > nowTs);
+        const isHistoryLive = Boolean(historyRec && !isHistoryUnpublished && !isHistoryScheduledFuture);
+
+        const isSettingsLive = Boolean(
+            resultCenterSettings?.publishExamKey === def.key
+            && (!resultCenterSettings.publishAcademicYear || resultCenterSettings.publishAcademicYear === currentAcademicYear)
+            && resultCenterSettings.publishAt
+            && new Date(resultCenterSettings.publishAt).getTime() <= nowTs
+        );
+
+        let maxRowPublishedAt = 0;
+        publishedRows.forEach((row) => {
+            const ts = Number(row.publishedAt || row.updatedAt || 0);
+            if (Number.isFinite(ts) && ts > maxRowPublishedAt) maxRowPublishedAt = ts;
+        });
+
+        let maxRowUpdatedAt = 0;
+        matchingRows.forEach((row) => {
+            const ts = Number(row.updatedAt || row.publishedAt || 0);
+            if (Number.isFinite(ts) && ts > maxRowUpdatedAt) maxRowUpdatedAt = ts;
+        });
+
+        const historyPublishedTs = isHistoryLive
+            ? Math.max(
+                new Date(historyRec?.publishedAt || 0).getTime() || 0,
+                new Date(historyRec?.publishAt || 0).getTime() || 0,
+                Number(historyRec?.updatedAt || 0),
+                Number(historyRec?.createdAt || 0)
+            )
+            : 0;
+        const settingsPublishedTs = isSettingsLive
+            ? Math.max(
+                new Date(resultCenterSettings.publishAt || 0).getTime() || 0,
+                Number(resultCenterSettings.updatedAt || 0)
+            )
+            : 0;
+
+        const hasPublishedResults = publishedRows.length > 0;
+        const isPublished = hasPublishedResults || isHistoryLive || isSettingsLive;
+        const publishTimestamp = hasPublishedResults
+            ? Math.max(maxRowPublishedAt, historyPublishedTs, settingsPublishedTs, idx + 1)
+            : (isPublished ? Math.max(historyPublishedTs, settingsPublishedTs, idx + 1) : 0);
+
+        return {
+            key: def.key,
+            label: def.label,
+            idx,
+            isPublished,
+            hasPublishedResults,
+            hasAnyRows: matchingRows.length > 0,
+            publishTimestamp,
+            maxRowUpdatedAt
+        };
+    });
+
+    // Prefer core exams that actually have published results, or live publish records, ordered by latest publish timestamp
+    const publishedCandidates = candidates.filter((c) => c.isPublished);
+    let latestPublishedKey = '';
+    if (publishedCandidates.length > 0) {
+        publishedCandidates.sort((a, b) => {
+            if (a.hasPublishedResults !== b.hasPublishedResults) return a.hasPublishedResults ? -1 : 1;
+            if (b.publishTimestamp !== a.publishTimestamp) return b.publishTimestamp - a.publishTimestamp;
+            return b.idx - a.idx;
+        });
+        latestPublishedKey = publishedCandidates[0].key;
+    }
+
+    let fallbackKey = latestPublishedKey;
+    if (!fallbackKey) {
+        const draftCandidates = candidates.filter((c) => c.hasAnyRows).sort((a, b) => b.maxRowUpdatedAt - a.maxRowUpdatedAt);
+        fallbackKey = draftCandidates.length > 0 ? draftCandidates[0].key : DEFAULT_EXAM_DEFS[0].key;
+    }
+
+    return { latestPublishedKey, fallbackKey };
+};
+
 function updateDashboard() {
     const isTeacherScope = (roleScope === 'staff');
     const targetClasses = isTeacherScope
@@ -2413,24 +2532,107 @@ function updateDashboard() {
     const yearRows = isTeacherScope && teacherAssignedClasses.length === 0
         ? []
         : examResultsCache.filter((row) => (!isTeacherScope || isClassInDutyScope(row.classLabel, teacherAssignedClasses)) && (row.academicYear === currentAcademicYear || !row.academicYear));
-    const yearPublishedRows = yearRows.filter((row) => row.published === true);
+
+    const { latestPublishedKey, fallbackKey } = resolveDashboardDefaultExamState(yearRows);
+
+    const dashExamSelect = document.getElementById('dashboard-exam-filter');
+    if (!dashboardExamUserSelected || !isDefaultExamKey(selectedDashboardExamKey)) {
+        selectedDashboardExamKey = fallbackKey;
+    }
+    if (dashExamSelect) {
+        if (dashExamSelect.options.length !== DEFAULT_EXAM_DEFS.length) {
+            dashExamSelect.innerHTML = DEFAULT_EXAM_DEFS
+                .map((def) => `<option value="${escapeHtml(def.key)}">${escapeHtml(def.label)}</option>`)
+                .join('');
+        }
+        if (dashExamSelect.value !== selectedDashboardExamKey) {
+            dashExamSelect.value = selectedDashboardExamKey;
+        }
+        syncSmartSelectDisplay(dashExamSelect);
+    }
+
+    const activeExamDef = DEFAULT_EXAM_DEFS.find((d) => d.key === selectedDashboardExamKey) || DEFAULT_EXAM_DEFS[0];
+    const examLabel = activeExamDef.label;
+
+    const examRows = yearRows.filter((row) => getRowCoreExamKey(row) === selectedDashboardExamKey);
+    const examPublishedRows = examRows.filter((row) => row.published === true);
+    const historyRec = getPublishHistoryEntryForCoreExam(selectedDashboardExamKey, currentAcademicYear);
+    const isHistoryUnpublished = historyRec && (historyRec.publishType === 'unpublished' || historyRec.status === 'Unpublished');
+    const historySchedTs = historyRec?.publishAt ? new Date(historyRec.publishAt).getTime() : 0;
+    const isScheduledFuture = Boolean(historyRec && historyRec.publishType === 'scheduled' && historySchedTs > Date.now());
+    const isHistoryLive = Boolean(historyRec && !isHistoryUnpublished && !isScheduledFuture);
+    const isExamPublished = examPublishedRows.length > 0 || isHistoryLive || Boolean(
+        resultCenterSettings?.publishExamKey === selectedDashboardExamKey
+        && (!resultCenterSettings.publishAcademicYear || resultCenterSettings.publishAcademicYear === currentAcademicYear)
+        && resultCenterSettings.publishAt
+        && new Date(resultCenterSettings.publishAt).getTime() <= Date.now()
+    );
+
+    const isDraftPreview = !isExamPublished && examRows.length > 0;
+    const activeExamRows = isExamPublished ? examPublishedRows : (isDraftPreview ? examRows : []);
+
     document.getElementById('dash-total-classes').textContent = targetClasses.length;
     document.getElementById('dash-total-students').textContent = yearStudents.length;
-    
+
     const statusEl = document.getElementById('dash-publish-status');
-    if(resultCenterSettings.publishAt && new Date(resultCenterSettings.publishAt) <= new Date()) {
-        statusEl.innerHTML = `<span class="text-emerald-200">Published</span>`;
-    } else {
-        statusEl.innerHTML = `<span class="text-amber-200">Hidden</span>`;
+    if (statusEl) {
+        if (isExamPublished) {
+            statusEl.innerHTML = `<span class="text-emerald-200">Published</span>`;
+        } else if (isScheduledFuture) {
+            statusEl.innerHTML = `<span class="text-amber-100">Scheduled</span>`;
+        } else if (isDraftPreview) {
+            statusEl.innerHTML = `<span class="text-amber-100">Draft Preview</span>`;
+        } else {
+            statusEl.innerHTML = `<span class="text-amber-200">Not Published</span>`;
+        }
     }
-    const passRows = yearPublishedRows.filter((row) => isPassFromMarks(row));
-    const passPercent = yearPublishedRows.length ? Math.round((passRows.length / yearPublishedRows.length) * 100) : 0;
+
+    const scopeNoteEl = document.getElementById('dash-exam-scope-note');
+    if (scopeNoteEl) {
+        if (isExamPublished) {
+            const isLatest = latestPublishedKey === selectedDashboardExamKey;
+            scopeNoteEl.textContent = isLatest
+                ? `${examLabel} (${currentAcademicYear || 'Current'}) · Latest Published`
+                : `${examLabel} (${currentAcademicYear || 'Current'}) · Published`;
+            scopeNoteEl.className = 'text-xs font-semibold text-emerald-700 truncate';
+        } else if (isDraftPreview) {
+            scopeNoteEl.textContent = `${examLabel} (${currentAcademicYear || 'Current'}) · Draft Preview (${examRows.length} draft records)`;
+            scopeNoteEl.className = 'text-xs font-semibold text-amber-700 truncate';
+        } else if (isScheduledFuture) {
+            scopeNoteEl.textContent = `${examLabel} (${currentAcademicYear || 'Current'}) · Scheduled`;
+            scopeNoteEl.className = 'text-xs font-semibold text-indigo-700 truncate';
+        } else {
+            scopeNoteEl.textContent = `${examLabel} (${currentAcademicYear || 'Current'}) · No Marks Entered`;
+            scopeNoteEl.className = 'text-xs font-semibold text-slate-500 truncate';
+        }
+    }
+
+    const passRows = activeExamRows.filter((row) => isPassFromMarks(row));
+    const passPercent = activeExamRows.length ? Math.round((passRows.length / activeExamRows.length) * 100) : 0;
     const passEl = document.getElementById('dash-pass-percent');
     if (passEl) passEl.textContent = `${passPercent}%`;
+    const healthTitleEl = document.getElementById('dash-health-title');
+    if (healthTitleEl) {
+        healthTitleEl.textContent = isDraftPreview
+            ? `Overall Pass Health — ${examLabel} (Draft Preview)`
+            : `Overall Pass Health — ${examLabel}`;
+    }
     const healthLabelEl = document.getElementById('dash-health-label');
     if (healthLabelEl) healthLabelEl.textContent = `${passPercent}%`;
     const healthBarEl = document.getElementById('dash-health-bar');
-    if (healthBarEl) healthBarEl.style.width = `${passPercent}%`;
+    if (healthBarEl) {
+        healthBarEl.style.width = `${passPercent}%`;
+        healthBarEl.className = `${isDraftPreview ? 'bg-amber-500' : 'bg-emerald-500'} h-2.5 rounded-full transition-all duration-300`;
+    }
+
+    const classPerfSubtitleEl = document.getElementById('dash-class-perf-subtitle');
+    if (classPerfSubtitleEl) {
+        classPerfSubtitleEl.textContent = isDraftPreview ? `${examLabel} · Draft Preview` : `${examLabel} · Pass Rates`;
+    }
+    const genderSubtitleEl = document.getElementById('dash-gender-subtitle');
+    if (genderSubtitleEl) {
+        genderSubtitleEl.textContent = isDraftPreview ? `${examLabel} · Draft Preview` : examLabel;
+    }
 
     // 1. Class Performance Breakdown (3-Column Circular Progress Gauges)
     const breakdownEl = document.getElementById('dash-class-breakdown');
@@ -2441,11 +2643,10 @@ function updateDashboard() {
             const ringRadius = 30;
             const ringCircumference = +(2 * Math.PI * ringRadius).toFixed(2);
             breakdownEl.innerHTML = targetClasses.map((cls) => {
-                const clsRows = yearRows.filter((r) => r.classLabel === cls);
-                const clsPublished = clsRows.filter((r) => r.published === true);
-                const clsPassed = clsPublished.filter((r) => isPassFromMarks(r));
-                const denominator = clsPublished.length || clsRows.length;
-                const pct = clsPublished.length ? Math.round((clsPassed.length / clsPublished.length) * 100) : 0;
+                const clsActive = activeExamRows.filter((r) => r.classLabel === cls);
+                const clsPassed = clsActive.filter((r) => isPassFromMarks(r));
+                const denominator = clsActive.length;
+                const pct = clsActive.length ? Math.round((clsPassed.length / clsActive.length) * 100) : 0;
                 const clampedPct = Math.max(0, Math.min(100, pct));
                 const dashOffset = +(ringCircumference * (1 - clampedPct / 100)).toFixed(2);
 
@@ -2454,7 +2655,7 @@ function updateDashboard() {
                 let pctTextClass = 'text-slate-500';
                 let cardTintClass = 'bg-slate-50/80 border-slate-200/90';
 
-                if (clsPublished.length > 0) {
+                if (clsActive.length > 0) {
                     if (pct >= 75) {
                         strokeColor = '#16a34a';
                         trackColor = '#dcfce7';
@@ -2507,11 +2708,11 @@ function updateDashboard() {
             return g.startsWith('f') || g.includes('girl');
         }).map(s => s.id));
 
-        const boysRows = yearPublishedRows.filter(r => boysStudents.has(r.studentId));
+        const boysRows = activeExamRows.filter(r => boysStudents.has(r.studentId));
         const boysPassed = boysRows.filter(r => isPassFromMarks(r)).length;
         const boysPct = boysRows.length ? Math.round((boysPassed / boysRows.length) * 100) : 0;
 
-        const girlsRows = yearPublishedRows.filter(r => girlsStudents.has(r.studentId));
+        const girlsRows = activeExamRows.filter(r => girlsStudents.has(r.studentId));
         const girlsPassed = girlsRows.filter(r => isPassFromMarks(r)).length;
         const girlsPct = girlsRows.length ? Math.round((girlsPassed / girlsRows.length) * 100) : 0;
 
@@ -2527,7 +2728,7 @@ function updateDashboard() {
     if (spotlightEl) {
         const topPerClass = [];
         targetClasses.forEach((cls) => {
-            const clsRows = (yearPublishedRows.length ? yearPublishedRows : yearRows).filter((r) => r.classLabel === cls && r.totals?.maximum > 0);
+            const clsRows = activeExamRows.filter((r) => r.classLabel === cls && r.totals?.maximum > 0);
             if (clsRows.length) {
                 const sorted = [...clsRows].sort((a, b) => Number(b.totals?.obtained || 0) - Number(a.totals?.obtained || 0));
                 const top = sorted[0];
@@ -2535,7 +2736,7 @@ function updateDashboard() {
             }
         });
         if (!topPerClass.length) {
-            spotlightEl.innerHTML = '<p class="text-gray-400 text-xs italic">Top student ranks will appear once results are entered.</p>';
+            spotlightEl.innerHTML = `<p class="text-gray-400 text-xs italic">Top student ranks for ${escapeHtml(examLabel)} will appear once results are entered.</p>`;
         } else {
             spotlightEl.innerHTML = topPerClass.map((item) => `
                 <div class="flex items-center justify-between p-2.5 bg-amber-50/60 border border-amber-200/70 rounded-xl text-xs">
@@ -2543,7 +2744,7 @@ function updateDashboard() {
                         <span class="w-6 h-6 rounded-full bg-amber-500 text-white font-extrabold flex items-center justify-center text-[10px] shrink-0">#1</span>
                         <div class="truncate">
                             <span class="font-bold text-slate-800">${escapeHtml(item.student?.name || 'Student')}</span>
-                            <span class="text-[10px] text-slate-500 block">${escapeHtml(item.cls)} • Adm: ${escapeHtml(item.student?.adm || item.student?.admissionNo || '-')}</span>
+                            <span class="text-[10px] text-slate-500 block">${escapeHtml(item.cls)} &bull; Adm: ${escapeHtml(item.student?.adm || item.student?.admissionNo || '-')}</span>
                         </div>
                     </div>
                     <div class="text-right shrink-0">
@@ -2559,6 +2760,15 @@ function updateDashboard() {
     updateReportPreview();
     renderPublishControls();
 };
+
+document.getElementById('dashboard-exam-filter')?.addEventListener('change', (e) => {
+    const val = e.target?.value || '';
+    if (isDefaultExamKey(val)) {
+        selectedDashboardExamKey = val;
+        dashboardExamUserSelected = true;
+        updateDashboard();
+    }
+});
 
 const getStudentNameById = (studentId = '') => students.find((entry) => entry.id === studentId)?.name || 'Unknown';
 const getStudentById = (studentId = '') => students.find((entry) => entry.id === studentId) || {};
@@ -3540,7 +3750,7 @@ const resolveDefaultWorkingDays = (className = '', examId = '', scopedStudents =
     return mostCommon;
 };
 
-const loadMarksTable = () => {
+const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
     const examId = document.getElementById('entry-exam-select')?.value || '';
     const className = document.getElementById('entry-class-select')?.value || '';
     const cont = document.getElementById('marks-entry-container');
@@ -3565,7 +3775,7 @@ const loadMarksTable = () => {
 
     const currentInputValues = {};
     const currentHeaderSubjectMarks = {};
-    if (isSameContext) {
+    if (isSameContext && preserveUnsavedInputs) {
         document.querySelectorAll('#marks-table-head .header-subject-max-input').forEach((inp) => {
             const subId = inp.dataset.subject;
             if (!subId) return;
@@ -4743,15 +4953,21 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
     }
 
     const confirmBtn = document.getElementById('marks-review-confirm-upload-btn');
+    const skipBtn = document.getElementById('marks-review-skip-issues-btn');
     const oldBtnHtml = confirmBtn ? confirmBtn.innerHTML : '';
+    const oldSkipHtml = skipBtn ? skipBtn.innerHTML : '';
     if (confirmBtn) {
         confirmBtn.disabled = true;
         confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    }
+    if (skipBtn) {
+        skipBtn.disabled = true;
     }
 
     try {
         const chunkSize = 100;
         let committedCount = 0;
+        const committedRecords = [];
         const touchedStudentIds = new Set(targetRows.map((entry) => entry.studentId).filter(Boolean));
         const examKey = currentExamContext?.key || '';
 
@@ -4781,7 +4997,7 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
                 }
 
                 const summary = buildResultSummary(finalMarks, subjectRows);
-                batch.set(doc(db, `${BASE_PATH}/examResults`, docId), {
+                const recordPayload = {
                     id: docId,
                     examId,
                     schemaId: currentExamSchema.id,
@@ -4798,7 +5014,9 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
                     showMarksToStudents: true,
                     updatedAt: Date.now(),
                     published: false
-                }, { merge: true });
+                };
+                batch.set(doc(db, `${BASE_PATH}/examResults`, docId), recordPayload, { merge: true });
+                committedRecords.push(recordPayload);
                 committedCount++;
             });
 
@@ -4807,17 +5025,37 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
             updateBulkStatus(`Uploaded ${committedCount} of ${targetRows.length}...`, pct);
         }
 
-        closeMarksReviewModal();
+        // Synchronously update local cache so Manual Entry renders all uploaded marks immediately at 100%
+        committedRecords.forEach((rec) => {
+            const existingIdx = examResultsCache.findIndex((r) => r.id === rec.id);
+            if (existingIdx >= 0) {
+                examResultsCache[existingIdx] = { ...examResultsCache[existingIdx], ...rec };
+            } else {
+                examResultsCache.push(rec);
+            }
+        });
+
+        lastLoadedMarksContext = { class: '', exam: '', academicYear: '' };
+        const headerAttInp = document.getElementById('header-col-total-attendance');
+        if (headerAttInp) headerAttInp.value = '';
+
         updateBulkStatus(`Uploaded ${committedCount} row(s) successfully as draft.`, 100, 'success');
-        loadMarksTable();
+        closeMarksReviewModal();
+        setMarksEntryMode('manual');
+        loadMarksTable({ preserveUnsavedInputs: false });
         notify(`Successfully uploaded ${committedCount} result record(s) into Draft for ${className}!`, 'success');
     } catch (err) {
         console.error('Error committing marks', err);
+        alert('Upload failed: ' + (err.message || 'Please check your connection and try again.'));
+    } finally {
         if (confirmBtn) {
             confirmBtn.disabled = false;
             confirmBtn.innerHTML = oldBtnHtml;
         }
-        alert('Upload failed: ' + (err.message || 'Please check your connection and try again.'));
+        if (skipBtn) {
+            skipBtn.disabled = false;
+            skipBtn.innerHTML = oldSkipHtml;
+        }
     }
 };
 
