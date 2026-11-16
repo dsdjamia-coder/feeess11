@@ -3645,7 +3645,21 @@ const studentPwa = registerPortalForPwa('student', {
                         studentProfile.photo = base64;
                         studentProfile.profile = { ...(studentProfile.profile || {}), photo: base64 };
                     }
-                    restoreTopEditModalIfWasOpen();
+                    if (studentPhotoSubmission && typeof studentPhotoSubmission === 'object') {
+                        studentPhotoSubmission.photo = base64;
+                    }
+                    if (groupMemberProfileMap[studentId]) {
+                        groupMemberProfileMap[studentId] = {
+                            ...groupMemberProfileMap[studentId],
+                            photo: base64,
+                            profile: { ...(groupMemberProfileMap[studentId].profile || {}), photo: base64 }
+                        };
+                    }
+                    // Photo is already 100% uploaded and saved; do not re-open the edit modal for a second Save confirmation
+                    wasStudentEditModalOpenBeforeCrop = false;
+                    if (studentProfile) {
+                        renderConcessionAndGroupSection(studentProfile);
+                    }
                 } catch (err) {
                     progressCtrl.fail();
                     console.error('Failed to save student photo:', err);
@@ -3744,17 +3758,28 @@ const studentPwa = registerPortalForPwa('student', {
                 const initial = getStudentInitial(st);
                 if (avatarEl) {
                     avatarEl.innerHTML = `
-                        <div class="w-full h-full rounded-full bg-gradient-to-br from-blue-900 via-indigo-950 to-slate-900 text-white flex items-center justify-center font-black text-4xl sm:text-5xl shadow-inner border-2 border-amber-400">
+                        <div class="w-full h-full rounded-full bg-white text-slate-900 flex items-center justify-center font-black text-4xl sm:text-5xl shadow-inner border border-slate-200">
                             ${escapeHtml(initial)}
                         </div>
                     `;
                 }
             }
 
-            // Clicking avatar opens viewer if photo exists
+            // Clicking avatar opens white professional photo viewer if a photo exists
             const openPhotoViewer = () => {
-                if (userPhoto && viewerModal && viewerImg) {
-                    viewerImg.src = userPhoto;
+                const livePhoto = studentProfile?.photo
+                    || studentProfile?.profile?.photo
+                    || studentPhotoSubmission?.photo
+                    || avatarEl?.querySelector('img')?.getAttribute('src')
+                    || '';
+                if (livePhoto && viewerModal && viewerImg) {
+                    viewerImg.src = livePhoto;
+                    const viewerNameEl = document.getElementById('student-photo-viewer-name');
+                    if (viewerNameEl) {
+                        const liveName = String(studentProfile?.name || studentProfile?.profile?.name || '').trim();
+                        viewerNameEl.textContent = liveName;
+                        viewerNameEl.classList.toggle('hidden', !liveName);
+                    }
                     viewerModal.classList.remove('hidden');
                     viewerModal.classList.add('flex');
                 }
@@ -3966,7 +3991,6 @@ const studentPwa = registerPortalForPwa('student', {
         const renderConcessionAndGroupSection = (st) => {
             const sectionEl = document.getElementById('dash-concession-group-section');
             const detailsEl = document.getElementById('dash-concession-group-details');
-            const badgeEl = document.getElementById('dash-group-badge');
             if (!detailsEl) return;
 
             const activeGroup = (studentGroups || []).find((g) => g.memberIds?.includes(studentId));
@@ -3980,37 +4004,57 @@ const studentPwa = registerPortalForPwa('student', {
             if (sectionEl) sectionEl.classList.remove('hidden');
 
             let html = '';
-            let badgeText = 'Standard Fee';
-            let badgeClass = 'bg-slate-100 text-slate-600 border-slate-200';
 
             if (activeGroup) {
-                badgeText = 'Sibling Group Active';
-                badgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
-                
                 const groupFee = Number(activeGroup.fee || 0);
                 const memberCount = (activeGroup.memberIds || []).length;
-                
+
                 const membersHtml = (activeGroup.memberIds || []).map((mId) => {
                     const mProfile = groupMemberProfileMap[mId] || {};
                     const isCurrent = mId === studentId;
                     const mName = mProfile.name || (isCurrent ? (st.name || 'Current Student') : `Sibling (${mId.slice(0, 6)})`);
                     const mClass = mProfile.class || mProfile.studentClass || (isCurrent ? (st.class || '--') : '--');
                     const mAdm = mProfile.adm || mProfile.profile?.admNo || (isCurrent ? (st.adm || '--') : '--');
+                    const rawPhoto = String(
+                        mProfile.photo
+                        || mProfile.profile?.photo
+                        || (isCurrent ? (st.photo || st.profile?.photo || studentPhotoSubmission?.photo || '') : '')
+                    ).trim();
+                    const safePhoto = rawPhoto
+                        ? (rawPhoto.startsWith('data:image/') ? rawPhoto : sanitizeUrl(rawPhoto))
+                        : '';
+                    const statusNorm = String(mProfile.status || '').trim().toLowerCase();
+                    const isMemberActive = mProfile.isActive !== false && statusNorm !== 'inactive' && statusNorm !== 'discontinued';
+
+                    const memberAvatarHtml = safePhoto
+                        ? `<div class="w-9 h-9 rounded-full overflow-hidden border border-slate-200 bg-white shrink-0 shadow-2xs">
+                                <img src="${escapeHtml(safePhoto)}" class="w-full h-full object-cover" alt="${escapeHtml(mName)}">
+                           </div>`
+                        : `<div class="w-9 h-9 rounded-full bg-white text-slate-900 border border-slate-200 font-black flex items-center justify-center shrink-0 text-sm shadow-2xs">
+                                ${escapeHtml(mName.charAt(0).toUpperCase())}
+                           </div>`;
+
+                    const rightActionHtml = isCurrent
+                        ? ''
+                        : (isMemberActive
+                            ? `<button type="button" class="group-member-switch-btn shrink-0 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer" data-switch-member-id="${escapeHtml(mId)}" title="Switch to this account">
+                                   <i class="fas fa-exchange-alt text-[10px]"></i> Switch
+                               </button>`
+                            : `<span class="shrink-0 text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200 px-2 py-1 rounded-lg">Inactive</span>`);
 
                     return `
-                    <div class="flex items-center justify-between p-2.5 rounded-lg border ${isCurrent ? 'bg-blue-50/80 border-blue-200' : 'bg-white border-slate-200'} text-xs">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                            <div class="w-7 h-7 rounded-full ${isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'} font-bold flex items-center justify-center shrink-0 text-xs">
-                                ${escapeHtml(mName.charAt(0).toUpperCase())}
-                            </div>
-                            <div class="min-w-0 truncate">
-                                <div class="font-bold text-slate-800 truncate flex items-center gap-1.5">
-                                    ${escapeHtml(mName)}
-                                    ${isCurrent ? '<span class="text-[10px] font-extrabold bg-blue-600 text-white px-1.5 py-0.2 rounded-full">You</span>' : ''}
+                    <div class="flex items-center justify-between gap-2.5 p-2.5 rounded-xl border ${isCurrent ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-slate-200'} text-xs">
+                        <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                            ${memberAvatarHtml}
+                            <div class="min-w-0 flex-1">
+                                <div class="font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
+                                    <span class="truncate">${escapeHtml(mName)}</span>
+                                    ${isCurrent ? '<span class="text-[10px] font-extrabold bg-emerald-600 text-white px-2 py-0.5 rounded-full shrink-0">You</span>' : ''}
                                 </div>
-                                <div class="text-[11px] text-slate-500 font-medium">Class: <span class="font-semibold text-slate-700">${escapeHtml(mClass)}</span> | Adm: <span class="font-mono text-slate-700">${escapeHtml(mAdm)}</span></div>
+                                <div class="text-[11px] text-slate-500 font-medium truncate">Class: <span class="font-semibold text-slate-700">${escapeHtml(mClass)}</span> | Adm: <span class="font-mono text-slate-700">${escapeHtml(mAdm)}</span></div>
                             </div>
                         </div>
+                        ${rightActionHtml}
                     </div>`;
                 }).join('');
 
@@ -4040,8 +4084,6 @@ const studentPwa = registerPortalForPwa('student', {
             }
 
             if (hasConcession) {
-                badgeText = activeGroup ? 'Group + Concession Active' : 'Fee Concession Active';
-                badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                 const concFee = Number(st.concessionFee);
 
                 html += `
@@ -4062,9 +4104,25 @@ const studentPwa = registerPortalForPwa('student', {
             }
 
             detailsEl.innerHTML = html;
-            if (badgeEl) {
-                badgeEl.textContent = badgeText;
-                badgeEl.className = `text-xs font-bold px-2.5 py-0.5 rounded-full border ${badgeClass}`;
+
+            if (!detailsEl.dataset.switchBound) {
+                detailsEl.dataset.switchBound = 'true';
+                detailsEl.addEventListener('click', (event) => {
+                    const switchBtn = event.target.closest('.group-member-switch-btn');
+                    if (!switchBtn) return;
+                    const targetMemberId = String(switchBtn.dataset.switchMemberId || '').trim();
+                    if (!targetMemberId || targetMemberId === studentId) return;
+                    const mProfile = groupMemberProfileMap[targetMemberId] || {};
+                    const currentGrp = (studentGroups || []).find((g) => g.memberIds?.includes(studentId));
+                    window.AppSession?.registerStudentAccount?.(targetMemberId, {
+                        name: mProfile.name || `Student (${targetMemberId.slice(0, 6)})`,
+                        class: mProfile.class || mProfile.studentClass || '',
+                        adm: mProfile.adm || mProfile.profile?.admNo || '',
+                        groupId: String(currentGrp?.id || ''),
+                        groupName: String(currentGrp?.name || '').trim()
+                    }, { keepOrder: true });
+                    switchToStudentAccount(targetMemberId);
+                });
             }
         };
 
@@ -4124,6 +4182,7 @@ const studentPwa = registerPortalForPwa('student', {
             });
 
             cameraBtn?.addEventListener('click', async () => {
+                wasStudentEditModalOpenBeforeCrop = true;
                 closeModal();
                 const cameraModal = document.getElementById('student-camera-modal');
                 if (cameraModal) {
@@ -4132,6 +4191,7 @@ const studentPwa = registerPortalForPwa('student', {
                     const ok = await startStudentCamera('user');
                     if (!ok) {
                         stopStudentCamera();
+                        wasStudentEditModalOpenBeforeCrop = false;
                     }
                 }
             });
@@ -7228,12 +7288,28 @@ const studentPwa = registerPortalForPwa('student', {
 
                 // Secondary background loads (non-blocking)
                 if (activeGroup?.memberIds?.length) {
-                    Promise.all(activeGroup.memberIds.map((memberId) => getDoc(doc(db, `${BASE_PATH}/students`, memberId))))
-                        .then(memberDocs => {
-                            groupMemberProfileMap = memberDocs.reduce((acc, memberDoc, idx) => {
-                                if (memberDoc.exists()) acc[activeGroup.memberIds[idx]] = memberDoc.data();
+                    Promise.all(
+                        activeGroup.memberIds.map(async (memberId) => {
+                            const stuDoc = await getDoc(doc(db, `${BASE_PATH}/students`, memberId)).catch(() => null);
+                            if (!stuDoc?.exists?.()) return null;
+                            const stuData = stuDoc.data() || {};
+                            if (!stuData.photo && !stuData.profile?.photo) {
+                                const photoSnap = await getDoc(doc(db, `${BASE_PATH}/studentPhotoSubmissions`, memberId)).catch(() => null);
+                                if (photoSnap?.exists?.() && photoSnap.data()?.photo) {
+                                    stuData.photo = photoSnap.data().photo;
+                                }
+                            }
+                            return { memberId, stuData };
+                        })
+                    )
+                        .then((results) => {
+                            groupMemberProfileMap = results.reduce((acc, item) => {
+                                if (item && item.stuData) acc[item.memberId] = item.stuData;
                                 return acc;
                             }, {});
+                            if (studentProfile) {
+                                renderConcessionAndGroupSection(studentProfile);
+                            }
                         })
                         .catch(memberError => console.warn('Unable to load group member profiles.', memberError));
                 }
