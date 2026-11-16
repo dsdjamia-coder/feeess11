@@ -256,13 +256,27 @@ export const openFeeEntryEditModal = (options = {}) => {
         return;
     }
 
-    activeModalOptions = { ...options };
-
     const isEdit = options.mode === 'edit' || Boolean(options.payment || options.paymentId);
     const isBulkAdd = options.mode === 'bulk-add' && Array.isArray(options.bulkItems) && options.bulkItems.length > 0;
     const isBulkEdit = options.mode === 'bulk-edit' && Array.isArray(options.bulkItems) && options.bulkItems.length > 0;
     const isBulk = isBulkAdd || isBulkEdit;
     const existingPayment = options.payment || (isBulkEdit ? options.bulkItems[0]?.payment : null) || null;
+
+    if (typeof window.canModifyPaymentRecord === 'function') {
+        if (isEdit && existingPayment && !window.canModifyPaymentRecord(options.relatedPayments?.length ? options.relatedPayments : existingPayment)) {
+            showToast('You can only edit payments that you collected.', 'warn');
+            return;
+        }
+        if (isBulkEdit) {
+            const hasUnauthorized = options.bulkItems.some((item) => item?.payment && !window.canModifyPaymentRecord(item.payment));
+            if (hasUnauthorized) {
+                showToast('You can only bulk edit payments that you collected.', 'warn');
+                return;
+            }
+        }
+    }
+
+    activeModalOptions = { ...options };
 
     // Resolve Student / Unit details
     const student = options.student || (existingPayment ? {
@@ -901,6 +915,8 @@ export const submitFeeEntryPayment = async () => {
         const currentUser = auth.currentUser;
         const collectorKey = (typeof window.getCollectorKey === 'function' ? window.getCollectorKey() : '') ||
             String(currentUser?.email || window.AppSession?.getStaffEmail?.() || window.AppSession?.getStaffAccess?.()?.userKey || window.AppSession?.getStaffAccess?.()?.loginId || 'admin@institution.edu').trim().toLowerCase();
+        const collectorEmail = String(currentUser?.email || window.AppSession?.getStaffEmail?.() || collectorKey || '').trim().toLowerCase();
+        const collectorUid = String(currentUser?.uid || '').trim();
         const collectorDisplayName = (typeof window.getCollectorDisplayName === 'function' ? window.getCollectorDisplayName() : '') ||
             window.AppSession?.getStaffAccess?.()?.name ||
             window.AppSession?.getStaffAccess?.()?.staffName ||
@@ -909,6 +925,15 @@ export const submitFeeEntryPayment = async () => {
         const isBulkAdd = activeModalOptions?.mode === 'bulk-add' && Array.isArray(activeModalOptions?.bulkItems);
         const isBulkEdit = activeModalOptions?.mode === 'bulk-edit' && Array.isArray(activeModalOptions?.bulkItems);
         const isBulk = isBulkAdd || isBulkEdit;
+
+        if (typeof window.canModifyPaymentRecord === 'function') {
+            if (isEdit && activeModalOptions?.payment && !window.canModifyPaymentRecord(activeModalOptions.relatedPayments?.length ? activeModalOptions.relatedPayments : activeModalOptions.payment)) {
+                throw new Error('You can only edit payments that you collected.');
+            }
+            if (isBulkEdit && activeModalOptions.bulkItems.some((item) => item?.payment && !window.canModifyPaymentRecord(item.payment))) {
+                throw new Error('You can only bulk edit payments that you collected.');
+            }
+        }
 
         let savedPaymentRecord = null;
         const savedPaymentRecords = [];
@@ -938,7 +963,12 @@ export const submitFeeEntryPayment = async () => {
                             || siblingDocs[0];
                         siblingDocs.forEach((sib) => {
                             const isPrim = sib.id === primarySib.id;
+                            const preservedCollector = sib.collectedBy || basePay.collectedBy || collectorKey;
+                            const preservedCollectorName = sib.collectedByName || basePay.collectedByName || collectorDisplayName;
+                            const preservedCollectorEmail = sib.collectedByEmail || basePay.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
+                            const preservedCollectorUid = sib.collectedByUid || basePay.collectedByUid || '';
                             const updatePayload = {
+                                studentId: sib.studentId || bItem.studentId || primarySib.studentId || '',
                                 amount: isPrim ? finalAmt : 0,
                                 groupMonthAmount: finalAmt,
                                 groupPaidAmount: finalAmt,
@@ -947,6 +977,12 @@ export const submitFeeEntryPayment = async () => {
                                 paymentDate: paymentDate,
                                 paymentMode: mode,
                                 description: description,
+                                collectedBy: preservedCollector,
+                                collectedByName: preservedCollectorName,
+                                ...(preservedCollectorEmail ? { collectedByEmail: preservedCollectorEmail } : {}),
+                                ...(preservedCollectorUid ? { collectedByUid: preservedCollectorUid } : {}),
+                                updatedBy: collectorKey,
+                                updatedByName: collectorDisplayName,
                                 updatedAt: new Date().toISOString()
                             };
                             batch.set(doc(db, `${BASE_PATH}/payments`, sib.id), updatePayload, { merge: true });
@@ -962,7 +998,12 @@ export const submitFeeEntryPayment = async () => {
                         });
                     } else {
                         const payRef = doc(db, `${BASE_PATH}/payments`, pId);
+                        const preservedCollector = basePay.collectedBy || collectorKey;
+                        const preservedCollectorName = basePay.collectedByName || collectorDisplayName;
+                        const preservedCollectorEmail = basePay.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
+                        const preservedCollectorUid = basePay.collectedByUid || '';
                         const updatePayload = {
+                            studentId: basePay.studentId || bItem.studentId || '',
                             amount: finalAmt,
                             groupMonthAmount: finalAmt,
                             groupPaidAmount: finalAmt,
@@ -970,6 +1011,12 @@ export const submitFeeEntryPayment = async () => {
                             paymentDate: paymentDate,
                             paymentMode: mode,
                             description: description,
+                            collectedBy: preservedCollector,
+                            collectedByName: preservedCollectorName,
+                            ...(preservedCollectorEmail ? { collectedByEmail: preservedCollectorEmail } : {}),
+                            ...(preservedCollectorUid ? { collectedByUid: preservedCollectorUid } : {}),
+                            updatedBy: collectorKey,
+                            updatedByName: collectorDisplayName,
                             updatedAt: new Date().toISOString()
                         };
                         batch.set(payRef, updatePayload, { merge: true });
@@ -1022,6 +1069,8 @@ export const submitFeeEntryPayment = async () => {
                                 transactionId: sharedTxnId,
                                 collectedBy: collectorKey,
                                 collectedByName: collectorDisplayName,
+                                ...(collectorEmail ? { collectedByEmail: collectorEmail } : {}),
+                                ...(collectorUid ? { collectedByUid: collectorUid } : {}),
                                 academicYear: itemAcademicYear,
                                 status: 'FULL'
                             };
@@ -1057,6 +1106,8 @@ export const submitFeeEntryPayment = async () => {
                             transactionId: sharedTxnId,
                             collectedBy: collectorKey,
                             collectedByName: collectorDisplayName,
+                            ...(collectorEmail ? { collectedByEmail: collectorEmail } : {}),
+                            ...(collectorUid ? { collectedByUid: collectorUid } : {}),
                             academicYear: itemAcademicYear,
                             status: 'FULL'
                         };
@@ -1099,7 +1150,12 @@ export const submitFeeEntryPayment = async () => {
 
                 siblingDocs.forEach((sib) => {
                     const isPrim = sib.id === primarySib.id;
+                    const preservedCollector = sib.collectedBy || basePayment.collectedBy || collectorKey;
+                    const preservedCollectorName = sib.collectedByName || basePayment.collectedByName || collectorDisplayName;
+                    const preservedCollectorEmail = sib.collectedByEmail || basePayment.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
+                    const preservedCollectorUid = sib.collectedByUid || basePayment.collectedByUid || '';
                     const updatePayload = {
+                        studentId: sib.studentId || studentId,
                         amount: isPrim ? amount : 0,
                         groupMonthAmount: amount,
                         groupPaidAmount: amount,
@@ -1110,6 +1166,12 @@ export const submitFeeEntryPayment = async () => {
                         description: description,
                         itemKey: canonicalEditItem.key,
                         itemName: canonicalEditItem.name,
+                        collectedBy: preservedCollector,
+                        collectedByName: preservedCollectorName,
+                        ...(preservedCollectorEmail ? { collectedByEmail: preservedCollectorEmail } : {}),
+                        ...(preservedCollectorUid ? { collectedByUid: preservedCollectorUid } : {}),
+                        updatedBy: collectorKey,
+                        updatedByName: collectorDisplayName,
                         updatedAt: new Date().toISOString()
                     };
                     batch.set(doc(db, `${BASE_PATH}/payments`, sib.id), updatePayload, { merge: true });
@@ -1121,8 +1183,6 @@ export const submitFeeEntryPayment = async () => {
                         ...sib,
                         transactionId: sib.transactionId || existingTxnId || basePayment.transactionId || existingPaymentId,
                         academicYear: sib.academicYear || academicYear,
-                        collectedBy: sib.collectedBy || collectorKey,
-                        collectedByName: sib.collectedByName || collectorDisplayName,
                         ...updatePayload
                     };
                     savedPaymentRecords.push({
@@ -1134,6 +1194,10 @@ export const submitFeeEntryPayment = async () => {
                 if (!savedPaymentRecord) savedPaymentRecord = savedPaymentRecords[0]?.record || null;
             } else {
                 const payRef = doc(db, `${BASE_PATH}/payments`, existingPaymentId);
+                const preservedCollector = basePayment.collectedBy || collectorKey;
+                const preservedCollectorName = basePayment.collectedByName || collectorDisplayName;
+                const preservedCollectorEmail = basePayment.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
+                const preservedCollectorUid = basePayment.collectedByUid || '';
                 const updatePayload = {
                     studentId: studentId,
                     amount: amount,
@@ -1145,6 +1209,12 @@ export const submitFeeEntryPayment = async () => {
                     description: description,
                     itemKey: canonicalEditItem.key,
                     itemName: canonicalEditItem.name,
+                    collectedBy: preservedCollector,
+                    collectedByName: preservedCollectorName,
+                    ...(preservedCollectorEmail ? { collectedByEmail: preservedCollectorEmail } : {}),
+                    ...(preservedCollectorUid ? { collectedByUid: preservedCollectorUid } : {}),
+                    updatedBy: collectorKey,
+                    updatedByName: collectorDisplayName,
                     updatedAt: new Date().toISOString()
                 };
                 batch.set(payRef, updatePayload, { merge: true });
@@ -1165,8 +1235,6 @@ export const submitFeeEntryPayment = async () => {
                     itemKey: canonicalEditItem.key,
                     itemName: canonicalEditItem.name,
                     academicYear: academicYear,
-                    collectedBy: activeModalOptions?.payment?.collectedBy || collectorKey,
-                    collectedByName: activeModalOptions?.payment?.collectedByName || collectorDisplayName,
                     ...updatePayload
                 };
                 savedPaymentRecords.push({ record: savedPaymentRecord, cell: activeModalOptions?.targetCellElement });
@@ -1238,6 +1306,8 @@ export const submitFeeEntryPayment = async () => {
                         transactionId: newTxnId,
                         collectedBy: collectorKey,
                         collectedByName: collectorDisplayName,
+                        ...(collectorEmail ? { collectedByEmail: collectorEmail } : {}),
+                        ...(collectorUid ? { collectedByUid: collectorUid } : {}),
                         academicYear: academicYear,
                         status: 'FULL'
                     };
@@ -1289,6 +1359,8 @@ export const submitFeeEntryPayment = async () => {
                     transactionId: newTxnId,
                     collectedBy: collectorKey,
                     collectedByName: collectorDisplayName,
+                    ...(collectorEmail ? { collectedByEmail: collectorEmail } : {}),
+                    ...(collectorUid ? { collectedByUid: collectorUid } : {}),
                     academicYear: academicYear,
                     status: 'FULL'
                 };
@@ -1397,7 +1469,7 @@ export const submitFeeEntryPayment = async () => {
         showToast(`Failed to save payment: ${err.message || 'Firestore error'}`, 'error');
         if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = isEdit
+            submitBtn.innerHTML = (isEdit || activeModalOptions?.mode === 'bulk-edit')
                 ? '<i class="fas fa-save mr-1"></i> Update Payment'
                 : '<i class="fas fa-check mr-1"></i> Record Payment';
         }

@@ -20,7 +20,11 @@ let ctx = {
     getFeeItems: () => [],
     getDefaultFee: () => 200,
     getAcademicYear: () => '',
-    getUserEmail: () => ''
+    getUserEmail: () => '',
+    getCollectorKey: () => '',
+    getCollectorName: () => '',
+    getUserUid: () => '',
+    getStaffRecord: () => null
 };
 
 let editGroupWorkingMembers = [];
@@ -30,6 +34,41 @@ let concSearchPageOffset = 0;
 let activeConcPageOffset = 0;
 
 const isUserAdmin = () => Boolean(ctx.isAdmin?.());
+const normalizeIdentityToken = (val = '') => String(val || '').trim().toLowerCase();
+const getCurrentIdentityTokens = () => {
+    const tokens = new Set();
+    const staffAccess = window.AppSession?.getStaffAccess?.() || null;
+    const staffRec = ctx.getStaffRecord?.() || null;
+    [
+        ctx.getCollectorKey?.(),
+        ctx.getUserEmail?.(),
+        window.AppSession?.getStaffEmail?.(),
+        staffAccess?.userKey,
+        staffAccess?.loginId,
+        staffAccess?.staffId,
+        staffRec?.id,
+        staffRec?.email,
+        staffRec?.loginId,
+        staffRec?.username,
+        staffRec?.userKey
+    ].forEach((val) => {
+        const clean = normalizeIdentityToken(val);
+        if (clean) tokens.add(clean);
+    });
+    return tokens;
+};
+const isFeeItemOwner = (item = null) => {
+    if (!item || typeof item !== 'object') return false;
+    const currentUid = String(ctx.getUserUid?.() || '').trim();
+    if (currentUid && item.createdByUid && String(item.createdByUid).trim() === currentUid) {
+        return true;
+    }
+    const creatorKey = normalizeIdentityToken(item.createdBy);
+    const creatorEmail = normalizeIdentityToken(item.createdByEmail);
+    if (!creatorKey && !creatorEmail) return false;
+    const tokens = getCurrentIdentityTokens();
+    return Boolean((creatorKey && tokens.has(creatorKey)) || (creatorEmail && tokens.has(creatorEmail)));
+};
 const isValidCollectionClass = (c = '') => {
     const u = String(c || '').trim().toUpperCase();
     return Boolean(u && u !== 'ALUMNI' && u !== 'GRADUATED' && u !== 'ALUMNI_DUES');
@@ -52,6 +91,7 @@ const canManageFeeItem = (item = null) => {
     if (!item) return false;
     if (isUserAdmin()) return true;
     if (item.type !== 'custom') return false;
+    if (!isFeeItemOwner(item)) return false;
     const duty = getScopedClasses();
     if (!duty.length) return false;
     if (item.scope === 'specific') {
@@ -300,7 +340,8 @@ export const renderFeeItemsManagement = () => {
 
         let detailsHtml = '';
         if (item.type === 'custom') {
-            detailsHtml = `<div class="text-[11px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Scope: <span class="font-semibold text-blue-600">${scopeDesc}</span> | Receipt Mandatory: <span class="font-semibold ${item.isReceiptMandatory ? 'text-red-500' : 'text-gray-400'}">${item.isReceiptMandatory ? 'YES' : 'NO'}</span></div>`;
+            const creatorPart = item.createdByName ? ` | Added by: <span class="font-semibold text-slate-600">${escapeHtml(item.createdByName)}</span>` : '';
+            detailsHtml = `<div class="text-[11px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Scope: <span class="font-semibold text-blue-600">${scopeDesc}</span> | Receipt Mandatory: <span class="font-semibold ${item.isReceiptMandatory ? 'text-red-500' : 'text-gray-400'}">${item.isReceiptMandatory ? 'YES' : 'NO'}</span>${creatorPart}</div>`;
         }
         const handleHtml = item.type === 'custom' && admin
             ? `<span class="drag-handle mr-2 sm:mr-4 text-gray-500 text-sm sm:text-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg px-1.5 sm:px-2 py-0.5 sm:py-1 cursor-grab active:cursor-grabbing select-none" title="Drag to reorder"><i class="fas fa-grip-lines"></i></span>`
@@ -1466,6 +1507,10 @@ export const initFinanceManagementModule = (stateContext) => {
         }
 
         const key = `custom_fee_${Date.now()}`;
+        const creatorKey = normalizeIdentityToken(ctx.getCollectorKey?.() || ctx.getUserEmail?.() || '');
+        const creatorEmail = normalizeIdentityToken(ctx.getUserEmail?.() || window.AppSession?.getStaffEmail?.() || '');
+        const creatorUid = String(ctx.getUserUid?.() || '').trim();
+        const creatorName = String(ctx.getCollectorName?.() || ctx.getUserEmail?.() || 'Staff').trim();
         const newFee = {
             key,
             name,
@@ -1474,6 +1519,10 @@ export const initFinanceManagementModule = (stateContext) => {
             isVisible: true,
             isReceiptMandatory: !!document.getElementById('adv-fee-receipt-req')?.checked,
             academicYear: ctx.getAcademicYear(),
+            createdBy: creatorKey,
+            createdByEmail: creatorEmail,
+            createdByUid: creatorUid,
+            createdByName: creatorName,
             createdAt: new Date().toISOString(),
             timestamp: Date.now()
         };
@@ -1588,7 +1637,7 @@ export const initFinanceManagementModule = (stateContext) => {
             const key = delBtn.dataset.key;
             const item = feeItems.find((i) => i.key === key);
             if (!canManageFeeItem(item)) {
-                showToast('You can only delete custom fee items belonging to your assigned duty classes.', 'warn');
+                showToast('You can only delete custom fee items that you created for your assigned duty classes.', 'warn');
                 return;
             }
             const confirmed = await openConfirmDialog({
@@ -1614,7 +1663,7 @@ export const initFinanceManagementModule = (stateContext) => {
             const key = editBtn.dataset.key;
             const item = feeItems.find((i) => i.key === key);
             if (!item || !canManageFeeItem(item)) {
-                showToast('You can only edit custom fee items belonging to your assigned duty classes.', 'warn');
+                showToast('You can only edit custom fee items that you created for your assigned duty classes.', 'warn');
                 return;
             }
 
@@ -1683,6 +1732,7 @@ export const initFinanceManagementModule = (stateContext) => {
             isVisible: true,
             isReceiptMandatory: !!document.getElementById('e-fee-receipt-req')?.checked,
             academicYear: existing.academicYear || ctx.getAcademicYear(),
+            updatedBy: normalizeIdentityToken(ctx.getCollectorKey?.() || ctx.getUserEmail?.() || ''),
             updatedAt: new Date().toISOString()
         };
 

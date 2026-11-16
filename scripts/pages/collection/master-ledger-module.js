@@ -385,7 +385,8 @@ export const buildLedgerUnits = () => {
                             amount: resolveGroupPaidTotalAmount(paidMemberEntries, groupFee),
                             receipt: firstPay.receiptNo || 'Paid',
                             date: firstPay.paymentDate || (firstPay.timestamp ? new Date(firstPay.timestamp).toLocaleDateString('en-GB') : '-'),
-                            paymentId: firstPay.id || null
+                            paymentId: firstPay.id || null,
+                            payment: firstPay
                         };
                     } else if (paidMemberEntries.length > 0 && unpaidMembers.length > 0) {
                         const unpaidIndivSum = unpaidMembers.reduce((sum, m) => {
@@ -467,7 +468,8 @@ export const buildLedgerUnits = () => {
                             amount: resolveLedgerPaymentAmount(matchedPayment, indFee),
                             receipt: matchedPayment.receiptNo || 'Paid',
                             date: matchedPayment.paymentDate || (matchedPayment.timestamp ? new Date(matchedPayment.timestamp).toLocaleDateString('en-GB') : '-'),
-                            paymentId: matchedPayment.id || null
+                            paymentId: matchedPayment.id || null,
+                            payment: matchedPayment
                         };
                     } else {
                         monthStatus[month] = {
@@ -874,18 +876,25 @@ const renderLedgerTable = (options = {}) => {
 
                     if (st.isPaid) {
                         const paidAmtDisplay = Math.round(Number(st.amount ?? unit.fee ?? 0));
+                        const paidPaymentRec = st.payment || ledgerPayments.find(p => st.paymentId && p.id === st.paymentId) || null;
+                        const canEditPaidCell = typeof window.canModifyPaymentRecord === 'function'
+                            ? window.canModifyPaymentRecord(paidPaymentRec)
+                            : true;
+                        const cellTitle = canEditPaidCell
+                            ? `Paid ₹${paidAmtDisplay} (${escapeHtml(st.receipt || 'Paid')}) • Click to view receipt or tick checkbox to bulk edit`
+                            : `Paid ₹${paidAmtDisplay} (${escapeHtml(st.receipt || 'Paid')}) • Click to view receipt (View Only)`;
                         return `
                             <td class="px-1.5 py-2 text-center border-r border-slate-200 bg-emerald-50/50 fee-cell-interactive cursor-pointer hover:bg-emerald-100 transition relative ${selRing}"
-                                data-ledger-action="view-receipt" data-payment-id="${st.paymentId || ''}" data-unit-id="${unit.id}" data-month="${month}" title="Paid ₹${paidAmtDisplay} (${escapeHtml(st.receipt || 'Paid')}) • Click to view receipt or tick checkbox to bulk edit">
-                                <div class="flex items-center justify-between mb-0.5 px-0.5">
-                                    <input type="checkbox" class="ledger-cell-select-cb w-3.5 h-3.5 rounded border-emerald-400 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                                data-ledger-action="view-receipt" data-payment-id="${st.paymentId || ''}" data-unit-id="${unit.id}" data-month="${month}" title="${cellTitle}">
+                                <div class="flex items-center ${canEditPaidCell ? 'justify-between' : 'justify-center'} mb-0.5 px-0.5">
+                                    ${canEditPaidCell ? `<input type="checkbox" class="ledger-cell-select-cb w-3.5 h-3.5 rounded border-emerald-400 text-amber-600 focus:ring-amber-500 cursor-pointer"
                                         data-sel-key="${escapeHtml(selKey)}"
                                         data-unit-id="${escapeHtml(unit.id)}"
                                         data-month="${escapeHtml(month)}"
                                         data-sel-type="edit"
                                         data-payment-id="${escapeHtml(st.paymentId || '')}"
                                         ${isSelected ? 'checked' : ''}
-                                        title="Select to bulk edit">
+                                        title="Select to bulk edit">` : ''}
                                     <div class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black border border-emerald-200">
                                         <i class="fas fa-check text-[7px]"></i> Paid
                                     </div>
@@ -1222,7 +1231,8 @@ const openLedgerBulkActionModal = (actionType = 'pay') => {
         } else if (actionType === 'edit') {
             const mIds = unit.students.map(s => s.id);
             const payment = findPreferredLedgerPayment(p => (sel.paymentId && p.id === sel.paymentId) || ((p.billingGroupId === unit.groupId || mIds.includes(p.studentId)) && isMonthMatch(p.itemKey, sel.month)));
-            if (payment) {
+            const canEditPayment = typeof window.canModifyPaymentRecord === 'function' ? window.canModifyPaymentRecord(payment) : true;
+            if (payment && canEditPayment) {
                 bulkItems.push({
                     paymentId: payment.id,
                     payment: payment,
@@ -1304,6 +1314,10 @@ window.openStudentQuickPayModal = openStudentQuickPayModal;
 // Open in-place Edit Modal for existing payment without redirecting to Fee Entry
 export const openEditPaymentInQuickModal = (payment, targetCellElement = null) => {
     if (!payment) return;
+    if (typeof window.canModifyPaymentRecord === 'function' && !window.canModifyPaymentRecord(payment)) {
+        showToast('You can only edit payments that you collected.', 'warn');
+        return;
+    }
     openFeeEntryEditModal({
         mode: 'edit',
         payment: payment,

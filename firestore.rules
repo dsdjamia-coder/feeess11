@@ -34,7 +34,7 @@ service cloud.firestore {
         && adminData(institutionId).adminsIndex[request.auth.token.email] == true;
     }
 
-    function isAdmin(institutionId) {
+    function isSuperAdminDoc(institutionId) {
       return hasEmailIdentity() && (isLegacyAdmin(institutionId) || isIndexedAdmin(institutionId));
     }
 
@@ -42,16 +42,52 @@ service cloud.firestore {
       return /databases/$(database)/documents/institutions/$(institutionId)/staffAccess/$(request.auth.token.email);
     }
 
-    function isStaff(institutionId) {
-      return hasEmailIdentity() && exists(staffAccessRef(institutionId)) && get(staffAccessRef(institutionId)).data.isActive != false;
+    function staffAccessLowerRef(institutionId) {
+      return /databases/$(database)/documents/institutions/$(institutionId)/staffAccess/$(request.auth.token.email.lower());
+    }
+
+    function hasStaffAccessDoc(institutionId) {
+      return hasEmailIdentity() && (exists(staffAccessRef(institutionId)) || exists(staffAccessLowerRef(institutionId)));
     }
 
     function staffData(institutionId) {
-      return get(staffAccessRef(institutionId)).data;
+      return exists(staffAccessRef(institutionId))
+        ? get(staffAccessRef(institutionId)).data
+        : get(staffAccessLowerRef(institutionId)).data;
+    }
+
+    function isStaff(institutionId) {
+      return hasStaffAccessDoc(institutionId) && staffData(institutionId).isActive != false;
+    }
+
+    function isStaffManager(institutionId) {
+      return isStaff(institutionId)
+        && (staffData(institutionId).canAccessAdmin == true || staffData(institutionId).actLikeSuperAdmin == true);
+    }
+
+    function isAdmin(institutionId) {
+      return isSuperAdminDoc(institutionId) || isStaffManager(institutionId);
     }
 
     function isCollector(institutionId) {
       return isAdmin(institutionId) || (isStaff(institutionId) && staffData(institutionId).canCollect == true);
+    }
+
+    function isRecordCollectorOwner(institutionId, data) {
+      return isCollector(institutionId) && (
+        ('collectedByUid' in data && data.collectedByUid is string && data.collectedByUid == request.auth.uid)
+        || (hasEmailIdentity() && 'collectedByEmail' in data && data.collectedByEmail is string && data.collectedByEmail.lower() == request.auth.token.email.lower())
+        || (hasEmailIdentity() && 'collectedBy' in data && data.collectedBy is string && (
+          data.collectedBy.lower() == request.auth.token.email.lower()
+          || (isStaff(institutionId) && (
+            ('email' in staffData(institutionId) && staffData(institutionId).email is string && data.collectedBy.lower() == staffData(institutionId).email.lower())
+            || ('loginId' in staffData(institutionId) && staffData(institutionId).loginId is string && data.collectedBy.lower() == staffData(institutionId).loginId.lower())
+            || ('username' in staffData(institutionId) && staffData(institutionId).username is string && data.collectedBy.lower() == staffData(institutionId).username.lower())
+            || ('userKey' in staffData(institutionId) && staffData(institutionId).userKey is string && data.collectedBy.lower() == staffData(institutionId).userKey.lower())
+            || ('staffId' in staffData(institutionId) && staffData(institutionId).staffId is string && data.collectedBy.lower() == staffData(institutionId).staffId.lower())
+          ))
+        ))
+      );
     }
 
     function isResultOperator(institutionId) {
@@ -233,8 +269,8 @@ service cloud.firestore {
 
     // 1. Settings Collection
     match /institutions/{institutionId}/settings/{docId} {
-      // Sensitive admin auth doc is STRICTLY Admin only (never publicly readable)
-      allow read, write: if docId == 'adminAuth' && isAdmin(institutionId);
+      // Sensitive admin auth doc is STRICTLY Super Admin only (never publicly readable)
+      allow read, write: if docId == 'adminAuth' && isSuperAdminDoc(institutionId);
 
       // Public settings required by landing page & portal shells (explicit allowlist, excludes adminAuth)
       allow read: if docId in [
@@ -346,18 +382,26 @@ service cloud.firestore {
       allow write: if isAdmin(institutionId) || isStaff(institutionId);
     }
 
-    // 9. Payments (Staff/Admin unrestricted; student session capped list query)
+    // 9. Payments (Staff/Admin unrestricted read; Admin/Manager or owner collector write/delete)
     match /institutions/{institutionId}/payments/{docId} {
       allow get: if isCollector(institutionId) || isAdmin(institutionId) || isSignedIn();
       allow list: if isCollector(institutionId) || isAdmin(institutionId) || isStaff(institutionId)
         || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
-      allow create, update: if (isAdmin(institutionId) || isCollector(institutionId)) && validPaymentWrite();
-      allow delete: if isAdmin(institutionId);
+      allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if validPaymentWrite() && (
+        isAdmin(institutionId)
+        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data))
+      );
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
     }
 
-    // 10. Donations
+    // 10. Donations (Staff/Collector read; Admin/Manager or owner collector create/update/delete)
     match /institutions/{institutionId}/donations/{docId} {
-      allow read, write: if isAdmin(institutionId) || isCollector(institutionId);
+      allow read: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId);
+      allow create: if isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data);
+      allow update: if isAdmin(institutionId)
+        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data));
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
     }
 
     // 11. Attendance
@@ -516,16 +560,24 @@ service cloud.firestore {
       allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
       allow list: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId)
         || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
-      allow create, update: if (isAdmin(institutionId) || isCollector(institutionId)) && validPaymentWrite();
-      allow delete: if isAdmin(institutionId);
+      allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if validPaymentWrite() && (
+        isAdmin(institutionId)
+        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data))
+      );
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
     }
 
     match /institutions/{institutionId}/years/{yearId}/payments/{docId} {
       allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
       allow list: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId)
         || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
-      allow create, update: if (isAdmin(institutionId) || isCollector(institutionId)) && validPaymentWrite();
-      allow delete: if isAdmin(institutionId);
+      allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if validPaymentWrite() && (
+        isAdmin(institutionId)
+        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data))
+      );
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/results/{docId} {

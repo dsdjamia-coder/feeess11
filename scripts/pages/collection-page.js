@@ -1174,9 +1174,12 @@ const resolveStaffDutyClasses = (staffRecord = null) => {
 };
 
 const getCurrentCollectorName = () => {
-    if (isMasterSuperAdmin()) return 'Administrator';
     const myStaff = findCurrentStaffMember(allStaff);
-    return myStaff?.name || window.AppSession?.getStaffName?.() || currentUserEmail || 'Collector';
+    if (myStaff?.name) return myStaff.name;
+    const sessionName = window.AppSession?.getStaffName?.();
+    if (sessionName && !isCurrentAdmin) return sessionName;
+    if (isMasterSuperAdmin()) return 'Administrator';
+    return currentUserEmail || 'Collector';
 };
 
 const getCollectorDisplayName = () => {
@@ -1184,6 +1187,7 @@ const getCollectorDisplayName = () => {
 };
 window.getCollectorKey = getCollectorKey;
 window.getCollectorDisplayName = getCollectorDisplayName;
+window.isMasterSuperAdmin = isMasterSuperAdmin;
 const getDutyUserKey = () => getCollectorKey();
 const getDutyStorageKey = () => `collector_duty_classes_${getDutyUserKey()}`;
 const getDutyPaymentStorageKey = () => `collector_duty_payment_${getDutyUserKey()}`;
@@ -1653,21 +1657,71 @@ const getStaffName = (email, savedName) => {
     return email;
 };
 
-const isSameCollectorRecord = (recordCollector = '') => {
-    const myKey = getCollectorKey();
-    const myEmail = getEffectiveStaffEmail();
-    const rec = normalizeEmail(recordCollector);
-    if (!rec) return false;
-    if (rec === myKey || (myEmail && rec === myEmail)) return true;
+const getCurrentCollectorIdentityTokens = () => {
+    const tokens = new Set();
+    const staffAccess = window.AppSession?.getStaffAccess?.() || null;
+    const officialSession = getOfficialSession();
     const myStaff = findCurrentStaffMember(allStaff);
-    if (myStaff) {
-        if (myStaff.id && normalizeEmail(myStaff.id) === rec) return true;
-        if (myStaff.email && normalizeEmail(myStaff.email) === rec) return true;
-        if (myStaff.username && String(myStaff.username).toLowerCase() === rec) return true;
-        if (myStaff.name && String(myStaff.name).toLowerCase() === rec) return true;
-    }
-    return false;
+    [
+        getCollectorKey(),
+        getEffectiveStaffEmail(),
+        auth?.currentUser?.email,
+        staffAccess?.userKey,
+        staffAccess?.loginId,
+        staffAccess?.staffId,
+        officialSession?.username,
+        officialSession?.email,
+        officialSession?.id,
+        myStaff?.id,
+        myStaff?.email,
+        myStaff?.loginId,
+        myStaff?.username,
+        myStaff?.userKey,
+        myStaff?.name
+    ].forEach((val) => {
+        const clean = normalizeEmail(val);
+        if (clean) tokens.add(clean);
+    });
+    return tokens;
 };
+
+const isSameCollectorRecord = (recordOrCollector = '') => {
+    if (!recordOrCollector) return false;
+    if (typeof recordOrCollector === 'object') {
+        const currentUid = String(auth?.currentUser?.uid || '').trim();
+        if (currentUid && recordOrCollector.collectedByUid && String(recordOrCollector.collectedByUid).trim() === currentUid) {
+            return true;
+        }
+        const tokens = getCurrentCollectorIdentityTokens();
+        const recBy = normalizeEmail(recordOrCollector.collectedBy || '');
+        const recEmail = normalizeEmail(recordOrCollector.collectedByEmail || '');
+        return Boolean((recBy && tokens.has(recBy)) || (recEmail && tokens.has(recEmail)));
+    }
+    const rec = normalizeEmail(recordOrCollector);
+    if (!rec) return false;
+    return getCurrentCollectorIdentityTokens().has(rec);
+};
+
+const canModifyPaymentRecord = (paymentOrList = null) => {
+    if (isMasterSuperAdmin()) return true;
+    if (!paymentOrList) return false;
+    if (Array.isArray(paymentOrList)) {
+        if (!paymentOrList.length) return false;
+        return paymentOrList.some((p) => isSameCollectorRecord(p))
+            && paymentOrList.every((p) => !(p?.collectedBy || p?.collectedByEmail || p?.collectedByUid) || isSameCollectorRecord(p));
+    }
+    return isSameCollectorRecord(paymentOrList);
+};
+
+const canModifyDonationRecord = (donation = null) => {
+    if (isMasterSuperAdmin()) return true;
+    if (!donation) return false;
+    return isSameCollectorRecord(donation);
+};
+
+window.isSameCollectorRecord = isSameCollectorRecord;
+window.canModifyPaymentRecord = canModifyPaymentRecord;
+window.canModifyDonationRecord = canModifyDonationRecord;
 
 const isFeeItemMatch = (paymentItemKey = '', targetItem = {}) => {
     const pKey = String(paymentItemKey || '').trim().toLowerCase();
@@ -2568,7 +2622,21 @@ document.getElementById('save-donation-btn')?.addEventListener('click', async ()
             return;
         }
     }
+    const existingDonation = editingDonationId
+        ? allDonations.find((entry) => entry.id === editingDonationId)
+        : null;
+    if (editingDonationId && existingDonation && !canModifyDonationRecord(existingDonation)) {
+        showToast('You can only edit donations that you collected.', 'warn');
+        return;
+    }
     const collectorLabel = getCurrentCollectorName();
+    const activeCollectorKey = getCollectorKey();
+    const activeCollectorEmail = normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '');
+    const activeCollectorUid = String(auth?.currentUser?.uid || '').trim();
+    const preservedCollector = existingDonation?.collectedBy || activeCollectorKey;
+    const preservedCollectorName = existingDonation?.collectedByName || collectorLabel;
+    const preservedCollectorEmail = existingDonation?.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : activeCollectorEmail);
+    const preservedCollectorUid = existingDonation?.collectedByUid || (editingDonationId ? '' : activeCollectorUid);
     const donationDoc = {
         donorName,
         receiptNo,
@@ -2576,9 +2644,16 @@ document.getElementById('save-donation-btn')?.addEventListener('click', async ()
         amount,
         paymentDate: donationDate,
         academicYear: getAcademicYearFromDate(new Date(donationDate)),
-        timestamp: Date.now(),
-        collectedBy: getCollectorKey(),
-        collectedByName: collectorLabel,
+        timestamp: existingDonation?.timestamp || Date.now(),
+        collectedBy: editingDonationId ? preservedCollector : activeCollectorKey,
+        collectedByName: editingDonationId ? preservedCollectorName : collectorLabel,
+        ...(editingDonationId
+            ? (preservedCollectorEmail ? { collectedByEmail: preservedCollectorEmail } : {})
+            : (activeCollectorEmail ? { collectedByEmail: activeCollectorEmail } : {})),
+        ...(editingDonationId
+            ? (preservedCollectorUid ? { collectedByUid: preservedCollectorUid } : {})
+            : (activeCollectorUid ? { collectedByUid: activeCollectorUid } : {})),
+        ...(editingDonationId ? { updatedBy: activeCollectorKey, updatedAt: new Date().toISOString() } : {}),
         entryType: 'donation'
     };
     isDonationSaveInFlight = true;
@@ -4150,7 +4225,29 @@ const exitEditMode = () => { isEditMode = false; editingPaymentGroup = {}; editT
 document.getElementById('cancel-edit-btn')?.addEventListener('click', exitEditMode);
 
 const startEditingPayment = (studentId, txnId) => {
-    const student = getStudentById(studentId); if(!student) return;
+    const parsedKey = parsePaymentGroupKey(txnId);
+    const grp = allPayments.filter((payment) => {
+        if (parsedKey.type === 'transaction') return payment.transactionId === parsedKey.transactionId;
+        if (parsedKey.type === 'receipt') return Number(payment.receiptNo) === parsedKey.receiptNo && (payment.collectedBy || '') === parsedKey.collectedBy;
+        return getPaymentGroupKey(payment) === txnId;
+    });
+    if (grp.length === 0) {
+        showToast('Payment record not found for editing.', 'warn');
+        return;
+    }
+    if (!canModifyPaymentRecord(grp)) {
+        showToast('You can only edit payments that you collected.', 'warn');
+        return;
+    }
+
+    const effectiveStudentId = studentId || grp[0].studentId;
+    const student = getStudentById(effectiveStudentId) || {
+        id: effectiveStudentId,
+        name: grp[0].studentName || 'Student',
+        adm: grp[0].studentAdm || '-',
+        class: grp[0].classLabel || grp[0].studentClass || '',
+        gender: 'all'
+    };
     activateTab('home-page', 'entry');
     document.getElementById('entry-class').value = student.class || ''; document.getElementById('entry-gender').value = student.gender || 'all';
     syncSmartSelectDisplay(document.getElementById('entry-class'));
@@ -4163,13 +4260,6 @@ const startEditingPayment = (studentId, txnId) => {
 
     populateFeeItemSelection();
 
-    const parsedKey = parsePaymentGroupKey(txnId);
-    const grp = allPayments.filter((payment) => {
-        if (parsedKey.type === 'transaction') return payment.transactionId === parsedKey.transactionId;
-        if (parsedKey.type === 'receipt') return Number(payment.receiptNo) === parsedKey.receiptNo && (payment.collectedBy || '') === parsedKey.collectedBy;
-        return false;
-    });
-    if(grp.length === 0) return;
     pendingFeeSelectionsByYear = {};
     grp.forEach((payment) => {
         const paymentYear = payment.academicYear || selectedFeeAcademicYear || '';
@@ -4195,7 +4285,16 @@ const startEditingPayment = (studentId, txnId) => {
         populateFeeItemSelection();
     }
 
-    editingPaymentGroup = { txnId, itemKeys: new Set(grp.map((p) => `${p.itemKey}__${p.academicYear || ''}`)) };
+    editingPaymentGroup = {
+        txnId,
+        itemKeys: new Set(grp.map((p) => `${p.itemKey}__${p.academicYear || ''}`)),
+        originalPayments: grp,
+        originalCollectedBy: grp[0].collectedBy || '',
+        originalCollectedByName: grp[0].collectedByName || '',
+        originalCollectedByEmail: grp[0].collectedByEmail || '',
+        originalCollectedByUid: grp[0].collectedByUid || '',
+        originalTimestamp: grp[0].timestamp || null
+    };
 
     document.getElementById('entry-receipt').value = grp[0].receiptNo || ''; document.getElementById('entry-date').value = grp[0].paymentDate;
     document.getElementById('entry-description').value = grp[0].description || '';
@@ -4405,20 +4504,65 @@ const processPaymentSubmit = async (isUpdate) => {
         if (saveBtn) saveBtn.disabled = true;
         if (updateBtn) updateBtn.disabled = true;
         try {
+            if (isUpdate && Array.isArray(editingPaymentGroup?.originalPayments) && !canModifyPaymentRecord(editingPaymentGroup.originalPayments)) {
+                throw new Error('You can only edit payments that you collected.');
+            }
             const batch = writeBatch(db);
             const tId = isUpdate ? editingPaymentGroup.txnId : (Date.now().toString() + Math.random().toString(36).substr(2, 5));
 
-            if(isUpdate) {
+            let fetchedOriginalData = null;
+            if (isUpdate) {
                 const docsToDelete = await collectPaymentDocsForGroup(editingPaymentGroup.txnId, '');
-                docsToDelete.forEach((docSnap) => {
-                    batch.delete(docSnap.ref);
-                    const payment = docSnap.data();
-                    const yearPath = getYearPaymentsCollectionPath(payment.academicYear || '');
-                    batch.delete(doc(db, yearPath, docSnap.id));
-                });
+                if (docsToDelete.length > 0) {
+                    fetchedOriginalData = docsToDelete[0].data();
+                    if (!canModifyPaymentRecord(docsToDelete.map(d => d.data()))) {
+                        throw new Error('You can only edit payments that you collected.');
+                    }
+                    docsToDelete.forEach((docSnap) => {
+                        batch.delete(docSnap.ref);
+                        const payment = docSnap.data();
+                        const year = payment.academicYear || '';
+                        if (year) {
+                            const yearPath = getYearPaymentsCollectionPath(year);
+                            batch.delete(doc(db, yearPath, docSnap.id));
+                            batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, docSnap.id));
+                            const cleanYear = String(year).replace(/[^\w-]/g, '_');
+                            batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, docSnap.id));
+                        }
+                    });
+                } else {
+                    const fallbackDocs = allPayments.filter((p) => getPaymentGroupKey(p) === editingPaymentGroup.txnId || p.transactionId === editingPaymentGroup.txnId);
+                    fallbackDocs.forEach((payment) => {
+                        if (!payment.id) return;
+                        batch.delete(doc(db, `${BASE_PATH}/payments`, payment.id));
+                        const year = payment.academicYear || '';
+                        if (year) {
+                            const yearPath = getYearPaymentsCollectionPath(year);
+                            batch.delete(doc(db, yearPath, payment.id));
+                            batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, payment.id));
+                            const cleanYear = String(year).replace(/[^\w-]/g, '_');
+                            batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, payment.id));
+                        }
+                    });
+                }
             }
 
             const currentStaffName = getCurrentCollectorName();
+            const currentKey = getCollectorKey();
+            const currentEmail = normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '');
+            const currentUid = String(auth?.currentUser?.uid || '').trim();
+            const resolvedCollectedBy = isUpdate
+                ? (editingPaymentGroup?.originalCollectedBy || fetchedOriginalData?.collectedBy || currentKey)
+                : currentKey;
+            const resolvedCollectedByName = isUpdate
+                ? (editingPaymentGroup?.originalCollectedByName || fetchedOriginalData?.collectedByName || currentStaffName)
+                : currentStaffName;
+            const resolvedCollectedByEmail = isUpdate
+                ? (editingPaymentGroup?.originalCollectedByEmail || fetchedOriginalData?.collectedByEmail || (resolvedCollectedBy.includes('@') ? resolvedCollectedBy : currentEmail))
+                : currentEmail;
+            const resolvedCollectedByUid = isUpdate
+                ? (editingPaymentGroup?.originalCollectedByUid || fetchedOriginalData?.collectedByUid || '')
+                : currentUid;
             const writtenGroupedMonthlyItems = new Set();
 
             allEntries.forEach((entry) => {
@@ -4435,8 +4579,11 @@ const processPaymentSubmit = async (isUpdate) => {
                     paymentMode: paymentMode,
                     timestamp: Date.now(),
                     description: desc,
-                    collectedBy: getCollectorKey(),
-                    collectedByName: currentStaffName,
+                    collectedBy: resolvedCollectedBy,
+                    collectedByName: resolvedCollectedByName,
+                    ...(resolvedCollectedByEmail ? { collectedByEmail: resolvedCollectedByEmail } : {}),
+                    ...(resolvedCollectedByUid ? { collectedByUid: resolvedCollectedByUid } : {}),
+                    ...(isUpdate ? { updatedBy: currentKey, updatedByName: currentStaffName, updatedAt: new Date().toISOString() } : {}),
                     academicYear: selectedFeeAcademicYear || '',
                     classLabel: studentClass
                 };
@@ -4561,7 +4708,7 @@ const processPaymentSubmit = async (isUpdate) => {
             showToast('Payment saved successfully!', 'success');
         } catch (e) {
             console.error(e);
-            alert("Failed to save payment. Please try again.");
+            showToast(`Failed to save payment: ${e?.message || 'Permission or network error'}`, 'error');
         } finally {
             isPaymentMutationInFlight = false;
             confirmBtn.disabled = false;
@@ -5889,6 +6036,8 @@ const executeCollectionBulkUpload = async ({ validOnly = false } = {}) => {
                 description: 'Bulk Upload',
                 collectedBy: collectorUserKey,
                 collectedByName: collectorName,
+                ...(normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '') ? { collectedByEmail: normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '') } : {}),
+                ...(auth?.currentUser?.uid ? { collectedByUid: String(auth.currentUser.uid).trim() } : {}),
                 academicYear: year,
                 classLabel: entry.classLabel || targetClass
             });
@@ -6360,6 +6509,12 @@ window.openPaymentReceiptDetailModal = (paymentId, targetCellElement = null) => 
         }
     }
 
+    const canModifyReceipt = canModifyPaymentRecord(details.txnPayments?.length ? details.txnPayments : clickedPayment);
+    const receiptEditBtn = document.getElementById('receipt-view-edit-btn');
+    const receiptDelBtn = document.getElementById('receipt-view-delete-btn');
+    if (receiptEditBtn) receiptEditBtn.classList.toggle('hidden', !canModifyReceipt);
+    if (receiptDelBtn) receiptDelBtn.classList.toggle('hidden', !canModifyReceipt);
+
     modal.classList.remove('hidden');
     modal.classList.add('flex');
 };
@@ -6400,6 +6555,10 @@ document.getElementById('receipt-view-edit-btn')?.addEventListener('click', () =
         || (studentId && txnId ? allPayments.find(p => p.studentId === studentId && (getPaymentGroupKey(p) === txnId || p.transactionId === txnId)) : null);
 
     if (payment) {
+        if (!canModifyPaymentRecord(details?.txnPayments?.length ? details.txnPayments : payment)) {
+            showToast('You can only edit payments that you collected.', 'warn');
+            return;
+        }
         openFeeEntryEditModal({
             mode: 'edit',
             payment: payment,
@@ -6420,6 +6579,15 @@ document.getElementById('receipt-view-delete-btn')?.addEventListener('click', as
     const paymentId = document.getElementById('receipt-view-payment-id')?.value;
     const txnId = document.getElementById('receipt-view-txn-id')?.value;
     if (!paymentId && !txnId) return;
+
+    const details = paymentId ? resolveTransactionReceiptDetails(paymentId) : null;
+    const targetRecords = details?.txnPayments?.length
+        ? details.txnPayments
+        : allPayments.filter((p) => (paymentId && p.id === paymentId) || (txnId && (getPaymentGroupKey(p) === txnId || p.transactionId === txnId)));
+    if (targetRecords.length > 0 && !canModifyPaymentRecord(targetRecords)) {
+        showToast('You can only delete payments that you collected.', 'warn');
+        return;
+    }
 
     const confirmed = await openConfirmDialog({
         title: 'Delete Payment',
@@ -6445,6 +6613,9 @@ document.getElementById('receipt-view-delete-btn')?.addEventListener('click', as
             const singleRef = doc(db, `${BASE_PATH}/payments`, paymentId);
             const singleSnap = await getDoc(singleRef);
             if (singleSnap.exists()) docsToDelete = [singleSnap];
+        }
+        if (docsToDelete.length > 0 && !canModifyPaymentRecord(docsToDelete.map((d) => d.data()))) {
+            throw new Error('You can only delete payments that you collected.');
         }
 
         if (docsToDelete.length > 0) {
@@ -6787,18 +6958,21 @@ const renderConcessionGroupOverview = () => {
 const updateHistoryStaffFilter = () => {
     const filterEl = document.getElementById('history-staff-filter');
     if (!filterEl) return;
-    if (!isCurrentAdmin) {
+    if (!isMasterSuperAdmin()) {
         filterEl.classList.add('hidden');
         syncSmartSelectDisplay(filterEl);
         return;
     }
     filterEl.classList.remove('hidden');
 
-    const uniqueEmails = [...new Set(allPayments.map(p => p.collectedBy))].filter(Boolean);
+    const uniqueEmails = [...new Set([
+        ...allPayments.map(p => p.collectedBy),
+        ...allDonations.map(d => d.collectedBy)
+    ])].filter(Boolean);
     const currentVal = filterEl.value;
 
     let opts = `<option value="all">All Staff Collections</option>`;
-    uniqueEmails.forEach(email => { opts += `<option value="${email}">${getStaffName(email, null)}</option>`; });
+    uniqueEmails.forEach(email => { opts += `<option value="${escapeHtml(email)}">${escapeHtml(getStaffName(email, null))}</option>`; });
 
     filterEl.innerHTML = opts;
     if(uniqueEmails.includes(currentVal) || currentVal === 'all') filterEl.value = currentVal;
@@ -6812,10 +6986,11 @@ const prepareHistoryData = () => {
         historyLoadTimer = null;
     }
 
-    let myPays = isCurrentAdmin ? [...allPayments] : allPayments.filter((payment) => isSameCollectorRecord(payment.collectedBy));
-    let myDonations = isCurrentAdmin ? [...allDonations] : allDonations.filter((donation) => isSameCollectorRecord(donation.collectedBy));
+    const hasAdminHistoryAccess = isMasterSuperAdmin();
+    let myPays = hasAdminHistoryAccess ? [...allPayments] : allPayments.filter((payment) => isSameCollectorRecord(payment));
+    let myDonations = hasAdminHistoryAccess ? [...allDonations] : allDonations.filter((donation) => isSameCollectorRecord(donation));
 
-    if (isCurrentAdmin) {
+    if (hasAdminHistoryAccess) {
         const staffFilter = document.getElementById('history-staff-filter').value;
         if (staffFilter && staffFilter !== 'all') {
             myPays = myPays.filter(p => p.collectedBy === staffFilter);
@@ -6823,7 +6998,7 @@ const prepareHistoryData = () => {
         }
     }
 
-    const searchTerm = document.getElementById('history-search-input').value.toLowerCase();
+    const searchTerm = (document.getElementById('history-search-input')?.value || '').toLowerCase();
 
     // 🌟 FIX: Timestamp History Sorting 🌟
     const feeHistoryGroups = Object.values(myPays.reduce((a, p) => {
@@ -6837,12 +7012,19 @@ const prepareHistoryData = () => {
                 tId: k, r: p.receiptNo||'-', sId: p.studentId, dt: p.paymentDate,
                 ts: pTs, kind: 'fee',
                 i: [], tot: 0, by: getStaffName(p.collectedBy, p.collectedByName), studentIds: [], seenBillingKeys: new Set(),
-                description: p.description || ''
+                description: p.description || '',
+                fallbackStudent: {
+                    name: p.studentName || 'Student',
+                    adm: p.studentAdm || '-',
+                    class: p.classLabel || p.studentClass || '-'
+                },
+                payments: [p]
             };
         } else {
             // Keep the absolute highest (newest) timestamp for accurate sorting of this group
             if (pTs > a[k].ts) a[k].ts = pTs;
             if (!a[k].description && p.description) a[k].description = p.description;
+            a[k].payments.push(p);
         }
         
         const billingKey = getPaymentBillingKey(p);
@@ -6855,7 +7037,10 @@ const prepareHistoryData = () => {
         if (!a[k].studentIds.includes(p.studentId)) a[k].studentIds.push(p.studentId);
         
         return a;
-    }, {}));
+    }, {})).map((grpItem) => ({
+        ...grpItem,
+        canModify: canModifyPaymentRecord(grpItem.payments)
+    }));
     
     const donationHistoryRows = myDonations.map((donation) => ({
         tId: `donation:${donation.id}`,
@@ -6869,7 +7054,8 @@ const prepareHistoryData = () => {
         by: getStaffName(donation.collectedBy, donation.collectedByName),
         studentIds: [],
         donorName: donation.donorName || '-',
-        description: donation.description || ''
+        description: donation.description || '',
+        canModify: canModifyDonationRecord(donation)
     }));
     sortedHistoryList = [...feeHistoryGroups, ...donationHistoryRows];
 
@@ -6882,8 +7068,8 @@ const prepareHistoryData = () => {
                 return donor.includes(searchTerm) || desc.includes(searchTerm) || rNo.includes(searchTerm);
             }
             const studentsInTxn = item.studentIds.map((id) => getStudentById(id)).filter(Boolean);
-            const sName = studentsInTxn.map((student) => student.name.toLowerCase()).join(' ');
-            const sAdm = studentsInTxn.map((student) => (student.adm || '').toLowerCase()).join(' ');
+            const sName = (studentsInTxn.length ? studentsInTxn.map((student) => student.name.toLowerCase()).join(' ') : (item.fallbackStudent?.name || '').toLowerCase());
+            const sAdm = (studentsInTxn.length ? studentsInTxn.map((student) => (student.adm || '').toLowerCase()).join(' ') : (item.fallbackStudent?.adm || '').toLowerCase());
             const rNo = item.r.toString().toLowerCase();
             const desc = (item.description || '').toLowerCase();
             return sName.includes(searchTerm) || sAdm.includes(searchTerm) || rNo.includes(searchTerm) || desc.includes(searchTerm);
@@ -6951,7 +7137,7 @@ const renderHistoryPage = () => {
             })
             .map((id) => getStudentById(id))
             .filter(Boolean);
-        const primaryStudent = txnStudents[0] || getStudentById(i.sId);
+        const primaryStudent = txnStudents[0] || getStudentById(i.sId) || i.fallbackStudent;
         const isDonationRow = i.kind === 'donation';
         if(!primaryStudent && !isDonationRow) return;
         const formatStudentMeta = (student) => `${student.name} (Adm: ${student.adm||'-'}, Class: ${student.class||'-'})`;
@@ -6959,12 +7145,17 @@ const renderHistoryPage = () => {
             ? `Donation: ${i.donorName || '-'}`
             : formatStudentMeta(primaryStudent);
         const otherStudentRows = txnStudents.slice(1).map((student) => formatStudentMeta(student));
-        const studentCount = isDonationRow ? 1 : (txnStudents.length || 1);
+        const studentCount = isDonationRow ? 1 : (txnStudents.length || i.studentIds?.length || 1);
         const totalLabel = `₹${Number(i.tot || 0).toFixed(0)} (${studentCount})`;
         const hasDescription = Boolean(i.description && String(i.description).trim());
         const descHtml = hasDescription
             ? `<div class="text-[11px] font-normal text-slate-500 truncate max-w-[200px] sm:max-w-[260px] mt-0.5" title="${escapeHtml(i.description)}"><i class="fas fa-comment-dots text-[10px] text-slate-400 mr-1"></i>${escapeHtml(i.description)}</div>`
             : '';
+        const actionControlsHtml = !i.canModify
+            ? `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-bold uppercase tracking-wider"><i class="fas fa-lock text-[9px]"></i> View Only</span>`
+            : (isDonationRow
+                ? `<button type="button" class="donation-edit-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition cursor-pointer" data-id="${escapeHtml(i.tId.replace('donation:', ''))}" title="Edit Donation" aria-label="Edit Donation"><i class="fas fa-edit text-sm" aria-hidden="true"></i></button><button type="button" class="donation-del-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:text-red-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transition cursor-pointer" data-id="${escapeHtml(i.tId.replace('donation:', ''))}" title="Delete Donation" aria-label="Delete Donation"><i class="fas fa-trash text-sm" aria-hidden="true"></i></button>`
+                : `<button type="button" class="edit-payment-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition cursor-pointer" data-sid="${escapeHtml(i.sId || '')}" data-tid="${escapeHtml(i.tId)}" title="Edit Payment" aria-label="Edit Payment"><i class="fas fa-edit text-sm" aria-hidden="true"></i></button><button type="button" class="delete-payment-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:text-red-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transition cursor-pointer" data-sid="${escapeHtml(i.sId || '')}" data-tid="${escapeHtml(i.tId)}" title="Delete Payment" aria-label="Delete Payment"><i class="fas fa-trash text-sm" aria-hidden="true"></i></button>`);
         html += `<tr class="bg-white hover:bg-gray-50 transition text-xs sm:text-sm">
             <td class="p-2 sm:p-3 font-medium text-gray-900 tabular-nums">${i.r}</td>
             <td class="p-2 sm:p-3 text-gray-600 tabular-nums">${new Date(i.dt).toLocaleDateString('en-GB')}</td>
@@ -6973,7 +7164,7 @@ const renderHistoryPage = () => {
                 ${descHtml}
                 ${otherStudentRows.length ? `<span class="text-[10px] text-gray-500 block mt-0.5 sm:mt-1">${otherStudentRows.map((row) => escapeHtml(row)).join('<br>')}</span>` : ''}
             </td>
-            <td class="p-2 sm:p-3"><span class="text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-blue-100 whitespace-nowrap">${i.by}</span></td>
+            <td class="p-2 sm:p-3"><span class="text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-blue-100 whitespace-nowrap">${escapeHtml(i.by)}</span></td>
             <td class="p-2 sm:p-3 text-center">
                 <button type="button" class="view-history-breakdown-btn inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-semibold ${isDonationRow ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'} transition cursor-pointer shadow-2xs" data-tid="${escapeHtml(i.tId)}" data-sid="${escapeHtml(i.sId || '')}" title="Click to view fee breakdown">
                     <span>${isDonationRow ? 'Donation' : `${i.i.length} ${i.i.length === 1 ? 'Item' : 'Items'}`}</span>
@@ -6983,9 +7174,7 @@ const renderHistoryPage = () => {
             <td class="p-2 sm:p-3 font-bold text-gray-800 tabular-nums">${totalLabel}</td>
             <td class="p-2 sm:p-3 text-center whitespace-nowrap">
                 <div class="inline-flex items-center justify-center gap-2 sm:gap-2.5">
-                ${isDonationRow
-                ? `<button type="button" class="donation-edit-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition cursor-pointer" data-id="${escapeHtml(i.tId.replace('donation:', ''))}" title="Edit Donation" aria-label="Edit Donation"><i class="fas fa-edit text-sm" aria-hidden="true"></i></button><button type="button" class="donation-del-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:text-red-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transition cursor-pointer" data-id="${escapeHtml(i.tId.replace('donation:', ''))}" title="Delete Donation" aria-label="Delete Donation"><i class="fas fa-trash text-sm" aria-hidden="true"></i></button>`
-                : `<button type="button" class="edit-payment-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition cursor-pointer" data-sid="${escapeHtml(i.sId || '')}" data-tid="${escapeHtml(i.tId)}" title="Edit Payment" aria-label="Edit Payment"><i class="fas fa-edit text-sm" aria-hidden="true"></i></button><button type="button" class="delete-payment-btn inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:text-red-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 transition cursor-pointer" data-sid="${escapeHtml(i.sId || '')}" data-tid="${escapeHtml(i.tId)}" title="Delete Payment" aria-label="Delete Payment"><i class="fas fa-trash text-sm" aria-hidden="true"></i></button>`}
+                ${actionControlsHtml}
                 </div>
             </td>
         </tr>`;
@@ -7091,8 +7280,13 @@ const showPaymentHistoryBreakdown = (txnId = '', fallbackStudentId = '') => {
         `;
 
         if (editBtn) {
-            editBtn.classList.remove('hidden');
+            const canEditDonation = canModifyDonationRecord(donation);
+            editBtn.classList.toggle('hidden', !canEditDonation);
             editBtn.onclick = () => {
+                if (!canModifyDonationRecord(donation)) {
+                    showToast('You can only edit donations that you collected.', 'warn');
+                    return;
+                }
                 closeHistoryBreakdownModal();
                 editingDonationId = donation.id;
                 document.getElementById('donation-name').value = donation.donorName || '';
@@ -7304,8 +7498,13 @@ const showPaymentHistoryBreakdown = (txnId = '', fallbackStudentId = '') => {
 
     if (editBtn) {
         const primaryStudentId = studentPaymentMap.keys().next().value || fallbackStudentId;
-        editBtn.classList.remove('hidden');
+        const canEditPayment = canModifyPaymentRecord(matchingPayments);
+        editBtn.classList.toggle('hidden', !canEditPayment);
         editBtn.onclick = () => {
+            if (!canModifyPaymentRecord(matchingPayments)) {
+                showToast('You can only edit payments that you collected.', 'warn');
+                return;
+            }
             closeHistoryBreakdownModal();
             startEditingPayment(primaryStudentId, txnId);
         };
@@ -7351,6 +7550,10 @@ document.getElementById('history-content-container')?.addEventListener('click', 
     if (donationEditBtn) {
         const donation = allDonations.find((entry) => entry.id === donationEditBtn.dataset.id);
         if (!donation) return;
+        if (!canModifyDonationRecord(donation)) {
+            showToast('You can only edit donations that you collected.', 'warn');
+            return;
+        }
         editingDonationId = donation.id;
         document.getElementById('donation-name').value = donation.donorName || '';
         document.getElementById('donation-receipt').value = donation.receiptNo || '';
@@ -7361,6 +7564,11 @@ document.getElementById('history-content-container')?.addEventListener('click', 
         activateTab('home-page', 'donation');
     }
     if (donationDelBtn) {
+        const donation = allDonations.find((entry) => entry.id === donationDelBtn.dataset.id);
+        if (donation && !canModifyDonationRecord(donation)) {
+            showToast('You can only delete donations that you collected.', 'warn');
+            return;
+        }
         const confirmed = await openConfirmDialog({
             title: 'Delete Donation',
             message: 'Delete this donation entry?',
@@ -7373,11 +7581,16 @@ document.getElementById('history-content-container')?.addEventListener('click', 
             showToast('Donation deleted.', 'info');
         } catch (error) {
             console.error(error);
-            showToast('Failed to delete donation.', 'error');
+            showToast('Failed to delete donation: ' + (error.message || 'Permission error'), 'error');
         }
     }
     if (delBtn) {
         const tid = delBtn.dataset.tid;
+        const targetGroupPayments = allPayments.filter((p) => getPaymentGroupKey(p) === tid || p.transactionId === tid);
+        if (targetGroupPayments.length > 0 && !canModifyPaymentRecord(targetGroupPayments)) {
+            showToast('You can only delete payments that you collected.', 'warn');
+            return;
+        }
         const confirmed = await openConfirmDialog({
             title: 'Delete Payment',
             message: 'Are you sure you want to permanently delete this payment?',
@@ -7393,6 +7606,9 @@ document.getElementById('history-content-container')?.addEventListener('click', 
             const batch = writeBatch(db);
             const docsToDelete = await collectPaymentDocsForGroup(tid, '');
             if (docsToDelete.length > 0) {
+                if (!canModifyPaymentRecord(docsToDelete.map((d) => d.data()))) {
+                    throw new Error('You can only delete payments that you collected.');
+                }
                 docsToDelete.forEach((docSnap) => {
                     batch.delete(docSnap.ref);
                     const payment = docSnap.data();
@@ -8965,7 +9181,11 @@ initFinanceManagementModule({
     getFeeItems: () => (Array.isArray(feeItems) ? feeItems : []),
     getDefaultFee: () => defaultFee,
     getAcademicYear: () => currentWorkingAcademicYear || selectedFeeAcademicYear || '',
-    getUserEmail: () => currentUserEmail || ''
+    getUserEmail: () => getEffectiveStaffEmail() || currentUserEmail || '',
+    getCollectorKey: () => getCollectorKey(),
+    getCollectorName: () => getCurrentCollectorName(),
+    getUserUid: () => auth?.currentUser?.uid || '',
+    getStaffRecord: () => findCurrentStaffMember(allStaff)
 });
 
 const initialTabId = getInitialActiveTab();
