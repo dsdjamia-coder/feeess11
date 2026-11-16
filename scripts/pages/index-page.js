@@ -48,58 +48,51 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
         const renderSavedAccounts = () => {
             const list = document.getElementById('saved-student-list');
-            const accounts = window.AppSession?.getRememberedAccounts?.() || window.AppSession?.getStudentAccounts?.() || [];
+            const rawAccounts = window.AppSession?.getRememberedAccounts?.() || window.AppSession?.getStudentAccounts?.() || [];
+            const accounts = rawAccounts.filter((a) => a && (a.role === 'student' || (!a.role && a.studentId)));
             if (!list) return;
 
             if (!accounts.length) {
-                list.innerHTML = '<p class="text-sm text-gray-500 py-3 text-center">No saved accounts found on this device.</p>';
+                list.innerHTML = '<p class="text-sm text-gray-500 py-3 text-center">No saved student accounts found on this device.</p>';
                 return;
             }
 
+            const activeStudentId = window.AppSession?.hasStudentSession?.()
+                ? String(window.AppSession?.getStudentId?.() || '')
+                : '';
+
             list.innerHTML = accounts.map((account) => {
-                const isStudent = account.role === 'student' || (!account.role && account.studentId);
-                const isStaff = account.role === 'staff';
-                const isAdmin = account.role === 'admin';
-
-                let roleBadgeHtml = '';
-                let metaText = '';
-                let avatarIcon = 'fa-user-graduate';
-                let avatarBg = 'bg-blue-100 text-blue-700';
-
-                if (isStudent) {
-                    roleBadgeHtml = '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">Student</span>';
-                    metaText = `Class ${escapeHtml(account.class || '--')} • Adm: ${escapeHtml(account.adm || '--')}`;
-                    avatarIcon = 'fa-user-graduate';
-                    avatarBg = 'bg-blue-100 text-blue-700';
-                } else if (isStaff || account.role === 'directory') {
-                    roleBadgeHtml = `<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">${escapeHtml(account.roleTitle || 'Staff')}</span>`;
-                    metaText = escapeHtml(account.email || account.loginId || 'Staff Portal Access');
-                    avatarIcon = 'fa-chalkboard-user';
-                    avatarBg = 'bg-emerald-100 text-emerald-700';
-                } else if (isAdmin) {
-                    roleBadgeHtml = '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">Super Admin</span>';
-                    metaText = escapeHtml(account.email || 'Full Institutional Administration');
-                    avatarIcon = 'fa-user-shield';
-                    avatarBg = 'bg-purple-100 text-purple-700';
-                }
+                const accountId = String(account.studentId || account.id || '');
+                const isActive = Boolean(activeStudentId && accountId === activeStudentId);
+                const activeBadgeHtml = isActive
+                    ? '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1"><i class="fas fa-circle text-[6px]"></i> Active</span>'
+                    : '<span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">Student</span>';
+                const groupBadgeHtml = (account.groupId || account.groupName)
+                    ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">${escapeHtml(account.groupName || 'Group')}</span>`
+                    : '';
+                const metaText = `Class ${escapeHtml(account.class || '--')} • Adm: ${escapeHtml(account.adm || '--')}`;
+                const cardClasses = isActive
+                    ? 'border-emerald-300 bg-emerald-50/40 ring-1 ring-emerald-200/70'
+                    : 'border-slate-200 bg-white hover:border-emerald-400';
 
                 return `
-                <div class="rounded-2xl border border-slate-200 bg-white hover:border-emerald-400 hover:shadow-xs p-3 flex items-center justify-between gap-3 transition cursor-pointer text-left saved-account-card group" data-id="${escapeHtml(account.id || account.studentId || '')}">
+                <div class="rounded-2xl border ${cardClasses} hover:shadow-xs p-3 flex items-center justify-between gap-3 transition cursor-pointer text-left saved-account-card group" data-id="${escapeHtml(accountId)}">
                     <div class="flex items-center gap-3 min-w-0 flex-1">
-                        <div class="w-10 h-10 rounded-xl ${avatarBg} flex items-center justify-center shrink-0 text-base shadow-2xs">
-                            <i class="fas ${avatarIcon}"></i>
+                        <div class="w-10 h-10 rounded-xl ${isActive ? 'bg-emerald-600 text-white' : 'bg-blue-100 text-blue-700'} flex items-center justify-center shrink-0 text-base shadow-2xs">
+                            <i class="fas fa-user-graduate"></i>
                         </div>
                         <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-2">
-                                <span class="font-extrabold text-slate-800 text-sm truncate group-hover:text-emerald-700 transition-colors">${escapeHtml(account.name || 'Account')}</span>
-                                ${roleBadgeHtml}
+                            <div class="flex items-center flex-wrap gap-1.5">
+                                <span class="font-extrabold text-slate-800 text-sm truncate group-hover:text-emerald-700 transition-colors">${escapeHtml(account.name || 'Student')}</span>
+                                ${activeBadgeHtml}
+                                ${groupBadgeHtml}
                             </div>
                             <div class="text-xs text-slate-500 font-medium mt-0.5 truncate">
                                 ${metaText}
                             </div>
                         </div>
                     </div>
-                    <button type="button" class="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition cursor-pointer shadow-2xs saved-account-remove" data-id="${escapeHtml(account.id || account.studentId || '')}" title="Remove this account" aria-label="Remove">
+                    <button type="button" class="w-8 h-8 shrink-0 flex items-center justify-center rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition cursor-pointer shadow-2xs saved-account-remove" data-id="${escapeHtml(accountId)}" title="Remove this account" aria-label="Remove">
                         <i class="fas fa-trash-alt text-xs"></i>
                     </button>
                 </div>
@@ -115,6 +108,10 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             document.getElementById('saved-student-modal').style.display = 'flex';
         };
         const openStudentLoginModal = () => {
+            if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                window.location.href = 'official.html';
+                return;
+            }
             if (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false) {
                 showToast("Student Portal is currently disabled by institution administration.", "error");
                 showLoginMessage("Student Portal is currently disabled by institution administration.");
@@ -126,57 +123,76 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             const sessionNotice = window.AppSession?.consumeFlash?.();
             if (sessionNotice) showLoginMessage(sessionNotice);
         };
-        const openStep2ForRememberedAccount = (account = {}, noticeMessage = '') => {
-            const modalEl = document.getElementById('login-modal');
-            const savedModalEl = document.getElementById('saved-student-modal');
-            if (savedModalEl) savedModalEl.style.display = 'none';
-            if (modalEl) modalEl.style.display = 'flex';
-            setMobileMenuState(false);
-
-            const isAdminAcc = account.role === 'admin';
-            const cleanEmail = String(account.email || '').trim().toLowerCase();
-            const matchedStaff = !isAdminAcc
-                ? (allStaffSnapshotRecords || []).find((s) =>
-                    (account.staffId && s.id === account.staffId)
-                    || (cleanEmail && String(s.email || '').trim().toLowerCase() === cleanEmail)
-                )
-                : null;
-
-            verifiedUser = {
-                type: isAdminAcc ? 'admin' : 'staff',
-                data: isAdminAcc ? (globalInstitutionConfig?.adminProfile || {}) : (matchedStaff || account.access || null),
-                displayName: account.name || (isAdminAcc ? 'Institution Administrator' : 'Staff Member'),
-                meta: isAdminAcc ? 'Administrator' : (account.roleTitle || 'Staff Member'),
-                loginEmail: cleanEmail || (account.loginId ? `${account.loginId}@school.internal` : '')
-            };
-
-            const nameEl = document.getElementById('verified-user-name');
-            const metaEl = document.getElementById('verified-user-meta');
-            const avatarIcon = document.getElementById('verified-user-avatar-icon');
-            const passLeadingIcon = document.getElementById('login-password-leading-icon');
-            const passLabel = document.getElementById('login-password-label');
-            const passInput = document.getElementById('login-password');
-            const passHint = document.getElementById('login-password-hint');
-
-            if (nameEl) nameEl.textContent = verifiedUser.displayName;
-            if (metaEl) metaEl.textContent = verifiedUser.meta;
-            resetPasswordVisibility();
-            if (avatarIcon) avatarIcon.className = isAdminAcc ? 'fas fa-user-shield' : 'fas fa-user-tie';
-            if (passLeadingIcon) passLeadingIcon.className = 'fas fa-lock login-input-leading';
-            if (passLabel) passLabel.textContent = 'Password';
-            if (passInput) {
-                passInput.placeholder = 'Enter account password';
-                passInput.type = 'password';
-                passInput.value = '';
+        const syncStudentGroupMembersToSession = async (studentId = '', { clearDismissed = false } = {}) => {
+            const cleanStudentId = String(studentId || '').trim();
+            if (!cleanStudentId) return;
+            if (clearDismissed) {
+                window.AppSession?.clearDismissedGroupStudents?.();
             }
-            if (passHint) passHint.textContent = 'Enter your account credentials to log in.';
+            try {
+                if (!auth.currentUser) {
+                    try { await signInAnonymously(auth); } catch (_) {}
+                }
+                if (!auth.currentUser) return;
 
-            setLoginStepState(2);
-            document.getElementById('login-step-1')?.classList.add('hidden');
-            document.getElementById('login-step-2')?.classList.remove('hidden');
-            showLoginMessage(noticeMessage || '');
-            setTimeout(() => passInput?.focus(), 60);
+                const groupSnap = await getDocs(
+                    query(collection(db, `${BASE_PATH}/studentGroups`), where('memberIds', 'array-contains', cleanStudentId))
+                );
+                if (!groupSnap || groupSnap.empty) return;
+
+                const matchingGroups = groupSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                const primaryGroup = matchingGroups[0];
+                const primaryGroupId = String(primaryGroup?.id || '');
+                const primaryGroupName = String(primaryGroup?.name || '').trim();
+
+                window.AppSession?.registerStudentAccount?.(cleanStudentId, {
+                    groupId: primaryGroupId,
+                    groupName: primaryGroupName
+                }, { keepOrder: true });
+
+                const dismissed = new Set(window.AppSession?.getDismissedGroupStudentIds?.() || []);
+                const siblingGroupMap = new Map();
+                matchingGroups.forEach((grp) => {
+                    const memberIds = Array.isArray(grp.memberIds) ? grp.memberIds : [];
+                    memberIds.forEach((rawId) => {
+                        const mId = String(rawId || '').trim();
+                        if (!mId || mId === cleanStudentId || dismissed.has(mId)) return;
+                        if (!siblingGroupMap.has(mId)) {
+                            siblingGroupMap.set(mId, {
+                                groupId: String(grp.id || ''),
+                                groupName: String(grp.name || '').trim()
+                            });
+                        }
+                    });
+                });
+
+                const siblingIds = Array.from(siblingGroupMap.keys());
+                if (!siblingIds.length) return;
+
+                const siblingSnaps = await Promise.all(
+                    siblingIds.map((sibId) => getDoc(doc(db, `${BASE_PATH}/students`, sibId)).catch(() => null))
+                );
+
+                siblingSnaps.forEach((snap, idx) => {
+                    if (!snap?.exists?.()) return;
+                    const sibData = snap.data() || {};
+                    const statusNorm = String(sibData.status || '').trim().toLowerCase();
+                    if (sibData.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') return;
+                    const sibId = siblingIds[idx];
+                    const grpMeta = siblingGroupMap.get(sibId) || {};
+                    window.AppSession?.registerStudentAccount?.(sibId, {
+                        name: sibData.name || '',
+                        class: sibData.class || '',
+                        adm: sibData.adm || '',
+                        groupId: grpMeta.groupId || '',
+                        groupName: grpMeta.groupName || ''
+                    }, { append: true });
+                });
+            } catch (err) {
+                console.warn('Student group session sync notice:', err);
+            }
         };
+
         const activateRememberedAccount = async (account) => {
             if (!account) return false;
             await ensureVerificationRegistriesLoaded();
@@ -217,61 +233,27 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         }
                     } catch (_) {}
                 }
+                await syncStudentGroupMembersToSession(targetStudentId, { clearDismissed: false });
+                if (window.AppSession?.hasStudentSession?.() && String(window.AppSession?.getStudentId?.() || '') === String(targetStudentId)) {
+                    window.AppSession?.startStudent?.(targetStudentId, account);
+                    window.location.href = 'student.html';
+                    return true;
+                }
                 return window.AppSession?.switchAccount?.(account.id || targetStudentId);
             }
 
-            if (account.source === 'directory' || account.role === 'directory') {
-                if (!auth.currentUser) {
-                    try { await signInAnonymously(auth); } catch (_) {}
-                }
-                return window.AppSession?.switchAccount?.(account.id);
-            }
-
-            if (account.role === 'admin') {
-                const emailLower = String(account.email || '').trim().toLowerCase();
-                const hasMatchingEmailAuth = Boolean(
-                    auth.currentUser
-                    && !auth.currentUser.isAnonymous
-                    && (!emailLower || String(auth.currentUser.email || '').trim().toLowerCase() === emailLower)
-                );
-                if (hasMatchingEmailAuth) {
-                    return window.AppSession?.switchAccount?.(account.id);
-                }
-                openStep2ForRememberedAccount(account, 'Please enter your password to restore secure admin access.');
-                return false;
-            }
-
-            // Staff account
-            const staffEmailLower = String(account.email || '').trim().toLowerCase();
-            const matchedStaff = (allStaffSnapshotRecords || []).find((s) =>
-                (account.staffId && s.id === account.staffId)
-                || (staffEmailLower && String(s.email || '').trim().toLowerCase() === staffEmailLower)
-            );
-            const hasDirectPassword = Boolean(String(matchedStaff?.password || '').trim());
-            const needsEmailAuth = account.requiresEmailAuth === true || !hasDirectPassword;
-
-            if (needsEmailAuth) {
-                const hasMatchingEmailAuth = Boolean(
-                    auth.currentUser
-                    && !auth.currentUser.isAnonymous
-                    && (!staffEmailLower || String(auth.currentUser.email || '').trim().toLowerCase() === staffEmailLower)
-                );
-                if (hasMatchingEmailAuth) {
-                    return window.AppSession?.switchAccount?.(account.id);
-                }
-                openStep2ForRememberedAccount(account, 'Please enter your password to restore secure staff access.');
-                return false;
-            }
-
-            if (!auth.currentUser) {
-                try { await signInAnonymously(auth); } catch (_) {}
-            }
-            return window.AppSession?.switchAccount?.(account.id);
+            return false;
         };
         window.openLogin = async () => {
             if (isOpeningLoginFlow) return;
             isOpeningLoginFlow = true;
             try {
+                // Official accounts (Admin / Staff) strictly enforce single-session access
+                if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                    window.location.href = 'official.html';
+                    return;
+                }
+
                 const params = new URLSearchParams(window.location.search);
                 const forceAdd = params.get('addStudent') === '1' || params.get('login') === 'new';
                 if (forceAdd) {
@@ -282,26 +264,8 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                 await ensureVerificationRegistriesLoaded();
                 await validateAndPruneRememberedAccounts({ verifyStudentsOnline: true });
 
-                if (window.AppSession?.hasStudentSession?.()) {
-                    const activeStudentId = window.AppSession?.getStudentId?.();
-                    const activeStudentStillRemembered = (window.AppSession?.getRememberedAccounts?.() || [])
-                        .some((a) => (a.role === 'student' || a.studentId) && (a.id === activeStudentId || a.studentId === activeStudentId));
-                    if (activeStudentStillRemembered) {
-                        window.location.href = 'student.html';
-                        return;
-                    }
-                }
-                if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
-                    window.location.href = 'official.html';
-                    return;
-                }
-
                 const accounts = window.AppSession?.getRememberedAccounts?.() || [];
-                if (accounts.length === 1) {
-                    await activateRememberedAccount(accounts[0]);
-                    return;
-                }
-                if (accounts.length > 1) {
+                if (accounts.length >= 1) {
                     openSavedStudentModal();
                     return;
                 }
@@ -1720,6 +1684,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             class: st.class || '',
                             adm: st.adm || ''
                         });
+                        await syncStudentGroupMembersToSession(st.studentId, { clearDismissed: true });
                         window.location.href = 'student.html';
                         return;
                     } else {
@@ -1728,6 +1693,15 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             btn.disabled = false;
                             btn.innerHTML = SIGN_IN_BTN_HTML;
                         }
+                    }
+                    return;
+                }
+
+                if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                    showLoginMessage('An official account is already logged in. Please log out first.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = SIGN_IN_BTN_HTML;
                     }
                     return;
                 }
@@ -2036,8 +2010,12 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             showLoginMessage(sessionNotice);
         }
         if (new URLSearchParams(window.location.search).get('addStudent') === '1') {
-            history.replaceState(null, '', window.location.pathname);
-            openStudentLoginModal();
+            if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                window.location.href = 'official.html';
+            } else {
+                history.replaceState(null, '', window.location.pathname);
+                openStudentLoginModal();
+            }
         }
 
         init();

@@ -18,6 +18,7 @@
     const STUDENT_STATE_KEY = 'app_session_student_state';
     const STUDENT_ACCOUNTS_KEY = 'app_student_accounts';
     const REMEMBERED_ACCOUNTS_KEY = 'app_remembered_accounts';
+    const DISMISSED_GROUP_STUDENTS_KEY = 'app_dismissed_group_students';
     const CURRENT_ROLE_KEY = 'app_session_current_role';
     const FLASH_KEY = 'app_session_flash';
     const ACTIVE_PROJECT_KEY = 'app_active_firebase_project_id';
@@ -131,6 +132,60 @@
         writeJson(STUDENT_ACCOUNTS_KEY, stamped);
     };
 
+    const isStudentAccountRecord = (account = null) => Boolean(
+        account && (account.role === 'student' || (!account.role && account.studentId))
+    );
+
+    const getDismissedGroupStudentIds = () => {
+        const raw = readJson(DISMISSED_GROUP_STUDENTS_KEY);
+        if (!raw) return [];
+        const activeProject = getActiveProjectId();
+        if (Array.isArray(raw)) {
+            return activeProject ? [] : raw.map((id) => String(id || '').trim()).filter(Boolean);
+        }
+        if (typeof raw === 'object') {
+            if (activeProject && raw.projectId && raw.projectId !== activeProject) return [];
+            const ids = Array.isArray(raw.ids) ? raw.ids : [];
+            return ids.map((id) => String(id || '').trim()).filter(Boolean);
+        }
+        return [];
+    };
+
+    const saveDismissedGroupStudentIds = (ids = []) => {
+        const activeProject = getActiveProjectId();
+        const unique = Array.from(new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean)));
+        if (!unique.length) {
+            removeKey(DISMISSED_GROUP_STUDENTS_KEY);
+            return;
+        }
+        writeJson(DISMISSED_GROUP_STUDENTS_KEY, {
+            ...(activeProject ? { projectId: activeProject } : {}),
+            ids: unique
+        });
+    };
+
+    const dismissGroupStudent = (studentId = '') => {
+        const cleanId = String(studentId || '').trim();
+        if (!cleanId) return;
+        const current = getDismissedGroupStudentIds();
+        if (!current.includes(cleanId)) {
+            saveDismissedGroupStudentIds([...current, cleanId]);
+        }
+    };
+
+    const undismissGroupStudent = (studentId = '') => {
+        const cleanId = String(studentId || '').trim();
+        if (!cleanId) return;
+        const current = getDismissedGroupStudentIds();
+        if (current.includes(cleanId)) {
+            saveDismissedGroupStudentIds(current.filter((id) => id !== cleanId));
+        }
+    };
+
+    const clearDismissedGroupStudents = () => {
+        removeKey(DISMISSED_GROUP_STUDENTS_KEY);
+    };
+
     const getRememberedAccounts = () => {
         let accounts = readJson(REMEMBERED_ACCOUNTS_KEY);
         const activeProject = getActiveProjectId();
@@ -143,45 +198,71 @@
                 name: st.name || '',
                 class: st.class || '',
                 adm: st.adm || '',
+                ...(st.groupId ? { groupId: st.groupId } : {}),
+                ...(st.groupName ? { groupName: st.groupName } : {}),
                 ...(st.projectId || activeProject ? { projectId: st.projectId || activeProject } : {}),
                 updatedAt: st.updatedAt || now()
             }));
             if (accounts.length) writeJson(REMEMBERED_ACCOUNTS_KEY, accounts);
         }
         if (!Array.isArray(accounts)) return [];
-        if (!activeProject) return accounts;
-        return accounts.filter((a) => a && a.projectId === activeProject);
+        // Strictly restrict remembered multi-account switching to student accounts only
+        const studentOnly = accounts.filter((a) => isStudentAccountRecord(a));
+        if (!activeProject) return studentOnly;
+        return studentOnly.filter((a) => a.projectId === activeProject);
     };
 
     const saveRememberedAccounts = (accounts = []) => {
         const activeProject = getActiveProjectId();
-        const stamped = (Array.isArray(accounts) ? accounts : []).map((a) => ({
-            ...a,
-            ...(activeProject ? { projectId: activeProject } : {})
-        }));
-        writeJson(REMEMBERED_ACCOUNTS_KEY, stamped);
-        const studentOnly = stamped.filter((a) => a.role === 'student');
+        const studentOnly = (Array.isArray(accounts) ? accounts : [])
+            .filter((a) => isStudentAccountRecord(a))
+            .map((a) => ({
+                ...a,
+                role: 'student',
+                studentId: a.studentId || a.id,
+                id: a.id || a.studentId,
+                ...(activeProject ? { projectId: activeProject } : {})
+            }));
+        writeJson(REMEMBERED_ACCOUNTS_KEY, studentOnly);
         saveStudentAccounts(studentOnly.map((s) => ({
             studentId: s.studentId || s.id,
-            name: s.name,
-            class: s.class,
-            adm: s.adm,
+            name: s.name || '',
+            class: s.class || '',
+            adm: s.adm || '',
+            ...(s.groupId ? { groupId: s.groupId } : {}),
+            ...(s.groupName ? { groupName: s.groupName } : {}),
             ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: s.updatedAt
         })));
     };
 
-    const registerRememberedAccount = (accountData = {}) => {
-        if (!accountData || !accountData.id || !accountData.role) return;
+    const registerRememberedAccount = (accountData = {}, options = {}) => {
+        if (!accountData || !accountData.id || !isStudentAccountRecord(accountData)) return;
         const currentAccounts = getRememberedAccounts();
         const activeProject = getActiveProjectId();
+        const targetId = String(accountData.studentId || accountData.id);
+        const existingIndex = currentAccounts.findIndex((a) => String(a.studentId || a.id) === targetId);
+        const existing = existingIndex >= 0 ? currentAccounts[existingIndex] : null;
         const nextAccount = {
+            ...(existing || {}),
             ...accountData,
+            id: targetId,
+            studentId: targetId,
+            role: 'student',
             ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: now()
         };
-        const updatedAccounts = [nextAccount, ...currentAccounts.filter((a) => a.id !== accountData.id)].slice(0, 10);
-        saveRememberedAccounts(updatedAccounts);
+
+        let updatedAccounts;
+        if (options.keepOrder && existingIndex >= 0) {
+            updatedAccounts = currentAccounts.map((acc, idx) => (idx === existingIndex ? nextAccount : acc));
+        } else if (options.append) {
+            const withoutExisting = currentAccounts.filter((a) => String(a.studentId || a.id) !== targetId);
+            updatedAccounts = [...withoutExisting, nextAccount];
+        } else {
+            updatedAccounts = [nextAccount, ...currentAccounts.filter((a) => String(a.studentId || a.id) !== targetId)];
+        }
+        saveRememberedAccounts(updatedAccounts.slice(0, 25));
     };
 
     const getStateByRole = (role) => {
@@ -202,6 +283,8 @@
             if (savedStudentAccounts) preserve[STUDENT_ACCOUNTS_KEY] = savedStudentAccounts;
             const savedRemembered = localStorage.getItem(REMEMBERED_ACCOUNTS_KEY);
             if (savedRemembered) preserve[REMEMBERED_ACCOUNTS_KEY] = savedRemembered;
+            const savedDismissed = localStorage.getItem(DISMISSED_GROUP_STUDENTS_KEY);
+            if (savedDismissed) preserve[DISMISSED_GROUP_STUDENTS_KEY] = savedDismissed;
             const savedProject = localStorage.getItem(ACTIVE_PROJECT_KEY);
             if (savedProject) preserve[ACTIVE_PROJECT_KEY] = savedProject;
             localStorage.clear();
@@ -255,6 +338,7 @@
                 STUDENT_STATE_KEY,
                 STUDENT_ACCOUNTS_KEY,
                 REMEMBERED_ACCOUNTS_KEY,
+                DISMISSED_GROUP_STUDENTS_KEY,
                 OFFICIAL_SESSION_KEY,
                 'app_enabled_modules',
                 'app_current_academic_year',
@@ -462,6 +546,8 @@
         hasStaffSession,
         hasAdminSession,
         startStudent(studentId, profile = {}) {
+            if (!studentId) return;
+            undismissGroupStudent(studentId);
             writeJson(STUDENT_STATE_KEY, buildState({ studentId, role: 'student' }));
             registerRememberedAccount({
                 id: studentId,
@@ -469,10 +555,31 @@
                 studentId,
                 name: profile.name || '',
                 class: profile.class || '',
-                adm: profile.adm || ''
+                adm: profile.adm || '',
+                ...(profile.groupId ? { groupId: profile.groupId } : {}),
+                ...(profile.groupName ? { groupName: profile.groupName } : {})
             });
             setCurrentRole('student');
         },
+        registerStudentAccount(studentId, profile = {}, options = {}) {
+            if (!studentId) return;
+            registerRememberedAccount({
+                id: studentId,
+                role: 'student',
+                studentId,
+                name: profile.name || '',
+                class: profile.class || '',
+                adm: profile.adm || '',
+                ...(profile.groupId ? { groupId: profile.groupId } : {}),
+                ...(profile.groupName ? { groupName: profile.groupName } : {})
+            }, {
+                append: options.append !== false,
+                keepOrder: options.keepOrder === true
+            });
+        },
+        getDismissedGroupStudentIds,
+        dismissGroupStudent,
+        clearDismissedGroupStudents,
         getStudentAccounts() {
             return getStudentAccounts();
         },
@@ -483,23 +590,23 @@
             return true;
         },
         logoutStudent(studentId = '', { removeAccount = false } = {}) {
-            const activeStudentId = studentId || this.getStudentId();
-            if (removeAccount && activeStudentId) {
-                const nextAccounts = getStudentAccounts().filter((account) => account.studentId !== activeStudentId);
+            const targetId = String(studentId || this.getStudentId() || '').trim();
+            if (removeAccount && targetId) {
+                const nextAccounts = getStudentAccounts().filter((account) => account.studentId !== targetId);
                 saveStudentAccounts(nextAccounts);
-                const nextRemembered = getRememberedAccounts().filter((a) => a.id !== activeStudentId && a.studentId !== activeStudentId);
+                const nextRemembered = getRememberedAccounts().filter((a) => a.id !== targetId && a.studentId !== targetId);
                 saveRememberedAccounts(nextRemembered);
+                dismissGroupStudent(targetId);
             }
-            removeKey(STUDENT_STATE_KEY);
-            if (getRole() === 'student') setCurrentRole('');
+            if (!studentId || targetId === this.getStudentId()) {
+                removeKey(STUDENT_STATE_KEY);
+                if (getRole() === 'student') setCurrentRole('');
+            }
         },
         startStaff(name = '', email = '', access = null) {
             const dutyClasses = Array.isArray(access?.dutyClasses) ? access.dutyClasses.filter(Boolean) : [];
             const staffId = access?.staffId || access?.entryId || email || name;
             const source = access?.source === 'directory' ? 'directory' : 'staff';
-            const accountId = source === 'directory'
-                ? `dir_${access?.entryId || staffId}`
-                : `staff_${staffId}`;
             const profile = {
                 id: staffId,
                 staffId,
@@ -520,21 +627,6 @@
                 profile,
                 access: access && typeof access === 'object' ? access : null
             }));
-            registerRememberedAccount({
-                id: accountId,
-                role: 'staff',
-                source,
-                staffId: access?.staffId || '',
-                entryId: access?.entryId || '',
-                categoryId: access?.categoryId || '',
-                loginId: access?.loginId || email || '',
-                name: name || 'Staff Member',
-                email: email || '',
-                requiresEmailAuth: access?.requiresEmailAuth === true,
-                roleTitle: access?.role || access?.type || 'Staff Member',
-                access: access && typeof access === 'object' ? access : null,
-                dutyClasses
-            });
             setCurrentRole('staff');
         },
         getStaffAccess() {
@@ -678,14 +770,6 @@
             const email = String(adminProfile?.email || 'admin').trim().toLowerCase();
             const name = adminProfile?.name || 'Administrator';
             writeJson(ADMIN_STATE_KEY, buildState({ role: 'admin', name, email }));
-            registerRememberedAccount({
-                id: 'admin_master',
-                role: 'admin',
-                name,
-                roleTitle: 'Super Admin',
-                email,
-                requiresEmailAuth: true
-            });
             setCurrentRole('admin');
         },
         getRememberedAccounts() {
@@ -788,9 +872,11 @@
         },
         removeRememberedAccount(accountId = '') {
             if (!accountId) return;
-            const target = getRememberedAccounts().find((a) => a.id === accountId);
-            const updated = getRememberedAccounts().filter((a) => a.id !== accountId);
+            const target = getRememberedAccounts().find((a) => a.id === accountId || a.studentId === accountId);
+            const updated = getRememberedAccounts().filter((a) => a.id !== accountId && a.studentId !== accountId);
             saveRememberedAccounts(updated);
+            const targetStudentId = String(target?.studentId || accountId || '').trim();
+            if (targetStudentId) dismissGroupStudent(targetStudentId);
             if (getStudentState()?.studentId === accountId || (target?.studentId && getStudentState()?.studentId === target.studentId)) {
                 removeKey(STUDENT_STATE_KEY);
                 if (getRole() === 'student') setCurrentRole('');

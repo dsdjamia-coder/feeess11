@@ -443,7 +443,11 @@ const studentPwa = registerPortalForPwa('student', {
                 window.AppSession?.logoutStudent(acc.studentId, { removeAccount: true });
             });
             window.AppSession?.logoutStudent('', { removeAccount: true });
-            try { localStorage.removeItem('app_student_accounts'); } catch (_) {}
+            window.AppSession?.clearDismissedGroupStudents?.();
+            try {
+                localStorage.removeItem('app_student_accounts');
+                localStorage.removeItem('app_remembered_accounts');
+            } catch (_) {}
             window.location.href = 'index.html?public=1';
         });
         document.getElementById('account-switcher-add-btn')?.addEventListener('click', () => {
@@ -7086,7 +7090,61 @@ const studentPwa = registerPortalForPwa('student', {
                 }
                 studentProfile = { id: stuSnap.id, ...st };
                 studentGroups = grpSnap.docs ? grpSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
-                const activeGroup = studentGroups.find((group) => Array.isArray(group.memberIds) && group.memberIds.includes(studentId));
+                const matchingGroups = studentGroups.filter((group) => Array.isArray(group.memberIds) && group.memberIds.includes(studentId));
+                const activeGroup = matchingGroups[0] || null;
+
+                // Keep active student and active group members synced into device student account switcher
+                if (activeGroup) {
+                    window.AppSession?.registerStudentAccount?.(studentId, {
+                        name: st.name || '',
+                        class: st.class || '',
+                        adm: st.adm || '',
+                        groupId: String(activeGroup.id || ''),
+                        groupName: String(activeGroup.name || '').trim()
+                    }, { keepOrder: true });
+
+                    const existingStudentIds = new Set(
+                        (window.AppSession?.getStudentAccounts?.() || []).map((acc) => String(acc.studentId || '').trim()).filter(Boolean)
+                    );
+                    const dismissedGroupIds = new Set(window.AppSession?.getDismissedGroupStudentIds?.() || []);
+                    const missingSiblingMap = new Map();
+                    matchingGroups.forEach((grp) => {
+                        const members = Array.isArray(grp.memberIds) ? grp.memberIds : [];
+                        members.forEach((rawId) => {
+                            const mId = String(rawId || '').trim();
+                            if (!mId || mId === studentId || existingStudentIds.has(mId) || dismissedGroupIds.has(mId)) return;
+                            if (!missingSiblingMap.has(mId)) {
+                                missingSiblingMap.set(mId, {
+                                    groupId: String(grp.id || ''),
+                                    groupName: String(grp.name || '').trim()
+                                });
+                            }
+                        });
+                    });
+
+                    const missingSiblingIds = Array.from(missingSiblingMap.keys());
+                    if (missingSiblingIds.length) {
+                        Promise.all(
+                            missingSiblingIds.map((sibId) => getDoc(doc(db, `${BASE_PATH}/students`, sibId)).catch(() => null))
+                        ).then((snaps) => {
+                            snaps.forEach((snap, idx) => {
+                                if (!snap?.exists?.()) return;
+                                const sibData = snap.data() || {};
+                                const statusNorm = String(sibData.status || '').trim().toLowerCase();
+                                if (sibData.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') return;
+                                const sibId = missingSiblingIds[idx];
+                                const grpMeta = missingSiblingMap.get(sibId) || {};
+                                window.AppSession?.registerStudentAccount?.(sibId, {
+                                    name: sibData.name || '',
+                                    class: sibData.class || '',
+                                    adm: sibData.adm || '',
+                                    groupId: grpMeta.groupId || '',
+                                    groupName: grpMeta.groupName || ''
+                                }, { append: true });
+                            });
+                        }).catch(() => {});
+                    }
+                }
 
                 const targetMemberIds = [studentId];
                 if (activeGroup?.memberIds?.length) {
