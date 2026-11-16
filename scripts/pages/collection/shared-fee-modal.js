@@ -13,6 +13,39 @@ import { collection, doc, writeBatch, getDoc, getDocs, query, where } from "http
 let activeModalOptions = null;
 let isSubmitting = false;
 
+const logFirestorePermissionError = (error, operationType = 'write', path = `${BASE_PATH}/payments`) => {
+    const errMsg = error instanceof Error ? error.message : String(error || 'Firestore error');
+    if (errMsg.toLowerCase().includes('permission')) {
+        const currentUser = auth?.currentUser || null;
+        const errInfo = {
+            error: errMsg,
+            operationType,
+            path,
+            authInfo: {
+                userId: currentUser?.uid || null,
+                email: currentUser?.email || null,
+                emailVerified: currentUser?.emailVerified ?? null,
+                isAnonymous: currentUser?.isAnonymous ?? null,
+                tenantId: currentUser?.tenantId || null,
+                providerInfo: Array.isArray(currentUser?.providerData)
+                    ? currentUser.providerData.map((p) => ({ providerId: p.providerId, email: p.email }))
+                    : []
+            }
+        };
+        console.error('Firestore Error: ', JSON.stringify(errInfo));
+    }
+};
+
+const checkMirrorDocExists = async (collectionPath = '', docId = '') => {
+    if (!collectionPath || !docId) return false;
+    try {
+        const snap = await getDoc(doc(db, collectionPath, docId));
+        return snap.exists();
+    } catch (_) {
+        return false;
+    }
+};
+
 // Compute next receipt number across all available payments (consistent with Staff and Global)
 export const getGlobalNextReceiptNumber = () => {
     let maxRcpt = 0;
@@ -943,7 +976,8 @@ export const submitFeeEntryPayment = async () => {
             const itemAmountInputs = Array.from(document.querySelectorAll('.bulk-item-amount-input'));
             const sharedTxnId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
 
-            bulkItems.forEach((bItem, idx) => {
+            for (let idx = 0; idx < bulkItems.length; idx++) {
+                const bItem = bulkItems[idx];
                 const inpEl = itemAmountInputs.find(el => Number(el.dataset.bulkIdx) === idx);
                 const parsedItemAmt = inpEl ? Number(inpEl.value) : Number(bItem.amount ?? 200);
                 const finalAmt = (Number.isFinite(parsedItemAmt) && parsedItemAmt >= 0)
@@ -956,17 +990,22 @@ export const submitFeeEntryPayment = async () => {
                     const pId = bItem.payment?.id || bItem.paymentId;
                     const basePay = bItem.payment || { id: pId, itemKey: bItem.itemKey, academicYear: itemAcademicYear };
                     const siblingDocs = findSiblingGroupPayments(basePay, []);
+                    const isAdminUser = typeof window.isMasterSuperAdmin === 'function' ? window.isMasterSuperAdmin() : false;
                     if (siblingDocs.length > 1) {
                         const primarySib = siblingDocs.find(p => p.isGroupPrimary)
                             || siblingDocs.find(p => Number(p.amount || 0) > 0)
                             || siblingDocs.find(p => p.id === pId)
                             || siblingDocs[0];
-                        siblingDocs.forEach((sib) => {
+                        const siblingMirrorFlags = itemAcademicYear
+                            ? await Promise.all(siblingDocs.map((sib) => checkMirrorDocExists(`${BASE_PATH}/years/${itemAcademicYear}/payments`, sib.id)))
+                            : siblingDocs.map(() => false);
+                        siblingDocs.forEach((sib, sibIdx) => {
                             const isPrim = sib.id === primarySib.id;
+                            const isCurrentOwner = !isAdminUser && (typeof window.canModifyPaymentRecord === 'function' ? window.canModifyPaymentRecord(sib) : false);
                             const preservedCollector = sib.collectedBy || basePay.collectedBy || collectorKey;
                             const preservedCollectorName = sib.collectedByName || basePay.collectedByName || collectorDisplayName;
-                            const preservedCollectorEmail = sib.collectedByEmail || basePay.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
-                            const preservedCollectorUid = sib.collectedByUid || basePay.collectedByUid || '';
+                            const preservedCollectorEmail = sib.collectedByEmail || basePay.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail) || (isCurrentOwner ? collectorEmail : '');
+                            const preservedCollectorUid = sib.collectedByUid || basePay.collectedByUid || (isCurrentOwner ? collectorUid : '');
                             const updatePayload = {
                                 studentId: sib.studentId || bItem.studentId || primarySib.studentId || '',
                                 amount: isPrim ? finalAmt : 0,
@@ -987,7 +1026,9 @@ export const submitFeeEntryPayment = async () => {
                             };
                             batch.set(doc(db, `${BASE_PATH}/payments`, sib.id), updatePayload, { merge: true });
                             if (itemAcademicYear) {
-                                batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, sib.id), updatePayload, { merge: true });
+                                if (siblingMirrorFlags[sibIdx]) {
+                                    batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, sib.id), updatePayload, { merge: true });
+                                }
                                 batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, sib.id), updatePayload, { merge: true });
                             }
                             const rec = { ...sib, ...updatePayload };
@@ -998,10 +1039,11 @@ export const submitFeeEntryPayment = async () => {
                         });
                     } else {
                         const payRef = doc(db, `${BASE_PATH}/payments`, pId);
+                        const isCurrentOwner = !isAdminUser && (typeof window.canModifyPaymentRecord === 'function' ? window.canModifyPaymentRecord(basePay) : false);
                         const preservedCollector = basePay.collectedBy || collectorKey;
                         const preservedCollectorName = basePay.collectedByName || collectorDisplayName;
-                        const preservedCollectorEmail = basePay.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
-                        const preservedCollectorUid = basePay.collectedByUid || '';
+                        const preservedCollectorEmail = basePay.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail) || (isCurrentOwner ? collectorEmail : '');
+                        const preservedCollectorUid = basePay.collectedByUid || (isCurrentOwner ? collectorUid : '');
                         const updatePayload = {
                             studentId: basePay.studentId || bItem.studentId || '',
                             amount: finalAmt,
@@ -1021,7 +1063,10 @@ export const submitFeeEntryPayment = async () => {
                         };
                         batch.set(payRef, updatePayload, { merge: true });
                         if (itemAcademicYear) {
-                            batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, pId), updatePayload, { merge: true });
+                            const hasLegacyYearDoc = await checkMirrorDocExists(`${BASE_PATH}/years/${itemAcademicYear}/payments`, pId);
+                            if (hasLegacyYearDoc) {
+                                batch.set(doc(db, `${BASE_PATH}/years/${itemAcademicYear}/payments`, pId), updatePayload, { merge: true });
+                            }
                             batch.set(doc(db, `${BASE_PATH}/academicYears/${itemCleanYear}/payments`, pId), updatePayload, { merge: true });
                         }
                         const rec = {
@@ -1118,7 +1163,7 @@ export const submitFeeEntryPayment = async () => {
                         savedPaymentRecords.push({ record: rec, cell: bItem.targetCellElement });
                     }
                 }
-            });
+            }
             savedPaymentRecord = savedPaymentRecords[0]?.record || null;
         } else if (isEdit && existingPaymentId) {
             // EDIT EXISTING PAYMENT (Atomic primary + sibling mirror sync for group records)
@@ -1142,18 +1187,23 @@ export const submitFeeEntryPayment = async () => {
                 (Array.isArray(basePayment.targetGroupMemberIds) && basePayment.targetGroupMemberIds.length > 1)
             );
 
+            const isAdminUser = typeof window.isMasterSuperAdmin === 'function' ? window.isMasterSuperAdmin() : false;
             if (isGroupEdit && siblingDocs.length > 1) {
                 const primarySib = siblingDocs.find(p => p.isGroupPrimary)
                     || siblingDocs.find(p => Number(p.amount || 0) > 0)
                     || siblingDocs.find(p => p.id === existingPaymentId)
                     || siblingDocs[0];
+                const siblingMirrorFlags = academicYear
+                    ? await Promise.all(siblingDocs.map((sib) => checkMirrorDocExists(`${BASE_PATH}/years/${academicYear}/payments`, sib.id)))
+                    : siblingDocs.map(() => false);
 
-                siblingDocs.forEach((sib) => {
+                siblingDocs.forEach((sib, sibIdx) => {
                     const isPrim = sib.id === primarySib.id;
+                    const isCurrentOwner = !isAdminUser && (typeof window.canModifyPaymentRecord === 'function' ? window.canModifyPaymentRecord(sib) : false);
                     const preservedCollector = sib.collectedBy || basePayment.collectedBy || collectorKey;
                     const preservedCollectorName = sib.collectedByName || basePayment.collectedByName || collectorDisplayName;
-                    const preservedCollectorEmail = sib.collectedByEmail || basePayment.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
-                    const preservedCollectorUid = sib.collectedByUid || basePayment.collectedByUid || '';
+                    const preservedCollectorEmail = sib.collectedByEmail || basePayment.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail) || (isCurrentOwner ? collectorEmail : '');
+                    const preservedCollectorUid = sib.collectedByUid || basePayment.collectedByUid || (isCurrentOwner ? collectorUid : '');
                     const updatePayload = {
                         studentId: sib.studentId || studentId,
                         amount: isPrim ? amount : 0,
@@ -1176,7 +1226,9 @@ export const submitFeeEntryPayment = async () => {
                     };
                     batch.set(doc(db, `${BASE_PATH}/payments`, sib.id), updatePayload, { merge: true });
                     if (academicYear) {
-                        batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, sib.id), updatePayload, { merge: true });
+                        if (siblingMirrorFlags[sibIdx]) {
+                            batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, sib.id), updatePayload, { merge: true });
+                        }
                         batch.set(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, sib.id), updatePayload, { merge: true });
                     }
                     const rec = {
@@ -1194,10 +1246,11 @@ export const submitFeeEntryPayment = async () => {
                 if (!savedPaymentRecord) savedPaymentRecord = savedPaymentRecords[0]?.record || null;
             } else {
                 const payRef = doc(db, `${BASE_PATH}/payments`, existingPaymentId);
+                const isCurrentOwner = !isAdminUser && (typeof window.canModifyPaymentRecord === 'function' ? window.canModifyPaymentRecord(basePayment) : false);
                 const preservedCollector = basePayment.collectedBy || collectorKey;
                 const preservedCollectorName = basePayment.collectedByName || collectorDisplayName;
-                const preservedCollectorEmail = basePayment.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail);
-                const preservedCollectorUid = basePayment.collectedByUid || '';
+                const preservedCollectorEmail = basePayment.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : collectorEmail) || (isCurrentOwner ? collectorEmail : '');
+                const preservedCollectorUid = basePayment.collectedByUid || (isCurrentOwner ? collectorUid : '');
                 const updatePayload = {
                     studentId: studentId,
                     amount: amount,
@@ -1219,7 +1272,10 @@ export const submitFeeEntryPayment = async () => {
                 };
                 batch.set(payRef, updatePayload, { merge: true });
                 if (academicYear) {
-                    batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, existingPaymentId), updatePayload, { merge: true });
+                    const hasLegacyYearDoc = await checkMirrorDocExists(`${BASE_PATH}/years/${academicYear}/payments`, existingPaymentId);
+                    if (hasLegacyYearDoc) {
+                        batch.set(doc(db, `${BASE_PATH}/years/${academicYear}/payments`, existingPaymentId), updatePayload, { merge: true });
+                    }
                     batch.set(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, existingPaymentId), updatePayload, { merge: true });
                 }
 
@@ -1465,6 +1521,11 @@ export const submitFeeEntryPayment = async () => {
             setTimeout(runDeferredRefreshes, 220);
         });
     } catch (err) {
+        logFirestorePermissionError(
+            err,
+            (isEdit || activeModalOptions?.mode === 'bulk-edit') ? 'update' : 'create',
+            `${BASE_PATH}/payments`
+        );
         console.error('Error saving fee payment:', err);
         showToast(`Failed to save payment: ${err.message || 'Firestore error'}`, 'error');
         if (submitBtn) {

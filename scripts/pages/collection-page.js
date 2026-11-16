@@ -1902,6 +1902,91 @@ const collectPaymentDocsForGroup = async (groupKey = '', expectedStudentId = '')
     return [];
 };
 
+const logFirestorePermissionError = (error, operationType = 'write', path = `${BASE_PATH}/payments`) => {
+    const errMsg = error instanceof Error ? error.message : String(error || 'Firestore error');
+    if (errMsg.toLowerCase().includes('permission')) {
+        const currentUser = auth?.currentUser || null;
+        const errInfo = {
+            error: errMsg,
+            operationType,
+            path,
+            authInfo: {
+                userId: currentUser?.uid || null,
+                email: currentUser?.email || null,
+                emailVerified: currentUser?.emailVerified ?? null,
+                isAnonymous: currentUser?.isAnonymous ?? null,
+                tenantId: currentUser?.tenantId || null,
+                providerInfo: Array.isArray(currentUser?.providerData)
+                    ? currentUser.providerData.map((p) => ({ providerId: p.providerId, email: p.email }))
+                    : []
+            }
+        };
+        console.error('Firestore Error: ', JSON.stringify(errInfo));
+    }
+};
+
+const queueExistingPaymentDeletes = async (batch, docsList = [], fallbackList = []) => {
+    const seenPaths = new Set();
+    const queueIfUnique = (ref) => {
+        if (!ref?.path || seenPaths.has(ref.path)) return;
+        seenPaths.add(ref.path);
+        batch.delete(ref);
+    };
+    const checkExists = async (ref) => {
+        try {
+            const snap = await getDoc(ref);
+            return snap.exists() ? ref : null;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const items = (Array.isArray(docsList) && docsList.length > 0)
+        ? docsList.map((docSnap) => ({
+            id: docSnap.id,
+            primaryRef: docSnap.ref,
+            primaryKnownExists: true,
+            payment: docSnap.data() || {}
+        }))
+        : (Array.isArray(fallbackList) ? fallbackList : [])
+            .filter((payment) => Boolean(payment?.id))
+            .map((payment) => ({
+                id: payment.id,
+                primaryRef: doc(db, `${BASE_PATH}/payments`, payment.id),
+                primaryKnownExists: false,
+                payment
+            }));
+
+    const refsToProbe = [];
+    items.forEach((item) => {
+        if (item.primaryKnownExists) {
+            queueIfUnique(item.primaryRef);
+        } else {
+            refsToProbe.push(item.primaryRef);
+        }
+        const year = item.payment?.academicYear || '';
+        if (year) {
+            const academicYearRef = doc(db, getYearPaymentsCollectionPath(year), item.id);
+            const legacyYearRef = doc(db, `${BASE_PATH}/years/${year}/payments`, item.id);
+            refsToProbe.push(academicYearRef, legacyYearRef);
+        }
+    });
+
+    const uniqueProbeRefs = [];
+    const seenProbes = new Set();
+    refsToProbe.forEach((ref) => {
+        if (ref?.path && !seenProbes.has(ref.path)) {
+            seenProbes.add(ref.path);
+            uniqueProbeRefs.push(ref);
+        }
+    });
+
+    if (uniqueProbeRefs.length > 0) {
+        const existingRefs = await Promise.all(uniqueProbeRefs.map(checkExists));
+        existingRefs.filter(Boolean).forEach(queueIfUnique);
+    }
+};
+
 const downloadTextFile = (filename, content, mimeType = 'text/plain;charset=utf-8') => {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -2635,8 +2720,9 @@ document.getElementById('save-donation-btn')?.addEventListener('click', async ()
     const activeCollectorUid = String(auth?.currentUser?.uid || '').trim();
     const preservedCollector = existingDonation?.collectedBy || activeCollectorKey;
     const preservedCollectorName = existingDonation?.collectedByName || collectorLabel;
-    const preservedCollectorEmail = existingDonation?.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : activeCollectorEmail);
-    const preservedCollectorUid = existingDonation?.collectedByUid || (editingDonationId ? '' : activeCollectorUid);
+    const isCurrentOwner = !isMasterSuperAdmin() && Boolean(existingDonation && canModifyDonationRecord(existingDonation));
+    const preservedCollectorEmail = existingDonation?.collectedByEmail || (preservedCollector.includes('@') ? preservedCollector : activeCollectorEmail) || (isCurrentOwner ? activeCollectorEmail : '');
+    const preservedCollectorUid = existingDonation?.collectedByUid || (editingDonationId ? (isCurrentOwner ? activeCollectorUid : '') : activeCollectorUid);
     const donationDoc = {
         donorName,
         receiptNo,
@@ -2677,8 +2763,9 @@ document.getElementById('save-donation-btn')?.addEventListener('click', async ()
             setTimeout(() => { msg.textContent = ''; }, 2000);
         }
     } catch (error) {
+        logFirestorePermissionError(error, editingDonationId ? 'update' : 'create', `${BASE_PATH}/donations`);
         console.error(error);
-        alert('Failed to save donation.');
+        showToast('Failed to save donation: ' + (error?.message || 'Permission or network error'), 'error');
     } finally {
         isDonationSaveInFlight = false;
         if (donationBtn) donationBtn.disabled = false;
@@ -4518,32 +4605,10 @@ const processPaymentSubmit = async (isUpdate) => {
                     if (!canModifyPaymentRecord(docsToDelete.map(d => d.data()))) {
                         throw new Error('You can only edit payments that you collected.');
                     }
-                    docsToDelete.forEach((docSnap) => {
-                        batch.delete(docSnap.ref);
-                        const payment = docSnap.data();
-                        const year = payment.academicYear || '';
-                        if (year) {
-                            const yearPath = getYearPaymentsCollectionPath(year);
-                            batch.delete(doc(db, yearPath, docSnap.id));
-                            batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, docSnap.id));
-                            const cleanYear = String(year).replace(/[^\w-]/g, '_');
-                            batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, docSnap.id));
-                        }
-                    });
+                    await queueExistingPaymentDeletes(batch, docsToDelete, []);
                 } else {
                     const fallbackDocs = allPayments.filter((p) => getPaymentGroupKey(p) === editingPaymentGroup.txnId || p.transactionId === editingPaymentGroup.txnId);
-                    fallbackDocs.forEach((payment) => {
-                        if (!payment.id) return;
-                        batch.delete(doc(db, `${BASE_PATH}/payments`, payment.id));
-                        const year = payment.academicYear || '';
-                        if (year) {
-                            const yearPath = getYearPaymentsCollectionPath(year);
-                            batch.delete(doc(db, yearPath, payment.id));
-                            batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, payment.id));
-                            const cleanYear = String(year).replace(/[^\w-]/g, '_');
-                            batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, payment.id));
-                        }
-                    });
+                    await queueExistingPaymentDeletes(batch, [], fallbackDocs);
                 }
             }
 
@@ -4551,6 +4616,7 @@ const processPaymentSubmit = async (isUpdate) => {
             const currentKey = getCollectorKey();
             const currentEmail = normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '');
             const currentUid = String(auth?.currentUser?.uid || '').trim();
+            const isCurrentOwnerOnUpdate = isUpdate && !isMasterSuperAdmin();
             const resolvedCollectedBy = isUpdate
                 ? (editingPaymentGroup?.originalCollectedBy || fetchedOriginalData?.collectedBy || currentKey)
                 : currentKey;
@@ -4558,10 +4624,10 @@ const processPaymentSubmit = async (isUpdate) => {
                 ? (editingPaymentGroup?.originalCollectedByName || fetchedOriginalData?.collectedByName || currentStaffName)
                 : currentStaffName;
             const resolvedCollectedByEmail = isUpdate
-                ? (editingPaymentGroup?.originalCollectedByEmail || fetchedOriginalData?.collectedByEmail || (resolvedCollectedBy.includes('@') ? resolvedCollectedBy : currentEmail))
+                ? (editingPaymentGroup?.originalCollectedByEmail || fetchedOriginalData?.collectedByEmail || (resolvedCollectedBy.includes('@') ? resolvedCollectedBy : currentEmail) || (isCurrentOwnerOnUpdate ? currentEmail : ''))
                 : currentEmail;
             const resolvedCollectedByUid = isUpdate
-                ? (editingPaymentGroup?.originalCollectedByUid || fetchedOriginalData?.collectedByUid || '')
+                ? (editingPaymentGroup?.originalCollectedByUid || fetchedOriginalData?.collectedByUid || (isCurrentOwnerOnUpdate ? currentUid : ''))
                 : currentUid;
             const writtenGroupedMonthlyItems = new Set();
 
@@ -4707,6 +4773,7 @@ const processPaymentSubmit = async (isUpdate) => {
             exitEditMode();
             showToast('Payment saved successfully!', 'success');
         } catch (e) {
+            logFirestorePermissionError(e, isUpdate ? 'update' : 'create', `${BASE_PATH}/payments`);
             console.error(e);
             showToast(`Failed to save payment: ${e?.message || 'Permission or network error'}`, 'error');
         } finally {
@@ -6619,38 +6686,19 @@ document.getElementById('receipt-view-delete-btn')?.addEventListener('click', as
         }
 
         if (docsToDelete.length > 0) {
-            docsToDelete.forEach((docSnap) => {
-                batch.delete(docSnap.ref);
-                const payment = docSnap.data();
-                const year = payment.academicYear || '';
-                if (year) {
-                    const yearPath = getYearPaymentsCollectionPath(year);
-                    batch.delete(doc(db, yearPath, docSnap.id));
-                    batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, docSnap.id));
-                    const cleanYear = String(year).replace(/[^\w-]/g, '_');
-                    batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, docSnap.id));
-                }
-            });
-        } else if (txnId) {
-            const fallbackMatches = allPayments.filter((p) => getPaymentGroupKey(p) === txnId || p.transactionId === txnId);
-            fallbackMatches.forEach((payment) => {
-                if (!payment.id) return;
-                batch.delete(doc(db, `${BASE_PATH}/payments`, payment.id));
-                const year = payment.academicYear || '';
-                if (year) {
-                    const yearPath = getYearPaymentsCollectionPath(year);
-                    batch.delete(doc(db, yearPath, payment.id));
-                    batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, payment.id));
-                    const cleanYear = String(year).replace(/[^\w-]/g, '_');
-                    batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, payment.id));
-                }
-            });
+            await queueExistingPaymentDeletes(batch, docsToDelete, []);
+        } else {
+            const fallbackMatches = txnId
+                ? allPayments.filter((p) => getPaymentGroupKey(p) === txnId || p.transactionId === txnId)
+                : (paymentId ? allPayments.filter((p) => p.id === paymentId) : []);
+            await queueExistingPaymentDeletes(batch, [], fallbackMatches);
         }
 
         await batch.commit();
         showToast('Payment deleted successfully.', 'success');
         closePaymentReceiptDetailModal();
     } catch (err) {
+        logFirestorePermissionError(err, 'delete', `${BASE_PATH}/payments`);
         console.error('Delete payment error:', err);
         showToast('Failed to delete payment: ' + (err.message || 'Network error'), 'error');
     } finally {
@@ -7580,6 +7628,7 @@ document.getElementById('history-content-container')?.addEventListener('click', 
             await deleteDoc(doc(db, `${BASE_PATH}/donations`, donationDelBtn.dataset.id));
             showToast('Donation deleted.', 'info');
         } catch (error) {
+            logFirestorePermissionError(error, 'delete', `${BASE_PATH}/donations/${donationDelBtn.dataset.id}`);
             console.error(error);
             showToast('Failed to delete donation: ' + (error.message || 'Permission error'), 'error');
         }
@@ -7609,36 +7658,15 @@ document.getElementById('history-content-container')?.addEventListener('click', 
                 if (!canModifyPaymentRecord(docsToDelete.map((d) => d.data()))) {
                     throw new Error('You can only delete payments that you collected.');
                 }
-                docsToDelete.forEach((docSnap) => {
-                    batch.delete(docSnap.ref);
-                    const payment = docSnap.data();
-                    const year = payment.academicYear || '';
-                    if (year) {
-                        const yearPath = getYearPaymentsCollectionPath(year);
-                        batch.delete(doc(db, yearPath, docSnap.id));
-                        batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, docSnap.id));
-                        const cleanYear = String(year).replace(/[^\w-]/g, '_');
-                        batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, docSnap.id));
-                    }
-                });
+                await queueExistingPaymentDeletes(batch, docsToDelete, []);
             } else {
                 const fallbackMatches = allPayments.filter((p) => getPaymentGroupKey(p) === tid || p.transactionId === tid);
-                fallbackMatches.forEach((payment) => {
-                    if (!payment.id) return;
-                    batch.delete(doc(db, `${BASE_PATH}/payments`, payment.id));
-                    const year = payment.academicYear || '';
-                    if (year) {
-                        const yearPath = getYearPaymentsCollectionPath(year);
-                        batch.delete(doc(db, yearPath, payment.id));
-                        batch.delete(doc(db, `${BASE_PATH}/years/${year}/payments`, payment.id));
-                        const cleanYear = String(year).replace(/[^\w-]/g, '_');
-                        batch.delete(doc(db, `${BASE_PATH}/academicYears/${cleanYear}/payments`, payment.id));
-                    }
-                });
+                await queueExistingPaymentDeletes(batch, [], fallbackMatches);
             }
             await batch.commit();
             showToast('Payment deleted successfully.', 'success');
         } catch (err) {
+            logFirestorePermissionError(err, 'delete', `${BASE_PATH}/payments`);
             console.error('History delete payment error:', err);
             showToast('Failed to delete payment: ' + (err.message || 'Network error'), 'error');
         } finally {

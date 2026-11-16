@@ -247,9 +247,16 @@ const getStaffAccessRef = (email = '') => doc(db, STAFF_ACCESS_COLLECTION, norma
 const syncStaffAccessRecord = async (staffRecord = {}) => {
     const email = normalizeEmail(staffRecord.email || '');
     if (!email) return;
+    const derivedUsername = String(
+        staffRecord.username
+        || staffRecord.loginId
+        || (email.endsWith('@school.internal') ? email.split('@')[0] : '')
+    ).trim().toLowerCase();
     const payload = {
         email,
-        username: staffRecord.username || '',
+        username: derivedUsername,
+        loginId: derivedUsername || email,
+        userKey: email,
         password: deleteField(),
         isActive: staffRecord.isActive !== false,
         canCollect: staffRecord.canCollect === true,
@@ -272,9 +279,9 @@ const syncStaffAccessRecord = async (staffRecord = {}) => {
         updatedAt: new Date().toISOString()
     };
     await setDoc(getStaffAccessRef(email), payload, { merge: true });
-    if (staffRecord.username) {
+    if (derivedUsername) {
         try {
-            await setDoc(doc(db, STAFF_ACCESS_COLLECTION, staffRecord.username), payload, { merge: true });
+            await setDoc(doc(db, STAFF_ACCESS_COLLECTION, derivedUsername), payload, { merge: true });
         } catch (_) {}
     }
 };
@@ -285,16 +292,34 @@ const removeStaffAccessRecord = async (email = '') => {
 };
 const rebuildStaffAccessIndex = async (staffRecords = []) => {
     const accessSnap = await getDocs(collection(db, STAFF_ACCESS_COLLECTION));
-    const activeEmails = new Set(staffRecords.map((staffRecord) => normalizeEmail(staffRecord.email)).filter(Boolean));
+    const activeKeys = new Set();
+    staffRecords.forEach((staffRecord) => {
+        const email = normalizeEmail(staffRecord.email);
+        if (email) activeKeys.add(email);
+        const derivedUsername = String(
+            staffRecord.username
+            || staffRecord.loginId
+            || (email.endsWith('@school.internal') ? email.split('@')[0] : '')
+        ).trim().toLowerCase();
+        if (derivedUsername) activeKeys.add(derivedUsername);
+    });
     const operations = [];
     accessSnap.forEach((docSnap) => {
-        if (!activeEmails.has(docSnap.id)) operations.push((batch) => batch.delete(docSnap.ref));
+        if (!activeKeys.has(String(docSnap.id || '').toLowerCase())) operations.push((batch) => batch.delete(docSnap.ref));
     });
     staffRecords.forEach((staffRecord) => {
         const email = normalizeEmail(staffRecord.email);
         if (!email) return;
+        const derivedUsername = String(
+            staffRecord.username
+            || staffRecord.loginId
+            || (email.endsWith('@school.internal') ? email.split('@')[0] : '')
+        ).trim().toLowerCase();
         operations.push((batch) => batch.set(getStaffAccessRef(email), {
             email,
+            username: derivedUsername,
+            loginId: derivedUsername || email,
+            userKey: email,
             password: deleteField(),
             isActive: staffRecord.isActive !== false,
             canCollect: staffRecord.canCollect === true,
@@ -5012,12 +5037,19 @@ const extractAndValidateStaffForm = (prefix = 'st') => {
         return null;
     }
 
+    const normalizedEmailVal = normalizeEmail(values.email || '');
+    const derivedUsernameVal = String(
+        existingStaffForValidation?.username
+        || (normalizedEmailVal.endsWith('@school.internal') ? normalizedEmailVal.split('@')[0] : '')
+    ).trim().toLowerCase();
+
     return {
         type,
         name,
         role: String(values.role || '').trim(),
         phone: String(values.phone || '').trim(),
         email: String(values.email || '').trim(),
+        ...(derivedUsernameVal ? { username: derivedUsernameVal } : {}),
         _initialAuthPassword: String(effectivePassword || '').trim(),
         msr: String(values.msr || '').trim(),
         address: String(values.address || '').trim(),

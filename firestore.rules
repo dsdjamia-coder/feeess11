@@ -24,18 +24,20 @@ service cloud.firestore {
       return get(adminAuthRef(institutionId)).data;
     }
 
-    function isLegacyAdmin(institutionId) {
-      return exists(adminAuthRef(institutionId))
-        && adminData(institutionId).email == request.auth.token.email;
-    }
-
-    function isIndexedAdmin(institutionId) {
-      return exists(adminAuthRef(institutionId))
-        && adminData(institutionId).adminsIndex[request.auth.token.email] == true;
-    }
-
     function isSuperAdminDoc(institutionId) {
-      return hasEmailIdentity() && (isLegacyAdmin(institutionId) || isIndexedAdmin(institutionId));
+      return hasEmailIdentity()
+        && exists(adminAuthRef(institutionId))
+        && (
+          adminData(institutionId).email == request.auth.token.email
+          || (
+            'adminsIndex' in adminData(institutionId)
+            && adminData(institutionId).adminsIndex is map
+            && (
+              adminData(institutionId).adminsIndex[request.auth.token.email] == true
+              || adminData(institutionId).adminsIndex[request.auth.token.email.lower()] == true
+            )
+          )
+        );
     }
 
     function staffAccessRef(institutionId) {
@@ -73,21 +75,35 @@ service cloud.firestore {
       return isAdmin(institutionId) || (isStaff(institutionId) && staffData(institutionId).canCollect == true);
     }
 
-    function isRecordCollectorOwner(institutionId, data) {
-      return isCollector(institutionId) && (
+    function isInternalUsernameEmail() {
+      return hasEmailIdentity() && request.auth.token.email.lower().matches('.*@school\\.internal$');
+    }
+
+    function authEmailUsernamePrefix() {
+      return request.auth.token.email.lower().split('@')[0];
+    }
+
+    function matchesCollectorIdentity(institutionId, data) {
+      return (
         ('collectedByUid' in data && data.collectedByUid is string && data.collectedByUid == request.auth.uid)
         || (hasEmailIdentity() && 'collectedByEmail' in data && data.collectedByEmail is string && data.collectedByEmail.lower() == request.auth.token.email.lower())
         || (hasEmailIdentity() && 'collectedBy' in data && data.collectedBy is string && (
           data.collectedBy.lower() == request.auth.token.email.lower()
+          || (isInternalUsernameEmail() && data.collectedBy.lower() == authEmailUsernamePrefix())
           || (isStaff(institutionId) && (
             ('email' in staffData(institutionId) && staffData(institutionId).email is string && data.collectedBy.lower() == staffData(institutionId).email.lower())
             || ('loginId' in staffData(institutionId) && staffData(institutionId).loginId is string && data.collectedBy.lower() == staffData(institutionId).loginId.lower())
             || ('username' in staffData(institutionId) && staffData(institutionId).username is string && data.collectedBy.lower() == staffData(institutionId).username.lower())
             || ('userKey' in staffData(institutionId) && staffData(institutionId).userKey is string && data.collectedBy.lower() == staffData(institutionId).userKey.lower())
             || ('staffId' in staffData(institutionId) && staffData(institutionId).staffId is string && data.collectedBy.lower() == staffData(institutionId).staffId.lower())
+            || ('name' in staffData(institutionId) && staffData(institutionId).name is string && data.collectedBy.lower() == staffData(institutionId).name.lower())
           ))
         ))
       );
+    }
+
+    function isRecordCollectorOwner(institutionId, data) {
+      return isCollector(institutionId) && matchesCollectorIdentity(institutionId, data);
     }
 
     function isResultOperator(institutionId) {
@@ -390,9 +406,9 @@ service cloud.firestore {
       allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
       allow update: if validPaymentWrite() && (
         isAdmin(institutionId)
-        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data))
+        || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
       );
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
     }
 
     // 10. Donations (Staff/Collector read; Admin/Manager or owner collector create/update/delete)
@@ -400,8 +416,8 @@ service cloud.firestore {
       allow read: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId);
       allow create: if isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data);
       allow update: if isAdmin(institutionId)
-        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data));
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
+        || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data));
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
     }
 
     // 11. Attendance
@@ -563,9 +579,9 @@ service cloud.firestore {
       allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
       allow update: if validPaymentWrite() && (
         isAdmin(institutionId)
-        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data))
+        || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
       );
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
     }
 
     match /institutions/{institutionId}/years/{yearId}/payments/{docId} {
@@ -575,9 +591,9 @@ service cloud.firestore {
       allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
       allow update: if validPaymentWrite() && (
         isAdmin(institutionId)
-        || (isRecordCollectorOwner(institutionId, resource.data) && isRecordCollectorOwner(institutionId, request.resource.data))
+        || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
       );
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || isRecordCollectorOwner(institutionId, resource.data)));
+      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/results/{docId} {
