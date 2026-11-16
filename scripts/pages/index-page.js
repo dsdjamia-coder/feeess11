@@ -122,6 +122,8 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             resetUniversalLoginForm();
             const sessionNotice = window.AppSession?.consumeFlash?.();
             if (sessionNotice) showLoginMessage(sessionNotice);
+            // Warm up verification registries in background while user types
+            ensureVerificationRegistriesLoaded().catch(() => {});
         };
         const syncStudentGroupMembersToSession = async (studentId = '', { clearDismissed = false } = {}) => {
             const cleanStudentId = String(studentId || '').trim();
@@ -193,58 +195,76 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             }
         };
 
-        const activateRememberedAccount = async (account) => {
-            if (!account) return false;
-            await ensureVerificationRegistriesLoaded();
-            const isValid = await isRememberedAccountValid(account, { verifyStudentOnline: true });
-            if (!isValid) {
-                window.AppSession?.removeRememberedAccount?.(account.id || account.studentId);
-                renderSavedAccounts();
-                showToast('This account is no longer active or has been removed by the administrator.', 'error');
-                const remaining = window.AppSession?.getRememberedAccounts?.() || [];
-                if (!remaining.length) {
-                    document.getElementById('saved-student-modal').style.display = 'none';
-                    openStudentLoginModal();
-                    showLoginMessage('Saved account is no longer active. Please log in with an active account.');
+        let isActivatingRememberedAccount = false;
+        const activateRememberedAccount = async (account, cardEl = null) => {
+            if (!account || isActivatingRememberedAccount) return false;
+            isActivatingRememberedAccount = true;
+            const restoreCardUi = () => {
+                if (!cardEl) return;
+                cardEl.classList.remove('opacity-75', 'pointer-events-none');
+                const removeBtn = cardEl.querySelector('.saved-account-remove');
+                if (removeBtn) {
+                    removeBtn.innerHTML = '<i class="fas fa-trash-alt text-xs"></i>';
+                    removeBtn.disabled = false;
                 }
-                return false;
+            };
+            if (cardEl) {
+                cardEl.classList.add('opacity-75', 'pointer-events-none');
+                const removeBtn = cardEl.querySelector('.saved-account-remove');
+                if (removeBtn) {
+                    removeBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs text-emerald-600"></i>';
+                    removeBtn.disabled = true;
+                }
             }
 
-            if (account.role === 'student' || (!account.role && account.studentId)) {
-                if (!auth.currentUser) {
-                    try { await signInAnonymously(auth); } catch (_) {}
-                }
-                const targetStudentId = account.studentId || account.id;
-                if (auth.currentUser && targetStudentId) {
-                    try {
-                        const stuSnap = await getDoc(doc(db, `${BASE_PATH}/students`, targetStudentId));
-                        const st = stuSnap.exists() ? stuSnap.data() : null;
-                        const statusNorm = String(st?.status || '').trim().toLowerCase();
-                        if (!stuSnap.exists() || st?.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') {
-                            window.AppSession?.removeRememberedAccount?.(account.id || targetStudentId);
-                            renderSavedAccounts();
-                            showToast('Your student account is inactive or has been removed.', 'error');
-                            const remaining = window.AppSession?.getRememberedAccounts?.() || [];
-                            if (!remaining.length) {
-                                document.getElementById('saved-student-modal').style.display = 'none';
-                                openStudentLoginModal();
+            try {
+                if (account.role === 'student' || (!account.role && account.studentId)) {
+                    const targetStudentId = String(account.studentId || account.id || '').trim();
+                    if (!targetStudentId) {
+                        restoreCardUi();
+                        return false;
+                    }
+                    if (!auth.currentUser) {
+                        try { await signInAnonymously(auth); } catch (_) {}
+                    }
+                    if (auth.currentUser) {
+                        try {
+                            const stuSnap = await getDoc(doc(db, `${BASE_PATH}/students`, targetStudentId));
+                            if (!stuSnap.metadata?.fromCache || stuSnap.exists()) {
+                                const st = stuSnap.exists() ? stuSnap.data() : null;
+                                const statusNorm = String(st?.status || '').trim().toLowerCase();
+                                if (!stuSnap.exists() || st?.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') {
+                                    window.AppSession?.removeRememberedAccount?.(account.id || targetStudentId);
+                                    renderSavedAccounts();
+                                    showToast('Your student account is inactive or has been removed.', 'error');
+                                    const remaining = window.AppSession?.getRememberedAccounts?.() || [];
+                                    if (!remaining.length) {
+                                        document.getElementById('saved-student-modal').style.display = 'none';
+                                        openStudentLoginModal();
+                                        showLoginMessage('Saved account is no longer active. Please log in with an active account.');
+                                    }
+                                    restoreCardUi();
+                                    return false;
+                                }
                             }
-                            return false;
-                        }
-                    } catch (_) {}
-                }
-                await syncStudentGroupMembersToSession(targetStudentId, { clearDismissed: false });
-                if (window.AppSession?.hasStudentSession?.() && String(window.AppSession?.getStudentId?.() || '') === String(targetStudentId)) {
-                    window.AppSession?.startStudent?.(targetStudentId, account);
-                    window.location.href = 'student.html';
-                    return true;
-                }
-                return window.AppSession?.switchAccount?.(account.id || targetStudentId);
-            }
+                        } catch (_) {}
+                    }
 
-            return false;
+                    if (window.AppSession?.hasStudentSession?.() && String(window.AppSession?.getStudentId?.() || '') === targetStudentId) {
+                        window.AppSession?.startStudent?.(targetStudentId, account);
+                        window.location.href = 'student.html';
+                        return true;
+                    }
+                    return window.AppSession?.switchAccount?.(account.id || targetStudentId);
+                }
+
+                restoreCardUi();
+                return false;
+            } finally {
+                isActivatingRememberedAccount = false;
+            }
         };
-        window.openLogin = async () => {
+        window.openLogin = () => {
             if (isOpeningLoginFlow) return;
             isOpeningLoginFlow = true;
             try {
@@ -261,12 +281,20 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     return;
                 }
 
-                await ensureVerificationRegistriesLoaded();
-                await validateAndPruneRememberedAccounts({ verifyStudentsOnline: true });
-
                 const accounts = window.AppSession?.getRememberedAccounts?.() || [];
                 if (accounts.length >= 1) {
                     openSavedStudentModal();
+                    // Validate saved accounts in parallel in the background so UI opens instantly
+                    validateAndPruneRememberedAccounts({ verifyStudentsOnline: true })
+                        .then((validList) => {
+                            const savedModal = document.getElementById('saved-student-modal');
+                            if (savedModal && savedModal.style.display === 'flex' && Array.isArray(validList) && validList.length === 0) {
+                                savedModal.style.display = 'none';
+                                openStudentLoginModal();
+                                showLoginMessage('Saved account is no longer active. Please log in with an active account.');
+                            }
+                        })
+                        .catch(() => {});
                     return;
                 }
                 openStudentLoginModal();
@@ -423,7 +451,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                 const accounts = window.AppSession?.getRememberedAccounts?.() || [];
                 const targetAccount = accounts.find((a) => a.id === accountId || a.studentId === accountId);
                 if (targetAccount) {
-                    await activateRememberedAccount(targetAccount);
+                    await activateRememberedAccount(targetAccount, card);
                 } else {
                     const stSwitched = window.AppSession?.switchStudent?.(accountId);
                     if (stSwitched) window.location.href = 'student.html';
@@ -1309,16 +1337,14 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             const st = stuSnap.data() || {};
                             const statusNorm = String(st.status || '').trim().toLowerCase();
                             if (st.isActive === false || statusNorm === 'inactive' || statusNorm === 'discontinued') return false;
+                            return true;
                         }
                     } catch (_) {}
                 }
                 const cleanAdm = normalizeAdmKey(account.adm || '');
                 if (cleanAdm) {
                     try {
-                        let lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
-                        if (!lookupSnap.exists()) {
-                            lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, cleanAdm));
-                        }
+                        const lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
                         if (lookupSnap.exists()) {
                             const st = lookupSnap.data() || {};
                             const statusNorm = String(st.status || '').trim().toLowerCase();
@@ -1383,17 +1409,25 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
         const validateAndPruneRememberedAccounts = async ({ verifyStudentsOnline = false } = {}) => {
             const accounts = window.AppSession?.getRememberedAccounts?.() || [];
             if (!accounts.length) return [];
+            if (verifyStudentsOnline && !auth.currentUser) {
+                try { await signInAnonymously(auth); } catch (_) {}
+            }
+            const results = await Promise.all(
+                accounts.map(async (account) => {
+                    const ok = await isRememberedAccountValid(account, { verifyStudentOnline: verifyStudentsOnline });
+                    return { account, ok };
+                })
+            );
             let removedAny = false;
             const validList = [];
-            for (const account of accounts) {
-                const ok = await isRememberedAccountValid(account, { verifyStudentOnline: verifyStudentsOnline });
+            results.forEach(({ account, ok }) => {
                 if (!ok) {
                     window.AppSession?.removeRememberedAccount?.(account.id || account.studentId);
                     removedAny = true;
                 } else {
                     validList.push(account);
                 }
-            }
+            });
             if (removedAny) {
                 const savedModal = document.getElementById('saved-student-modal');
                 if (savedModal && savedModal.style.display === 'flex') {
@@ -1684,7 +1718,10 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             class: st.class || '',
                             adm: st.adm || ''
                         });
-                        await syncStudentGroupMembersToSession(st.studentId, { clearDismissed: true });
+                        await Promise.race([
+                            syncStudentGroupMembersToSession(st.studentId, { clearDismissed: true }),
+                            new Promise((resolve) => setTimeout(resolve, 1500))
+                        ]);
                         window.location.href = 'student.html';
                         return;
                     } else {
