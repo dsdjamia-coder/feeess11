@@ -13,6 +13,9 @@ import { openFeeEntryEditModal, closeFeeEntryEditModal, submitFeeEntryPayment } 
 
 // Module state
 let ledgerStudents = [];
+let ledgerAllStudents = [];
+let ledgerRawStudents = [];
+let ledgerDutyClasses = [];
 let ledgerGroups = [];
 let ledgerPayments = [];
 let ledgerClasses = ['+2', '+1', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
@@ -213,10 +216,31 @@ const resolveGroupPaidTotalAmount = (paidMemberEntries = [], fallbackGroupFee = 
     return Math.round(total * 100) / 100;
 };
 
+// Helper to resolve a student's class for a specific academic year
+const resolveStudentClassForLedgerYear = (s = {}, activeYear = '') => {
+    if (!s) return '-';
+    return (activeYear && s.academicYears?.[activeYear]?.class) || s.class || s.studentClass || '-';
+};
+
 // Group resolving logic
-const buildLedgerUnits = () => {
+export const buildLedgerUnits = () => {
+    const activeYear = filters.academicYear || ledgerAcademicYear;
+    const dutyStudentIdSet = new Set();
+    ledgerStudents.forEach(s => {
+        if (s?.id) dutyStudentIdSet.add(s.id);
+    });
+
+    // Full lookup map allows resolving cross-class group siblings while dutyStudentIdSet gates eligibility
     const studentMap = new Map();
-    ledgerStudents.forEach(s => studentMap.set(s.id, s));
+    ledgerRawStudents.forEach(s => {
+        if (s?.id) studentMap.set(s.id, s);
+    });
+    ledgerAllStudents.forEach(s => {
+        if (s?.id) studentMap.set(s.id, s);
+    });
+    ledgerStudents.forEach(s => {
+        if (s?.id) studentMap.set(s.id, s);
+    });
 
     const units = [];
 
@@ -306,12 +330,16 @@ const buildLedgerUnits = () => {
         ledgerGroups.forEach(group => {
             const memberIds = Array.isArray(group.memberIds) ? group.memberIds : [];
             const members = memberIds.map(id => studentMap.get(id)).filter(Boolean);
+            const hasDutyMember = members.some(m => dutyStudentIdSet.has(m.id));
 
-            if (members.length > 0) {
+            if (members.length > 0 && hasDutyMember) {
                 members.forEach(m => processedStudentIds.add(m.id));
 
-                // Sort siblings by class high to low, then name
-                members.sort((a, b) => getClassRank(b.class || b.studentClass) - getClassRank(a.class || a.studentClass) || (a.name || '').localeCompare(b.name || ''));
+                // Sort siblings by class high to low (year-aware), then name
+                members.sort((a, b) =>
+                    getClassRank(resolveStudentClassForLedgerYear(b, activeYear)) - getClassRank(resolveStudentClassForLedgerYear(a, activeYear))
+                    || (a.name || '').localeCompare(b.name || '')
+                );
 
                 const primary = members[0];
                 const groupFee = Number(group.fee || group.amount || (ledgerDefaultFee * members.length));
@@ -578,7 +606,7 @@ const renderFilterControls = () => {
         });
     }
 
-    // Populate Class Filter Dropdown
+    // Populate Class Filter Dropdown (keep collector's duty classes when restricted)
     const classFilterSelect = document.getElementById('ledger-class-filter');
     const resolvedClasses = resolveAcademicYearClasses({
         academicYears: ledgerAcademicYearSettings,
@@ -587,8 +615,15 @@ const renderFilterControls = () => {
         configuredClasses: ledgerClasses
     });
     const fallbackClasses = Array.isArray(ledgerClasses) ? ledgerClasses : [];
-    const uniqueClasses = (resolvedClasses.length ? resolvedClasses : fallbackClasses)
-        .filter(Boolean)
+    const normalizeDutyCls = (v) => String(v || '').replace(/^class\s*:?\s*/i, '').trim().toLowerCase();
+    const dutyAllowSet = Array.isArray(ledgerDutyClasses) && ledgerDutyClasses.length > 0
+        ? new Set(ledgerDutyClasses.map(normalizeDutyCls).filter(Boolean))
+        : null;
+    const rawUniqueClasses = (resolvedClasses.length ? resolvedClasses : fallbackClasses).filter(Boolean);
+    const scopedUniqueClasses = dutyAllowSet
+        ? rawUniqueClasses.filter(cls => dutyAllowSet.has(normalizeDutyCls(cls)))
+        : rawUniqueClasses;
+    const uniqueClasses = (scopedUniqueClasses.length ? scopedUniqueClasses : fallbackClasses.filter(Boolean))
         .sort(compareClassLabelsNatural);
 
     if (classFilterSelect) {
@@ -1681,8 +1716,12 @@ const resetFilters = () => {
 };
 
 // Public update hook to sync with collection-page.js data
-export const updateMasterLedgerData = ({ students, groups, payments, classes, defaultFee, academicYear, academicYearSettings, forceResetYear = false }) => {
+export const updateMasterLedgerData = ({ students, allStudents, rawStudents, dutyClasses, groups, payments, classes, defaultFee, academicYear, academicYearSettings, forceResetYear = false }) => {
     if (Array.isArray(students)) ledgerStudents = students;
+    if (Array.isArray(allStudents)) ledgerAllStudents = allStudents;
+    else if (Array.isArray(students) && ledgerAllStudents.length === 0) ledgerAllStudents = students;
+    if (Array.isArray(rawStudents)) ledgerRawStudents = rawStudents;
+    if (Array.isArray(dutyClasses)) ledgerDutyClasses = dutyClasses;
     if (Array.isArray(groups)) ledgerGroups = groups;
     if (Array.isArray(payments)) ledgerPayments = payments;
     if (Array.isArray(classes)) ledgerClasses = classes;

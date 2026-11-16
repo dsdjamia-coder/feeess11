@@ -363,14 +363,18 @@ const getLinkForTarget = (targetId) => links.find(link => link.dataset.target ==
 
 const syncMasterLedgerState = (forceResetYear = false) => {
     try {
-        const effectiveStudents = isMasterSuperAdmin()
+        const isSuper = isMasterSuperAdmin();
+        const effectiveStudents = isSuper
             ? (Array.isArray(students) ? students : [])
             : (Array.isArray(students) && selectedDutyClasses.length ? students.filter(s => isClassInDutyScope(s.class, selectedDutyClasses)) : (Array.isArray(students) ? students : []));
-        const effectiveClasses = isMasterSuperAdmin()
+        const effectiveClasses = isSuper
             ? (Array.isArray(classes) ? classes : [])
             : getClassOptionsForCollector();
         updateMasterLedgerData({
             students: effectiveStudents,
+            allStudents: Array.isArray(students) ? students : [],
+            rawStudents: Array.isArray(allStudentsRaw) ? allStudentsRaw : [],
+            dutyClasses: isSuper ? [] : [...(selectedDutyClasses || [])],
             groups: Array.isArray(studentGroups) ? studentGroups : [],
             payments: Array.isArray(allPayments) ? allPayments : [],
             classes: effectiveClasses,
@@ -1714,14 +1718,45 @@ const resolveCanonicalFeeItem = (rawKeyOrMonth = '', academicYear = '') => {
 window.resolveCanonicalFeeItem = resolveCanonicalFeeItem;
 window.resolveCanonicalFeeItemKey = resolveCanonicalFeeItem;
 
+const isStudentInCollectorDutyScope = (studentObj = null, academicYear = '') => {
+    if (isMasterSuperAdmin()) return true;
+    if (!selectedDutyClasses || !selectedDutyClasses.length || !studentObj) return false;
+    const stuClass = (academicYear ? getStudentClassForFeeYear(studentObj, academicYear) : '') || studentObj.class || studentObj.studentClass || '';
+    return isClassInDutyScope(stuClass, selectedDutyClasses);
+};
+
 const getVisiblePayments = () => {
     if (isMasterSuperAdmin()) return allPayments;
     if (!selectedDutyClasses || !selectedDutyClasses.length) return [];
-    return allPayments.filter((payment) => {
-        if (!isSameCollectorRecord(payment.collectedBy)) return false;
-        const paymentClass = payment.classLabel || payment.studentClass || getStudentById(payment.studentId)?.class || '';
+    const collectorPayments = allPayments.filter((payment) => isSameCollectorRecord(payment.collectedBy));
+    const isRecordInDutyScope = (payment = {}) => {
+        const st = getStudentById(payment.studentId);
+        const paymentClass = payment.classLabel || payment.studentClass || getStudentClassForFeeYear(st, payment.academicYear) || st?.class || '';
         return isClassInDutyScope(paymentClass, selectedDutyClasses);
+    };
+
+    const dutyGroupIds = new Set();
+    (studentGroups || []).forEach((grp) => {
+        const members = Array.isArray(grp?.memberIds) ? grp.memberIds : [];
+        if (members.some((mid) => isStudentInCollectorDutyScope(getStudentById(mid)))) {
+            if (grp.id) dutyGroupIds.add(grp.id);
+        }
     });
+
+    const dutyLinkedTxnKeys = new Set();
+    collectorPayments.forEach((payment) => {
+        const hasDutyMemberTarget = Array.isArray(payment.targetGroupMemberIds)
+            && payment.targetGroupMemberIds.some((mid) => isStudentInCollectorDutyScope(getStudentById(mid), payment.academicYear));
+        if (isRecordInDutyScope(payment) || hasDutyMemberTarget || (payment.billingGroupId && dutyGroupIds.has(payment.billingGroupId))) {
+            dutyLinkedTxnKeys.add(getPaymentGroupKey(payment));
+        }
+    });
+
+    return collectorPayments.filter((payment) =>
+        isRecordInDutyScope(payment)
+        || dutyLinkedTxnKeys.has(getPaymentGroupKey(payment))
+        || (payment.billingGroupId && dutyGroupIds.has(payment.billingGroupId))
+    );
 };
 const getVisibleDonations = () => isMasterSuperAdmin()
     ? [...allDonations]
@@ -1957,19 +1992,20 @@ const updateDashboardMetrics = () => {
     const currentMonthStr = todayStr.substring(0, 7);
     const myPays = [...getVisiblePayments(), ...getVisibleDonations()];
 
-    let todayTotal = 0, monthTotal = 0;
-    const todayReceipts = new Set();
+    const sumVisiblePeriodTotal = (entries = []) => {
+        const donationSum = entries
+            .filter(p => p.entryType === 'donation')
+            .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+        const feeEntries = entries.filter(p => p.entryType !== 'donation');
+        return roundMoney(sumReportPaymentsOnce(feeEntries) + donationSum);
+    };
 
-    myPays.forEach(p => {
-        const amt = parseFloat(p.amount) || 0;
-        if(p.paymentDate === todayStr) {
-            todayTotal += amt;
-            todayReceipts.add(getPaymentGroupKey(p));
-        }
-        if(p.paymentDate && p.paymentDate.substring(0,7) === currentMonthStr) {
-            monthTotal += amt;
-        }
-    });
+    const todayEntries = myPays.filter(p => p.paymentDate === todayStr);
+    const monthEntries = myPays.filter(p => p.paymentDate && p.paymentDate.substring(0, 7) === currentMonthStr);
+    const todayTotal = sumVisiblePeriodTotal(todayEntries);
+    const monthTotal = sumVisiblePeriodTotal(monthEntries);
+    const todayReceipts = new Set();
+    todayEntries.forEach(p => todayReceipts.add(getPaymentGroupKey(p)));
 
     document.getElementById('dash-today-amt').textContent = todayTotal.toFixed(0);
     document.getElementById('dash-month-amt').textContent = monthTotal.toFixed(0);
@@ -2873,13 +2909,26 @@ const buildFeeItemGroupMembersMarkup = (groupState) => {
 const getVisibleFeeItemsForCurrentStudentAndYear = () => {
     const st = getStudentById(selectedStudentId);
     if (!st) return [];
-    const studentClassInSelectedYear = getStudentClassForFeeYear(st, selectedFeeAcademicYear);
+    const activeGroup = getStudentBillingGroup(st.id);
+    const groupMembers = activeGroup ? getGroupMemberStudents(activeGroup) : [];
+    const targetMembers = groupMembers.length > 1
+        ? (selectedGroupMemberIds && selectedGroupMemberIds.size > 0
+            ? groupMembers.filter(m => selectedGroupMemberIds.has(m.id))
+            : groupMembers)
+        : [st];
+    const targetClasses = [...new Set(
+        targetMembers
+            .map(m => getStudentClassForFeeYear(m, selectedFeeAcademicYear))
+            .filter(Boolean)
+    )];
     return feeItems.filter((i) => {
         const itemYear = i.academicYear || getAcademicYearFromDate();
         if (selectedFeeAcademicYear && itemYear !== selectedFeeAcademicYear) return false;
         if (i.isVisible === false) return false;
         if (i.type === 'custom' && st) {
-            if (i.scope === 'specific' && studentClassInSelectedYear && i.targetClass !== studentClassInSelectedYear) return false;
+            if (i.scope === 'specific' && targetClasses.length > 0 && i.targetClass && !targetClasses.includes(i.targetClass)) {
+                return false;
+            }
         }
         return true;
     });
@@ -3057,6 +3106,8 @@ const renderGroupedStudentsPanel = () => {
 
     const memberRows = members.map((student, index) => {
         const isChecked = selectedGroupMemberIds.has(student.id);
+        const memberClass = getStudentClassForFeeYear(student, selectedFeeAcademicYear) || student.class || '--';
+        const isOtherClass = !isMasterSuperAdmin() && selectedDutyClasses?.length > 0 && !isClassInDutyScope(memberClass, selectedDutyClasses);
         const hasConcession = student.concessionFee !== undefined && student.concessionFee !== null && student.concessionFee !== '';
         const indRate = hasConcession ? parseFloat(student.concessionFee) : defaultFee;
         const rateBadge = hasConcession
@@ -3085,7 +3136,7 @@ const renderGroupedStudentsPanel = () => {
                 <label for="grp-stu-${student.id}" class="cursor-pointer min-w-0">
                     <div class="font-bold text-gray-900 text-xs sm:text-sm truncate">${index + 1}. ${escapeHtml(student.name || 'Student')}</div>
                     <div class="text-[10.5px] sm:text-[11px] text-gray-500 flex items-center gap-1.5 flex-wrap mt-0.5">
-                        <span class="font-semibold text-emerald-700">Class: ${escapeHtml(student.class || '--')}</span>
+                        <span class="font-semibold ${isOtherClass ? 'text-indigo-700' : 'text-emerald-700'}">Class: ${escapeHtml(memberClass)}${isOtherClass ? ' (Sibling)' : ''}</span>
                         <span>•</span>
                         <span>Adm: ${escapeHtml(student.adm || '--')}</span>
                         <span>•</span>
@@ -3249,9 +3300,27 @@ const addCurrentStudentToMultiQueue = () => {
     if (!selectedStudentId) return alert('Please select a student.');
     const selected = buildSelectedItemsForCurrentStudent();
     if (!selected.length) return alert('Please select at least one fee item.');
-    const st = getStudentById(selectedStudentId);
-    const total = roundMoney(calculateEntryTotalForStudent(selected, selectedStudentId));
-    multiEntryQueue.push({ studentId: selectedStudentId, studentName: st?.name || 'Student', classLabel: st?.class || '', items: selected, total });
+    const activeGroup = getStudentBillingGroup(selectedStudentId);
+    const targetGroupMemberIds = activeGroup && Array.isArray(activeGroup.memberIds) && activeGroup.memberIds.length > 1
+        ? (selectedGroupMemberIds && selectedGroupMemberIds.size > 0 ? [...selectedGroupMemberIds] : [...activeGroup.memberIds])
+        : [selectedStudentId];
+    const isSingleMemberOnly = targetGroupMemberIds.length === 1;
+    const isAllGroupMembers = Boolean(activeGroup && targetGroupMemberIds.length === activeGroup.memberIds.length);
+    const primaryTargetId = isSingleMemberOnly ? targetGroupMemberIds[0] : selectedStudentId;
+    const st = getStudentById(primaryTargetId);
+    const memberNames = targetGroupMemberIds.length > 1
+        ? targetGroupMemberIds.map(id => getStudentById(id)?.name).filter(Boolean).join(', ')
+        : (st?.name || 'Student');
+    const total = roundMoney(calculateEntryTotalForStudent(selected, primaryTargetId));
+    multiEntryQueue.push({
+        studentId: primaryTargetId,
+        studentName: memberNames || st?.name || 'Student',
+        classLabel: getStudentClassForFeeYear(st, selectedFeeAcademicYear) || st?.class || '',
+        items: selected,
+        total,
+        billingGroupId: isAllGroupMembers ? activeGroup.id : null,
+        targetGroupMemberIds
+    });
     resetStudentSelection();
     document.getElementById('total-amount').value = 0;
     renderMultiEntryQueue();
@@ -3266,6 +3335,14 @@ const editMultiEntryItem = (index = -1) => {
     document.getElementById('entry-class').value = st.class || '';
     document.getElementById('entry-gender').value = st.gender || 'all';
     selectedStudentId = st.id;
+    const entryGroup = getStudentBillingGroup(st.id);
+    if (Array.isArray(entry.targetGroupMemberIds) && entry.targetGroupMemberIds.length > 0) {
+        selectedGroupMemberIds = new Set(entry.targetGroupMemberIds);
+    } else if (entryGroup && Array.isArray(entryGroup.memberIds) && entryGroup.memberIds.length > 1) {
+        selectedGroupMemberIds = new Set(entryGroup.memberIds);
+    } else {
+        selectedGroupMemberIds = new Set([st.id]);
+    }
     document.getElementById('entry-student-input').value = `${st.name} (Adm: ${st.adm || '-'})`;
     pendingFeeSelectionsByYear = {};
     (entry.items || []).forEach((item) => {
@@ -3275,6 +3352,7 @@ const editMultiEntryItem = (index = -1) => {
     });
     multiEntryQueue.splice(index, 1);
     populateFeeItemSelection();
+    syncGroupedStudentsForSelectedStudent();
     updateTotalAmount();
     renderMultiEntryQueue();
 };
@@ -3518,6 +3596,11 @@ const populateStudentSuggestions = (searchTerm = '') => {
         fil.forEach(s => {
             const isAlum = s.isAlumni === true || String(s.status || '').trim().toLowerCase() === 'alumni' || String(s.class || '').trim().toLowerCase() === 'alumni';
             const alumBatch = s.passedOutYear || s.graduatedYear || '';
+            const grp = getStudentBillingGroup(s.id);
+            const grpMembers = grp ? getGroupMemberStudents(grp) : [];
+            const groupBadge = grpMembers.length > 1
+                ? `<span class="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200"><i class="fas fa-users mr-1"></i>Group (${grpMembers.length})</span>`
+                : '';
             const statusOrBatchBadge = isAlum
                 ? `<span class="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200"><i class="fas fa-graduation-cap mr-1"></i>Alumni ${alumBatch ? `(Batch ${escapeHtml(alumBatch)})` : ''}</span>`
                 : `<span class="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">Class: ${escapeHtml(s.class || '-')}</span>`;
@@ -3529,6 +3612,7 @@ const populateStudentSuggestions = (searchTerm = '') => {
                     <div class="font-bold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
                         <span>${escapeHtml(s.name)}</span>
                         ${statusOrBatchBadge}
+                        ${groupBadge}
                         ${s.gender ? `<span class="text-[10px] font-bold text-slate-500">(${escapeHtml(s.gender.charAt(0))})</span>` : ''}
                         ${String(s.status || '').toLowerCase() === 'discontinued' ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">Discontinued</span>` : ''}
                     </div>
@@ -4325,7 +4409,8 @@ const processPaymentSubmit = async (isUpdate) => {
                 if (!entrySelected.length) return;
                 const customCbs = entrySelected.filter((item) => item.itemType === 'custom');
                 const monthlyCbs = entrySelected.filter((item) => (item.itemType || 'month') === 'month');
-                const studentClass = students.find((student) => student.id === entry.studentId)?.class || '';
+                const entryStuObj = getStudentById(entry.studentId);
+                const studentClass = getStudentClassForFeeYear(entryStuObj, selectedFeeAcademicYear) || entryStuObj?.class || '';
                 const common = {
                     receiptNo: rcpt,
                     transactionId: tId,
@@ -4349,7 +4434,8 @@ const processPaymentSubmit = async (isUpdate) => {
                     const enteredCustomTotal = roundMoney(Math.max(0, Number(item.amount || 0)));
                     if (targets.length === 1) {
                         const singleId = targets[0];
-                        const singleClass = students.find((student) => student.id === singleId)?.class || studentClass;
+                        const singleStuObj = getStudentById(singleId);
+                        const singleClass = getStudentClassForFeeYear(singleStuObj, itemYear) || singleStuObj?.class || studentClass;
                         queuePaymentWrite(batch, {
                             ...common,
                             academicYear: itemYear,
@@ -4367,7 +4453,8 @@ const processPaymentSubmit = async (isUpdate) => {
                         let runningAssigned = 0;
 
                         targets.forEach((memberId, idx) => {
-                            const memberClass = students.find((student) => student.id === memberId)?.class || studentClass;
+                            const memberStuObj = getStudentById(memberId);
+                            const memberClass = getStudentClassForFeeYear(memberStuObj, itemYear) || memberStuObj?.class || studentClass;
                             const isLast = idx === targets.length - 1;
                             let memberAmt = 0;
                             if (isLast) {
@@ -4403,7 +4490,8 @@ const processPaymentSubmit = async (isUpdate) => {
                         if (targets.length === 1) {
                             // Single student payment ONLY - unchecked siblings remain unpaid without arrears!
                             const singleId = targets[0];
-                            const singleClass = students.find(s => s.id === singleId)?.class || studentClass;
+                            const singleStuObj = getStudentById(singleId);
+                            const singleClass = getStudentClassForFeeYear(singleStuObj, itemYear) || singleStuObj?.class || studentClass;
                             queuePaymentWrite(batch, {
                                 ...common,
                                 academicYear: itemYear,
@@ -4428,7 +4516,8 @@ const processPaymentSubmit = async (isUpdate) => {
                             targets.forEach((id, idx) => {
                                 const isPrimary = idx === 0;
                                 const studentAmt = isPrimary ? itemMonthAmount : 0;
-                                const memberClass = students.find(s => s.id === id)?.class || studentClass;
+                                const memberStuObj = getStudentById(id);
+                                const memberClass = getStudentClassForFeeYear(memberStuObj, itemYear) || memberStuObj?.class || studentClass;
                                 queuePaymentWrite(batch, {
                                     ...common,
                                     academicYear: itemYear,
@@ -7457,18 +7546,16 @@ const renderMonthlyCollectedPage = (searchTerm = '') => {
             const monthlyTxnRows = Object.values(mF.reduce((acc, payment) => {
                 const txnKey = payment.transactionId || payment.receiptNo || `tx-${payment.timestamp || Math.random()}`;
                 if (!acc[txnKey]) acc[txnKey] = { receiptNo: payment.receiptNo || '-', total: 0, students: {}, seenBilling: new Set() };
-                const billingKey = payment.billingGroupId
-                    ? `${txnKey}__${payment.itemKey || ''}__${payment.academicYear || ''}__${payment.billingGroupId}`
-                    : '';
-                if (!(billingKey && acc[txnKey].seenBilling.has(billingKey))) {
+                const billingKey = getPaymentBillingKey(payment);
+                if (!acc[txnKey].seenBilling.has(billingKey)) {
+                    acc[txnKey].seenBilling.add(billingKey);
                     acc[txnKey].total = roundMoney(acc[txnKey].total + getMonthlyReportPaymentAmount(payment));
-                    if (billingKey) acc[txnKey].seenBilling.add(billingKey);
                 }
                 const student = getStudentById(payment.studentId) || {};
                 acc[txnKey].students[payment.studentId || txnKey] = {
-                    name: student.name || 'Unknown',
-                    class: student.class || '-',
-                    adm: student.adm || '-'
+                    name: student.name || payment.studentName || 'Unknown',
+                    class: getStudentClassForFeeYear(student, payment.academicYear) || student.class || payment.classLabel || '-',
+                    adm: student.adm || payment.studentAdm || '-'
                 };
                 return acc;
             }, {})).sort(receiptSort);
@@ -9203,6 +9290,16 @@ onAuthStateChanged(auth, async (user) => {
 
     onSnapshot(collection(db, `${BASE_PATH}/studentGroups`), (snap) => {
         studentGroups = snap.docs.map(d => ({id: d.id, ...d.data()}));
+        if (selectedStudentId) {
+            const grp = getStudentBillingGroup(selectedStudentId);
+            if (grp && Array.isArray(grp.memberIds) && grp.memberIds.length > 1) {
+                if (!selectedGroupMemberIds || selectedGroupMemberIds.size === 0) {
+                    selectedGroupMemberIds = new Set(grp.memberIds);
+                }
+            }
+            populateFeeItemSelection();
+            syncGroupedStudentsForSelectedStudent();
+        }
         syncMasterLedgerState();
         syncFeeDuesState();
         hideLoader();

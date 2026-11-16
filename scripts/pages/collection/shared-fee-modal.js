@@ -116,6 +116,11 @@ const roundMoney = (value) => {
     return Number.isFinite(num) ? Math.round(num * 100) / 100 : 0;
 };
 
+const resolveMemberClassForYear = (student = {}, year = '') => {
+    if (!student) return '-';
+    return (year && student.academicYears?.[year]?.class) || student.class || student.studentClass || '-';
+};
+
 // Resolve true total paid amount for single or grouped/mirror payment records
 const resolveModalPaymentAmount = (p, fallbackFee = 0) => {
     if (!p) return roundMoney(fallbackFee);
@@ -387,7 +392,7 @@ export const openFeeEntryEditModal = (options = {}) => {
             if (includedList) {
                 namesEl.textContent = includedList.map((s, i) => `${includedList.length > 1 ? `${i + 1}. ` : ''}${s.name} (${s.class || '-'})`).join(', ');
             } else if (unit) {
-                namesEl.textContent = unit.students.map((s, i) => `${unit.isGroup ? `${i + 1}. ` : ''}${s.name} (${s.class || s.studentClass || '-'})`).join(', ');
+                namesEl.textContent = unit.students.map((s, i) => `${unit.isGroup ? `${i + 1}. ` : ''}${s.name} (${resolveMemberClassForYear(s, effectiveYear)})`).join(', ');
             } else if (student) {
                 namesEl.textContent = `${student.name} (Adm: ${student.adm || '-'})`;
             } else {
@@ -402,7 +407,8 @@ export const openFeeEntryEditModal = (options = {}) => {
                 const clsTxt = [...new Set(includedList.map(s => s.class).filter(Boolean))].join(', ');
                 classTag.textContent = `Class: ${clsTxt || '-'}`;
             } else {
-                classTag.textContent = unit ? `Class: ${unit.classes?.join(', ')}` : `Class: ${student?.class || '-'}`;
+                const unitClasses = unit ? [...new Set(unit.students.map(s => resolveMemberClassForYear(s, effectiveYear)).filter(Boolean))] : [];
+                classTag.textContent = unit ? `Class: ${(unitClasses.length ? unitClasses : (unit.classes || [])).join(', ')}` : `Class: ${student?.class || '-'}`;
             }
         }
     }
@@ -520,6 +526,7 @@ export const openFeeEntryEditModal = (options = {}) => {
             const paidRec = paidMemberMap.get(s.id);
             const isAlreadyPaid = Boolean(paidRec);
 
+            const memberClass = resolveMemberClassForYear(s, effectiveYear);
             if (isAlreadyPaid) {
                 const rcptTxt = paidRec.receiptNo ? `#${escapeHtml(String(paidRec.receiptNo))}` : 'Paid';
                 const paidAmt = Math.round(resolveModalPaymentAmount(paidRec, memberIndivFee));
@@ -530,7 +537,7 @@ export const openFeeEntryEditModal = (options = {}) => {
                             <input type="checkbox" class="ledger-group-student-cb w-4 h-4 text-emerald-600 rounded border-emerald-300 cursor-not-allowed flex-shrink-0"
                                 data-student-id="${escapeHtml(s.id)}"
                                 data-student-name="${escapeHtml(s.name)}"
-                                data-student-class="${escapeHtml(s.class || s.studentClass || '-')}"
+                                data-student-class="${escapeHtml(memberClass)}"
                                 data-student-adm="${escapeHtml(s.adm || '')}"
                                 data-student-fee="${memberIndivFee}"
                                 data-already-paid="true"
@@ -538,7 +545,7 @@ export const openFeeEntryEditModal = (options = {}) => {
                             <div class="min-w-0">
                                 <div class="font-bold text-emerald-900 text-xs truncate">✓ ${idx + 1}. ${escapeHtml(s.name)}</div>
                                 <div class="text-[10px] text-emerald-700">
-                                    Class: <span class="font-semibold">${escapeHtml(s.class || s.studentClass || '-')}</span>
+                                    Class: <span class="font-semibold">${escapeHtml(memberClass)}</span>
                                     ${s.adm ? ` | Adm: <span class="font-mono">${escapeHtml(s.adm)}</span>` : ''}
                                     <span> | ${hasConc ? 'Conc' : 'Indiv'}: ₹${memberIndivFee}</span>
                                 </div>
@@ -558,7 +565,7 @@ export const openFeeEntryEditModal = (options = {}) => {
                             <input type="checkbox" class="ledger-group-student-cb w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer flex-shrink-0"
                                 data-student-id="${escapeHtml(s.id)}"
                                 data-student-name="${escapeHtml(s.name)}"
-                                data-student-class="${escapeHtml(s.class || s.studentClass || '-')}"
+                                data-student-class="${escapeHtml(memberClass)}"
                                 data-student-adm="${escapeHtml(s.adm || '')}"
                                 data-student-fee="${memberIndivFee}"
                                 data-already-paid="false"
@@ -566,7 +573,7 @@ export const openFeeEntryEditModal = (options = {}) => {
                             <div class="min-w-0">
                                 <div class="font-bold text-slate-800 text-xs truncate">${idx + 1}. ${escapeHtml(s.name)}</div>
                                 <div class="text-[10px] text-slate-500">
-                                    Class: <span class="font-semibold text-slate-700">${escapeHtml(s.class || s.studentClass || '-')}</span>
+                                    Class: <span class="font-semibold text-slate-700">${escapeHtml(memberClass)}</span>
                                     ${s.adm ? ` | Adm: <span class="font-mono">${escapeHtml(s.adm)}</span>` : ''}
                                     ${hasConc ? ` | <span class="text-amber-700 font-bold">Concession</span>` : ''}
                                 </div>
