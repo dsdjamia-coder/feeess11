@@ -21,6 +21,53 @@ let ctx = {
 
 let editGroupWorkingMembers = [];
 let pendingGroupCreationData = null;
+let grpPageOffset = 0;
+let concSearchPageOffset = 0;
+let activeConcPageOffset = 0;
+
+const computePaginationSlice = (totalItems, offset, rowLimitRaw = '25') => {
+    const isAllRows = rowLimitRaw === 'all';
+    const rowLimit = isAllRows ? totalItems : (parseInt(rowLimitRaw, 10) || 25);
+    let safeOffset = offset;
+    if (isAllRows) {
+        safeOffset = 0;
+    } else if (safeOffset >= totalItems) {
+        safeOffset = Math.max(0, Math.floor(Math.max(0, totalItems - 1) / rowLimit) * rowLimit);
+    }
+    const sliceStart = isAllRows ? 0 : Math.max(0, safeOffset);
+    const sliceEnd = isAllRows ? totalItems : Math.min(totalItems, sliceStart + rowLimit);
+    return { isAllRows, rowLimit, sliceStart, sliceEnd, nextOffset: safeOffset };
+};
+
+const renderSlicePagination = ({ el, sliceStart, sliceEnd, totalFiltered, rowLimit, isAllRows, noun = 'records', roundedCard = false, onPageChange }) => {
+    if (!el) return;
+    const radiusCls = roundedCard ? 'rounded-xl border border-slate-200 bg-slate-50/80' : 'border-t border-slate-200 bg-slate-50/70';
+    if (!isAllRows) {
+        const hasPrev = sliceStart > 0;
+        const hasNext = sliceEnd < totalFiltered;
+        el.className = `flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-4 py-2 sm:py-2.5 ${radiusCls} text-[11px] sm:text-xs`;
+        el.innerHTML = `
+            <span class="font-semibold text-slate-600">Showing <b class="text-slate-900">${sliceStart + 1} - ${sliceEnd}</b> of <b class="text-slate-900">${totalFiltered}</b> ${escapeHtml(noun)}</span>
+            <div class="flex items-center gap-2">
+                <button type="button" data-page-dir="prev" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition" ${hasPrev ? '' : 'disabled'}>
+                    <i class="fas fa-chevron-left mr-1 text-[10px]"></i> Previous
+                </button>
+                <button type="button" data-page-dir="next" class="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition" ${hasNext ? '' : 'disabled'}>
+                    Next <i class="fas fa-chevron-right ml-1 text-[10px]"></i>
+                </button>
+            </div>
+        `;
+        el.querySelector('[data-page-dir="prev"]')?.addEventListener('click', () => {
+            onPageChange(Math.max(0, sliceStart - rowLimit));
+        });
+        el.querySelector('[data-page-dir="next"]')?.addEventListener('click', () => {
+            if (sliceEnd < totalFiltered) onPageChange(sliceEnd);
+        });
+    } else {
+        el.className = `flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 ${radiusCls} text-[11px] sm:text-xs`;
+        el.innerHTML = `<span class="font-semibold text-slate-600">Showing all <b class="text-slate-900">${totalFiltered}</b> ${escapeHtml(noun)}</span>`;
+    }
+};
 
 // --- Helper Audit Logging ---
 const logAudit = async (category, action, entityType, entityId, message) => {
@@ -140,7 +187,6 @@ export const renderFeeItemsManagement = () => {
 
 export const syncFeeConfigUI = (data = {}) => {
     const defFeeInput = document.getElementById('default-fee-input');
-    const titleInput = document.getElementById('fee-status-title-input');
     const reqCheckbox = document.getElementById('default-fee-receipt-req');
     const startDaySelect = document.getElementById('fee-collect-start-day');
     const endDaySelect = document.getElementById('fee-collect-end-day');
@@ -148,7 +194,6 @@ export const syncFeeConfigUI = (data = {}) => {
     const notifyDaysInput = document.getElementById('fee-notify-days-before');
 
     if (defFeeInput && data.defaultFee !== undefined) defFeeInput.value = data.defaultFee;
-    if (titleInput && data.feeStatusTitle !== undefined) titleInput.value = data.feeStatusTitle;
     if (reqCheckbox && data.defaultReceiptMandatory !== undefined) reqCheckbox.checked = !!data.defaultReceiptMandatory;
 
     const windowCfg = data.feeCollectionWindow || {};
@@ -207,7 +252,6 @@ const updateFeeScheduleSummary = () => {
 
 const saveFeeConfiguration = async () => {
     const defFeeInput = document.getElementById('default-fee-input');
-    const titleInput = document.getElementById('fee-status-title-input');
     const reqCheckbox = document.getElementById('default-fee-receipt-req');
     const startDaySelect = document.getElementById('fee-collect-start-day');
     const endDaySelect = document.getElementById('fee-collect-end-day');
@@ -215,7 +259,6 @@ const saveFeeConfiguration = async () => {
     const notifyDaysInput = document.getElementById('fee-notify-days-before');
 
     const defaultFee = parseFloat(defFeeInput?.value) || 0;
-    const feeStatusTitle = (titleInput?.value || '').trim();
     const defaultReceiptMandatory = !!reqCheckbox?.checked;
 
     const startDay = parseInt(startDaySelect?.value || '1', 10);
@@ -225,7 +268,6 @@ const saveFeeConfiguration = async () => {
 
     const payload = {
         defaultFee,
-        feeStatusTitle,
         defaultReceiptMandatory,
         feeCollectionStartDay: startDay,
         feeCollectionEndDay: endDay,
@@ -266,10 +308,31 @@ export const renderStudentGroups = () => {
     const sTerm = (document.getElementById('grp-search-input')?.value || '').trim().toLowerCase();
     const fCls = document.getElementById('grp-class-filter')?.value ?? '';
     const fSize = document.getElementById('filter-groups-size')?.value || 'all';
+    const rowLimitRaw = document.getElementById('grp-row-limit')?.value || '25';
     const countBadge = document.getElementById('grp-count-badge');
+    const paginationEl = document.getElementById('grp-pagination');
+    const resetGrpPagination = () => {
+        if (paginationEl) {
+            paginationEl.className = 'hidden';
+            paginationEl.innerHTML = '';
+        }
+    };
 
     const uniqueGroups = Array.from(new Map((studentGroups || []).map((g) => [g.id, g])).values());
     populateExistingGroupSizeFilter(uniqueGroups);
+
+    if (!fCls && !sTerm && fSize === 'all') {
+        if (countBadge) countBadge.textContent = `${uniqueGroups.length} Groups`;
+        listNode.innerHTML = `
+            <div class="text-center py-8 px-4 bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-500 text-xs">
+                <i class="fas fa-users text-slate-300 text-2xl mb-2 block"></i>
+                <p class="font-bold text-slate-700 text-xs sm:text-sm">Select a Class to View Student Groups</p>
+                <p class="mt-1 text-[11px] text-slate-500">Please choose a specific class, select &ldquo;All Classes&rdquo;, or search by student or father name above.</p>
+            </div>
+        `;
+        resetGrpPagination();
+        return;
+    }
 
     const filteredGroups = uniqueGroups.filter((g) => {
         const memberIds = g.memberIds || [];
@@ -323,10 +386,16 @@ export const renderStudentGroups = () => {
                 ${uniqueGroups.length === 0 ? 'No groups created yet.' : 'No student groups match the current search or class filter.'}
             </div>
         `;
+        resetGrpPagination();
         return;
     }
 
-    listNode.innerHTML = filteredGroups.map((g, gIdx) => {
+    const { isAllRows, rowLimit, sliceStart, sliceEnd, nextOffset } = computePaginationSlice(filteredGroups.length, grpPageOffset, rowLimitRaw);
+    grpPageOffset = nextOffset;
+    const visibleGroups = filteredGroups.slice(sliceStart, sliceEnd);
+
+    listNode.innerHTML = visibleGroups.map((g, gIdx) => {
+        const displayGroupNo = sliceStart + gIdx + 1;
         const memberRows = (g.memberIds || []).map((memberId, mIdx) => {
             const student = students.find((entry) => entry.id === memberId) || rawStudents.find((entry) => entry.id === memberId);
             if (!student) {
@@ -395,9 +464,9 @@ export const renderStudentGroups = () => {
                 <div class="bg-slate-50 px-2.5 py-2 sm:px-3.5 sm:py-2.5 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
                     <div class="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
                         <span class="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-[11px] sm:text-xs font-black shadow-2xs">
-                            ${gIdx + 1}
+                            ${displayGroupNo}
                         </span>
-                        <h4 class="font-bold text-xs sm:text-sm text-gray-800">Group #${gIdx + 1}</h4>
+                        <h4 class="font-bold text-xs sm:text-sm text-gray-800">Group #${displayGroupNo}</h4>
                         <span class="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 sm:px-2.5 py-0.5 rounded-full">
                             <i class="fas fa-users text-[10px]"></i> ${(g.memberIds || []).length} Students
                         </span>
@@ -435,6 +504,21 @@ export const renderStudentGroups = () => {
             </div>
         `;
     }).join('');
+
+    renderSlicePagination({
+        el: paginationEl,
+        sliceStart,
+        sliceEnd,
+        totalFiltered: filteredGroups.length,
+        rowLimit,
+        isAllRows,
+        noun: 'groups',
+        roundedCard: true,
+        onPageChange: (next) => {
+            grpPageOffset = next;
+            renderStudentGroups();
+        }
+    });
 };
 
 const populateExistingGroupClassFilter = () => {
@@ -517,18 +601,20 @@ export const populateConcessionClassFilters = () => {
     }
 };
 
+const matchesGroupGenderFilter = (studentGender, filterGender) => {
+    const f = String(filterGender || 'all').trim().toLowerCase();
+    if (!f || f === 'all') return true;
+    const g = String(studentGender || '').trim().toLowerCase();
+    if (f === 'male') return g === 'male' || g === 'm' || g === 'boy';
+    if (f === 'female') return g === 'female' || g === 'f' || g === 'girl';
+    return g === f;
+};
+
 const renderGroupStudentDatalist = (idx) => {
-    const cls = document.querySelector(`.grp-cls[data-idx="${idx}"]`)?.value;
-    const gen = document.querySelector(`.grp-gen[data-idx="${idx}"]`)?.value;
+    const cls = document.querySelector(`.grp-cls[data-idx="${idx}"]`)?.value || 'all';
+    const gen = document.querySelector(`.grp-gen[data-idx="${idx}"]`)?.value || 'all';
     const stuSelect = document.getElementById(`grp-stu-${idx}`);
     if (!stuSelect) return;
-
-    if (!cls) {
-        stuSelect.innerHTML = '<option value="">Select class and gender first...</option>';
-        stuSelect.value = '';
-        syncSmartSelectDisplay(stuSelect);
-        return;
-    }
 
     const students = ctx.getStudents();
     const alreadySelected = Array.from(document.querySelectorAll('.grp-stu'))
@@ -536,14 +622,17 @@ const renderGroupStudentDatalist = (idx) => {
         .map((el) => el.value)
         .filter(Boolean);
 
-    const matches = students.filter((s) => s.class === cls && (!gen || s.gender === gen) && !alreadySelected.includes(s.id));
+    const matches = students
+        .filter((s) => (cls === 'all' || s.class === cls) && matchesGroupGenderFilter(s.gender, gen) && !alreadySelected.includes(s.id))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' }));
+
     const prevVal = stuSelect.value || '';
     if (matches.length === 0) {
         stuSelect.innerHTML = '<option value="">No eligible students found</option>';
         stuSelect.value = '';
     } else {
         stuSelect.innerHTML = '<option value="">-- Select Student --</option>' +
-            matches.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} (Adm: ${escapeHtml(s.adm || '--')})</option>`).join('');
+            matches.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} (Class ${escapeHtml(s.class || '--')} · Adm: ${escapeHtml(s.adm || '--')})</option>`).join('');
         stuSelect.value = matches.some((m) => m.id === prevVal) ? prevVal : '';
     }
     syncSmartSelectDisplay(stuSelect);
@@ -802,8 +891,16 @@ export const renderConcessionsList = () => {
     populateConcessionClassFilters();
     const fCls = document.getElementById('filter-conc-class')?.value || '';
     const sTerm = (document.getElementById('search-conc-input')?.value || '').trim().toLowerCase();
+    const rowLimitRaw = document.getElementById('conc-search-row-limit')?.value || '25';
     const cont = document.getElementById('conc-list-container');
     const emptyState = document.getElementById('conc-list-empty');
+    const paginationEl = document.getElementById('conc-list-pagination');
+    const resetConcSearchPagination = () => {
+        if (paginationEl) {
+            paginationEl.className = 'hidden';
+            paginationEl.innerHTML = '';
+        }
+    };
 
     renderActiveConcessionsList();
 
@@ -812,6 +909,7 @@ export const renderConcessionsList = () => {
     if (!fCls && !sTerm) {
         emptyState.classList.remove('hidden');
         cont.classList.add('hidden');
+        resetConcSearchPagination();
         return;
     }
     emptyState.classList.add('hidden');
@@ -827,10 +925,15 @@ export const renderConcessionsList = () => {
 
     if (fil.length === 0) {
         cont.innerHTML = '<p class="text-xs text-slate-500 py-4 text-center">No matching students found.</p>';
+        resetConcSearchPagination();
         return;
     }
 
-    cont.innerHTML = fil.map((s) => {
+    const { isAllRows, rowLimit, sliceStart, sliceEnd, nextOffset } = computePaginationSlice(fil.length, concSearchPageOffset, rowLimitRaw);
+    concSearchPageOffset = nextOffset;
+    const visibleStudents = fil.slice(sliceStart, sliceEnd);
+
+    cont.innerHTML = visibleStudents.map((s) => {
         const hasConc = s.concessionFee !== undefined && s.concessionFee !== null && s.concessionFee !== '';
         return `
             <div class="p-2 sm:p-2.5 bg-white border border-slate-200 rounded-lg shadow-2xs hover:border-blue-200 transition flex items-center justify-between gap-2">
@@ -852,6 +955,22 @@ export const renderConcessionsList = () => {
             </div>
         `;
     }).join('');
+    cont.scrollTop = 0;
+
+    renderSlicePagination({
+        el: paginationEl,
+        sliceStart,
+        sliceEnd,
+        totalFiltered: fil.length,
+        rowLimit,
+        isAllRows,
+        noun: 'students',
+        roundedCard: true,
+        onPageChange: (next) => {
+            concSearchPageOffset = next;
+            renderConcessionsList();
+        }
+    });
 };
 
 const renderActiveConcessionsList = () => {
@@ -861,6 +980,14 @@ const renderActiveConcessionsList = () => {
     const statusLabel = document.getElementById('active-conc-filter-status');
     const sTerm = (document.getElementById('active-conc-search')?.value || '').trim().toLowerCase();
     const fCls = document.getElementById('active-conc-class-filter')?.value ?? '';
+    const rowLimitRaw = document.getElementById('active-conc-row-limit')?.value || '25';
+    const paginationEl = document.getElementById('active-conc-pagination');
+    const resetActiveConcPagination = () => {
+        if (paginationEl) {
+            paginationEl.className = 'hidden';
+            paginationEl.innerHTML = '';
+        }
+    };
 
     if (!cont) return;
 
@@ -868,6 +995,13 @@ const renderActiveConcessionsList = () => {
     const active = students.filter((s) => s.concessionFee !== undefined && s.concessionFee !== null && s.concessionFee !== '');
 
     if (badge) badge.textContent = String(active.length);
+
+    if (!fCls && !sTerm) {
+        if (statusLabel) statusLabel.textContent = 'Select Class or Search';
+        cont.innerHTML = '<tr><td colspan="6" class="py-8 px-4 text-center text-slate-500 font-medium text-xs"><i class="fas fa-filter text-slate-300 text-xl mb-1.5 block"></i>Please select a class, choose &ldquo;All Classes&rdquo;, or search above to view active concessions.</td></tr>';
+        resetActiveConcPagination();
+        return;
+    }
 
     const filtered = active.filter((s) => {
         if (fCls && fCls !== 'all' && s.class !== fCls) return false;
@@ -880,17 +1014,22 @@ const renderActiveConcessionsList = () => {
     });
 
     if (statusLabel) {
-        statusLabel.textContent = (fCls !== 'all' || sTerm) ? `Showing ${filtered.length} of ${active.length}` : 'Showing All';
+        statusLabel.textContent = (fCls !== 'all' || sTerm) ? `Showing ${filtered.length} of ${active.length}` : `Showing All (${active.length})`;
     }
 
     if (!filtered.length) {
         cont.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400 font-semibold text-xs">No active concessions found.</td></tr>';
+        resetActiveConcPagination();
         return;
     }
 
-    cont.innerHTML = filtered.map((s, idx) => `
+    const { isAllRows, rowLimit, sliceStart, sliceEnd, nextOffset } = computePaginationSlice(filtered.length, activeConcPageOffset, rowLimitRaw);
+    activeConcPageOffset = nextOffset;
+    const visibleActive = filtered.slice(sliceStart, sliceEnd);
+
+    cont.innerHTML = visibleActive.map((s, idx) => `
         <tr class="hover:bg-slate-50 transition">
-            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center text-slate-400 font-semibold tabular-nums">${idx + 1}</td>
+            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center text-slate-400 font-semibold tabular-nums">${sliceStart + idx + 1}</td>
             <td class="py-1.5 sm:py-2.5 px-2 sm:px-3">
                 <span class="font-bold text-slate-800 text-[11px] sm:text-xs">${escapeHtml(s.name || '-')}</span>
             </td>
@@ -905,6 +1044,21 @@ const renderActiveConcessionsList = () => {
             </td>
         </tr>
     `).join('');
+
+    renderSlicePagination({
+        el: paginationEl,
+        sliceStart,
+        sliceEnd,
+        totalFiltered: filtered.length,
+        rowLimit,
+        isAllRows,
+        noun: 'concessions',
+        roundedCard: false,
+        onPageChange: (next) => {
+            activeConcPageOffset = next;
+            renderActiveConcessionsList();
+        }
+    });
 };
 
 const openConcModal = (studentId) => {
@@ -1225,7 +1379,7 @@ export const initFinanceManagementModule = (stateContext) => {
         if (count < 2) return;
 
         const classes = [...(ctx.getClasses() || [])].sort(compareClassLabelsNatural);
-        const clsOpts = '<option value="">-- Select Class --</option>' + classes.map((c) => {
+        const clsOpts = '<option value="all" selected>All Classes</option>' + classes.map((c) => {
             const clean = String(c || '').trim();
             const lbl = clean.toLowerCase().startsWith('class') ? clean : `Class: ${clean}`;
             return `<option value="${escapeHtml(c)}">${escapeHtml(lbl)}</option>`;
@@ -1233,19 +1387,26 @@ export const initFinanceManagementModule = (stateContext) => {
 
         for (let i = 0; i < count; i++) {
             cont.innerHTML += `
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pb-4 border-b border-gray-100 mb-2">
-                    <select id="grp-cls-${i}" data-smart-select="true" class="grp-cls p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}">${clsOpts}</select>
-                    <select id="grp-gen-${i}" data-smart-select="true" class="grp-gen p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}"><option value="Male">Male</option><option value="Female">Female</option></select>
-                    <div class="sm:col-span-3">
-                        <select id="grp-stu-${i}" data-smart-select="true" class="grp-stu p-2.5 border rounded-lg text-sm font-semibold bg-white w-full" data-idx="${i}">
-                            <option value="">Select class and gender first...</option>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 pb-4 border-b border-gray-100 mb-2">
+                    <div class="sm:col-span-2">
+                        <select id="grp-cls-${i}" data-smart-select="true" class="grp-cls p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}">${clsOpts}</select>
+                    </div>
+                    <div>
+                        <select id="grp-gen-${i}" data-smart-select="true" class="grp-gen p-2.5 border rounded-lg bg-gray-50 text-sm font-semibold" data-idx="${i}"><option value="all" selected>All</option><option value="Male">Male</option><option value="Female">Female</option></select>
+                    </div>
+                    <div class="col-span-2 sm:col-span-3">
+                        <select id="grp-stu-${i}" data-smart-select="true" data-smart-floating="true" data-smart-search="true" data-smart-placeholder="Type student name or Adm No..." class="grp-stu p-2.5 border rounded-lg text-sm font-semibold bg-white w-full" data-idx="${i}">
+                            <option value="">-- Select Student --</option>
                         </select>
-                        <p class="text-xs text-gray-500 mt-1">Select class and gender, then choose a student from the dropdown.</p>
+                        <p class="text-xs text-gray-500 mt-1">Type student name or admission no. to search, or filter by class and gender.</p>
                     </div>
                 </div>
             `;
         }
         enableSmartSelectWindowing(cont, { visibleCount: 0 });
+        for (let i = 0; i < count; i++) {
+            renderGroupStudentDatalist(i);
+        }
     });
 
     document.getElementById('group-creation-container')?.addEventListener('change', (e) => {
@@ -1299,10 +1460,14 @@ export const initFinanceManagementModule = (stateContext) => {
     document.getElementById('unify-family-confirm-btn')?.addEventListener('click', handleConfirmGroupCreation);
 
     // Existing groups filters
-    ['grp-search-input', 'grp-class-filter', 'filter-groups-size'].forEach((id) => {
-        document.getElementById(id)?.addEventListener('input', renderStudentGroups);
-        document.getElementById(id)?.addEventListener('change', renderStudentGroups);
-    });
+    const handleGroupFilterChange = () => {
+        grpPageOffset = 0;
+        renderStudentGroups();
+    };
+    document.getElementById('grp-search-input')?.addEventListener('input', handleGroupFilterChange);
+    document.getElementById('grp-class-filter')?.addEventListener('change', handleGroupFilterChange);
+    document.getElementById('filter-groups-size')?.addEventListener('change', handleGroupFilterChange);
+    document.getElementById('grp-row-limit')?.addEventListener('change', handleGroupFilterChange);
 
     const closeEditGroupModal = () => {
         document.getElementById('edit-group-popup')?.classList.add('hidden');
@@ -1348,25 +1513,24 @@ export const initFinanceManagementModule = (stateContext) => {
             document.getElementById('e-grp-fee').value = g.fee || '';
             editGroupWorkingMembers = [...(g.memberIds || [])];
 
-            const stuSelect = document.getElementById('e-grp-student-select');
-            if (stuSelect) {
-                stuSelect.innerHTML = '<option value="">Select class first...</option>';
-                stuSelect.value = '';
-                syncSmartSelectDisplay(stuSelect);
-            }
-
             const classFilter = document.getElementById('e-grp-class-filter');
             if (classFilter) {
                 const classes = ctx.getClasses();
                 populateClassSelect(classFilter, classes, {
-                    selectedValue: '',
-                    includeAllOption: false,
-                    placeholder: '-- Select Class --'
+                    selectedValue: 'all',
+                    includeAllOption: true,
+                    allOptionLabel: 'All Classes',
+                    allOptionValue: 'all'
                 });
             }
-            syncSmartSelectDisplay(document.getElementById('e-grp-gender-filter'));
+            const genderFilter = document.getElementById('e-grp-gender-filter');
+            if (genderFilter) {
+                genderFilter.value = 'all';
+                syncSmartSelectDisplay(genderFilter);
+            }
 
             renderEditGroupMembers();
+            populateEditGroupStudentDatalist();
 
             const modal = document.getElementById('edit-group-popup');
             if (modal) {
@@ -1406,23 +1570,21 @@ export const initFinanceManagementModule = (stateContext) => {
     });
 
     const populateEditGroupStudentDatalist = () => {
-        const cls = document.getElementById('e-grp-class-filter')?.value;
-        const gen = document.getElementById('e-grp-gender-filter')?.value;
+        const cls = document.getElementById('e-grp-class-filter')?.value || 'all';
+        const gen = document.getElementById('e-grp-gender-filter')?.value || 'all';
         const stuSelect = document.getElementById('e-grp-student-select');
         if (!stuSelect) return;
-        if (!cls) {
-            stuSelect.innerHTML = '<option value="">Select class first...</option>';
-            stuSelect.value = '';
-            syncSmartSelectDisplay(stuSelect);
-            return;
-        }
+
         const students = ctx.getStudents();
-        const matches = students.filter((s) => s.class === cls && (!gen || s.gender === gen) && !editGroupWorkingMembers.includes(s.id));
+        const matches = students
+            .filter((s) => (cls === 'all' || s.class === cls) && matchesGroupGenderFilter(s.gender, gen) && !editGroupWorkingMembers.includes(s.id))
+            .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true, sensitivity: 'base' }));
+
         if (matches.length === 0) {
             stuSelect.innerHTML = '<option value="">No eligible students found</option>';
         } else {
             stuSelect.innerHTML = '<option value="">-- Select Student --</option>' +
-                matches.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} (Adm: ${escapeHtml(s.adm || '--')})</option>`).join('');
+                matches.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} (Class ${escapeHtml(s.class || '--')} · Adm: ${escapeHtml(s.adm || '--')})</option>`).join('');
         }
         stuSelect.value = '';
         syncSmartSelectDisplay(stuSelect);
@@ -1471,10 +1633,20 @@ export const initFinanceManagementModule = (stateContext) => {
     });
 
     // --- Fee Concessions Listeners ---
-    document.getElementById('filter-conc-class')?.addEventListener('change', renderConcessionsList);
-    document.getElementById('search-conc-input')?.addEventListener('input', renderConcessionsList);
-    document.getElementById('active-conc-search')?.addEventListener('input', renderActiveConcessionsList);
-    document.getElementById('active-conc-class-filter')?.addEventListener('change', renderActiveConcessionsList);
+    const handleConcSearchFilterChange = () => {
+        concSearchPageOffset = 0;
+        renderConcessionsList();
+    };
+    const handleActiveConcFilterChange = () => {
+        activeConcPageOffset = 0;
+        renderActiveConcessionsList();
+    };
+    document.getElementById('filter-conc-class')?.addEventListener('change', handleConcSearchFilterChange);
+    document.getElementById('conc-search-row-limit')?.addEventListener('change', handleConcSearchFilterChange);
+    document.getElementById('search-conc-input')?.addEventListener('input', handleConcSearchFilterChange);
+    document.getElementById('active-conc-search')?.addEventListener('input', handleActiveConcFilterChange);
+    document.getElementById('active-conc-class-filter')?.addEventListener('change', handleActiveConcFilterChange);
+    document.getElementById('active-conc-row-limit')?.addEventListener('change', handleActiveConcFilterChange);
 
     // Populate concession class filter dropdowns
     populateConcessionClassFilters();

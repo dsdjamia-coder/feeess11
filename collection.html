@@ -1674,7 +1674,6 @@
                             <h2 class="text-base sm:text-xl font-bold mb-2.5 sm:mb-3 text-blue-900 border-b border-blue-200 pb-2"><i class="fas fa-cog mr-2"></i> Default Configuration</h2>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-5 mb-3 sm:mb-4">
                                 <div><label class="block text-xs sm:text-sm font-semibold mb-1">School Default Monthly Fee (₹)</label><input type="number" id="default-fee-input" class="w-full p-2 sm:p-2.5 border rounded-lg shadow-sm font-bold text-blue-700 bg-white text-sm"></div>
-                                <div><label class="block text-xs sm:text-sm font-semibold mb-1">Fee Status Title (For PDF Report)</label><input type="text" id="fee-status-title-input" class="w-full p-2 sm:p-2.5 border rounded-lg shadow-sm bg-white text-sm"></div>
                             </div>
 
                             <!-- Monthly Collection Window & Student Notification Schedule -->
@@ -1844,20 +1843,28 @@
                                 <span>Viewing historical sibling groups for session <strong id="grp-historical-year-label">--</strong> (Read-Only). Switch to active session to create or modify groups.</span>
                             </div>
 
-                            <!-- Existing Groups Search, Academic Year & Class Filter Bar -->
+                            <!-- Existing Groups Search, Class, Group Size & Row Limit Bar -->
                             <div class="bg-gray-50 p-2 sm:p-2.5 rounded-lg border border-gray-200 shadow-2xs grid grid-cols-2 sm:grid-cols-12 gap-1.5 sm:gap-2 items-center">
-                                <div class="col-span-1 sm:col-span-4">
-                                    <select id="filter-groups-size" data-smart-select="true" class="w-full py-1.5 px-2.5 text-xs border border-indigo-200 rounded-md bg-white text-indigo-900 font-bold focus:ring-1 focus:ring-indigo-500">
-                                        <option value="all">All Group Sizes</option>
-                                    </select>
-                                </div>
-                                <div class="col-span-1 sm:col-span-3 sm:order-3">
+                                <div class="col-span-1 sm:col-span-3">
                                     <select id="grp-class-filter" data-smart-select="true" class="w-full py-1.5 px-2.5 text-xs border border-gray-300 rounded-md bg-white text-gray-800 font-medium focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                                         <option value="" selected>-- Select Class --</option>
                                         <option value="all">All Classes</option>
                                     </select>
                                 </div>
-                                <div class="col-span-2 sm:col-span-5 sm:order-2 relative">
+                                <div class="col-span-1 sm:col-span-3">
+                                    <select id="filter-groups-size" data-smart-select="true" class="w-full py-1.5 px-2.5 text-xs border border-indigo-200 rounded-md bg-white text-indigo-900 font-bold focus:ring-1 focus:ring-indigo-500">
+                                        <option value="all">All Group Sizes</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-1 sm:col-span-2">
+                                    <select id="grp-row-limit" data-smart-select="true" class="w-full py-1.5 px-2 text-xs border border-gray-300 rounded-md bg-white text-gray-700 font-bold focus:ring-1 focus:ring-blue-500 focus:border-blue-500 cursor-pointer">
+                                        <option value="25" selected>Rows: 25</option>
+                                        <option value="50">Rows: 50</option>
+                                        <option value="100">Rows: 100</option>
+                                        <option value="all">Show All</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-1 sm:col-span-4 relative">
                                     <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs pointer-events-none"></i>
                                     <input type="text" id="grp-search-input" placeholder="Search student or father name..." class="w-full py-1.5 pl-8 pr-2.5 text-xs border border-gray-300 rounded-md bg-white text-gray-800 placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                                 </div>
@@ -1865,6 +1872,7 @@
 
                             <!-- Existing Groups List Container -->
                             <div id="student-groups-list" class="space-y-2.5 sm:space-y-4"></div>
+                            <div id="grp-pagination" class="hidden"></div>
                         </div>
                     </div>
                 </div>
@@ -1908,15 +1916,24 @@
                             </div>
 
                             <!-- Filters -->
-                            <div class="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:gap-2.5 bg-slate-50/70 p-2 sm:p-3 rounded-lg border border-slate-200">
-                                <div>
+                            <div class="grid grid-cols-2 gap-2 sm:gap-2.5 bg-slate-50/70 p-2 sm:p-3 rounded-lg border border-slate-200">
+                                <div class="col-span-1">
                                     <label class="block text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Filter Class</label>
                                     <select id="filter-conc-class" data-smart-select="true" class="w-full py-1.5 px-2 sm:px-2.5 text-xs border border-slate-300 rounded-md bg-white text-slate-800 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-medium">
                                         <option value="" selected>-- Select Class --</option>
                                         <option value="all">All Classes</option>
                                     </select>
                                 </div>
-                                <div>
+                                <div class="col-span-1">
+                                    <label class="block text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Rows Limit</label>
+                                    <select id="conc-search-row-limit" data-smart-select="true" class="w-full py-1.5 px-2 sm:px-2.5 text-xs border border-slate-300 rounded-md bg-white text-slate-700 font-bold focus:ring-1 focus:ring-blue-500 focus:border-blue-500 cursor-pointer">
+                                        <option value="25" selected>Rows: 25</option>
+                                        <option value="50">Rows: 50</option>
+                                        <option value="100">Rows: 100</option>
+                                        <option value="all">Show All</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-2">
                                     <label class="block text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Search Student</label>
                                     <div class="relative">
                                         <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
@@ -1927,9 +1944,10 @@
 
                             <!-- Results List -->
                             <div id="conc-list-empty" class="text-center py-4 sm:py-6 px-3 bg-slate-50/50 rounded-lg border border-dashed border-slate-300 text-xs text-slate-500">
-                                Select a class or search to find students.
+                                Select a class, choose All Classes, or search to find students.
                             </div>
                             <div id="conc-list-container" class="space-y-1.5 sm:space-y-2 max-h-[380px] sm:max-h-[460px] overflow-y-auto pr-1 hidden"></div>
+                            <div id="conc-list-pagination" class="hidden"></div>
                         </div>
 
                         <!-- Right Column: Active Concessions Directory (xl:col-span-8) -->
@@ -1946,39 +1964,50 @@
                                     <p class="hidden sm:block text-[11px] text-slate-500 mt-0.5">Students with special monthly fee rates applied.</p>
                                 </div>
                                 <div class="flex items-center gap-2 shrink-0">
-                                    <span id="active-conc-filter-status" class="text-[10px] sm:text-xs text-emerald-800 font-semibold bg-emerald-100/70 border border-emerald-200 px-2 py-0.5 rounded-md whitespace-nowrap">Showing All</span>
+                                    <span id="active-conc-filter-status" class="text-[10px] sm:text-xs text-emerald-800 font-semibold bg-emerald-100/70 border border-emerald-200 px-2 py-0.5 rounded-md whitespace-nowrap">Select Class or Search</span>
                                 </div>
                             </div>
 
-                            <!-- Active Concessions Search & Filter Bar -->
+                            <!-- Active Concessions Search, Class & Row Limit Bar -->
                             <div class="bg-white p-2 sm:p-2.5 rounded-lg border border-emerald-100 shadow-2xs grid grid-cols-2 sm:grid-cols-12 gap-1.5 sm:gap-2 items-center">
-                                <div class="col-span-1 sm:col-span-7 relative">
-                                    <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
-                                    <input type="text" id="active-conc-search" placeholder="Search name/adm..." class="w-full py-1.5 pl-7 sm:pl-8 pr-2 text-xs border border-slate-200 rounded-md bg-slate-50/60 focus:bg-white text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
-                                </div>
-                                <div class="col-span-1 sm:col-span-5">
+                                <div class="col-span-1 sm:col-span-4">
                                     <select id="active-conc-class-filter" data-smart-select="true" class="w-full py-1.5 px-2 sm:px-2.5 text-xs border border-slate-200 rounded-md bg-slate-50/60 focus:bg-white text-slate-800 font-medium focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
                                         <option value="" selected>-- Select Class --</option>
                                         <option value="all">All Classes</option>
                                     </select>
                                 </div>
+                                <div class="col-span-1 sm:col-span-3">
+                                    <select id="active-conc-row-limit" data-smart-select="true" class="w-full py-1.5 px-2 sm:px-2.5 text-xs border border-slate-200 rounded-md bg-slate-50/60 focus:bg-white text-slate-700 font-bold focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer">
+                                        <option value="25" selected>Rows: 25</option>
+                                        <option value="50">Rows: 50</option>
+                                        <option value="100">Rows: 100</option>
+                                        <option value="all">Show All</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-2 sm:col-span-5 relative">
+                                    <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                                    <input type="text" id="active-conc-search" placeholder="Search name/adm..." class="w-full py-1.5 pl-7 sm:pl-8 pr-2 text-xs border border-slate-200 rounded-md bg-slate-50/60 focus:bg-white text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
+                                </div>
                             </div>
 
                             <!-- Active Concessions Table -->
-                            <div class="overflow-x-auto rounded-xl border border-emerald-200/80 bg-white shadow-2xs">
-                                <table class="w-full text-left border-collapse text-xs">
-                                    <thead class="bg-emerald-50 text-emerald-950 uppercase font-extrabold text-[11px] tracking-wider border-b border-emerald-200">
-                                        <tr>
-                                            <th class="py-2 sm:py-2.5 px-2 sm:px-3 w-10 text-center">#</th>
-                                            <th class="py-2 sm:py-2.5 px-2 sm:px-3">Student Details</th>
-                                            <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center">Class</th>
-                                            <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center">Adm No</th>
-                                            <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-right">Special Monthly Fee</th>
-                                            <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center w-24 sm:w-28">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="active-concessions-list" class="divide-y divide-slate-100"></tbody>
-                                </table>
+                            <div class="rounded-xl border border-emerald-200/80 bg-white shadow-2xs overflow-hidden">
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left border-collapse text-xs">
+                                        <thead class="bg-emerald-50 text-emerald-950 uppercase font-extrabold text-[11px] tracking-wider border-b border-emerald-200">
+                                            <tr>
+                                                <th class="py-2 sm:py-2.5 px-2 sm:px-3 w-10 text-center">#</th>
+                                                <th class="py-2 sm:py-2.5 px-2 sm:px-3">Student Details</th>
+                                                <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center">Class</th>
+                                                <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center">Adm No</th>
+                                                <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-right">Special Monthly Fee</th>
+                                                <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center w-24 sm:w-28">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="active-concessions-list" class="divide-y divide-slate-100"></tbody>
+                                    </table>
+                                </div>
+                                <div id="active-conc-pagination" class="hidden"></div>
                             </div>
                         </div>
                     </div>
@@ -2829,23 +2858,24 @@
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                     <div class="sm:col-span-2">
                         <select id="e-grp-class-filter" data-smart-select="true" data-smart-floating="true" class="w-full p-2.5 border rounded-lg bg-white text-sm font-semibold">
-                            <option value="">-- Select Class --</option>
+                            <option value="all" selected>All Classes</option>
                         </select>
                     </div>
                     <select id="e-grp-gender-filter" data-smart-select="true" data-smart-floating="true" class="w-full p-2.5 border rounded-lg bg-white text-sm font-semibold">
+                        <option value="all" selected>All</option>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
                     </select>
                 </div>
                 <div class="flex gap-2">
                     <div class="flex-grow min-w-0">
-                        <select id="e-grp-student-select" data-smart-select="true" data-smart-floating="true" class="w-full p-2.5 border rounded-lg bg-white text-sm font-semibold">
-                            <option value="">Select class first...</option>
+                        <select id="e-grp-student-select" data-smart-select="true" data-smart-floating="true" data-smart-search="true" data-smart-placeholder="Type student name or Adm No..." class="w-full p-2.5 border rounded-lg bg-white text-sm font-semibold">
+                            <option value="">-- Select Student --</option>
                         </select>
                     </div>
                     <button id="e-grp-add-member" type="button" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 text-sm cursor-pointer shrink-0">Add</button>
                 </div>
-                <p class="text-xs text-gray-500 mt-2">Pick a class and choose a student from the dropdown, then click Add.</p>
+                <p class="text-xs text-gray-500 mt-2">Type a student name or admission no. to search, or filter by class and gender, then click Add.</p>
             </div>
             <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
                 <button id="edit-group-cancel" type="button" class="px-5 py-2.5 bg-gray-200 text-gray-800 font-bold rounded-lg hover:bg-gray-300 cursor-pointer">Cancel</button>

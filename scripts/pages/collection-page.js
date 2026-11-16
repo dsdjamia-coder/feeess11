@@ -34,7 +34,7 @@ let currentUserEmail = '';
 let currentCollectorKey = '';
 let students = [], allStudentsRaw = [], allPayments = [], allDonations = [], classes = [], institutionalConfiguredClasses = [], studentGroups = [], feeItems = [], allStaff = [];
 let directoryEntries = [], directoryCategories = [], pageAccessConfig = { categories: {}, overrides: {} };
-let defaultFee = 200, feeStatusTitle = '', defaultReceiptMandatory = false;
+let defaultFee = 200, defaultReceiptMandatory = false;
 let currentWorkingAcademicYear = getAcademicYearFromDate(new Date());
 let hasLoadedCollectionAcademicYears = false;
 if (typeof document !== 'undefined') {
@@ -9120,7 +9120,6 @@ onAuthStateChanged(auth, async (user) => {
             setTimeout(() => { fitTextToContainer('header-title'); }, 50);
 
             defaultFee = d.defaultFee || 200;
-            feeStatusTitle = d.feeStatusTitle || '';
             feeItems = sortFeeItemsForDisplay(d.feeItems || []);
             defaultReceiptMandatory = d.defaultReceiptMandatory || false;
             syncFeeConfigUI(d);
@@ -9130,7 +9129,6 @@ onAuthStateChanged(auth, async (user) => {
             window.defaultFee = defaultFee;
             window.feeItems = feeItems;
             window.defaultReceiptMandatory = defaultReceiptMandatory;
-            window.feeStatusTitle = feeStatusTitle;
             window.getNextReceiptNoForStaff = getNextReceiptNoForStaff;
             window.getCollectorKey = getCollectorKey;
             checkReceiptMandatory();

@@ -966,7 +966,7 @@ export const exportFeeDuesPdfWithOptions = ({ includeClass = false, includeGuard
             fillColor: [241, 245, 249]
         },
         columnStyles: {
-            0: { halign: 'left', cellWidth: 200 },
+            0: { halign: 'left', cellWidth: 'auto', minCellWidth: 200 },
             1: { cellWidth: 90 },
             2: { halign: 'right', cellWidth: 100 },
             3: { halign: 'right', cellWidth: 100 },

@@ -209,8 +209,44 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.smart-select-search-input {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+    padding-right: 2.75rem !important;
+}
+.smart-select-search-input::placeholder {
+    color: #64748b;
+    font-weight: 500;
+}
 .smart-select-trigger.smart-select-placeholder {
     color: #64748b;
+}
+.smart-select-clear {
+    position: absolute;
+    right: 1.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    background: transparent;
+    border: none;
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 2;
+}
+.smart-select-clear:hover {
+    color: #ef4444;
+    background: #fee2e2;
+}
+.smart-select-clear.hidden {
+    display: none;
 }
 .smart-select-caret {
     position: absolute;
