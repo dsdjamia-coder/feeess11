@@ -56,6 +56,32 @@ const isClassInDutyScope = (clsName = '', dutyList = []) => {
     const targetNorm = normalizeClassLabel(clsName);
     return dutyList.some((d) => normalizeClassLabel(d) === targetNorm || String(d).trim().toLowerCase() === String(clsName).trim().toLowerCase());
 };
+const getOfficialSession = () => {
+    try {
+        const raw = localStorage.getItem('official_portal_session_v1');
+        return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+        return null;
+    }
+};
+const isMasterSuperAdmin = () => {
+    const staffAccess = window.AppSession?.getStaffAccess?.();
+    if (staffAccess?.actLikeSuperAdmin === true || staffAccess?.canAccessAdmin === true) return true;
+    if (staffAccess && (staffAccess.source === 'staff' || staffAccess.staffId || staffAccess.userKey)) {
+        return false;
+    }
+    const officialSession = getOfficialSession();
+    if (officialSession?.actLikeSuperAdmin === true || officialSession?.canAccessAdmin === true) return true;
+    if (officialSession && (officialSession.source === 'staff' || (officialSession.id && officialSession.id !== 'admin'))) {
+        return false;
+    }
+    return Boolean(isCurrentAdmin || window.AppSession?.getRole?.() === 'admin');
+};
+const getClassOptionsForCollector = () => {
+    if (isMasterSuperAdmin()) return classes;
+    if (!selectedDutyClasses || !selectedDutyClasses.length) return [];
+    return classes.filter((cls) => isClassInDutyScope(cls, selectedDutyClasses));
+};
 let pendingFeeSelectionsByYear = {};
 let isPaymentMutationInFlight = false;
 
@@ -97,20 +123,6 @@ initCollectionUploadModule();
 initCollectionSettingsModule();
 initMasterLedgerModule();
 initSharedFeeModal();
-initFinanceManagementModule({
-    getStudents: () => (Array.isArray(students) ? students : []),
-    getRawStudents: () => (Array.isArray(allStudentsRaw) ? allStudentsRaw : []),
-    getClasses: () => (Array.isArray(classes) ? classes : []),
-    getDutyClasses: () => (isMasterSuperAdmin() ? (Array.isArray(classes) ? classes : []) : getClassOptionsForCollector()),
-    getRawDutyClasses: () => (isMasterSuperAdmin() ? (Array.isArray(classes) ? classes : []) : (Array.isArray(selectedDutyClasses) ? selectedDutyClasses : [])),
-    isAdmin: () => isMasterSuperAdmin(),
-    isClassInDutyScope: (clsName = '') => isMasterSuperAdmin() || isClassInDutyScope(clsName, selectedDutyClasses),
-    getStudentGroups: () => (Array.isArray(studentGroups) ? studentGroups : []),
-    getFeeItems: () => (Array.isArray(feeItems) ? feeItems : []),
-    getDefaultFee: () => defaultFee,
-    getAcademicYear: () => currentWorkingAcademicYear || selectedFeeAcademicYear || '',
-    getUserEmail: () => currentUserEmail || ''
-});
 initFeeDuesModule({
     onSelectStudentForCollection: (studentId) => {
         const student = getStudentById(studentId) || (allStudentsRaw || []).find(s => s.id === studentId);
@@ -1071,32 +1083,9 @@ const setResultPageNavVisibility = (canAccess = false) => {
     if (!navItem) return;
     navItem.classList.toggle('hidden', !canAccess);
 };
-const getOfficialSession = () => {
-    try {
-        const raw = localStorage.getItem('official_portal_session_v1');
-        return raw ? JSON.parse(raw) : null;
-    } catch (_) {
-        return null;
-    }
-};
-
 const normalizeEmail = (email = '') => String(email || '').trim().toLowerCase();
 const getEffectiveStaffEmail = () => normalizeEmail(currentUserEmail || window.AppSession?.getStaffEmail?.() || auth?.currentUser?.email || '');
 const getCollectorKey = () => normalizeEmail(currentCollectorKey || window.AppSession?.getStaffAccess?.()?.userKey || window.AppSession?.getStaffAccess?.()?.loginId || getEffectiveStaffEmail());
-
-const isMasterSuperAdmin = () => {
-    const staffAccess = window.AppSession?.getStaffAccess?.();
-    if (staffAccess?.actLikeSuperAdmin === true || staffAccess?.canAccessAdmin === true) return true;
-    if (staffAccess && (staffAccess.source === 'staff' || staffAccess.staffId || staffAccess.userKey)) {
-        return false;
-    }
-    const officialSession = getOfficialSession();
-    if (officialSession?.actLikeSuperAdmin === true || officialSession?.canAccessAdmin === true) return true;
-    if (officialSession && (officialSession.source === 'staff' || (officialSession.id && officialSession.id !== 'admin'))) {
-        return false;
-    }
-    return Boolean(isCurrentAdmin || window.AppSession?.getRole?.() === 'admin');
-};
 
 const canUserViewAlumni = () => {
     if (isMasterSuperAdmin()) return true;
@@ -2276,12 +2265,6 @@ const renderFeeYearSwitcher = () => {
     nextBtn.classList.toggle('opacity-40', nextBtn.disabled);
     prevLabel.textContent = currentIndex < availableFeeAcademicYears.length - 1 ? availableFeeAcademicYears[currentIndex + 1] : '--';
     nextLabel.textContent = currentIndex > 0 ? availableFeeAcademicYears[currentIndex - 1] : '--';
-};
-
-const getClassOptionsForCollector = () => {
-    if (isMasterSuperAdmin()) return classes;
-    if (!selectedDutyClasses || !selectedDutyClasses.length) return [];
-    return classes.filter((cls) => isClassInDutyScope(cls, selectedDutyClasses));
 };
 
 const renderMyClassTab = () => {
@@ -8969,7 +8952,22 @@ document.getElementById('stu-info-row-limit')?.addEventListener('change', handle
 document.getElementById('stu-info-search')?.addEventListener('input', handleStudentInfoFilterChange);
 
 
-// Initialize tabs after all module-level const/let handlers and state are initialized (prevents TDZ ReferenceErrors)
+// Initialize finance module & tabs after all module-level const/let handlers and state are initialized (prevents TDZ ReferenceErrors)
+initFinanceManagementModule({
+    getStudents: () => (Array.isArray(students) ? students : []),
+    getRawStudents: () => (Array.isArray(allStudentsRaw) ? allStudentsRaw : []),
+    getClasses: () => (Array.isArray(classes) ? classes : []),
+    getDutyClasses: () => (isMasterSuperAdmin() ? (Array.isArray(classes) ? classes : []) : getClassOptionsForCollector()),
+    getRawDutyClasses: () => (isMasterSuperAdmin() ? (Array.isArray(classes) ? classes : []) : (Array.isArray(selectedDutyClasses) ? selectedDutyClasses : [])),
+    isAdmin: () => isMasterSuperAdmin(),
+    isClassInDutyScope: (clsName = '') => isMasterSuperAdmin() || isClassInDutyScope(clsName, selectedDutyClasses),
+    getStudentGroups: () => (Array.isArray(studentGroups) ? studentGroups : []),
+    getFeeItems: () => (Array.isArray(feeItems) ? feeItems : []),
+    getDefaultFee: () => defaultFee,
+    getAcademicYear: () => currentWorkingAcademicYear || selectedFeeAcademicYear || '',
+    getUserEmail: () => currentUserEmail || ''
+});
+
 const initialTabId = getInitialActiveTab();
 activateTab(initialTabId);
 applyTabVisibilityPreferences();
