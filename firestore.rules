@@ -122,6 +122,46 @@ service cloud.firestore {
         );
     }
 
+    function validOfficialPhotoString(val) {
+      return val is string && val.size() <= 100000;
+    }
+
+    function isAllowedStaffSelfPhotoUpdate(institutionId, docId) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return hasEmailIdentity()
+        && isStaff(institutionId)
+        && (
+          ('email' in resource.data && resource.data.email is string && resource.data.email.lower() == request.auth.token.email.lower())
+          || ('staffId' in staffData(institutionId) && staffData(institutionId).staffId == docId)
+        )
+        && changed.hasOnly(['photo', 'updatedAt'])
+        && (!('photo' in changed) || validOfficialPhotoString(request.resource.data.photo))
+        && (!('updatedAt' in changed) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string);
+    }
+
+    function validDirectoryValuesPhotoMap(changedKeys) {
+      return !('values' in changedKeys)
+        || (
+          request.resource.data.values is map
+          && (
+            (('values' in resource.data && resource.data.values is map)
+              && request.resource.data.values.diff(resource.data.values).affectedKeys().hasOnly(['photo']))
+            || ((!('values' in resource.data) || !(resource.data.values is map))
+              && request.resource.data.values.keys().hasOnly(['photo']))
+          )
+          && (!('photo' in request.resource.data.values) || validOfficialPhotoString(request.resource.data.values.photo))
+        );
+    }
+
+    function isAllowedDirectorySelfPhotoUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return isSignedIn()
+        && ('categoryId' in resource.data)
+        && changed.hasOnly(['values', 'updatedAt'])
+        && (!('updatedAt' in changed) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string)
+        && validDirectoryValuesPhotoMap(changed);
+    }
+
     function isAllowedStudentPhotoUpdate(institutionId) {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       return isSignedIn()
@@ -241,7 +281,8 @@ service cloud.firestore {
     // 2. Staff Profiles (Public profiles; credentials stored strictly in Firebase Auth)
     match /institutions/{institutionId}/staff/{docId} {
       allow read: if true;
-      allow write: if isAdmin(institutionId);
+      allow create, delete: if isAdmin(institutionId);
+      allow update: if isAdmin(institutionId) || isAllowedStaffSelfPhotoUpdate(institutionId, docId);
     }
 
     // 3. Staff Access (Roles & Permissions - scoped to Admin or own signed-in Staff identity)
@@ -249,7 +290,16 @@ service cloud.firestore {
       allow list: if isAdmin(institutionId);
       allow get: if isAdmin(institutionId)
         || (hasEmailIdentity() && (docId == request.auth.token.email || isStaff(institutionId)));
-      allow write: if isAdmin(institutionId);
+      allow create, delete: if isAdmin(institutionId);
+      allow update: if isAdmin(institutionId)
+        || (
+          hasEmailIdentity()
+          && docId == request.auth.token.email
+          && isStaff(institutionId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo', 'updatedAt'])
+          && (!('photo' in request.resource.data.diff(resource.data).affectedKeys()) || validOfficialPhotoString(request.resource.data.photo))
+          && (!('updatedAt' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string)
+        );
     }
 
     // 4. Student Auth Lookup (Exact single-doc lookup for login; list restricted to Staff/Admin)
@@ -393,7 +443,8 @@ service cloud.firestore {
     // 16. Public Directory (Public read for landing page; auth metadata isolated to admin)
     match /institutions/{institutionId}/publicDirectory/{docId} {
       allow read: if true;
-      allow write: if isAdmin(institutionId);
+      allow create, delete: if isAdmin(institutionId);
+      allow update: if isAdmin(institutionId) || isAllowedDirectorySelfPhotoUpdate();
     }
 
     match /institutions/{institutionId}/directoryAuth/{docId} {

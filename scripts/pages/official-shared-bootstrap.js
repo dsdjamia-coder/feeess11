@@ -1,8 +1,9 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-    import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+    import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { db, auth } from '../../config/firebase-config.js';
     import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
     import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, escapeHtml, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+    import { InteractiveCropper } from '../shared/image-cropper.js';
     import { registerPortalForPwa } from '../shared/pwa-install.js';
     import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 
@@ -212,10 +213,12 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     const extractStudentPhoto = (obj = {}) => {
       const prof = (obj?.profile && typeof obj.profile === 'object') ? obj.profile : {};
       const custom = (obj?.customValues && typeof obj.customValues === 'object') ? obj.customValues : {};
+      const customFields = (obj?.customFields && typeof obj.customFields === 'object') ? obj.customFields : {};
       const candidates = [
         obj?.photo, obj?.image, obj?.photoUrl, obj?.photo_url, obj?.avatar,
         prof?.photo, prof?.image, prof?.photoUrl, prof?.photo_url,
-        custom?.photo, custom?.image
+        custom?.photo, custom?.image,
+        customFields?.photo, customFields?.image
       ];
       for (const c of candidates) {
         if (typeof c === 'string') {
@@ -1020,10 +1023,17 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       }
       return String(value);
     };
-    const SENSITIVE_PROFILE_KEYS = new Set(['id', 'password', 'passwordhash', 'password_hash', 'username', 'user_name', 'usernameraw', 'username_raw', 'authmeta', 'source', 'email']);
-    const isSensitiveProfileField = (key = '', label = '') => {
+    const SENSITIVE_PROFILE_KEYS = new Set(['id', 'staffid', 'uid', 'loginid', 'password', 'passwordhash', 'password_hash', 'username', 'user_name', 'usernameraw', 'username_raw', 'authmeta', 'source']);
+    const isSensitiveProfileField = (key = '', label = '', { allowEmail = false } = {}) => {
       const parts = [key, label].map((item) => String(item || '').toLowerCase().replace(/[\s.-]+/g, '_'));
-      return parts.some((part) => SENSITIVE_PROFILE_KEYS.has(part) || /(^|_)pass(word)?($|_)/.test(part) || /(^|_)user(name)?($|_)/.test(part) || part.includes('credential') || part.includes('auth'));
+      return parts.some((part) => {
+        if (!allowEmail && part === 'email') return true;
+        return SENSITIVE_PROFILE_KEYS.has(part)
+          || /(^|_)pass(word)?($|_)/.test(part)
+          || /(^|_)user(name)?($|_)/.test(part)
+          || part.includes('credential')
+          || part.includes('auth');
+      });
     };
     const renderEntriesGrid = (entries = []) => {
       const visibleEntries = entries.filter((entry) => entry && !isSensitiveProfileField(entry.key, entry.label) && valueToDisplay(entry.value) !== '');
@@ -1130,8 +1140,10 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         : (profile.name || userSession?.name || (isMasterAdmin ? 'Administrator' : 'Staff Member'));
       const userRole = isMasterAdmin ? 'Super Admin' : (profile.role || profile.type || userSession?.type || 'Staff');
       const rawPhoto = isDirectory
-        ? (profile.values?.photo || profile.values?.image || '')
-        : (profile.photo || profile.image || profile.customValues?.photo || '');
+        ? (profile.values?.photo !== undefined ? profile.values.photo : (profile.values?.image || ''))
+        : (profile.photo !== undefined
+            ? (profile.photo || (isMasterAdmin ? (institutionConfig?.adminProfile?.photo || '') : ''))
+            : (profile.image || profile.customFields?.photo || profile.customValues?.photo || (isMasterAdmin ? (institutionConfig?.adminProfile?.photo || '') : '') || ''));
       const hasValidPhoto = Boolean(rawPhoto && typeof rawPhoto === 'string' && rawPhoto.trim() !== '' && !rawPhoto.includes('assets/images/logo.png'));
 
       const userLineEl = document.getElementById('official-user-line');
@@ -1392,7 +1404,15 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       if (event.key === 'Escape') {
         setMobileMenuState(false);
         closeOfficialDetailModal();
-        closeIdCardModal();
+        const hasOpenPhotoModal = ['official-crop-modal', 'official-camera-modal', 'official-photo-edit-modal'].some((id) => {
+          const el = document.getElementById(id);
+          return el && !el.classList.contains('hidden');
+        });
+        if (hasOpenPhotoModal && typeof closeAllOfficialPhotoModals === 'function') {
+          closeAllOfficialPhotoModals();
+        } else {
+          closeIdCardModal();
+        }
       }
     });
 
@@ -3836,63 +3856,112 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       return labels.length ? labels : ['Official Portal'];
     };
 
-    const getStaffProfileEntries = (staff = {}) => {
+    const resolveStaffDutyClassesList = (staff = {}) => {
+      const activeYr = activeAcademicYearId || officialFilters.academicYearId || '';
+      if (staff.dutyClassesByYear && typeof staff.dutyClassesByYear === 'object') {
+        if (activeYr && Array.isArray(staff.dutyClassesByYear[activeYr])) {
+          return staff.dutyClassesByYear[activeYr].map((v) => String(v || '').trim()).filter(Boolean);
+        }
+        if (activeYr) {
+          for (const [yrKey, list] of Object.entries(staff.dutyClassesByYear)) {
+            if (isYearMatch(yrKey, activeYr) && Array.isArray(list)) {
+              return list.map((v) => String(v || '').trim()).filter(Boolean);
+            }
+          }
+        }
+      }
+      if (Array.isArray(staff.dutyClasses)) {
+        return staff.dutyClasses.map((v) => String(v || '').trim()).filter(Boolean);
+      }
+      if (typeof staff.dutyClasses === 'string' && staff.dutyClasses.trim()) {
+        return staff.dutyClasses.split(',').map((v) => v.trim()).filter(Boolean);
+      }
+      return [];
+    };
+
+    const getStaffProfileEntries = (staff = {}, { includeEmail = false } = {}) => {
       const seenKeys = new Set([
-        'id', 'photo', 'image', 'logo', 'password', 'passwordHash', 'password_hash',
+        'id', 'staffId', 'uid', 'loginId', 'photo', 'image', 'logo', 'password', 'passwordHash', 'password_hash',
         'username', 'user_name', 'usernameRaw', 'username_raw', 'authMeta', 'source',
-        'isActive', 'showInPublic', 'canCollect', 'canManageResults', 'canAccessWorksheet',
-        'canAccessAdmin', 'dutyPaymentDetails', 'displayOrder', 'createdAt', 'updatedAt',
-        'customValues'
+        'isActive', 'showPublic', 'showInPublic', 'canCollect', 'canManageResults', 'canAccessWorksheet',
+        'canAccessAttendance', 'canAccessAcademicPlan', 'canAccessActivity', 'canAccessEvaluation',
+        'canAccessAdmin', 'actLikeSuperAdmin', 'dutyPaymentDetails', 'displayOrder', 'createdAt', 'updatedAt',
+        'customValues', 'customFields', 'dutyClassesByYear', 'access', 'categoryId'
       ]);
       const entries = [];
       const pushEntry = (key, label, value) => {
-        if (value === undefined || value === null || String(valueToDisplay(value)).trim() === '' || valueToDisplay(value) === '--') return;
-        entries.push({ key, label, value });
+        if (value === undefined || value === null) return;
+        const formatted = String(valueToDisplay(value)).trim();
+        if (!formatted || formatted === '--') return;
+        entries.push({ key, label, value: formatted });
         seenKeys.add(key);
       };
 
       const cat = getDirectoryCategory(staff.type) || directoryCategories.find((c) => normalizeText(c.name) === normalizeText(staff.type));
       const catFields = normalizeConfiguredFields(cat?.fields || []);
-      const customVals = (staff.customValues && typeof staff.customValues === 'object') ? staff.customValues : {};
+      const customFieldsObj = (staff.customFields && typeof staff.customFields === 'object') ? staff.customFields : {};
+      const customValsObj = (staff.customValues && typeof staff.customValues === 'object') ? staff.customValues : {};
 
-      pushEntry('name', 'Full Name', staff.name || customVals.name);
-      pushEntry('role', 'Role / Designation', staff.role || staff.designation || customVals.role || staff.type);
+      pushEntry('name', 'Full Name', staff.name || customFieldsObj.name || customValsObj.name);
+      pushEntry('role', 'Role / Designation', staff.role || staff.designation || customFieldsObj.role || customValsObj.role || staff.type);
       pushEntry('type', 'Staff Category', cat?.name || staff.type);
-      pushEntry('phone', 'Phone Number', staff.phone || staff.mobile || customVals.phone);
-      if (staff.email || customVals.email) {
-        pushEntry('email', 'Email Address', staff.email || customVals.email);
+      pushEntry('phone', 'Phone Number', staff.phone || staff.mobile || customFieldsObj.phone || customValsObj.phone);
+      if (includeEmail && (staff.email || customFieldsObj.email || customValsObj.email)) {
+        pushEntry('email', 'Email Address', staff.email || customFieldsObj.email || customValsObj.email);
+      } else {
+        seenKeys.add('email');
       }
-      pushEntry('msr', 'MSR / Staff ID', staff.msr || customVals.msr);
-      pushEntry('qualification', 'Qualification', staff.qualification || customVals.qualification);
-      pushEntry('subject', 'Subject / Department', staff.subject || customVals.subject);
-      pushEntry('joiningDate', 'Joining Date', staff.joiningDate || customVals.joiningDate);
-      pushEntry('dutyClasses', 'Assigned Duty Classes', Array.isArray(staff.dutyClasses) ? staff.dutyClasses.join(', ') : (staff.dutyClasses || customVals.dutyClasses));
-      pushEntry('address', 'Address', staff.address || customVals.address);
+      pushEntry('msr', 'MSR / Staff ID', staff.msr || customFieldsObj.msr || customValsObj.msr);
+      pushEntry('qualification', 'Qualification', staff.qualification || customFieldsObj.qualification || customValsObj.qualification);
+      pushEntry('subject', 'Subject / Department', staff.subject || customFieldsObj.subject || customValsObj.subject);
+      pushEntry('joiningDate', 'Joining Date', staff.joiningDate || customFieldsObj.joiningDate || customValsObj.joiningDate);
+      const dutyList = resolveStaffDutyClassesList(staff);
+      if (dutyList.length) {
+        pushEntry('dutyClasses', 'Assigned Duty Classes', dutyList.join(', '));
+      } else if (customFieldsObj.dutyClasses || customValsObj.dutyClasses) {
+        pushEntry('dutyClasses', 'Assigned Duty Classes', customFieldsObj.dutyClasses || customValsObj.dutyClasses);
+      } else {
+        seenKeys.add('dutyClasses');
+      }
+      pushEntry('address', 'Address', staff.address || customFieldsObj.address || customValsObj.address);
 
-      // Include any category-configured fields
+      // Include all category-configured fields (including newly added custom input fields from Admin)
       catFields.forEach((f) => {
         if (!f.key || seenKeys.has(f.key) || f.type === 'photo' || f.type === 'password') return;
-        const val = customVals[f.key] !== undefined ? customVals[f.key] : staff[f.key];
+        if (isSensitiveProfileField(f.key, f.label, { allowEmail: includeEmail })) return;
+        const val = customFieldsObj[f.key] !== undefined
+          ? customFieldsObj[f.key]
+          : (customValsObj[f.key] !== undefined ? customValsObj[f.key] : staff[f.key]);
         pushEntry(f.key, f.label || toLabel(f.key), val);
       });
 
-      // Include any remaining customValues keys added in admin
-      Object.entries(customVals).forEach(([k, v]) => {
-        if (seenKeys.has(k) || isSensitiveProfileField(k, k)) return;
+      // Include any remaining customFields added from Admin
+      Object.entries(customFieldsObj).forEach(([k, v]) => {
+        if (seenKeys.has(k) || isSensitiveProfileField(k, k, { allowEmail: includeEmail })) return;
         pushEntry(k, toLabel(k), v);
       });
 
-      // Include any remaining top-level fields added in admin
+      // Include any remaining legacy customValues keys
+      Object.entries(customValsObj).forEach(([k, v]) => {
+        if (seenKeys.has(k) || isSensitiveProfileField(k, k, { allowEmail: includeEmail })) return;
+        pushEntry(k, toLabel(k), v);
+      });
+
+      // Include any remaining non-internal top-level fields added in Admin
       Object.entries(staff || {}).forEach(([k, v]) => {
-        if (seenKeys.has(k) || isSensitiveProfileField(k, k) || typeof v === 'object') return;
+        if (seenKeys.has(k) || isSensitiveProfileField(k, k, { allowEmail: includeEmail }) || typeof v === 'object' || typeof v === 'boolean') return;
         pushEntry(k, toLabel(k), v);
       });
 
-      pushEntry('status', 'Account Status', staff.isActive !== false ? 'Active' : 'Inactive');
+      if (!includeEmail) {
+        pushEntry('status', 'Account Status', staff.isActive !== false ? 'Active' : 'Inactive');
+      } else {
+        seenKeys.add('status');
+      }
       return entries;
     };
 
-    const getDirectoryProfileEntries = (entry = {}) => {
+    const getDirectoryProfileEntries = (entry = {}, { includeEmail = false } = {}) => {
       const cat = getDirectoryCategory(entry?.categoryId);
       const authItem = getCategoryAuthItem(entry?.categoryId);
       const hiddenKeys = new Set([authItem.usernameField, authItem.passwordField, 'photo', 'image', 'logo'].filter(Boolean));
@@ -3900,41 +3969,546 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       const result = [];
       const usedKeys = new Set(hiddenKeys);
       fields.forEach((f) => {
+        if (isSensitiveProfileField(f.key, f.label, { allowEmail: includeEmail })) return;
         const val = entry?.values?.[f.key];
-        if (val !== undefined && val !== null && String(valueToDisplay(val)).trim() !== '' && valueToDisplay(val) !== '--') {
-          result.push({ key: f.key, label: f.label || toLabel(f.key), value: val });
+        const formatted = String(valueToDisplay(val)).trim();
+        if (formatted && formatted !== '--') {
+          result.push({ key: f.key, label: f.label || toLabel(f.key), value: formatted });
           usedKeys.add(f.key);
         }
       });
       Object.entries(entry?.values || {}).forEach(([k, v]) => {
-        if (usedKeys.has(k) || isSensitiveProfileField(k, k)) return;
-        if (v !== undefined && v !== null && String(valueToDisplay(v)).trim() !== '' && valueToDisplay(v) !== '--') {
-          result.push({ key: k, label: toLabel(k), value: v });
+        if (usedKeys.has(k) || isSensitiveProfileField(k, k, { allowEmail: includeEmail })) return;
+        const formatted = String(valueToDisplay(v)).trim();
+        if (formatted && formatted !== '--') {
+          result.push({ key: k, label: toLabel(k), value: formatted });
         }
       });
       return result;
     };
 
-    const openMyProfileModal = () => {
+    const showOfficialToast = (message = '', type = 'success') => {
+      const existing = document.getElementById('official-floating-toast');
+      if (existing) existing.remove();
+      const toneClass = type === 'error'
+        ? 'bg-rose-600 text-white border-rose-700'
+        : (type === 'info' ? 'bg-slate-800 text-white border-slate-900' : 'bg-emerald-600 text-white border-emerald-700');
+      const iconClass = type === 'error' ? 'fa-circle-exclamation' : (type === 'info' ? 'fa-circle-info' : 'fa-circle-check');
+      const toast = document.createElement('div');
+      toast.id = 'official-floating-toast';
+      toast.className = `fixed bottom-5 left-1/2 -translate-x-1/2 z-[1300] px-4 py-2.5 rounded-xl border shadow-xl text-xs font-bold flex items-center gap-2 ${toneClass} max-w-[92vw]`;
+      toast.innerHTML = `<i class="fas ${iconClass}"></i><span>${escapeHtml(message)}</span>`;
+      document.body.appendChild(toast);
+      setTimeout(() => {
+        toast.remove();
+      }, 3200);
+    };
+
+    let officialCropper = null;
+    let officialCameraStream = null;
+    let officialCameraFacingMode = 'user';
+    let officialPhotoBindingsDone = false;
+
+    const getCurrentPhotoTarget = () => {
+      const profile = getCurrentSessionProfile() || {};
+      const isDirectory = userSession?.source === 'directory' || window.AppSession?.getStaffAccess?.()?.source === 'directory';
+      if (isDirectory && profile?.id) {
+        return { kind: 'directory', id: profile.id, profile };
+      }
+      const matchedStaff = findMatchedStaffRecord();
+      if (matchedStaff?.id) {
+        return { kind: 'staff', id: matchedStaff.id, profile: matchedStaff };
+      }
+      const role = window.AppSession?.getRole?.() || '';
+      if (role === 'admin' || userSession?.source === 'firebase') {
+        return { kind: 'admin', id: 'config', profile };
+      }
+      return { kind: 'none', id: '', profile };
+    };
+
+    const resolveActiveUserPhoto = () => {
+      const profile = getCurrentSessionProfile() || {};
+      const isDirectory = userSession?.source === 'directory' || window.AppSession?.getStaffAccess?.()?.source === 'directory';
+      const role = window.AppSession?.getRole?.() || '';
+      const isStaffSession = userSession?.source === 'staff' || role === 'staff' || Boolean(window.AppSession?.getStaffAccess?.());
+      const isMasterAdmin = !isStaffSession && !isDirectory && (role === 'admin' || userSession?.source === 'firebase' || userSession?.source === 'legacy-admin' || userSession?.type === 'Admin');
+      const raw = isDirectory
+        ? (profile.values?.photo !== undefined ? profile.values.photo : (profile.values?.image || ''))
+        : (profile.photo !== undefined
+            ? (profile.photo || (isMasterAdmin ? (institutionConfig?.adminProfile?.photo || '') : ''))
+            : (profile.image || profile.customFields?.photo || profile.customValues?.photo || (isMasterAdmin ? (institutionConfig?.adminProfile?.photo || '') : '') || ''));
+      return (typeof raw === 'string' && raw.trim() && !raw.includes('assets/images/logo.png')) ? raw.trim() : '';
+    };
+
+    const syncLocalSessionPhotoCache = (newPhoto = '') => {
+      if (userSession) userSession.photo = newPhoto;
+      try {
+        const rawOfficial = localStorage.getItem(OFFICIAL_SESSION_KEY);
+        if (rawOfficial) {
+          const parsed = JSON.parse(rawOfficial);
+          parsed.photo = newPhoto;
+          if (parsed.access && typeof parsed.access === 'object') {
+            parsed.access.photo = newPhoto;
+          }
+          localStorage.setItem(OFFICIAL_SESSION_KEY, JSON.stringify(parsed));
+        }
+      } catch (_) {}
+      try {
+        const role = window.AppSession?.getRole?.() || '';
+        const stateKey = role === 'admin' ? 'app_session_admin_state' : 'app_session_staff_state';
+        const rawState = localStorage.getItem(stateKey);
+        if (rawState) {
+          const st = JSON.parse(rawState);
+          st.photo = newPhoto;
+          if (st.access && typeof st.access === 'object') {
+            st.access.photo = newPhoto;
+          }
+          localStorage.setItem(stateKey, JSON.stringify(st));
+        }
+      } catch (_) {}
+    };
+
+    const persistOfficialProfilePhoto = async (newPhoto = '') => {
+      const target = getCurrentPhotoTarget();
+      if (target.kind === 'none') {
+        showOfficialToast('Unable to locate your profile record.', 'error');
+        return false;
+      }
+
+      if (newPhoto && newPhoto.length > 98000) {
+        showOfficialToast('Compressed image still exceeds 50 KB limit. Please crop tighter.', 'error');
+        return false;
+      }
+
+      try {
+        if (!auth.currentUser) {
+          await signInAnonymously(auth);
+        }
+        const now = Date.now();
+        if (target.kind === 'staff') {
+          const staffRef = doc(db, `${BASE_PATH}/staff`, target.id);
+          await updateDoc(staffRef, {
+            photo: newPhoto,
+            updatedAt: now
+          });
+          const staffIdx = allStaff.findIndex((s) => s.id === target.id);
+          if (staffIdx !== -1) {
+            const nextCustomFields = allStaff[staffIdx].customFields && typeof allStaff[staffIdx].customFields === 'object'
+              ? { ...allStaff[staffIdx].customFields, photo: newPhoto }
+              : allStaff[staffIdx].customFields;
+            allStaff[staffIdx] = { ...allStaff[staffIdx], photo: newPhoto, ...(nextCustomFields ? { customFields: nextCustomFields } : {}), updatedAt: now };
+          }
+          const staffEmail = String(auth.currentUser?.email || target.profile?.email || userSession?.email || '').trim().toLowerCase();
+          if (staffEmail) {
+            try {
+              await updateDoc(doc(db, `${BASE_PATH}/staffAccess`, staffEmail), {
+                photo: newPhoto,
+                updatedAt: now
+              });
+            } catch (_) {}
+          }
+        } else if (target.kind === 'directory') {
+          const dirRef = doc(db, `${BASE_PATH}/publicDirectory`, target.id);
+          await updateDoc(dirRef, {
+            'values.photo': newPhoto,
+            updatedAt: now
+          });
+          const dirIdx = directoryEntries.findIndex((d) => d.id === target.id);
+          if (dirIdx !== -1) {
+            directoryEntries[dirIdx] = {
+              ...directoryEntries[dirIdx],
+              values: { ...(directoryEntries[dirIdx].values || {}), photo: newPhoto },
+              updatedAt: now
+            };
+          }
+        } else if (target.kind === 'admin') {
+          const configRef = doc(db, `${BASE_PATH}/settings`, 'config');
+          const nextAdminProfile = {
+            ...(institutionConfig?.adminProfile || {}),
+            photo: newPhoto
+          };
+          await setDoc(configRef, { adminProfile: nextAdminProfile }, { merge: true });
+          institutionConfig = { ...(institutionConfig || {}), adminProfile: nextAdminProfile };
+        }
+
+        syncLocalSessionPhotoCache(newPhoto);
+        renderHome();
+        renderOfficialProfileHeader();
+        if (!document.getElementById('official-id-card-modal')?.classList.contains('hidden')) {
+          openMyProfileModal();
+        }
+        showOfficialToast(newPhoto ? 'ID Card photo updated successfully.' : 'ID Card photo removed.', newPhoto ? 'success' : 'info');
+        return true;
+      } catch (err) {
+        console.error('Failed to save official ID card photo:', err);
+        showOfficialToast(err?.message || 'Permission denied or network error while saving photo.', 'error');
+        return false;
+      }
+    };
+
+    const verifyOfficialImageFile = (file) => {
+      if (!file) return Promise.resolve({ valid: false, error: 'No file selected.' });
+      const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+      const parts = String(file.name || '').toLowerCase().split('.');
+      const ext = parts.length > 1 ? parts.pop() : '';
+      const isImageMime = String(file.type || '').toLowerCase().startsWith('image/');
+      if (!isImageMime && !allowedExtensions.includes(ext)) {
+        return Promise.resolve({ valid: false, error: 'Only JPG, PNG, or WEBP image files are supported.' });
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return Promise.resolve({ valid: false, error: 'Image size exceeds 5 MB limit. Please pick a smaller image.' });
+      }
+      if (file.size < 100) {
+        return Promise.resolve({ valid: false, error: 'Selected image file is invalid or empty.' });
+      }
+      return new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          if (!img.naturalWidth || !img.naturalHeight || img.naturalWidth < 40 || img.naturalHeight < 40) {
+            resolve({ valid: false, error: 'Image resolution is too small (minimum 40x40 px).' });
+          } else {
+            resolve({ valid: true });
+          }
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve({ valid: false, error: 'Unable to decode the selected image file.' });
+        };
+        img.src = url;
+      });
+    };
+
+    const safelyPrepareOfficialImageForCropping = (file, maxDimension = 1200) => {
+      return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          try {
+            let w = img.naturalWidth || img.width;
+            let h = img.naturalHeight || img.height;
+            if (w > maxDimension || h > maxDimension) {
+              const s = maxDimension / Math.max(w, h);
+              w = Math.round(w * s);
+              h = Math.round(h * s);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, w);
+            canvas.height = Math.max(1, h);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(objectUrl);
+            resolve(canvas.toDataURL('image/jpeg', 0.94));
+          } catch (e) {
+            URL.revokeObjectURL(objectUrl);
+            reject(e);
+          }
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Could not read image data.'));
+        };
+        img.src = objectUrl;
+      });
+    };
+
+    const stopOfficialCamera = () => {
+      if (officialCameraStream) {
+        officialCameraStream.getTracks().forEach((track) => track.stop());
+        officialCameraStream = null;
+      }
+      const video = document.getElementById('official-camera-video');
+      if (video) video.srcObject = null;
+      const camModal = document.getElementById('official-camera-modal');
+      if (camModal) {
+        camModal.classList.add('hidden');
+        camModal.classList.remove('flex');
+        camModal.setAttribute('aria-hidden', 'true');
+      }
+    };
+
+    const startOfficialCamera = async (facingMode = 'user') => {
+      const video = document.getElementById('official-camera-video');
+      if (!video || !navigator.mediaDevices?.getUserMedia) {
+        const fileInput = document.getElementById('official-photo-file-input');
+        if (fileInput) {
+          fileInput.setAttribute('capture', facingMode);
+          fileInput.click();
+          setTimeout(() => fileInput.removeAttribute('capture'), 1000);
+        }
+        return false;
+      }
+      if (officialCameraStream) {
+        officialCameraStream.getTracks().forEach((track) => track.stop());
+        officialCameraStream = null;
+      }
+      officialCameraFacingMode = facingMode;
+      try {
+        let stream = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: facingMode } }
+          });
+        } catch (_err1) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+        officialCameraStream = stream;
+        video.srcObject = officialCameraStream;
+        await video.play();
+        return true;
+      } catch (err) {
+        console.warn('Official camera unavailable:', err?.message || err);
+        stopOfficialCamera();
+        const fileInput = document.getElementById('official-photo-file-input');
+        if (fileInput) {
+          fileInput.setAttribute('capture', facingMode);
+          fileInput.click();
+          setTimeout(() => fileInput.removeAttribute('capture'), 1000);
+        } else {
+          showOfficialToast('Camera permission denied or camera not available.', 'error');
+        }
+        return false;
+      }
+    };
+
+    const openOfficialCropModal = async (imageSrc) => {
+      const modal = document.getElementById('official-crop-modal');
+      const canvas = document.getElementById('official-crop-canvas');
+      if (!modal || !canvas) return;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      modal.setAttribute('aria-hidden', 'false');
+
+      if (!officialCropper) {
+        officialCropper = new InteractiveCropper({
+          canvas,
+          targetSize: 400,
+          maxKb: 50,
+          aspectRatio: '1:1'
+        });
+      }
+      try {
+        await officialCropper.loadImage(imageSrc);
+      } catch (err) {
+        console.error('Failed to load image in official cropper:', err);
+        showOfficialToast('Failed to open image in cropper.', 'error');
+      }
+    };
+
+    const closeOfficialPhotoChoiceModal = () => {
+      const m = document.getElementById('official-photo-edit-modal');
+      if (!m) return;
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+      m.setAttribute('aria-hidden', 'true');
+    };
+
+    const closeOfficialCropModal = () => {
+      const m = document.getElementById('official-crop-modal');
+      if (!m) return;
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+      m.setAttribute('aria-hidden', 'true');
+    };
+
+    function closeAllOfficialPhotoModals() {
+      stopOfficialCamera();
+      closeOfficialCropModal();
+      closeOfficialPhotoChoiceModal();
+    }
+
+    const bindOfficialPhotoModalEvents = () => {
+      if (officialPhotoBindingsDone) return;
+      const choiceModal = document.getElementById('official-photo-edit-modal');
+      const camModal = document.getElementById('official-camera-modal');
+      const cropModal = document.getElementById('official-crop-modal');
+      if (!choiceModal || !camModal || !cropModal) return;
+      officialPhotoBindingsDone = true;
+
+      document.getElementById('official-photo-edit-close')?.addEventListener('click', closeOfficialPhotoChoiceModal);
+      document.getElementById('official-photo-edit-cancel')?.addEventListener('click', closeOfficialPhotoChoiceModal);
+      choiceModal.addEventListener('click', (e) => {
+        if (e.target === choiceModal) closeOfficialPhotoChoiceModal();
+      });
+
+      document.getElementById('official-photo-upload-btn')?.addEventListener('click', () => {
+        document.getElementById('official-photo-file-input')?.click();
+      });
+
+      document.getElementById('official-photo-file-input')?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        const check = await verifyOfficialImageFile(file);
+        if (!check.valid) {
+          showOfficialToast(check.error, 'error');
+          return;
+        }
+        try {
+          const prepared = await safelyPrepareOfficialImageForCropping(file, 1200);
+          closeOfficialPhotoChoiceModal();
+          await openOfficialCropModal(prepared);
+        } catch (err) {
+          showOfficialToast(err?.message || 'Could not process image.', 'error');
+        }
+      });
+
+      document.getElementById('official-photo-camera-btn')?.addEventListener('click', async () => {
+        closeOfficialPhotoChoiceModal();
+        camModal.classList.remove('hidden');
+        camModal.classList.add('flex');
+        camModal.setAttribute('aria-hidden', 'false');
+        await startOfficialCamera('user');
+      });
+
+      document.getElementById('official-photo-remove-btn')?.addEventListener('click', async () => {
+        const removeBtn = document.getElementById('official-photo-remove-btn');
+        if (removeBtn) {
+          removeBtn.disabled = true;
+          removeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Removing...';
+        }
+        const ok = await persistOfficialProfilePhoto('');
+        if (removeBtn) {
+          removeBtn.disabled = false;
+          removeBtn.innerHTML = '<i class="fas fa-trash"></i> Remove';
+        }
+        if (ok) closeOfficialPhotoChoiceModal();
+      });
+
+      document.getElementById('official-camera-flip-btn')?.addEventListener('click', async () => {
+        const nextMode = officialCameraFacingMode === 'user' ? 'environment' : 'user';
+        await startOfficialCamera(nextMode);
+      });
+      document.getElementById('official-camera-close-btn')?.addEventListener('click', stopOfficialCamera);
+      document.getElementById('official-camera-cancel-btn')?.addEventListener('click', stopOfficialCamera);
+
+      document.getElementById('official-camera-capture-btn')?.addEventListener('click', async () => {
+        const video = document.getElementById('official-camera-video');
+        if (!video || !video.videoWidth || !video.videoHeight) {
+          showOfficialToast('Camera stream is not ready yet.', 'error');
+          return;
+        }
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        const canvas = document.createElement('canvas');
+        canvas.width = vw;
+        canvas.height = vh;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, vw, vh);
+        const capturedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        stopOfficialCamera();
+        await openOfficialCropModal(capturedDataUrl);
+      });
+
+      document.getElementById('official-crop-close-btn')?.addEventListener('click', closeOfficialCropModal);
+      document.getElementById('official-crop-cancel-btn')?.addEventListener('click', closeOfficialCropModal);
+      document.getElementById('official-crop-rotate-btn')?.addEventListener('click', () => officialCropper?.rotateClockwise());
+      document.getElementById('official-crop-zoomin-btn')?.addEventListener('click', () => officialCropper?.zoomCropBox(1.15));
+      document.getElementById('official-crop-zoomout-btn')?.addEventListener('click', () => officialCropper?.zoomCropBox(0.85));
+      document.getElementById('official-crop-reset-btn')?.addEventListener('click', () => officialCropper?.reset());
+
+      document.getElementById('official-crop-save-btn')?.addEventListener('click', async () => {
+        if (!officialCropper) return;
+        const saveBtn = document.getElementById('official-crop-save-btn');
+        if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+        try {
+          const base64 = officialCropper.getCroppedBase64(50, 400);
+          const ok = await persistOfficialProfilePhoto(base64);
+          if (ok) closeOfficialCropModal();
+        } catch (err) {
+          console.error('Crop/save failed:', err);
+          showOfficialToast(err?.message || 'Failed to crop and save photo.', 'error');
+        } finally {
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-check"></i> <span>Save Square Photo</span>';
+          }
+        }
+      });
+    };
+
+    const openOfficialPhotoEditModal = () => {
+      bindOfficialPhotoModalEvents();
+      const modal = document.getElementById('official-photo-edit-modal');
+      if (!modal) return;
       const profile = getCurrentSessionProfile() || {};
       const isDirectory = userSession?.source === 'directory';
-      const label = isDirectory ? (profile.values?.name || userSession?.name || 'Staff Member') : (profile.name || userSession?.name || 'Staff Member');
-      const userType = isDirectory ? (getDirectoryCategory(profile.categoryId)?.name || userSession?.type || 'Staff') : (profile.role || profile.designation || profile.type || userSession?.type || 'Staff');
+      const label = isDirectory ? (profile.values?.name || userSession?.name || 'User') : (profile.name || userSession?.name || 'User');
+      const initialChar = String(label || 'S').trim().charAt(0).toUpperCase() || 'S';
+      const currentPhoto = resolveActiveUserPhoto();
 
-      const rawPhoto = isDirectory ? (profile.values?.photo || profile.values?.image) : (profile.photo || profile.image || profile.customValues?.photo);
-      const hasPhoto = Boolean(rawPhoto && typeof rawPhoto === 'string' && rawPhoto.trim() !== '' && !rawPhoto.includes('assets/images/logo.png'));
+      const previewEl = document.getElementById('official-photo-edit-preview');
+      const placeholderEl = document.getElementById('official-photo-edit-placeholder');
+      const removeBtn = document.getElementById('official-photo-remove-btn');
+      if (placeholderEl) placeholderEl.textContent = initialChar;
+      if (currentPhoto) {
+        if (previewEl) {
+          previewEl.src = currentPhoto;
+          previewEl.classList.remove('hidden');
+        }
+        if (placeholderEl) placeholderEl.classList.add('hidden');
+        if (removeBtn) removeBtn.classList.remove('hidden');
+      } else {
+        if (previewEl) {
+          previewEl.src = '';
+          previewEl.classList.add('hidden');
+        }
+        if (placeholderEl) placeholderEl.classList.remove('hidden');
+        if (removeBtn) removeBtn.classList.add('hidden');
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      modal.setAttribute('aria-hidden', 'false');
+    };
+
+    const openMyProfileModal = () => {
+      bindOfficialPhotoModalEvents();
+      const profile = getCurrentSessionProfile() || {};
+      const isDirectory = userSession?.source === 'directory';
+      const role = window.AppSession?.getRole?.() || '';
+      const isStaffSession = userSession?.source === 'staff' || role === 'staff' || Boolean(window.AppSession?.getStaffAccess?.());
+      const isMasterAdmin = !isStaffSession && !isDirectory && (role === 'admin' || userSession?.source === 'firebase' || userSession?.source === 'legacy-admin' || userSession?.type === 'Admin');
+
+      const label = isDirectory
+        ? (profile.values?.name || userSession?.name || 'Staff Member')
+        : (profile.name || userSession?.name || (isMasterAdmin ? 'Administrator' : 'Staff Member'));
+      const userType = isDirectory
+        ? (getDirectoryCategory(profile.categoryId)?.name || userSession?.type || 'Staff')
+        : (isMasterAdmin && !findMatchedStaffRecord() ? 'Super Admin' : (profile.role || profile.designation || profile.type || userSession?.type || 'Staff'));
+
+      const rawPhoto = resolveActiveUserPhoto();
+      const hasPhoto = Boolean(rawPhoto);
 
       const instName = resolveInstitutionName(institutionConfig) || 'Institution Name';
       const instPlace = institutionConfig?.place || institutionConfig?.address || institutionConfig?.subtitle || '';
       const instReg = institutionConfig?.regNo || institutionConfig?.code || '';
       const initialChar = String(label || 'S').trim().charAt(0).toUpperCase() || 'S';
 
-      const phoneVal = profile.phone || profile.mobile || profile.customValues?.phone || userSession?.phone || '--';
-      const addressVal = profile.address || profile.customValues?.address || '--';
-      const dutyClassesArr = Array.isArray(profile.dutyClasses)
-        ? profile.dutyClasses
-        : (profile.dutyClasses ? [profile.dutyClasses] : (profile.customValues?.dutyClasses ? [profile.customValues.dutyClasses] : []));
-      const dutyClassesVal = dutyClassesArr.length ? dutyClassesArr.join(', ') : (profile.dutyClasses || profile.customValues?.dutyClasses || '--');
+      const headerHiddenKeys = new Set(['name', 'role', 'type', 'status']);
+      let rawEntries = [];
+      if (isDirectory) {
+        rawEntries = getDirectoryProfileEntries(profile, { includeEmail: true });
+      } else if (isStaffSession || findMatchedStaffRecord()) {
+        const staffRecord = findMatchedStaffRecord() || profile;
+        rawEntries = getStaffProfileEntries(staffRecord, { includeEmail: true });
+      } else {
+        const adminEmail = String(profile.email || userSession?.email || institutionConfig?.adminProfile?.email || '').trim();
+        const adminPhone = String(profile.phone || institutionConfig?.adminProfile?.phone || '').trim();
+        if (adminEmail && adminEmail !== 'admin') rawEntries.push({ key: 'email', label: 'Email Address', value: adminEmail });
+        if (adminPhone) rawEntries.push({ key: 'phone', label: 'Phone Number', value: adminPhone });
+      }
+
+      const detailEntries = rawEntries.filter((entry) => {
+        if (!entry || headerHiddenKeys.has(entry.key)) return false;
+        if (isSensitiveProfileField(entry.key, entry.label, { allowEmail: true })) return false;
+        const val = String(valueToDisplay(entry.value)).trim();
+        return Boolean(val && val !== '--');
+      });
 
       const perms = evaluateModulePermissions();
       const accessItems = [];
@@ -3948,15 +4522,36 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       if (perms.admin) accessItems.push({ label: 'Admin', icon: 'fa-user-shield', color: 'text-violet-600' });
       if (!accessItems.length) accessItems.push({ label: 'Portal', icon: 'fa-check-circle', color: 'text-indigo-600' });
 
-      const photoHtml = hasPhoto
-        ? `<div class="relative mx-auto -mt-14 w-28 h-28 rounded-full p-1 bg-white shadow-xl ring-4 ring-slate-100 flex items-center justify-center overflow-hidden">
-             <img src="${escapeHtml(rawPhoto)}" class="w-full h-full rounded-full object-cover bg-slate-100" alt="${escapeHtml(label)}" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-full h-full rounded-full bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 text-3xl font-black\\'>${escapeHtml(initialChar)}</div>';">
-           </div>`
-        : `<div class="relative mx-auto -mt-14 w-28 h-28 rounded-full p-1 bg-white shadow-xl ring-4 ring-slate-100 flex items-center justify-center overflow-hidden">
-             <div class="w-full h-full rounded-full bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 flex flex-col items-center justify-center text-indigo-700">
-               <span class="text-3xl font-black leading-none">${escapeHtml(initialChar)}</span>
-             </div>
+      const photoInnerHtml = hasPhoto
+        ? `<img src="${escapeHtml(rawPhoto)}" class="w-full h-full rounded-full object-cover bg-slate-100" alt="${escapeHtml(label)}" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-full h-full rounded-full bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700 text-3xl font-black\\'>${escapeHtml(initialChar)}</div>';">`
+        : `<div class="w-full h-full rounded-full bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 flex flex-col items-center justify-center text-indigo-700">
+             <span class="text-3xl font-black leading-none">${escapeHtml(initialChar)}</span>
            </div>`;
+
+      const photoHtml = `
+        <div class="relative mx-auto -mt-14 w-28 h-28">
+          <button type="button" id="id-card-photo-trigger" class="group relative w-full h-full rounded-full p-1 bg-white shadow-xl ring-4 ring-slate-100 hover:ring-indigo-200 flex items-center justify-center overflow-hidden cursor-pointer transition focus-visible:outline-none focus-visible:ring-indigo-400" title="${hasPhoto ? 'Click to change or remove photo' : 'Click to add photo'}" aria-label="${hasPhoto ? 'Change profile photo' : 'Add profile photo'}">
+            ${photoInnerHtml}
+            <span class="absolute inset-1 rounded-full bg-slate-900/0 group-hover:bg-slate-900/20 transition"></span>
+          </button>
+          <span class="pointer-events-none absolute bottom-0 right-0 w-8 h-8 rounded-full bg-indigo-600 text-white border-2 border-white shadow-md flex items-center justify-center">
+            <i class="fas fa-camera text-xs"></i>
+          </span>
+        </div>`;
+
+      const detailsGridHtml = detailEntries.length
+        ? `<div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left">
+            ${detailEntries.map((entry) => {
+              const displayVal = String(valueToDisplay(entry.value)).trim();
+              const isWide = entry.key === 'address' || displayVal.length > 36;
+              return `
+                <div class="bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/80 ${isWide ? 'sm:col-span-2' : ''}">
+                  <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-tight">${escapeHtml(entry.label || toLabel(entry.key))}</div>
+                  <div class="font-bold text-slate-800 text-xs mt-1 break-words leading-snug">${escapeHtml(displayVal)}</div>
+                </div>`;
+            }).join('')}
+          </div>`
+        : '';
 
       const idCardHtml = `
         <div class="w-full bg-white select-none">
@@ -3986,21 +4581,8 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
               </div>
             </div>
 
-            <!-- Key Details Section: Phone Number, Address, Duty Classes -->
-            <div class="mt-4 bg-slate-50/90 rounded-2xl p-3.5 border border-slate-200/80 text-xs text-left space-y-2.5">
-              <div class="flex items-start justify-between gap-3 border-b border-slate-200/60 pb-2">
-                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0">Phone Number</span>
-                <span class="font-extrabold text-slate-800 text-right break-all">${escapeHtml(phoneVal)}</span>
-              </div>
-              <div class="border-b border-slate-200/60 pb-2">
-                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Address</div>
-                <div class="font-bold text-slate-800 text-xs break-words leading-snug">${escapeHtml(addressVal)}</div>
-              </div>
-              <div>
-                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Duty Classes</div>
-                <div class="font-bold text-slate-800 text-xs break-words leading-snug">${escapeHtml(dutyClassesVal)}</div>
-              </div>
-            </div>
+            <!-- Dynamic Admin-Entered Details Grid (2-Column, Non-Blank Only) -->
+            ${detailsGridHtml}
 
             <!-- Bottom Section: QR Scanner Icon & Authorized Page Badges -->
             <div class="mt-4 pt-3 border-t border-slate-200 flex items-center gap-3">
@@ -4024,15 +4606,14 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       `;
 
       openIdCardModal(idCardHtml);
+      document.getElementById('id-card-photo-trigger')?.addEventListener('click', openOfficialPhotoEditModal);
     };
 
     const renderHome = () => {
-      const profile = getCurrentSessionProfile();
+      const profile = getCurrentSessionProfile() || {};
       const isDirectory = userSession?.source === 'directory';
       const label = isDirectory ? (profile.values?.name || userSession?.name || 'User') : (profile.name || userSession?.name || 'User');
-      const rawPhoto = isDirectory
-        ? (profile.values?.photo || profile.values?.image || '')
-        : (profile.photo || profile.image || profile.customValues?.photo || '');
+      const rawPhoto = resolveActiveUserPhoto();
       const hasPhoto = Boolean(rawPhoto && typeof rawPhoto === 'string' && rawPhoto.trim() !== '' && !rawPhoto.includes('assets/images/logo.png'));
       const userType = isDirectory ? (getDirectoryCategory(profile.categoryId)?.name || userSession?.type || 'Category User') : (profile.type || userSession?.type || '--');
       const entries = isDirectory ? getDirectoryProfileEntries(profile) : (userSession?.source === 'staff' ? getStaffProfileEntries(profile) : renderKeyValueGrid(profile, ['photo', 'image', 'logo']));
@@ -7996,6 +8577,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       onSnapshot(doc(db, `${BASE_PATH}/settings`, 'config'), (snap) => {
         const conf = snap.exists() ? snap.data() : {};
         applyOfficialBranding(conf);
+        renderOfficialProfileHeader();
         if (conf.enabledModules && typeof conf.enabledModules === 'object') {
           try {
             localStorage.setItem('app_enabled_modules', JSON.stringify(conf.enabledModules));
