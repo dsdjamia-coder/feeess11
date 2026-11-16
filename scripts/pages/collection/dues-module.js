@@ -19,7 +19,16 @@ let duesClasses = [];
 let duesDefaultFee = 200;
 let duesAcademicYear = '';
 let duesAcademicYearSettings = [];
+let duesIsAdmin = true;
+let duesDutyClasses = [];
 let selectStudentForCollectionCallback = null;
+
+const normalizeClassLabel = (str = '') => String(str || '').replace(/^class\s*/i, '').trim().toLowerCase();
+const isClassInDutyScope = (clsName = '', dutyList = []) => {
+    if (!Array.isArray(dutyList) || dutyList.length === 0) return false;
+    const targetNorm = normalizeClassLabel(clsName);
+    return dutyList.some((d) => normalizeClassLabel(d) === targetNorm || String(d).trim().toLowerCase() === String(clsName).trim().toLowerCase());
+};
 
 // Filter state
 const filters = {
@@ -349,6 +358,9 @@ export const getFilteredDuesList = () => {
     if (!filters.classFilter) {
         return [];
     }
+    if (!duesIsAdmin && (!Array.isArray(duesDutyClasses) || duesDutyClasses.length === 0)) {
+        return [];
+    }
 
     const targetYear = filters.academicYear || duesAcademicYear;
     const activeCutoffMonths = getActiveCutoffMonths(targetYear);
@@ -363,9 +375,12 @@ export const getFilteredDuesList = () => {
             String(student.class || '').trim().toLowerCase() === 'alumni';
         if (isAlumni) return;
 
-        // Class filter
+        // Class filter & Duty-class enforcement
         const rawClass = student.academicYears?.[targetYear]?.class || student.class || '';
         const studentClass = String(rawClass).trim();
+        if (!duesIsAdmin && !isClassInDutyScope(studentClass, duesDutyClasses)) {
+            return;
+        }
         const cleanStudentClass = studentClass.replace(/^Class\s*:?\s*/i, '').trim().toLowerCase();
         const activeClassFilter = String(filters.classFilter || '').trim();
         const cleanActiveFilter = activeClassFilter.replace(/^Class\s*:?\s*/i, '').trim().toLowerCase();
@@ -426,6 +441,27 @@ export const renderFeeDues = () => {
     const currentYearAmountEl = document.getElementById('dues-current-year-amount');
     const pastYearsAmountEl = document.getElementById('dues-past-years-amount');
     const grandTotalAmountEl = document.getElementById('dues-grand-total-amount');
+
+    // 0. If non-admin has no duty classes assigned, show access notice
+    if (!duesIsAdmin && (!Array.isArray(duesDutyClasses) || duesDutyClasses.length === 0)) {
+        if (totalStudentsEl) totalStudentsEl.textContent = '0';
+        if (currentYearAmountEl) currentYearAmountEl.textContent = '0';
+        if (pastYearsAmountEl) pastYearsAmountEl.textContent = '0';
+        if (grandTotalAmountEl) grandTotalAmountEl.textContent = '0';
+
+        if (tableContainer) {
+            tableContainer.innerHTML = `
+                <div class="text-center py-16 px-4 bg-white rounded-2xl border border-amber-200 shadow-xs">
+                    <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl shadow-2xs">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </div>
+                    <h3 class="text-base font-extrabold text-slate-800 mb-1">No Duty Classes Assigned</h3>
+                    <p class="text-xs text-slate-500 max-w-sm mx-auto">No duty classes are assigned to your account. Please ask the administrator to assign duty classes in Staff Management.</p>
+                </div>
+            `;
+        }
+        return;
+    }
 
     // 1. If no class is selected (i.e. "-- Select Class --" is active), prompt the user to choose
     if (!filters.classFilter) {
@@ -1169,6 +1205,44 @@ export const populateDuesClassDropdown = () => {
         configuredClasses: duesClasses
     });
 
+    if (!duesIsAdmin) {
+        const cleanDuty = (Array.isArray(duesDutyClasses) ? duesDutyClasses : []).filter((c) => {
+            const u = String(c || '').trim().toUpperCase();
+            return u && u !== 'ALUMNI' && u !== 'GRADUATED' && u !== 'ALUMNI_DUES';
+        });
+        const scopedClasses = resolvedClasses.filter((cls) => isClassInDutyScope(cls, cleanDuty));
+        cleanDuty.forEach((dc) => {
+            if (!scopedClasses.some((sc) => normalizeClassLabel(sc) === normalizeClassLabel(dc))) {
+                scopedClasses.push(dc);
+            }
+        });
+        scopedClasses.sort(compareClassLabelsNatural);
+
+        if (scopedClasses.length === 0) {
+            populateClassSelect(classFilter, [], {
+                selectedValue: '',
+                placeholder: 'No classes assigned',
+                includeAllOption: false
+            });
+            filters.classFilter = '';
+            return;
+        }
+
+        let curVal = filters.classFilter !== undefined ? filters.classFilter : (classFilter.value || '');
+        if (curVal && curVal !== 'all' && !isClassInDutyScope(curVal, scopedClasses)) {
+            curVal = '';
+        }
+        populateClassSelect(classFilter, scopedClasses, {
+            selectedValue: curVal,
+            placeholder: '-- Select Class --',
+            includeAllOption: true,
+            allOptionLabel: 'All Classes',
+            allOptionValue: 'all'
+        });
+        filters.classFilter = classFilter.value;
+        return;
+    }
+
     const curVal = filters.classFilter !== undefined ? filters.classFilter : (classFilter.value || '');
     populateClassSelect(classFilter, resolvedClasses, {
         selectedValue: curVal,
@@ -1207,9 +1281,13 @@ export const updateFeeDuesData = ({
     defaultFee,
     academicYear,
     academicYearSettings,
+    isAdmin,
+    dutyClasses,
     initialClass,
     forceResetYear = false
 } = {}) => {
+    if (typeof isAdmin === 'boolean') duesIsAdmin = isAdmin;
+    if (Array.isArray(dutyClasses)) duesDutyClasses = dutyClasses;
     if (Array.isArray(students)) duesStudents = students;
     if (Array.isArray(rawStudents)) duesRawStudents = rawStudents;
     if (Array.isArray(groups)) duesGroups = groups;

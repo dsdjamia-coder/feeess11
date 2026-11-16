@@ -1670,8 +1670,11 @@
                 <!-- Sub-View 1: Fee Structure & Default Configuration -->
                 <div id="subview-fee-structure">
                     <div class="grid grid-cols-1 xl:grid-cols-2 gap-3.5 sm:gap-6 items-start">
-                        <div class="card p-3.5 sm:p-5 rounded-xl shadow-sm bg-blue-50/30 border-blue-100">
-                            <h2 class="text-base sm:text-xl font-bold mb-2.5 sm:mb-3 text-blue-900 border-b border-blue-200 pb-2"><i class="fas fa-cog mr-2"></i> Default Configuration</h2>
+                        <div id="default-fee-config-card" class="card p-3.5 sm:p-5 rounded-xl shadow-sm bg-blue-50/30 border-blue-100">
+                            <h2 class="text-base sm:text-xl font-bold mb-2.5 sm:mb-3 text-blue-900 border-b border-blue-200 pb-2 flex items-center justify-between gap-2 flex-wrap">
+                                <span><i class="fas fa-cog mr-2"></i> Default Configuration</span>
+                                <span id="default-fee-readonly-badge" class="hidden inline-flex items-center gap-1 text-[10px] sm:text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full"><i class="fas fa-lock text-[10px]"></i> View Only (Admin Managed)</span>
+                            </h2>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-5 mb-3 sm:mb-4">
                                 <div><label class="block text-xs sm:text-sm font-semibold mb-1">School Default Monthly Fee (₹)</label><input type="number" id="default-fee-input" class="w-full p-2 sm:p-2.5 border rounded-lg shadow-sm font-bold text-blue-700 bg-white text-sm"></div>
                             </div>
@@ -1755,9 +1758,16 @@
                         <div class="text-right"><button id="save-fee-config-btn" type="button" class="btn-primary font-bold py-2 px-5 sm:py-2.5 sm:px-8 rounded-lg shadow-md cursor-pointer text-xs sm:text-sm"><i class="fas fa-save mr-1.5 sm:mr-2"></i> Save Config</button></div>
                     </div>
 
-                    <div class="card p-3.5 sm:p-5 rounded-xl shadow-sm bg-white">
-                        <h2 class="text-base sm:text-xl font-bold mb-3 sm:mb-4 text-gray-800 border-b pb-2"><i class="fas fa-plus-circle mr-2 text-green-600"></i> Advanced Fee Builder</h2>
-                        <div class="bg-gray-50 p-3 sm:p-4 rounded-xl border border-gray-200 mb-4 sm:mb-6">
+                    <div id="adv-fee-builder-card" class="card p-3.5 sm:p-5 rounded-xl shadow-sm bg-white">
+                        <h2 class="text-base sm:text-xl font-bold mb-3 sm:mb-4 text-gray-800 border-b pb-2 flex items-center justify-between gap-2 flex-wrap">
+                            <span><i class="fas fa-plus-circle mr-2 text-green-600"></i> Advanced Fee Builder</span>
+                            <span id="adv-fee-scope-note-badge" class="hidden inline-flex items-center gap-1 text-[10px] sm:text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full"><i class="fas fa-shield-alt text-[10px]"></i> Duty Classes Only</span>
+                        </h2>
+                        <div id="adv-fee-no-duty-notice" class="hidden mb-4 p-3 sm:p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-center gap-2">
+                            <i class="fas fa-exclamation-circle text-amber-600 shrink-0"></i>
+                            <span>No duty classes assigned to your account. Only assigned duty classes can add or edit class fee items.</span>
+                        </div>
+                        <div id="adv-fee-builder-form-box" class="bg-gray-50 p-3 sm:p-4 rounded-xl border border-gray-200 mb-4 sm:mb-6">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-4 mb-3 sm:mb-4">
                                 <div><label class="block text-sm font-semibold mb-1">Fee Item Name *</label><input type="text" id="adv-fee-name" class="w-full p-2.5 border rounded-lg bg-white" placeholder="e.g. Admission Fee, Exam Fee"></div>
                                 <div>
@@ -1798,7 +1808,7 @@
                             <div class="text-right border-t pt-3"><button id="add-adv-fee-btn" type="button" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-8 rounded-lg shadow-md cursor-pointer"><i class="fas fa-save mr-2"></i> Create Fee Item</button></div>
                         </div>
 
-                        <h3 class="font-bold text-gray-800 mb-3 border-b pb-2"><i class="fas fa-list-ul mr-2 text-gray-500"></i> Active Fee Items (Custom items can be reordered)</h3>
+                        <h3 id="fee-items-list-heading" class="font-bold text-gray-800 mb-3 border-b pb-2"><i class="fas fa-list-ul mr-2 text-gray-500"></i> Active Fee Items <span id="fee-items-reorder-note" class="text-xs font-semibold text-gray-500">(Custom items can be reordered)</span></h3>
                         <div id="fee-items-management-container" class="space-y-3"></div>
                     </div>
                 </div>
@@ -1807,7 +1817,7 @@
                 <!-- Sub-View 2: Student Groups Management -->
                 <div id="manage-groups-page" class="hidden">
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-3.5 sm:gap-6 items-start">
-                        <div class="card p-3.5 sm:p-5 rounded-xl shadow-sm lg:col-span-5">
+                        <div id="create-student-group-card" class="card p-3.5 sm:p-5 rounded-xl shadow-sm lg:col-span-5">
                             <div class="flex items-center gap-2 mb-2.5 sm:mb-3 border-b pb-2">
                                 <h2 class="text-base sm:text-xl font-bold text-gray-800">Create Student Group</h2>
                                 <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Combine siblings or related students to apply shared monthly fees and consolidated billing." title="Combine siblings or related students to apply shared monthly fees and consolidated billing.">
@@ -1823,7 +1833,7 @@
                                 <div id="create-group-btn-container" class="text-right hidden border-t pt-3 sm:pt-4"><button id="create-group-btn" class="btn-primary font-bold py-2 px-5 sm:py-2.5 sm:px-8 rounded-lg shadow-md text-xs sm:text-sm">Create Group</button></div>
                             </div>
                         </div>
-                        <div class="card p-3.5 sm:p-5 rounded-xl shadow-sm lg:col-span-7 space-y-2.5 sm:space-y-3">
+                        <div id="existing-student-groups-card" class="card p-3.5 sm:p-5 rounded-xl shadow-sm lg:col-span-7 space-y-2.5 sm:space-y-3">
                             <div class="flex flex-row items-center justify-between gap-2 border-b pb-2">
                                 <div class="min-w-0">
                                     <h2 class="text-base sm:text-xl font-bold text-gray-800 flex items-center gap-2">
@@ -1834,7 +1844,10 @@
                                     </h2>
                                     <p class="hidden sm:block text-xs text-gray-500 mt-0.5">Manage linked student groups and group monthly fee rates.</p>
                                 </div>
-                                <span id="grp-count-badge" class="text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full shrink-0 whitespace-nowrap">0 Groups</span>
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    <span id="groups-readonly-badge" class="hidden inline-flex items-center gap-1 text-[10px] sm:text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap"><i class="fas fa-lock text-[9px]"></i> View Only</span>
+                                    <span id="grp-count-badge" class="text-[11px] sm:text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full shrink-0 whitespace-nowrap">0 Groups</span>
+                                </div>
                             </div>
 
                             <!-- Historical Groups Banner -->
@@ -1906,7 +1919,7 @@
                     <!-- Desktop 2-Column Responsive Layout -->
                     <div class="grid grid-cols-1 xl:grid-cols-12 gap-3 sm:gap-4 items-start">
                         <!-- Left Column: Search & Assign Concession (xl:col-span-4) -->
-                        <div class="xl:col-span-4 card p-3 sm:p-4 rounded-xl shadow-xs border border-slate-200/80 bg-white flex flex-col space-y-2.5 sm:space-y-3">
+                        <div id="conc-assign-card" class="xl:col-span-4 card p-3 sm:p-4 rounded-xl shadow-xs border border-slate-200/80 bg-white flex flex-col space-y-2.5 sm:space-y-3">
                             <div class="flex items-center justify-between border-b border-slate-100 pb-2">
                                 <h3 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
                                     <i class="fas fa-user-plus text-blue-600 text-xs"></i>
@@ -1951,7 +1964,7 @@
                         </div>
 
                         <!-- Right Column: Active Concessions Directory (xl:col-span-8) -->
-                        <div class="xl:col-span-8 card p-3 sm:p-4 rounded-xl shadow-xs border border-emerald-200/90 bg-emerald-50/20 flex flex-col space-y-2.5 sm:space-y-3">
+                        <div id="active-conc-directory-card" class="xl:col-span-8 card p-3 sm:p-4 rounded-xl shadow-xs border border-emerald-200/90 bg-emerald-50/20 flex flex-col space-y-2.5 sm:space-y-3">
                             <div class="flex flex-row items-center justify-between gap-2 border-b border-emerald-200/70 pb-2">
                                 <div class="min-w-0">
                                     <h3 class="text-xs sm:text-sm font-bold text-emerald-900 flex items-center gap-1.5 sm:gap-2">
@@ -1963,7 +1976,8 @@
                                     </h3>
                                     <p class="hidden sm:block text-[11px] text-slate-500 mt-0.5">Students with special monthly fee rates applied.</p>
                                 </div>
-                                <div class="flex items-center gap-2 shrink-0">
+                                <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                                    <span id="conc-readonly-badge" class="hidden inline-flex items-center gap-1 text-[10px] sm:text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md whitespace-nowrap"><i class="fas fa-lock text-[9px]"></i> View Only</span>
                                     <span id="active-conc-filter-status" class="text-[10px] sm:text-xs text-emerald-800 font-semibold bg-emerald-100/70 border border-emerald-200 px-2 py-0.5 rounded-md whitespace-nowrap">Select Class or Search</span>
                                 </div>
                             </div>
@@ -2001,7 +2015,7 @@
                                                 <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center">Class</th>
                                                 <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center">Adm No</th>
                                                 <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-right">Special Monthly Fee</th>
-                                                <th class="py-2 sm:py-2.5 px-2 sm:px-3 text-center w-24 sm:w-28">Actions</th>
+                                                <th id="active-conc-actions-th" class="py-2 sm:py-2.5 px-2 sm:px-3 text-center w-24 sm:w-28">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="active-concessions-list" class="divide-y divide-slate-100"></tbody>

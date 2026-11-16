@@ -12,7 +12,7 @@ import { initCollectionUploadModule } from './collection/upload-module.js';
 import { initCollectionSettingsModule } from './collection/settings-module.js';
 import { initMasterLedgerModule, updateMasterLedgerData } from './collection/master-ledger-module.js';
 import { initSharedFeeModal, openFeeEntryEditModal } from './collection/shared-fee-modal.js';
-import { initFinanceManagementModule, renderFeeItemsManagement, renderStudentGroups, renderConcessionsList, syncFeeConfigUI } from './collection/finance-management.js';
+import { initFinanceManagementModule, renderFeeItemsManagement, renderStudentGroups, renderConcessionsList, syncFeeConfigUI, applyFinanceSettingsAccessUI } from './collection/finance-management.js';
 import { initFeeDuesModule, updateFeeDuesData, renderFeeDues } from './collection/dues-module.js';
 import { downloadSpreadsheetRows, formatSpreadsheetCellValue, normalizeToIsoDate, parseCsvArrayBufferToMatrix } from '../shared/spreadsheet-utils.js';
 
@@ -101,6 +101,10 @@ initFinanceManagementModule({
     getStudents: () => (Array.isArray(students) ? students : []),
     getRawStudents: () => (Array.isArray(allStudentsRaw) ? allStudentsRaw : []),
     getClasses: () => (Array.isArray(classes) ? classes : []),
+    getDutyClasses: () => (isMasterSuperAdmin() ? (Array.isArray(classes) ? classes : []) : getClassOptionsForCollector()),
+    getRawDutyClasses: () => (isMasterSuperAdmin() ? (Array.isArray(classes) ? classes : []) : (Array.isArray(selectedDutyClasses) ? selectedDutyClasses : [])),
+    isAdmin: () => isMasterSuperAdmin(),
+    isClassInDutyScope: (clsName = '') => isMasterSuperAdmin() || isClassInDutyScope(clsName, selectedDutyClasses),
     getStudentGroups: () => (Array.isArray(studentGroups) ? studentGroups : []),
     getFeeItems: () => (Array.isArray(feeItems) ? feeItems : []),
     getDefaultFee: () => defaultFee,
@@ -391,10 +395,11 @@ window.syncMasterLedgerState = syncMasterLedgerState;
 
 const syncFeeDuesState = (preferredClass, forceResetYear = false) => {
     try {
-        const effectiveStudents = isMasterSuperAdmin()
+        const isSuper = isMasterSuperAdmin();
+        const effectiveStudents = isSuper
             ? (Array.isArray(students) ? students : [])
-            : (Array.isArray(students) && selectedDutyClasses.length ? students.filter(s => isClassInDutyScope(s.class, selectedDutyClasses)) : (Array.isArray(students) ? students : []));
-        const effectiveClasses = isMasterSuperAdmin()
+            : (Array.isArray(students) && selectedDutyClasses.length ? students.filter(s => isClassInDutyScope(s.class, selectedDutyClasses)) : []);
+        const effectiveClasses = isSuper
             ? (Array.isArray(classes) ? classes : [])
             : getClassOptionsForCollector();
         const activeClass = preferredClass !== undefined
@@ -407,6 +412,8 @@ const syncFeeDuesState = (preferredClass, forceResetYear = false) => {
             payments: Array.isArray(allPayments) ? allPayments : [],
             feeItems: Array.isArray(feeItems) ? feeItems : [],
             classes: effectiveClasses,
+            isAdmin: isSuper,
+            dutyClasses: isSuper ? [] : (Array.isArray(selectedDutyClasses) ? [...selectedDutyClasses] : []),
             defaultFee: typeof defaultFee === 'number' ? defaultFee : 200,
             academicYear: currentWorkingAcademicYear || '',
             academicYearSettings: Array.isArray(academicYearSettings) ? academicYearSettings : [],
@@ -495,6 +502,9 @@ const switchSettingsSubTab = (subtab = 'structure') => {
         btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
+    if (typeof applyFinanceSettingsAccessUI === 'function') {
+        applyFinanceSettingsAccessUI();
+    }
     if (subtab === 'structure' && typeof renderFeeItemsManagement === 'function') {
         renderFeeItemsManagement();
     } else if (subtab === 'groups' && typeof renderStudentGroups === 'function') {
@@ -623,6 +633,7 @@ const activateTab = (targetId, subTabId = null) => {
         else if (typeof setupFeeEntryUI === 'function') setupFeeEntryUI();
     }
     if (safeTargetId === 'fee-settings-page') {
+        if (typeof applyFinanceSettingsAccessUI === 'function') applyFinanceSettingsAccessUI();
         const activeSubtab = document.querySelector('.settings-subtab-btn.active')?.dataset.settingsSubtab || 'structure';
         if (activeSubtab === 'structure' && typeof renderFeeItemsManagement === 'function') renderFeeItemsManagement();
         else if (activeSubtab === 'groups' && typeof renderStudentGroups === 'function') renderStudentGroups();
@@ -2269,7 +2280,7 @@ const renderFeeYearSwitcher = () => {
 
 const getClassOptionsForCollector = () => {
     if (isMasterSuperAdmin()) return classes;
-    if (!selectedDutyClasses || !selectedDutyClasses.length) return classes;
+    if (!selectedDutyClasses || !selectedDutyClasses.length) return [];
     return classes.filter((cls) => isClassInDutyScope(cls, selectedDutyClasses));
 };
 
@@ -3432,55 +3443,75 @@ const populateClassDropdowns = () => {
     // Synchronize Fee Concessions Class Filters
     const filterConc = document.getElementById('filter-conc-class');
     if (filterConc) {
-        populateClassSelect(filterConc, classes, {
-            selectedValue: filterConc.value || '',
-            placeholder: '-- Select Class --',
-            includeAllOption: true,
-            allOptionLabel: 'All Classes',
-            allOptionValue: 'all'
-        });
+        if (allowedTargetClasses.length > 0) {
+            populateClassSelect(filterConc, allowedTargetClasses, {
+                selectedValue: filterConc.value || '',
+                placeholder: '-- Select Class --',
+                includeAllOption: true,
+                allOptionLabel: 'All Classes',
+                allOptionValue: 'all'
+            });
+        } else {
+            filterConc.innerHTML = `<option value="">No classes assigned</option>`;
+        }
     }
     const activeConcClassFilter = document.getElementById('active-conc-class-filter');
     if (activeConcClassFilter) {
-        populateClassSelect(activeConcClassFilter, classes, {
-            selectedValue: activeConcClassFilter.value || '',
-            placeholder: '-- Select Class --',
-            includeAllOption: true,
-            allOptionLabel: 'All Classes',
-            allOptionValue: 'all'
-        });
+        if (allowedTargetClasses.length > 0) {
+            populateClassSelect(activeConcClassFilter, allowedTargetClasses, {
+                selectedValue: activeConcClassFilter.value || '',
+                placeholder: '-- Select Class --',
+                includeAllOption: true,
+                allOptionLabel: 'All Classes',
+                allOptionValue: 'all'
+            });
+        } else {
+            activeConcClassFilter.innerHTML = `<option value="">No classes assigned</option>`;
+        }
     }
 
     // Synchronize Student Groups Class Filter
     const grpClassFilter = document.getElementById('grp-class-filter');
     if (grpClassFilter) {
-        populateClassSelect(grpClassFilter, classes, {
-            selectedValue: grpClassFilter.value || '',
-            placeholder: '-- Select Class --',
-            includeAllOption: true,
-            allOptionLabel: 'All Classes',
-            allOptionValue: 'all'
-        });
+        if (allowedTargetClasses.length > 0) {
+            populateClassSelect(grpClassFilter, allowedTargetClasses, {
+                selectedValue: grpClassFilter.value || '',
+                placeholder: '-- Select Class --',
+                includeAllOption: true,
+                allOptionLabel: 'All Classes',
+                allOptionValue: 'all'
+            });
+        } else {
+            grpClassFilter.innerHTML = `<option value="">No classes assigned</option>`;
+        }
     }
 
     // Synchronize Advanced Fee Target Class Dropdown
     const advFeeClassSelect = document.getElementById('adv-fee-specific-class');
     if (advFeeClassSelect) {
-        populateClassSelect(advFeeClassSelect, classes, {
-            selectedValue: advFeeClassSelect.value || '',
-            placeholder: '-- Select Class --',
-            includeAllOption: false
-        });
+        if (allowedTargetClasses.length > 0) {
+            populateClassSelect(advFeeClassSelect, allowedTargetClasses, {
+                selectedValue: advFeeClassSelect.value || '',
+                placeholder: '-- Select Class --',
+                includeAllOption: false
+            });
+        } else {
+            advFeeClassSelect.innerHTML = `<option value="">No classes assigned</option>`;
+        }
     }
 
     // Synchronize Edit Fee Target Class Dropdown
     const eFeeClassSelect = document.getElementById('e-fee-specific-class');
     if (eFeeClassSelect) {
-        populateClassSelect(eFeeClassSelect, classes, {
-            selectedValue: eFeeClassSelect.value || '',
-            placeholder: '-- Select Class --',
-            includeAllOption: false
-        });
+        if (allowedTargetClasses.length > 0) {
+            populateClassSelect(eFeeClassSelect, allowedTargetClasses, {
+                selectedValue: eFeeClassSelect.value || '',
+                placeholder: '-- Select Class --',
+                includeAllOption: false
+            });
+        } else {
+            eFeeClassSelect.innerHTML = `<option value="">No classes assigned</option>`;
+        }
     }
 
     // Synchronize Fee Dues Academic Year Select
@@ -3497,6 +3528,9 @@ const populateClassDropdowns = () => {
         if (entryClassEl) entryClassEl.value = userExplicitClass;
     }
 
+    if (typeof applyFinanceSettingsAccessUI === 'function') {
+        applyFinanceSettingsAccessUI();
+    }
     syncSmartSelectDisplay(document);
     renderMyClassTab();
 };
@@ -9000,6 +9034,8 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('subtab-btn-collector-wise')?.classList.toggle('hidden', !isMasterSuperAdmin());
     applyTabVisibilityPreferences();
     if (isMasterSuperAdmin() && displayEl) { displayEl.textContent = "ADMINISTRATOR"; }
+    syncFeeDuesState();
+    applyFinanceSettingsAccessUI();
 
     const refreshVisibleViewOnDataUpdate = () => {
         // 1. Fee Collection Module
@@ -9037,6 +9073,7 @@ onAuthStateChanged(auth, async (user) => {
         }
         // 7. Fee Settings & Setup Module
         if (!document.getElementById('fee-settings-page')?.classList.contains('hidden')) {
+            applyFinanceSettingsAccessUI();
             if (!document.getElementById('manage-groups-page')?.classList.contains('hidden')) {
                 renderStudentGroups();
             } else if (!document.getElementById('fee-concessions-page')?.classList.contains('hidden')) {
@@ -9115,6 +9152,8 @@ onAuthStateChanged(auth, async (user) => {
         }
         setDutyPaymentDetailsInputs(collectorPaymentDetails);
         populateClassDropdowns();
+        syncFeeDuesState();
+        applyFinanceSettingsAccessUI();
         renderStaffDirectory();
         updateHistoryStaffFilter();
         updateDashboardMetrics();
@@ -9209,6 +9248,7 @@ onAuthStateChanged(auth, async (user) => {
             feeItems = sortFeeItemsForDisplay(d.feeItems || []);
             defaultReceiptMandatory = d.defaultReceiptMandatory || false;
             syncFeeConfigUI(d);
+            applyFinanceSettingsAccessUI();
             syncFeeDuesState();
             syncMasterLedgerState();
 

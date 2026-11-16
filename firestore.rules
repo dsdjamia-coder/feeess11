@@ -272,6 +272,11 @@ service cloud.firestore {
         || (docId == 'sessionRegistry' && isSignedIn() && validSessionRegistryWrite())
         || (isResultOperator(institutionId) && docId == 'resultCenter')
         || (isCollector(institutionId) && docId in ['sessionRegistry', 'receiptSequence'])
+        || (isCollector(institutionId)
+            && docId == 'config'
+            && resource != null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['feeItems'])
+            && request.resource.data.feeItems is list)
         || (canManageAttendance(institutionId) && (docId == 'attendanceConfig' || docId == 'timetableStructure'))
         || (canManageAcademicPlan(institutionId) && (docId == 'yearPlanConfig' || docId == 'academicPlanningConfig'))
         || (canManageActivity(institutionId) && (docId == 'activityConfig' || docId == 'taskDefinitions'))

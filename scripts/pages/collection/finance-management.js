@@ -12,6 +12,10 @@ let ctx = {
     getStudents: () => [],
     getRawStudents: () => [],
     getClasses: () => [],
+    getDutyClasses: () => [],
+    getRawDutyClasses: () => [],
+    isAdmin: () => false,
+    isClassInDutyScope: () => false,
     getStudentGroups: () => [],
     getFeeItems: () => [],
     getDefaultFee: () => 200,
@@ -24,6 +28,165 @@ let pendingGroupCreationData = null;
 let grpPageOffset = 0;
 let concSearchPageOffset = 0;
 let activeConcPageOffset = 0;
+
+const isUserAdmin = () => Boolean(ctx.isAdmin?.());
+const isValidCollectionClass = (c = '') => {
+    const u = String(c || '').trim().toUpperCase();
+    return Boolean(u && u !== 'ALUMNI' && u !== 'GRADUATED' && u !== 'ALUMNI_DUES');
+};
+const getScopedClasses = () => {
+    const raw = isUserAdmin() ? (ctx.getClasses?.() || []) : (ctx.getDutyClasses?.() || []);
+    return Array.from(new Set((Array.isArray(raw) ? raw : []).filter(isValidCollectionClass))).sort(compareClassLabelsNatural);
+};
+const isDutyClassMatch = (cls = '') => {
+    if (isUserAdmin()) return true;
+    const trimmed = String(cls || '').trim();
+    if (!trimmed) return false;
+    return Boolean(ctx.isClassInDutyScope?.(trimmed));
+};
+const getStudentEffectiveClass = (st = {}, activeYear = '') => {
+    if (!st || typeof st !== 'object') return '';
+    return String((activeYear && st.academicYears?.[activeYear]?.class) || st.class || '').trim();
+};
+const canManageFeeItem = (item = null) => {
+    if (!item) return false;
+    if (isUserAdmin()) return true;
+    if (item.type !== 'custom') return false;
+    const duty = getScopedClasses();
+    if (!duty.length) return false;
+    if (item.scope === 'specific') {
+        return Boolean(item.targetClass && isDutyClassMatch(item.targetClass));
+    }
+    if (item.scope === 'class-wise') {
+        const clsKeys = Object.keys(item.classValues || {}).filter(Boolean);
+        return clsKeys.length > 0 && clsKeys.every((cls) => isDutyClassMatch(cls));
+    }
+    return false;
+};
+
+const syncAdvFeeScopeOptionsAndInputs = () => {
+    const admin = isUserAdmin();
+    const scopedClasses = getScopedClasses();
+    const scopeSelect = document.getElementById('adv-fee-scope');
+    if (scopeSelect) {
+        const prevScope = scopeSelect.value || '';
+        if (admin) {
+            scopeSelect.innerHTML = `
+                <option value="global">Global (Same for all classes)</option>
+                <option value="class-wise">Class-wise (Different for each class)</option>
+                <option value="specific">Specific Class Only</option>
+            `;
+            scopeSelect.value = ['global', 'class-wise', 'specific'].includes(prevScope) ? prevScope : 'global';
+        } else {
+            let opts = '';
+            if (scopedClasses.length > 1) {
+                opts += '<option value="class-wise">Class-wise (Assigned Duty Classes)</option>';
+            }
+            opts += '<option value="specific">Specific Class Only</option>';
+            scopeSelect.innerHTML = opts;
+            if (prevScope === 'class-wise' && scopedClasses.length > 1) {
+                scopeSelect.value = 'class-wise';
+            } else {
+                scopeSelect.value = 'specific';
+            }
+        }
+        syncSmartSelectDisplay(scopeSelect);
+    }
+
+    const activeScope = scopeSelect?.value || (admin ? 'global' : 'specific');
+    document.getElementById('scope-global-container')?.classList.toggle('hidden', !admin || activeScope !== 'global');
+    document.getElementById('scope-class-wise-container')?.classList.toggle('hidden', activeScope !== 'class-wise');
+    document.getElementById('scope-specific-container')?.classList.toggle('hidden', activeScope !== 'specific');
+
+    const inputsCont = document.getElementById('class-wise-inputs');
+    if (inputsCont && activeScope === 'class-wise') {
+        const existingVals = {};
+        inputsCont.querySelectorAll('.cw-input').forEach((inp) => {
+            if (inp.dataset.class) existingVals[inp.dataset.class] = inp.value;
+        });
+        inputsCont.innerHTML = scopedClasses.map((c) => `<div><label class="block text-xs font-bold text-gray-600 mb-1">${escapeHtml(c)}</label><input type="number" data-class="${escapeHtml(c)}" class="cw-input w-full p-2 border rounded text-sm font-medium" value="${escapeHtml(String(existingVals[c] ?? ''))}"></div>`).join('');
+    }
+
+    const targetSelect = document.getElementById('adv-fee-specific-class');
+    if (targetSelect) {
+        if (scopedClasses.length === 0) {
+            populateClassSelect(targetSelect, [], {
+                selectedValue: '',
+                placeholder: 'No classes assigned',
+                includeAllOption: false
+            });
+        } else {
+            const curTarget = targetSelect.value || '';
+            const safeTarget = scopedClasses.includes(curTarget) ? curTarget : '';
+            populateClassSelect(targetSelect, scopedClasses, {
+                selectedValue: safeTarget,
+                placeholder: '-- Select Class --',
+                includeAllOption: false
+            });
+        }
+    }
+};
+
+export const applyFinanceSettingsAccessUI = () => {
+    const admin = isUserAdmin();
+    const scopedClasses = getScopedClasses();
+
+    // 1. Structure -> Default Configuration (Admin Only)
+    document.getElementById('default-fee-readonly-badge')?.classList.toggle('hidden', admin);
+    document.getElementById('save-fee-config-btn')?.classList.toggle('hidden', !admin);
+    [
+        'default-fee-input',
+        'fee-collect-start-day',
+        'fee-collect-end-day',
+        'fee-notify-mode',
+        'fee-notify-days-before',
+        'default-fee-receipt-req'
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.disabled = !admin;
+        el.classList.toggle('opacity-75', !admin);
+        el.classList.toggle('cursor-not-allowed', !admin);
+        if (el.tagName === 'SELECT') {
+            syncSmartSelectDisplay(el);
+        }
+    });
+
+    // 2. Structure -> Advanced Fee Builder & Active Items Reorder Hint
+    document.getElementById('adv-fee-scope-note-badge')?.classList.toggle('hidden', admin);
+    document.getElementById('fee-items-reorder-note')?.classList.toggle('hidden', !admin);
+    const builderBox = document.getElementById('adv-fee-builder-form-box');
+    const noDutyNotice = document.getElementById('adv-fee-no-duty-notice');
+    if (!admin && scopedClasses.length === 0) {
+        builderBox?.classList.add('hidden');
+        noDutyNotice?.classList.remove('hidden');
+    } else {
+        builderBox?.classList.remove('hidden');
+        noDutyNotice?.classList.add('hidden');
+        syncAdvFeeScopeOptionsAndInputs();
+    }
+
+    // 3. Groups -> View Mode for Non-Admin
+    const createGrpCard = document.getElementById('create-student-group-card');
+    const existingGrpCard = document.getElementById('existing-student-groups-card');
+    createGrpCard?.classList.toggle('hidden', !admin);
+    if (existingGrpCard) {
+        existingGrpCard.classList.toggle('lg:col-span-7', admin);
+        existingGrpCard.classList.toggle('lg:col-span-12', !admin);
+    }
+    document.getElementById('groups-readonly-badge')?.classList.toggle('hidden', admin);
+
+    // 4. Concessions -> Active Concessions Only View Mode for Non-Admin
+    const assignConcCard = document.getElementById('conc-assign-card');
+    const activeConcCard = document.getElementById('active-conc-directory-card');
+    assignConcCard?.classList.toggle('hidden', !admin);
+    if (activeConcCard) {
+        activeConcCard.classList.toggle('xl:col-span-8', admin);
+        activeConcCard.classList.toggle('xl:col-span-12', !admin);
+    }
+    document.getElementById('conc-readonly-badge')?.classList.toggle('hidden', admin);
+    document.getElementById('active-conc-actions-th')?.classList.toggle('hidden', !admin);
+};
 
 const computePaginationSlice = (totalItems, offset, rowLimitRaw = '25') => {
     const isAllRows = rowLimitRaw === 'all';
@@ -93,9 +256,11 @@ const logAudit = async (category, action, entityType, entityId, message) => {
 // =========================================================================
 
 export const renderFeeItemsManagement = () => {
+    applyFinanceSettingsAccessUI();
     const cont = document.getElementById('fee-items-management-container');
     if (!cont) return;
 
+    const admin = isUserAdmin();
     const activeYear = ctx.getAcademicYear();
     const feeItems = ctx.getFeeItems();
     const scopedFeeItems = feeItems.filter((item) => (item.academicYear || activeYear) === activeYear);
@@ -124,24 +289,37 @@ export const renderFeeItemsManagement = () => {
     };
 
     const renderItemCard = (item) => {
+        const canManage = canManageFeeItem(item);
+        let scopeDesc = (item.scope || 'GLOBAL').toUpperCase();
+        if (item.scope === 'specific' && item.targetClass) {
+            scopeDesc = `SPECIFIC (${escapeHtml(item.targetClass)})`;
+        } else if (item.scope === 'class-wise' && item.classValues) {
+            const clsList = Object.keys(item.classValues).filter(Boolean);
+            if (clsList.length) scopeDesc = `CLASS-WISE (${escapeHtml(clsList.join(', '))})`;
+        }
+
         let detailsHtml = '';
         if (item.type === 'custom') {
-            detailsHtml = `<div class="text-[11px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Scope: <span class="font-semibold text-blue-600 uppercase">${escapeHtml(item.scope || 'GLOBAL')}</span> | Receipt Mandatory: <span class="font-semibold ${item.isReceiptMandatory ? 'text-red-500' : 'text-gray-400'}">${item.isReceiptMandatory ? 'YES' : 'NO'}</span></div>`;
+            detailsHtml = `<div class="text-[11px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Scope: <span class="font-semibold text-blue-600">${scopeDesc}</span> | Receipt Mandatory: <span class="font-semibold ${item.isReceiptMandatory ? 'text-red-500' : 'text-gray-400'}">${item.isReceiptMandatory ? 'YES' : 'NO'}</span></div>`;
         }
-        const handleHtml = item.type === 'custom'
+        const handleHtml = item.type === 'custom' && admin
             ? `<span class="drag-handle mr-2 sm:mr-4 text-gray-500 text-sm sm:text-lg bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-lg px-1.5 sm:px-2 py-0.5 sm:py-1 cursor-grab active:cursor-grabbing select-none" title="Drag to reorder"><i class="fas fa-grip-lines"></i></span>`
-            : `<span class="mr-2 sm:mr-4 text-[10px] font-bold uppercase text-gray-400">Fixed</span>`;
+            : `<span class="mr-2 sm:mr-3 w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 text-xs"><i class="fas ${item.type === 'custom' ? 'fa-tag' : 'fa-calendar'}"></i></span>`;
+
+        const actionHtml = item.type === 'custom'
+            ? (canManage
+                ? `<button type="button" class="text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition edit-fee mr-1.5 sm:mr-2 cursor-pointer shrink-0" data-key="${escapeHtml(item.key)}" title="Edit Fee Item"><i class="fas fa-edit"></i></button>
+                   <button type="button" class="text-red-600 bg-red-50 hover:bg-red-100 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition del-fee cursor-pointer shrink-0" data-key="${escapeHtml(item.key)}" title="Delete Fee Item"><i class="fas fa-trash"></i></button>`
+                : `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider shrink-0"><i class="fas fa-lock text-[9px]"></i> View Only</span>`)
+            : `<span class="px-2 sm:px-3 py-0.5 sm:py-1 bg-gray-100 text-gray-500 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider shrink-0">Month</span>`;
 
         return `<div class="flex items-center bg-white border border-gray-200 p-2.5 sm:p-4 rounded-xl shadow-sm drag-item transition hover:shadow-md" data-key="${escapeHtml(item.key)}">
             ${handleHtml}
-            <div class="flex-grow min-w-0">
+            <div class="flex-grow min-w-0 pr-2">
                 <span class="font-bold text-gray-800 text-sm sm:text-lg block truncate">${escapeHtml(item.name)}</span>
                 ${detailsHtml}
             </div>
-            ${item.type === 'custom' ? `
-                <button type="button" class="text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition edit-fee mr-1.5 sm:mr-2 cursor-pointer shrink-0" data-key="${escapeHtml(item.key)}"><i class="fas fa-edit"></i></button>
-                <button type="button" class="text-red-600 bg-red-50 hover:bg-red-100 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold transition del-fee cursor-pointer shrink-0" data-key="${escapeHtml(item.key)}"><i class="fas fa-trash"></i></button>
-            ` : `<span class="px-2 sm:px-3 py-0.5 sm:py-1 bg-gray-100 text-gray-500 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider shrink-0">Month</span>`}
+            ${actionHtml}
         </div>`;
     };
 
@@ -161,6 +339,7 @@ export const renderFeeItemsManagement = () => {
     `;
 
     const persistFeeOrder = async () => {
+        if (!isUserAdmin()) return;
         const orderedKeys = [
             ...Array.from(cont.querySelectorAll('#fee-items-monthly-list .drag-item')).map((el) => el.dataset.key),
             ...Array.from(cont.querySelectorAll('#fee-items-custom-list .drag-item')).map((el) => el.dataset.key)
@@ -175,7 +354,7 @@ export const renderFeeItemsManagement = () => {
     };
 
     const customList = document.getElementById('fee-items-custom-list');
-    if (customList && customItems.length > 1 && typeof Sortable !== 'undefined') {
+    if (admin && customList && customItems.length > 1 && typeof Sortable !== 'undefined') {
         new Sortable(customList, {
             handle: '.drag-handle',
             animation: 150,
@@ -251,6 +430,10 @@ const updateFeeScheduleSummary = () => {
 };
 
 const saveFeeConfiguration = async () => {
+    if (!isUserAdmin()) {
+        showToast('Only administrators can modify default fee settings.', 'warn');
+        return;
+    }
     const defFeeInput = document.getElementById('default-fee-input');
     const reqCheckbox = document.getElementById('default-fee-receipt-req');
     const startDaySelect = document.getElementById('fee-collect-start-day');
@@ -296,11 +479,15 @@ const saveFeeConfiguration = async () => {
 // =========================================================================
 
 export const renderStudentGroups = () => {
+    applyFinanceSettingsAccessUI();
     const listNode = document.getElementById('student-groups-list');
     if (!listNode) return;
 
     populateExistingGroupClassFilter();
 
+    const admin = isUserAdmin();
+    const dutyClasses = getScopedClasses();
+    const activeYear = ctx.getAcademicYear?.() || '';
     const students = ctx.getStudents();
     const rawStudents = ctx.getRawStudents();
     const studentGroups = ctx.getStudentGroups();
@@ -319,10 +506,35 @@ export const renderStudentGroups = () => {
     };
 
     const uniqueGroups = Array.from(new Map((studentGroups || []).map((g) => [g.id, g])).values());
-    populateExistingGroupSizeFilter(uniqueGroups);
+    const resolveGroupMembers = (group) => (group.memberIds || [])
+        .map((mid) => students.find((entry) => entry.id === mid) || rawStudents.find((entry) => entry.id === mid))
+        .filter(Boolean);
+
+    const eligibleGroups = admin
+        ? uniqueGroups
+        : (dutyClasses.length
+            ? uniqueGroups.filter((g) => {
+                const members = resolveGroupMembers(g);
+                return members.some((st) => isDutyClassMatch(getStudentEffectiveClass(st, activeYear)));
+            })
+            : []);
+
+    populateExistingGroupSizeFilter(eligibleGroups);
+
+    if (!admin && dutyClasses.length === 0) {
+        if (countBadge) countBadge.textContent = '0 Groups';
+        listNode.innerHTML = `
+            <div class="text-center py-8 px-4 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-xs font-semibold">
+                <i class="fas fa-exclamation-circle text-amber-600 text-xl mb-1.5 block"></i>
+                No duty classes assigned to your account. Please ask the administrator to assign duty classes in Staff Management.
+            </div>
+        `;
+        resetGrpPagination();
+        return;
+    }
 
     if (!fCls && !sTerm && fSize === 'all') {
-        if (countBadge) countBadge.textContent = `${uniqueGroups.length} Groups`;
+        if (countBadge) countBadge.textContent = `${eligibleGroups.length} Groups`;
         listNode.innerHTML = `
             <div class="text-center py-8 px-4 bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-500 text-xs">
                 <i class="fas fa-users text-slate-300 text-2xl mb-2 block"></i>
@@ -334,17 +546,22 @@ export const renderStudentGroups = () => {
         return;
     }
 
-    const filteredGroups = uniqueGroups.filter((g) => {
+    const filteredGroups = eligibleGroups.filter((g) => {
         const memberIds = g.memberIds || [];
         if (fSize !== 'all' && memberIds.length !== parseInt(fSize, 10)) {
             return false;
         }
 
-        const memberStudents = memberIds.map((mid) => students.find((entry) => entry.id === mid) || rawStudents.find((entry) => entry.id === mid)).filter(Boolean);
+        const memberStudents = resolveGroupMembers(g);
 
         let matchClass = (!fCls || fCls === 'all');
         if (!matchClass) {
-            matchClass = memberStudents.some((st) => st.class === fCls);
+            const fNorm = String(fCls).replace(/^class\s*/i, '').trim().toLowerCase();
+            matchClass = memberStudents.some((st) => {
+                const stCls = getStudentEffectiveClass(st, activeYear);
+                const stNorm = stCls.replace(/^class\s*/i, '').trim().toLowerCase();
+                return stCls === fCls || stNorm === fNorm;
+            });
         }
 
         let matchSearch = true;
@@ -373,9 +590,9 @@ export const renderStudentGroups = () => {
 
     if (countBadge) {
         if (fCls !== 'all' || sTerm || fSize !== 'all') {
-            countBadge.textContent = `Showing ${filteredGroups.length} of ${uniqueGroups.length} Groups`;
+            countBadge.textContent = `Showing ${filteredGroups.length} of ${eligibleGroups.length} Groups`;
         } else {
-            countBadge.textContent = `${uniqueGroups.length} Groups`;
+            countBadge.textContent = `${eligibleGroups.length} Groups`;
         }
     }
 
@@ -383,7 +600,7 @@ export const renderStudentGroups = () => {
         listNode.innerHTML = `
             <div class="text-center py-8 px-4 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-gray-500 text-xs">
                 <i class="fas fa-users-slash text-gray-400 text-xl mb-1.5 block"></i>
-                ${uniqueGroups.length === 0 ? 'No groups created yet.' : 'No student groups match the current search or class filter.'}
+                ${eligibleGroups.length === 0 ? 'No student groups available.' : 'No student groups match the current search or class filter.'}
             </div>
         `;
         resetGrpPagination();
@@ -475,14 +692,16 @@ export const renderStudentGroups = () => {
                         </span>
                     </div>
 
-                    <div class="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
-                        <button type="button" class="text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition inline-flex items-center gap-1 edit-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
-                            <i class="fas fa-edit text-[10px]"></i> Edit
-                        </button>
-                        <button type="button" class="text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition inline-flex items-center gap-1 del-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
-                            <i class="fas fa-trash-alt text-[10px]"></i> Delete
-                        </button>
-                    </div>
+                    ${admin ? `
+                        <div class="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                            <button type="button" class="text-blue-600 bg-white hover:bg-blue-50 border border-blue-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition inline-flex items-center gap-1 edit-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
+                                <i class="fas fa-edit text-[10px]"></i> Edit
+                            </button>
+                            <button type="button" class="text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md text-[11px] sm:text-xs font-bold transition inline-flex items-center gap-1 del-grp cursor-pointer" data-id="${escapeHtml(g.id)}">
+                                <i class="fas fa-trash-alt text-[10px]"></i> Delete
+                            </button>
+                        </div>
+                    ` : ''}
                 </div>
 
                 <div class="overflow-x-auto">
@@ -524,12 +743,19 @@ export const renderStudentGroups = () => {
 const populateExistingGroupClassFilter = () => {
     const classFilter = document.getElementById('grp-class-filter');
     if (!classFilter) return;
-    const curVal = classFilter.value ?? '';
-    const classes = ctx.getClasses ? ctx.getClasses() : [];
-    const validClasses = classes.filter(c => {
-        const u = String(c).trim().toUpperCase();
-        return u && u !== 'ALUMNI' && u !== 'GRADUATED' && u !== 'ALUMNI_DUES';
-    });
+    const validClasses = getScopedClasses();
+    if (!isUserAdmin() && validClasses.length === 0) {
+        populateClassSelect(classFilter, [], {
+            selectedValue: '',
+            includeAllOption: false,
+            placeholder: 'No classes assigned'
+        });
+        return;
+    }
+    let curVal = classFilter.value ?? '';
+    if (!isUserAdmin() && curVal && curVal !== 'all' && !isDutyClassMatch(curVal)) {
+        curVal = '';
+    }
     populateClassSelect(classFilter, validClasses, {
         selectedValue: curVal,
         includeAllOption: true,
@@ -568,21 +794,36 @@ const populateExistingGroupSizeFilter = (uniqueGroups = []) => {
 export const populateConcessionClassFilters = () => {
     const concClassFilter = document.getElementById('filter-conc-class');
     const activeConcClassFilter = document.getElementById('active-conc-class-filter');
-    let classes = ctx.getClasses ? ctx.getClasses() : [];
-    if (!classes || !classes.length) {
+    let validClasses = getScopedClasses();
+    if (isUserAdmin() && !validClasses.length) {
         const students = ctx.getStudents ? ctx.getStudents() : [];
-        classes = [...new Set(students.map(s => s.class).filter(Boolean))].sort(compareClassLabelsNatural);
+        validClasses = [...new Set(students.map(s => s.class).filter(isValidCollectionClass))].sort(compareClassLabelsNatural);
     }
-    if (!classes || !classes.length) return;
 
-    const validClasses = classes.filter(c => {
-        const u = String(c).trim().toUpperCase();
-        return u && u !== 'ALUMNI' && u !== 'GRADUATED' && u !== 'ALUMNI_DUES';
-    });
+    if (!isUserAdmin() && validClasses.length === 0) {
+        if (concClassFilter) {
+            populateClassSelect(concClassFilter, [], {
+                selectedValue: '',
+                includeAllOption: false,
+                placeholder: 'No classes assigned'
+            });
+        }
+        if (activeConcClassFilter) {
+            populateClassSelect(activeConcClassFilter, [], {
+                selectedValue: '',
+                includeAllOption: false,
+                placeholder: 'No classes assigned'
+            });
+        }
+        return;
+    }
+    if (!validClasses.length) return;
 
     if (concClassFilter) {
+        let curVal = concClassFilter.value ?? '';
+        if (!isUserAdmin() && curVal && curVal !== 'all' && !isDutyClassMatch(curVal)) curVal = '';
         populateClassSelect(concClassFilter, validClasses, {
-            selectedValue: concClassFilter.value ?? '',
+            selectedValue: curVal,
             includeAllOption: true,
             allOptionLabel: 'All Classes',
             allOptionValue: 'all',
@@ -591,8 +832,10 @@ export const populateConcessionClassFilters = () => {
     }
 
     if (activeConcClassFilter) {
+        let curActiveVal = activeConcClassFilter.value ?? '';
+        if (!isUserAdmin() && curActiveVal && curActiveVal !== 'all' && !isDutyClassMatch(curActiveVal)) curActiveVal = '';
         populateClassSelect(activeConcClassFilter, validClasses, {
-            selectedValue: activeConcClassFilter.value ?? '',
+            selectedValue: curActiveVal,
             includeAllOption: true,
             allOptionLabel: 'All Classes',
             allOptionValue: 'all',
@@ -776,6 +1019,11 @@ const closeUnifyFamilyModal = () => {
 };
 
 const handleConfirmGroupCreation = async () => {
+    if (!isUserAdmin()) {
+        showToast('Only administrators can create or update student groups.', 'warn');
+        closeUnifyFamilyModal();
+        return;
+    }
     if (!pendingGroupCreationData) return;
 
     const { studentIds, groupFee, isEdit, groupId } = pendingGroupCreationData;
@@ -888,7 +1136,12 @@ const handleConfirmGroupCreation = async () => {
 // =========================================================================
 
 export const renderConcessionsList = () => {
+    applyFinanceSettingsAccessUI();
     populateConcessionClassFilters();
+    renderActiveConcessionsList();
+
+    if (!isUserAdmin()) return;
+
     const fCls = document.getElementById('filter-conc-class')?.value || '';
     const sTerm = (document.getElementById('search-conc-input')?.value || '').trim().toLowerCase();
     const rowLimitRaw = document.getElementById('conc-search-row-limit')?.value || '25';
@@ -901,8 +1154,6 @@ export const renderConcessionsList = () => {
             paginationEl.innerHTML = '';
         }
     };
-
-    renderActiveConcessionsList();
 
     if (!cont || !emptyState) return;
 
@@ -975,6 +1226,10 @@ export const renderConcessionsList = () => {
 
 const renderActiveConcessionsList = () => {
     populateConcessionClassFilters();
+    const admin = isUserAdmin();
+    const dutyClasses = getScopedClasses();
+    const colSpan = admin ? 6 : 5;
+
     const cont = document.getElementById('active-concessions-list');
     const badge = document.getElementById('active-conc-count-badge');
     const statusLabel = document.getElementById('active-conc-filter-status');
@@ -991,20 +1246,38 @@ const renderActiveConcessionsList = () => {
 
     if (!cont) return;
 
+    const activeYear = ctx.getAcademicYear?.() || '';
     const students = ctx.getStudents();
-    const active = students.filter((s) => s.concessionFee !== undefined && s.concessionFee !== null && s.concessionFee !== '');
+    const activeAll = students.filter((s) => s.concessionFee !== undefined && s.concessionFee !== null && s.concessionFee !== '');
+    const active = admin
+        ? activeAll
+        : (dutyClasses.length
+            ? activeAll.filter((s) => isDutyClassMatch(getStudentEffectiveClass(s, activeYear)))
+            : []);
 
     if (badge) badge.textContent = String(active.length);
 
+    if (!admin && dutyClasses.length === 0) {
+        if (statusLabel) statusLabel.textContent = 'No Duty Classes Assigned';
+        cont.innerHTML = `<tr><td colspan="${colSpan}" class="py-8 px-4 text-center text-amber-700 bg-amber-50 font-semibold text-xs"><i class="fas fa-exclamation-circle text-amber-600 text-xl mb-1.5 block"></i>No duty classes assigned to your account. Please ask the administrator to assign duty classes.</td></tr>`;
+        resetActiveConcPagination();
+        return;
+    }
+
     if (!fCls && !sTerm) {
         if (statusLabel) statusLabel.textContent = 'Select Class or Search';
-        cont.innerHTML = '<tr><td colspan="6" class="py-8 px-4 text-center text-slate-500 font-medium text-xs"><i class="fas fa-filter text-slate-300 text-xl mb-1.5 block"></i>Please select a class, choose &ldquo;All Classes&rdquo;, or search above to view active concessions.</td></tr>';
+        cont.innerHTML = `<tr><td colspan="${colSpan}" class="py-8 px-4 text-center text-slate-500 font-medium text-xs"><i class="fas fa-filter text-slate-300 text-xl mb-1.5 block"></i>Please select a class, choose &ldquo;All Classes&rdquo;, or search above to view active concessions.</td></tr>`;
         resetActiveConcPagination();
         return;
     }
 
     const filtered = active.filter((s) => {
-        if (fCls && fCls !== 'all' && s.class !== fCls) return false;
+        if (fCls && fCls !== 'all') {
+            const stCls = getStudentEffectiveClass(s, activeYear);
+            const stNorm = stCls.replace(/^class\s*/i, '').trim().toLowerCase();
+            const fNorm = String(fCls).replace(/^class\s*/i, '').trim().toLowerCase();
+            if (stCls !== fCls && stNorm !== fNorm) return false;
+        }
         if (sTerm) {
             const name = (s.name || '').toLowerCase();
             const adm = (s.adm ? String(s.adm) : '').toLowerCase();
@@ -1018,7 +1291,7 @@ const renderActiveConcessionsList = () => {
     }
 
     if (!filtered.length) {
-        cont.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-400 font-semibold text-xs">No active concessions found.</td></tr>';
+        cont.innerHTML = `<tr><td colspan="${colSpan}" class="p-4 text-center text-slate-400 font-semibold text-xs">No active concessions found.</td></tr>`;
         resetActiveConcPagination();
         return;
     }
@@ -1038,10 +1311,12 @@ const renderActiveConcessionsList = () => {
             </td>
             <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center font-mono font-bold text-slate-700 tabular-nums">${escapeHtml(s.adm || '-')}</td>
             <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-right font-extrabold text-emerald-700 tabular-nums">₹${escapeHtml(String(s.concessionFee))}</td>
-            <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center whitespace-nowrap">
-                <button type="button" class="p-1 sm:p-1.5 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition concession-open-btn cursor-pointer mr-0.5 sm:mr-1" data-id="${escapeHtml(s.id)}" title="Edit Concession"><i class="fas fa-edit"></i></button>
-                <button type="button" class="p-1 sm:p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition concession-delete-btn cursor-pointer" data-id="${escapeHtml(s.id)}" title="Remove Concession"><i class="fas fa-trash-alt"></i></button>
-            </td>
+            ${admin ? `
+                <td class="py-1.5 sm:py-2.5 px-2 sm:px-3 text-center whitespace-nowrap">
+                    <button type="button" class="p-1 sm:p-1.5 rounded-lg text-blue-600 hover:text-blue-800 hover:bg-blue-50 transition concession-open-btn cursor-pointer mr-0.5 sm:mr-1" data-id="${escapeHtml(s.id)}" title="Edit Concession"><i class="fas fa-edit"></i></button>
+                    <button type="button" class="p-1 sm:p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition concession-delete-btn cursor-pointer" data-id="${escapeHtml(s.id)}" title="Remove Concession"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            ` : ''}
         </tr>
     `).join('');
 
@@ -1062,6 +1337,10 @@ const renderActiveConcessionsList = () => {
 };
 
 const openConcModal = (studentId) => {
+    if (!isUserAdmin()) {
+        showToast('Only administrators can edit fee concessions.', 'warn');
+        return;
+    }
     const students = ctx.getStudents();
     const s = students.find((st) => st.id === studentId);
     if (!s) return;
@@ -1135,35 +1414,56 @@ export const initFinanceManagementModule = (stateContext) => {
     // --- Advanced Fee Builder Scope Toggle ---
     document.getElementById('adv-fee-scope')?.addEventListener('change', (e) => {
         const val = e.target.value;
+        if (!isUserAdmin() && val === 'global') {
+            syncAdvFeeScopeOptionsAndInputs();
+            return;
+        }
         document.getElementById('scope-global-container')?.classList.toggle('hidden', val !== 'global');
         document.getElementById('scope-class-wise-container')?.classList.toggle('hidden', val !== 'class-wise');
         document.getElementById('scope-specific-container')?.classList.toggle('hidden', val !== 'specific');
 
-        const classes = ctx.getClasses();
+        const scopedClasses = getScopedClasses();
         if (val === 'class-wise') {
             const inputsCont = document.getElementById('class-wise-inputs');
             if (inputsCont) {
-                inputsCont.innerHTML = classes.map((c) => `<div><label class="block text-xs font-bold text-gray-600 mb-1">${escapeHtml(c)}</label><input type="number" data-class="${escapeHtml(c)}" class="cw-input w-full p-2 border rounded text-sm font-medium"></div>`).join('');
+                inputsCont.innerHTML = scopedClasses.map((c) => `<div><label class="block text-xs font-bold text-gray-600 mb-1">${escapeHtml(c)}</label><input type="number" data-class="${escapeHtml(c)}" class="cw-input w-full p-2 border rounded text-sm font-medium"></div>`).join('');
             }
         }
         if (val === 'specific') {
             const targetSelect = document.getElementById('adv-fee-specific-class');
             if (targetSelect) {
-                populateClassSelect(targetSelect, classes, {
-                    selectedValue: targetSelect.value || '',
-                    placeholder: '-- Select Class --',
-                    includeAllOption: false
-                });
+                if (scopedClasses.length === 0) {
+                    populateClassSelect(targetSelect, [], {
+                        selectedValue: '',
+                        placeholder: 'No classes assigned',
+                        includeAllOption: false
+                    });
+                } else {
+                    populateClassSelect(targetSelect, scopedClasses, {
+                        selectedValue: scopedClasses.includes(targetSelect.value) ? targetSelect.value : '',
+                        placeholder: '-- Select Class --',
+                        includeAllOption: false
+                    });
+                }
             }
         }
     });
 
     document.getElementById('add-adv-fee-btn')?.addEventListener('click', async () => {
+        const admin = isUserAdmin();
+        const dutyClasses = getScopedClasses();
+        if (!admin && dutyClasses.length === 0) {
+            return showToast('No duty classes assigned to your account.', 'warn');
+        }
+
         const nameInput = document.getElementById('adv-fee-name');
         const scopeSelect = document.getElementById('adv-fee-scope');
         const name = (nameInput?.value || '').trim();
-        const scope = scopeSelect?.value || 'global';
+        const scope = scopeSelect?.value || (admin ? 'global' : 'specific');
         if (!name) return showToast('Fee item name is required.', 'warn');
+        if (!admin && scope === 'global') {
+            return showToast('Only administrators can create Global fee items.', 'warn');
+        }
 
         const key = `custom_fee_${Date.now()}`;
         const newFee = {
@@ -1186,14 +1486,20 @@ export const initFinanceManagementModule = (stateContext) => {
             const classAmounts = {};
             document.querySelectorAll('.cw-input').forEach((inp) => {
                 const amt = parseFloat(inp.value);
-                if (!isNaN(amt)) classAmounts[inp.dataset.class] = amt;
+                const cls = inp.dataset.class;
+                if (!isNaN(amt) && cls && (admin || isDutyClassMatch(cls))) {
+                    classAmounts[cls] = amt;
+                }
             });
-            if (Object.keys(classAmounts).length === 0) return showToast('Enter amount for at least one class.', 'warn');
+            if (Object.keys(classAmounts).length === 0) return showToast('Enter amount for at least one assigned class.', 'warn');
             newFee.classValues = classAmounts;
         } else if (scope === 'specific') {
             const targetClass = document.getElementById('adv-fee-specific-class')?.value;
             const amt = parseFloat(document.getElementById('adv-fee-specific-amt')?.value);
             if (!targetClass || isNaN(amt)) return showToast('Select class and enter valid amount.', 'warn');
+            if (!admin && !isDutyClassMatch(targetClass)) {
+                return showToast('You can only add fee items for your assigned duty classes.', 'warn');
+            }
             newFee.targetClass = targetClass;
             newFee.amount = amt;
         }
@@ -1207,6 +1513,9 @@ export const initFinanceManagementModule = (stateContext) => {
             nameInput.value = '';
             const globalAmtInput = document.getElementById('adv-fee-global-amt');
             if (globalAmtInput) globalAmtInput.value = '';
+            const specAmtInput = document.getElementById('adv-fee-specific-amt');
+            if (specAmtInput) specAmtInput.value = '';
+            document.querySelectorAll('.cw-input').forEach((inp) => { inp.value = ''; });
             renderFeeItemsManagement();
             showToast(`Fee item "${name}" created!`, 'success');
         } catch (err) {
@@ -1216,27 +1525,31 @@ export const initFinanceManagementModule = (stateContext) => {
     });
 
     const renderEditFeeScopeSection = (scope, existingItem = null) => {
-        document.getElementById('e-scope-global-container')?.classList.toggle('hidden', scope !== 'global');
-        document.getElementById('e-scope-class-wise-container')?.classList.toggle('hidden', scope !== 'class-wise');
-        document.getElementById('e-scope-specific-container')?.classList.toggle('hidden', scope !== 'specific');
+        const admin = isUserAdmin();
+        const safeScope = (!admin && scope === 'global') ? 'specific' : scope;
+        document.getElementById('e-scope-global-container')?.classList.toggle('hidden', !admin || safeScope !== 'global');
+        document.getElementById('e-scope-class-wise-container')?.classList.toggle('hidden', safeScope !== 'class-wise');
+        document.getElementById('e-scope-specific-container')?.classList.toggle('hidden', safeScope !== 'specific');
 
-        const classes = ctx.getClasses();
-        if (scope === 'global') {
+        const scopedClasses = getScopedClasses();
+        if (safeScope === 'global') {
             const amtEl = document.getElementById('e-fee-global-amt');
             if (amtEl && existingItem) amtEl.value = existingItem.amount || '';
-        } else if (scope === 'class-wise') {
+        } else if (safeScope === 'class-wise') {
             const inputsEl = document.getElementById('e-class-wise-inputs');
             if (inputsEl) {
-                inputsEl.innerHTML = classes.map((c) => {
+                inputsEl.innerHTML = scopedClasses.map((c) => {
                     const existingVal = existingItem?.classValues?.[c] ?? '';
                     return `<div><label class="block text-xs font-bold text-gray-600 mb-1">${escapeHtml(c)}</label><input type="number" data-class="${escapeHtml(c)}" class="e-cw-input w-full p-2 border rounded text-sm font-medium" value="${escapeHtml(String(existingVal))}"></div>`;
                 }).join('');
             }
-        } else if (scope === 'specific') {
+        } else if (safeScope === 'specific') {
             const specificSelect = document.getElementById('e-fee-specific-class');
             if (specificSelect) {
-                populateClassSelect(specificSelect, classes, {
-                    selectedValue: existingItem ? (existingItem.targetClass || '') : (specificSelect.value || ''),
+                const candidateVal = existingItem ? (existingItem.targetClass || '') : (specificSelect.value || '');
+                const safeTarget = scopedClasses.includes(candidateVal) ? candidateVal : '';
+                populateClassSelect(specificSelect, scopedClasses, {
+                    selectedValue: safeTarget,
                     placeholder: '-- Select Class --',
                     includeAllOption: false
                 });
@@ -1249,6 +1562,10 @@ export const initFinanceManagementModule = (stateContext) => {
     document.getElementById('e-fee-scope')?.addEventListener('change', (e) => {
         const key = document.getElementById('e-fee-key')?.value;
         const item = ctx.getFeeItems().find((i) => i.key === key) || null;
+        if (!isUserAdmin() && e.target.value === 'global') {
+            e.target.value = 'specific';
+            syncSmartSelectDisplay(e.target);
+        }
         renderEditFeeScopeSection(e.target.value, item);
     });
 
@@ -1269,6 +1586,11 @@ export const initFinanceManagementModule = (stateContext) => {
 
         if (delBtn) {
             const key = delBtn.dataset.key;
+            const item = feeItems.find((i) => i.key === key);
+            if (!canManageFeeItem(item)) {
+                showToast('You can only delete custom fee items belonging to your assigned duty classes.', 'warn');
+                return;
+            }
             const confirmed = await openConfirmDialog({
                 title: 'Delete Fee Item',
                 message: 'Permanently delete this fee item?',
@@ -1291,19 +1613,38 @@ export const initFinanceManagementModule = (stateContext) => {
         if (editBtn) {
             const key = editBtn.dataset.key;
             const item = feeItems.find((i) => i.key === key);
-            if (!item) return;
+            if (!item || !canManageFeeItem(item)) {
+                showToast('You can only edit custom fee items belonging to your assigned duty classes.', 'warn');
+                return;
+            }
 
+            const admin = isUserAdmin();
+            const scopedClasses = getScopedClasses();
             document.getElementById('e-fee-key').value = item.key;
             document.getElementById('e-fee-name').value = item.name;
-            const itemScope = item.scope || 'global';
+            const itemScope = (!admin && item.scope === 'global') ? 'specific' : (item.scope || 'global');
             const scopeEl = document.getElementById('e-fee-scope');
             if (scopeEl) {
-                scopeEl.value = itemScope;
+                if (admin) {
+                    scopeEl.innerHTML = `
+                        <option value="global">Global (Same for all classes)</option>
+                        <option value="class-wise">Class-wise (Different for each)</option>
+                        <option value="specific">Specific Class Only</option>
+                    `;
+                } else {
+                    let opts = '';
+                    if (scopedClasses.length > 1) {
+                        opts += '<option value="class-wise">Class-wise (Assigned Duty Classes)</option>';
+                    }
+                    opts += '<option value="specific">Specific Class Only</option>';
+                    scopeEl.innerHTML = opts;
+                }
+                scopeEl.value = (!admin && itemScope === 'class-wise' && scopedClasses.length <= 1) ? 'specific' : itemScope;
                 syncSmartSelectDisplay(scopeEl);
             }
             document.getElementById('e-fee-receipt-req').checked = !!item.isReceiptMandatory;
 
-            renderEditFeeScopeSection(itemScope, item);
+            renderEditFeeScopeSection(scopeEl?.value || itemScope, item);
 
             const modal = document.getElementById('edit-fee-popup');
             if (modal) {
@@ -1317,12 +1658,22 @@ export const initFinanceManagementModule = (stateContext) => {
 
     document.getElementById('e-fee-update')?.addEventListener('click', async () => {
         const key = document.getElementById('e-fee-key').value;
+        const feeItems = ctx.getFeeItems();
+        const existing = feeItems.find((f) => f.key === key);
+        if (!existing || !canManageFeeItem(existing)) {
+            showToast('You do not have permission to modify this fee item.', 'warn');
+            closeEditFeeModal();
+            return;
+        }
+
+        const admin = isUserAdmin();
         const name = (document.getElementById('e-fee-name').value || '').trim();
         const scope = document.getElementById('e-fee-scope').value;
         if (!name) return showToast('Fee item name is mandatory.', 'warn');
+        if (!admin && scope === 'global') {
+            return showToast('Only administrators can configure Global fee items.', 'warn');
+        }
 
-        const feeItems = ctx.getFeeItems();
-        const existing = feeItems.find((f) => f.key === key) || {};
         const updated = {
             ...existing,
             key,
@@ -1343,16 +1694,25 @@ export const initFinanceManagementModule = (stateContext) => {
             const classAmounts = {};
             document.querySelectorAll('.e-cw-input').forEach((inp) => {
                 const amt = parseFloat(inp.value);
-                if (!isNaN(amt)) classAmounts[inp.dataset.class] = amt;
+                const cls = inp.dataset.class;
+                if (!isNaN(amt) && cls && (admin || isDutyClassMatch(cls))) {
+                    classAmounts[cls] = amt;
+                }
             });
-            if (Object.keys(classAmounts).length === 0) return showToast('Enter amount for at least one class.', 'warn');
+            if (Object.keys(classAmounts).length === 0) return showToast('Enter amount for at least one assigned class.', 'warn');
             updated.classValues = classAmounts;
+            delete updated.targetClass;
+            delete updated.amount;
         } else if (scope === 'specific') {
             const targetCls = document.getElementById('e-fee-specific-class')?.value;
             const amt = parseFloat(document.getElementById('e-fee-specific-amt')?.value);
             if (!targetCls || isNaN(amt)) return showToast('Select class and enter valid amount.', 'warn');
+            if (!admin && !isDutyClassMatch(targetCls)) {
+                return showToast('You can only assign fee items to your duty classes.', 'warn');
+            }
             updated.targetClass = targetCls;
             updated.amount = amt;
+            delete updated.classValues;
         }
 
         try {
@@ -1428,6 +1788,10 @@ export const initFinanceManagementModule = (stateContext) => {
     });
 
     document.getElementById('create-group-btn')?.addEventListener('click', () => {
+        if (!isUserAdmin()) {
+            showToast('Only administrators can create student groups.', 'warn');
+            return;
+        }
         const studentSelects = Array.from(document.querySelectorAll('.grp-stu'));
         const studentIds = studentSelects.map((sel) => sel.value).filter(Boolean);
         const feeInput = document.getElementById('group-monthly-fee');
@@ -1482,6 +1846,10 @@ export const initFinanceManagementModule = (stateContext) => {
     document.getElementById('student-groups-list')?.addEventListener('click', async (e) => {
         const delBtn = e.target.closest('.del-grp');
         const editBtn = e.target.closest('.edit-grp');
+        if ((delBtn || editBtn) && !isUserAdmin()) {
+            showToast('Only administrators can modify student groups.', 'warn');
+            return;
+        }
 
         if (delBtn) {
             const gid = delBtn.dataset.id;
@@ -1610,6 +1978,11 @@ export const initFinanceManagementModule = (stateContext) => {
     document.getElementById('edit-group-cancel')?.addEventListener('click', closeEditGroupModal);
 
     document.getElementById('edit-group-update')?.addEventListener('click', () => {
+        if (!isUserAdmin()) {
+            showToast('Only administrators can update student groups.', 'warn');
+            closeEditGroupModal();
+            return;
+        }
         const gid = document.getElementById('e-grp-id')?.value;
         const feeVal = document.getElementById('e-grp-fee')?.value;
         const gfee = parseFloat(feeVal);
@@ -1648,12 +2021,17 @@ export const initFinanceManagementModule = (stateContext) => {
     document.getElementById('active-conc-class-filter')?.addEventListener('change', handleActiveConcFilterChange);
     document.getElementById('active-conc-row-limit')?.addEventListener('change', handleActiveConcFilterChange);
 
-    // Populate concession class filter dropdowns
+    // Populate concession class filter dropdowns & sync View Mode UI
     populateConcessionClassFilters();
+    applyFinanceSettingsAccessUI();
 
     document.getElementById('fee-concessions-page')?.addEventListener('click', async (e) => {
         const openBtn = e.target.closest('.concession-open-btn');
         const delBtn = e.target.closest('.concession-delete-btn');
+        if ((openBtn || delBtn) && !isUserAdmin()) {
+            showToast('Only administrators can modify fee concessions.', 'warn');
+            return;
+        }
 
         if (openBtn) {
             openConcModal(openBtn.dataset.id);
@@ -1688,6 +2066,11 @@ export const initFinanceManagementModule = (stateContext) => {
     });
 
     document.getElementById('conc-save')?.addEventListener('click', async () => {
+        if (!isUserAdmin()) {
+            showToast('Only administrators can modify fee concessions.', 'warn');
+            closeConcModal();
+            return;
+        }
         const sid = document.getElementById('conc-student-id')?.value;
         const amt = parseFloat(document.getElementById('conc-fee-amount')?.value);
         if (isNaN(amt) || amt < 0) return showToast('Please enter a valid concession amount.', 'warn');
@@ -1714,6 +2097,11 @@ export const initFinanceManagementModule = (stateContext) => {
     });
 
     document.getElementById('conc-remove')?.addEventListener('click', async () => {
+        if (!isUserAdmin()) {
+            showToast('Only administrators can remove fee concessions.', 'warn');
+            closeConcModal();
+            return;
+        }
         const sid = document.getElementById('conc-student-id')?.value;
         const confirmed = await openConfirmDialog({
             title: 'Remove Concession',
