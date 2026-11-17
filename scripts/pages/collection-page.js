@@ -4939,7 +4939,7 @@ const downloadCollectionBulkTemplate = (format = 'xlsx') => {
         return;
     }
 
-    const headers = ['Student_ID', 'Admission_No', 'Student_Name'];
+    const headers = ['Admission_No', 'Student_Name'];
     monthlyItems.forEach(item => {
         const safeName = normalizeFeeItemName(item.name).replace(/[^a-zA-Z0-9]/g, '_');
         headers.push(`${safeName}_Amount`);
@@ -4948,7 +4948,7 @@ const downloadCollectionBulkTemplate = (format = 'xlsx') => {
     });
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const modelRow = ['SAMPLE-ID-DO-NOT-DELETE', '1234', 'Model Student Name'];
+    const modelRow = ['1234', 'Model Student Name'];
     monthlyItems.forEach(() => {
         modelRow.push(defFee);
         modelRow.push('1001');
@@ -4959,7 +4959,6 @@ const downloadCollectionBulkTemplate = (format = 'xlsx') => {
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
         .map((student) => {
             const rowData = [
-                student.id,
                 student.adm || '',
                 student.name || ''
             ];
@@ -5028,9 +5027,9 @@ const downloadCollectionBulkTemplate = (format = 'xlsx') => {
 
 const buildCollectionBulkMappingOptions = (monthlyItems = []) => {
     const options = [
-        { key: 'studentId', label: 'Student ID (Locked)' },
         { key: 'adm', label: 'Admission No (Locked)' },
-        { key: 'name', label: 'Student Name (Locked)' }
+        { key: 'name', label: 'Student Name (Locked)' },
+        { key: 'studentId', label: 'Student ID (Optional)' }
     ];
     monthlyItems.forEach((item) => {
         const labelBase = normalizeFeeItemName(item.name || item.key);
@@ -5141,9 +5140,14 @@ const validateCollectionBulkRow = (rowIdx, classStudents = null) => {
     const admVal = colByField.adm ? String(workingRow[colByField.adm] || '').trim() : '';
     const nameVal = colByField.name ? String(workingRow[colByField.name] || '').trim() : '';
 
-    const isSampleRow = studentIdVal === 'SAMPLE-ID-DO-NOT-DELETE';
+    const isSampleRow = studentIdVal === 'SAMPLE-ID-DO-NOT-DELETE' || (
+        nameVal.toLowerCase() === 'model student name' &&
+        (admVal === '1234' || admVal === '') &&
+        !studentsScope.some((s) => String(s.name || '').trim().toLowerCase() === 'model student name')
+    );
 
     let matchedStudent = null;
+    let ambiguousNameError = false;
     if (!isSampleRow) {
         if (studentIdVal) {
             matchedStudent = studentsScope.find((s) => s.id === studentIdVal) || null;
@@ -5151,6 +5155,15 @@ const validateCollectionBulkRow = (rowIdx, classStudents = null) => {
         if (!matchedStudent && admVal) {
             const normAdm = admVal.toUpperCase();
             matchedStudent = studentsScope.find((s) => String(s.adm || '').trim().toUpperCase() === normAdm) || null;
+        }
+        if (!matchedStudent && !admVal && nameVal) {
+            const normName = nameVal.toLowerCase();
+            const nameMatches = studentsScope.filter((s) => String(s.name || '').trim().toLowerCase() === normName);
+            if (nameMatches.length === 1) {
+                matchedStudent = nameMatches[0];
+            } else if (nameMatches.length > 1) {
+                ambiguousNameError = true;
+            }
         }
     }
 
@@ -5186,18 +5199,23 @@ const validateCollectionBulkRow = (rowIdx, classStudents = null) => {
     }
 
     if (!matchedStudent) {
+        const fatalReason = ambiguousNameError
+            ? `Multiple students named "${nameVal}" in Class ${targetClass} — enter Admission No`
+            : (!studentIdVal && !admVal && !nameVal)
+                ? `Missing Admission No or Student Name in Class ${targetClass} (${year})`
+                : `Student not found in Class ${targetClass} (${year})`;
         columns.forEach((c) => {
             if (!c.mappedField || c.mappedField === 'none') return;
             cellStatuses[c.id] = {
                 status: 'error',
-                reason: `Student not found in Class ${targetClass} (${year})`
+                reason: fatalReason
             };
         });
         return {
             rowIdx,
             isSampleRow: false,
             hasFatalError: true,
-            fatalReason: `Unmatched student in Class ${targetClass} (${year})`,
+            fatalReason,
             matchedStudent: null,
             displayStudentId: studentIdVal,
             displayAdm: admVal,
@@ -5896,9 +5914,9 @@ const handleBulkFileSelection = (file) => {
             );
 
             const columns = buildCollectionBulkColumns(rawHeaders, monthlyItems);
-            const hasStudentIdentity = columns.some((c) => c.mappedField === 'studentId' || c.mappedField === 'adm');
+            const hasStudentIdentity = columns.some((c) => c.mappedField === 'adm' || c.mappedField === 'name' || c.mappedField === 'studentId');
             if (!hasStudentIdentity) {
-                alert('Invalid file format. Could not detect Student_ID or Admission_No column. Please use the downloaded template.');
+                alert('Invalid file format. Could not detect Admission_No or Student_Name column. Please use the downloaded template.');
                 const fi = document.getElementById('bulk-file-input');
                 if (fi) fi.value = '';
                 return;
