@@ -1460,6 +1460,7 @@ function initializeDataListeners() {
         renderGradeRules();
         renderBlockedClasses();
         renderPublishedHistoryTable();
+        if (typeof renderPublishClassExamMatrix === 'function') renderPublishClassExamMatrix();
         renderPromotionMappingUI();
         renderResultVisibilitySettings();
     });
@@ -2620,6 +2621,21 @@ const renderPublishedHistoryTable = () => {
             </div>
         `;
 
+        const getPublishSourceBadgeHtml = (source = '') => {
+            const norm = String(source || '').trim().toLowerCase();
+            if (norm === 'marks_entry') {
+                return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"><i class="fas fa-pen-to-square text-[9px]"></i> Marks Entry</span>`;
+            }
+            if (norm === 'draft_review') {
+                return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><i class="fas fa-file-lines text-[9px]"></i> Draft Review</span>`;
+            }
+            if (norm === 'auto_scheduled') {
+                return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200"><i class="fas fa-clock text-[9px]"></i> Auto Scheduled</span>`;
+            }
+            return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200"><i class="fas fa-bullhorn text-[9px]"></i> Publish Control</span>`;
+        };
+        const sourceBadge = getPublishSourceBadgeHtml(record.publishSource || (record.publishType === 'auto' ? 'auto_scheduled' : 'publish_control'));
+
         const modeBadge = isUnpublished
             ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200"><i class="fas fa-undo text-[10px]"></i> Reverted to Draft</span>`
             : isScheduled
@@ -2659,6 +2675,7 @@ const renderPublishedHistoryTable = () => {
                     <div class="flex flex-col gap-1 items-start">
                         ${statusBadge}
                         ${modeBadge}
+                        ${sourceBadge}
                     </div>
                 </td>
                 <td class="py-3 px-4 whitespace-nowrap">
@@ -2688,7 +2705,7 @@ const renderPublishControls = () => {
     const yearSelect = document.getElementById('publish-academic-year');
     const examSelect = document.getElementById('publish-exam-select');
     if (!yearSelect || !examSelect) return;
-    const years = [...new Set([currentAcademicYear, ...resultSchemas.map((s) => s.academicYear).filter(Boolean)])].filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
+    const years = [...new Set([currentAcademicYear, ...resultSchemas.map((s) => s.academicYear).filter(Boolean), ...examResultsCache.map((r) => r.academicYear).filter(Boolean)])].filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
     const prevYear = yearSelect.dataset.userChangedYear === 'true'
         ? (yearSelect.value || resultCenterSettings.publishAcademicYear || currentAcademicYear)
         : currentAcademicYear;
@@ -2724,7 +2741,250 @@ const renderPublishControls = () => {
         syncSmartSelectDisplay(historyYearSelect);
     }
 
+    const matrixYearSelect = document.getElementById('publish-matrix-year-select');
+    if (matrixYearSelect) {
+        const allMatrixYears = [...new Set([...years, ...examResultsCache.map((r) => r.academicYear).filter(Boolean)])].filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
+        const prevMatrixYear = matrixYearSelect.dataset.userChangedYear === 'true'
+            ? (matrixYearSelect.value || currentAcademicYear)
+            : currentAcademicYear;
+        populateAcademicYearSelect(matrixYearSelect, allMatrixYears, currentAcademicYear, {
+            selectedValue: prevMatrixYear,
+            preferCurrentUnlessUserChanged: true
+        });
+        syncSmartSelectDisplay(matrixYearSelect);
+    }
+
+    renderPublishClassExamMatrix();
     renderPublishedHistoryTable();
+};
+
+const renderPublishClassExamMatrix = () => {
+    const container = document.getElementById('publish-class-exam-matrix');
+    if (!container) return;
+    const yearSelect = document.getElementById('publish-matrix-year-select');
+    const selectedYear = yearSelect?.value || currentAcademicYear || '';
+
+    const classSet = new Set(Array.isArray(classes) ? classes : []);
+    resultSchemas
+        .filter((s) => !selectedYear || !s.academicYear || s.academicYear === selectedYear)
+        .forEach((s) => { if (s.classLabel) classSet.add(s.classLabel); });
+    examResultsCache
+        .filter((r) => !selectedYear || !r.academicYear || r.academicYear === selectedYear)
+        .forEach((r) => { if (r.classLabel) classSet.add(r.classLabel); });
+
+    const orderedClasses = Array.from(classSet).filter(Boolean).sort(compareClassLabelsNatural);
+    if (!orderedClasses.length) {
+        container.innerHTML = '<div class="p-6 text-center text-xs text-slate-400">No classes found for this academic year.</div>';
+        return;
+    }
+
+    const historyRecords = getPublishHistoryRecords();
+    const now = Date.now();
+
+    const rowsHtml = orderedClasses.map((cls) => {
+        const classExamMap = new Map();
+        const schemaOptions = getExamOptionsForClass(cls, selectedYear);
+        if (schemaOptions.length) {
+            schemaOptions.forEach((ex) => {
+                const key = ex.key || parseExamValue(ex.value).examKey;
+                if (key && !classExamMap.has(key)) {
+                    classExamMap.set(key, { key, label: ex.label || key });
+                }
+            });
+        } else {
+            DEFAULT_EXAM_DEFS.forEach((ex) => {
+                classExamMap.set(ex.key, { key: ex.key, label: ex.label });
+            });
+        }
+
+        examResultsCache
+            .filter((r) => r.classLabel === cls && (!selectedYear || !r.academicYear || r.academicYear === selectedYear))
+            .forEach((r) => {
+                const rKey = r.examKey || parseExamValue(r.examId || '').examKey;
+                if (rKey && !classExamMap.has(rKey)) {
+                    classExamMap.set(rKey, { key: rKey, label: r.examLabel || rKey });
+                }
+            });
+
+        const badgesHtml = Array.from(classExamMap.values()).map((exam) => {
+            const matchingRows = examResultsCache.filter((row) => {
+                if (row.classLabel !== cls) return false;
+                const matchesYear = !selectedYear || !row.academicYear || row.academicYear === selectedYear;
+                return matchesYear && resultMatchesExam(row, exam.key);
+            });
+            const liveCount = matchingRows.filter((r) => r.published === true).length;
+            const draftCount = matchingRows.filter((r) => r.published !== true).length;
+            const totalCount = matchingRows.length;
+
+            const pubRecord = historyRecords.find((r) => (r.academicYear || currentAcademicYear) === selectedYear && r.examKey === exam.key);
+            const isRecordUnpublished = Boolean(pubRecord && (pubRecord.publishType === 'unpublished' || pubRecord.status === 'Unpublished'));
+            const isBlocked = Boolean(
+                (pubRecord && !isRecordUnpublished && Array.isArray(pubRecord.blockedClasses) && pubRecord.blockedClasses.includes(cls))
+                || (!pubRecord && resultCenterSettings.publishExamKey === exam.key && (!resultCenterSettings.publishAcademicYear || resultCenterSettings.publishAcademicYear === selectedYear) && Array.isArray(resultCenterSettings.blockedClasses) && resultCenterSettings.blockedClasses.includes(cls))
+            );
+            const isScheduledFuture = Boolean(
+                pubRecord && !isRecordUnpublished && pubRecord.publishType === 'scheduled' && pubRecord.publishAt && new Date(pubRecord.publishAt).getTime() > now
+            );
+
+            let pillCls = 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100';
+            let dotCls = 'bg-slate-400';
+            let statusLabel = 'No Marks';
+
+            if (isBlocked) {
+                pillCls = 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100';
+                dotCls = 'bg-rose-500';
+                statusLabel = draftCount > 0 ? `Blocked (${draftCount})` : 'Blocked';
+            } else if (isScheduledFuture) {
+                pillCls = 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100';
+                dotCls = 'bg-blue-500';
+                statusLabel = totalCount > 0 ? `Scheduled (${totalCount})` : 'Scheduled';
+            } else if (liveCount > 0 && draftCount === 0) {
+                pillCls = 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
+                dotCls = 'bg-emerald-500';
+                statusLabel = `Live (${liveCount})`;
+            } else if (liveCount > 0 && draftCount > 0) {
+                pillCls = 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100';
+                dotCls = 'bg-amber-500';
+                statusLabel = `Partial (${liveCount}/${totalCount})`;
+            } else if (draftCount > 0) {
+                pillCls = 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100';
+                dotCls = 'bg-orange-400';
+                statusLabel = `Draft (${draftCount})`;
+            }
+
+            const titleText = `${cls} • ${exam.label}: ${statusLabel} (${liveCount} live, ${draftCount} draft)`;
+            return `
+                <button type="button"
+                    class="publish-matrix-exam-btn inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition cursor-pointer shrink-0 whitespace-nowrap ${pillCls}"
+                    data-year="${escapeHtml(selectedYear)}"
+                    data-exam-key="${escapeHtml(exam.key)}"
+                    data-exam-label="${escapeHtml(pubRecord?.examLabel || exam.label)}"
+                    title="${escapeHtml(titleText)}">
+                    <span class="w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}"></span>
+                    <span class="font-bold">${escapeHtml(exam.label)}:</span>
+                    <span class="font-mono tabular-nums">${escapeHtml(statusLabel)}</span>
+                </button>
+            `;
+        }).join('');
+
+        return `
+            <tr class="hover:bg-slate-50/70 transition">
+                <td class="py-2 px-3 font-bold text-xs text-slate-800 whitespace-nowrap sticky left-0 bg-white border-r border-slate-100 z-10 min-w-[115px]">
+                    ${escapeHtml(cls)}
+                </td>
+                <td class="py-2 px-3 whitespace-nowrap">
+                    <div class="flex items-center gap-1.5 flex-nowrap">
+                        ${badgesHtml}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <table class="w-full text-left text-xs text-slate-700">
+            <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                <tr>
+                    <th class="py-2 px-3 sticky left-0 bg-slate-50 border-r border-slate-200 z-10">Class</th>
+                    <th class="py-2 px-3">Exams Status (${escapeHtml(selectedYear || 'Current')})</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                ${rowsHtml}
+            </tbody>
+        </table>
+    `;
+};
+
+const syncPublishRecordFromDirectAction = async ({
+    academicYear = currentAcademicYear,
+    examKey = '',
+    examLabel = '',
+    action = 'publish',
+    source = 'marks_entry'
+} = {}) => {
+    const cleanYear = String(academicYear || currentAcademicYear || '').trim();
+    const cleanKey = String(examKey || '').trim();
+    if (!cleanYear || !cleanKey) return;
+
+    const history = Array.isArray(resultCenterSettings.publishHistory) ? [...resultCenterSettings.publishHistory] : [];
+    const existingIdx = history.findIndex((r) => (r.academicYear || cleanYear) === cleanYear && r.examKey === cleanKey);
+    const nowTs = Date.now();
+    const nowIso = new Date(nowTs).toISOString();
+
+    if (action === 'publish') {
+        if (existingIdx >= 0) {
+            const existing = history[existingIdx];
+            history[existingIdx] = {
+                ...existing,
+                academicYear: cleanYear,
+                examKey: cleanKey,
+                examLabel: existing.examLabel || examLabel || cleanKey,
+                publishType: (existing.publishType === 'scheduled' || existing.publishType === 'unpublished') ? 'now' : (existing.publishType || 'now'),
+                status: 'Published',
+                publishAt: existing.publishAt || nowIso,
+                publishSource: source,
+                lastUpdatedByRole: roleScope,
+                lastSyncedAt: nowTs,
+                updatedAt: nowTs
+            };
+        } else {
+            history.unshift({
+                id: `pub_${nowTs}_${cleanKey.replace(/[^\w-]/g, '_')}`,
+                academicYear: cleanYear,
+                examKey: cleanKey,
+                examLabel: examLabel || cleanKey,
+                publishType: 'now',
+                status: 'Published',
+                publishAt: nowIso,
+                blockedClasses: [],
+                publishSource: source,
+                lastUpdatedByRole: roleScope,
+                createdAt: nowTs,
+                updatedAt: nowTs
+            });
+        }
+    } else if (action === 'unpublish' && existingIdx >= 0) {
+        const remainingLive = examResultsCache.some((row) => {
+            if (row.published !== true) return false;
+            const matchesYear = !row.academicYear || row.academicYear === cleanYear;
+            return matchesYear && resultMatchesExam(row, cleanKey);
+        });
+        const existing = history[existingIdx];
+        if (!remainingLive) {
+            history[existingIdx] = {
+                ...existing,
+                publishType: 'unpublished',
+                status: 'Unpublished',
+                publishSource: source,
+                lastUpdatedByRole: roleScope,
+                unpublishedAt: nowTs,
+                updatedAt: nowTs
+            };
+        } else {
+            history[existingIdx] = {
+                ...existing,
+                publishSource: source,
+                lastUpdatedByRole: roleScope,
+                lastSyncedAt: nowTs,
+                updatedAt: nowTs
+            };
+        }
+    } else {
+        return;
+    }
+
+    try {
+        await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
+            publishHistory: history,
+            updatedAt: nowTs
+        }, { merge: true });
+        resultCenterSettings.publishHistory = history;
+        renderPublishClassExamMatrix();
+        renderPublishedHistoryTable();
+    } catch (err) {
+        console.warn('Unified publish history sync warning:', err);
+    }
 };
 let updateReportPreview = () => {};
 
@@ -3452,18 +3712,26 @@ const isAllAbsent = (row = {}) => {
     });
 };
 
-const populateClassFilterSelect = (selectEl, allowedClasses) => {
+const populateClassFilterSelect = (selectEl, allowedClasses, defaultValue = 'ALL') => {
     if (!selectEl) return;
     const prev = selectEl.value;
+    const hasInitialized = selectEl.dataset.filterInitialized === 'true';
     const formatClassOptionLabel = (cls) => {
         const clean = String(cls || '').trim();
         return clean.toLowerCase().startsWith('class') ? clean : `Class: ${clean}`;
     };
     selectEl.innerHTML = `<option value="">Select Class</option><option value="ALL">All Classes</option>${allowedClasses.map((cls) => `<option value="${escapeHtml(cls)}">${escapeHtml(formatClassOptionLabel(cls))}</option>`).join('')}`;
-    if (prev && (prev === 'ALL' || prev === 'all' || allowedClasses.some((c) => isClassInDutyScope(prev, [c])))) {
-        selectEl.value = (prev === 'all') ? 'ALL' : prev;
+    if (hasInitialized) {
+        if (prev === '' && defaultValue === '') {
+            selectEl.value = '';
+        } else if (prev && (prev === 'ALL' || prev === 'all' || allowedClasses.some((c) => isClassInDutyScope(prev, [c])))) {
+            selectEl.value = (prev === 'all') ? 'ALL' : prev;
+        } else {
+            selectEl.value = defaultValue;
+        }
     } else {
-        selectEl.value = 'ALL';
+        selectEl.value = defaultValue;
+        selectEl.dataset.filterInitialized = 'true';
     }
     syncSmartSelectDisplay(selectEl);
 };
@@ -3484,19 +3752,20 @@ const renderPublishedDraftTables = () => {
     const pubAllowedClasses = isTeacherScope ? (teacherAssignedClasses.length > 0 ? classes.filter((c) => isClassInDutyScope(c, teacherAssignedClasses)) : []) : classes;
     const draftAllowedClasses = pubAllowedClasses;
 
-    // 1. Populate Class Filter dropdowns: Select Class, All Classes, then classes
-    populateClassFilterSelect(pubClassEl, pubAllowedClasses);
-    populateClassFilterSelect(draftClassEl, draftAllowedClasses);
+    // 1. Populate Class Filter dropdowns: Published defaults to ALL, Draft defaults to Select Class ('')
+    populateClassFilterSelect(pubClassEl, pubAllowedClasses, 'ALL');
+    populateClassFilterSelect(draftClassEl, draftAllowedClasses, '');
 
     const publishedClass = pubClassEl?.value || 'ALL';
-    const draftClass = draftClassEl?.value || 'ALL';
+    const draftClass = draftClassEl?.value ?? '';
+    const isDraftClassSelected = Boolean(draftClass);
 
     // 2. Populate Exam Filter dropdowns (NO "All Exams" option, only real exams)
     if (pubExamEl && !pubExamEl.options.length) {
         renderExamSelectOptions(pubExamEl, publishedClass, currentAcademicYear, '');
     }
     if (draftExamEl && !draftExamEl.options.length) {
-        renderExamSelectOptions(draftExamEl, draftClass, currentAcademicYear, '');
+        renderExamSelectOptions(draftExamEl, draftClass || 'ALL', currentAcademicYear, '');
     }
 
     const publishedExam = pubExamEl?.value || '';
@@ -3505,17 +3774,19 @@ const renderPublishedDraftTables = () => {
     const yearRows = examResultsCache.filter((row) => !currentAcademicYear || !row.academicYear || row.academicYear === currentAcademicYear);
 
     const isPubClassMatch = (row) => !publishedClass || publishedClass === 'ALL' || row.classLabel === publishedClass;
-    const isDraftClassMatch = (row) => !draftClass || draftClass === 'ALL' || row.classLabel === draftClass;
+    const isDraftClassMatch = (row) => draftClass === 'ALL' || row.classLabel === draftClass;
 
     const publishedRowsRaw = yearRows.filter((row) => row.published === true)
         .filter((row) => !isTeacherScope || isClassInDutyScope(row.classLabel, teacherAssignedClasses))
         .filter(isPubClassMatch)
         .filter((row) => !publishedExam || resultMatchesExam(row, publishedExam));
 
-    const draftRowsRaw = yearRows.filter((row) => row.published !== true)
-        .filter((row) => !isTeacherScope || isClassInDutyScope(row.classLabel, teacherAssignedClasses))
-        .filter(isDraftClassMatch)
-        .filter((row) => !draftExam || resultMatchesExam(row, draftExam));
+    const draftRowsRaw = isDraftClassSelected
+        ? yearRows.filter((row) => row.published !== true)
+            .filter((row) => !isTeacherScope || isClassInDutyScope(row.classLabel, teacherAssignedClasses))
+            .filter(isDraftClassMatch)
+            .filter((row) => !draftExam || resultMatchesExam(row, draftExam))
+        : [];
 
     // 3. Update single Status Dropdown with live counts (default: all)
     const curDraft = currentDraftFilter || draftStatusEl?.value || 'all';
@@ -3533,7 +3804,16 @@ const renderPublishedDraftTables = () => {
             <option value="p_awarded" ${curDraft === 'p_awarded' ? 'selected' : ''}>P Awarded (${dPA})</option>
         `;
         draftStatusEl.value = curDraft;
+        syncSmartSelectDisplay(draftStatusEl);
     }
+
+    ['draft-bulk-publish-btn', 'draft-bulk-delete-btn'].forEach((btnId) => {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.disabled = !isDraftClassSelected;
+        btn.classList.toggle('opacity-50', !isDraftClassSelected);
+        btn.classList.toggle('cursor-not-allowed', !isDraftClassSelected);
+    });
 
     const curPub = currentPublishedFilter || pubStatusEl?.value || 'all';
     if (pubStatusEl) {
@@ -3550,6 +3830,7 @@ const renderPublishedDraftTables = () => {
             <option value="p_awarded" ${curPub === 'p_awarded' ? 'selected' : ''}>P Awarded (${pPA})</option>
         `;
         pubStatusEl.value = curPub;
+        syncSmartSelectDisplay(pubStatusEl);
     }
 
     // 4. Filter by active single status filter
@@ -3728,7 +4009,15 @@ const renderPublishedDraftTables = () => {
     };
 
     publishedEl.innerHTML = renderTableForResults(publishedRows, true);
-    draftEl.innerHTML = renderTableForResults(draftRows, false);
+    draftEl.innerHTML = isDraftClassSelected
+        ? renderTableForResults(draftRows, false)
+        : `
+            <div class="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+                <i class="fas fa-chalkboard-user text-3xl text-indigo-300 mb-2"></i>
+                <p class="text-sm font-bold text-slate-700">Select a Class to View Draft Results</p>
+                <p class="text-xs text-slate-500 mt-1">Select a class or choose <strong>All Classes</strong> from the Class dropdown above to view draft results.</p>
+            </div>
+        `;
 };
 
 // --- Exam Setup Logic ---
@@ -5945,6 +6234,15 @@ const saveMarksFromEntry = async (shouldPublish = false) => {
 
     try {
         await batch.commit();
+        if (effectivePublish && operationCount > 0) {
+            await syncPublishRecordFromDirectAction({
+                academicYear: currentAcademicYear,
+                examKey: currentExamContext.key,
+                examLabel: currentExamContext.label,
+                action: 'publish',
+                source: 'marks_entry'
+            });
+        }
         if (operationCount === 0 && headerRulesChanged) {
             activeBtn.innerHTML = `<i class="fas fa-check"></i> Saved Rules!`;
             notify(`Updated Total & Pass marks for ${selectedClass} (${currentExamContext?.label || ''}).`);
@@ -6105,6 +6403,7 @@ const publishPendingExamDrafts = async (recordId) => {
             resultCenterSettings.publishHistory = history;
         }
 
+        renderPublishClassExamMatrix();
         renderPublishedHistoryTable();
         renderPublishedDraftTables();
         updateDashboard();
@@ -6180,6 +6479,7 @@ const unpublishExamResults = async (recordId) => {
             cancelEditingPublishRecord();
         }
 
+        renderPublishClassExamMatrix();
         renderPublishedHistoryTable();
         renderPublishedDraftTables();
         updateDashboard();
@@ -6244,6 +6544,7 @@ const deletePublishRecord = async (recordId) => {
     if (editingPublishRecordId === recordId) {
         cancelEditingPublishRecord();
     }
+    renderPublishClassExamMatrix();
     renderPublishedHistoryTable();
     renderPublishedDraftTables();
     updateDashboard();
@@ -6310,6 +6611,8 @@ const runPublishAction = async () => {
             status: isNow ? 'Published' : 'Scheduled',
             publishAt,
             blockedClasses: blocked,
+            publishSource: 'publish_control',
+            lastUpdatedByRole: roleScope,
             createdAt: existingIdx >= 0 && history[existingIdx].createdAt ? history[existingIdx].createdAt : Date.now(),
             updatedAt: Date.now()
         };
@@ -6377,6 +6680,7 @@ const runPublishAction = async () => {
         resultCenterSettings.publishExamKey = publishExamKey;
 
         cancelEditingPublishRecord();
+        renderPublishClassExamMatrix();
         renderPublishedHistoryTable();
         renderPublishedDraftTables();
         updateDashboard();
@@ -6421,6 +6725,7 @@ const checkAndFinalizeScheduledPublishes = async () => {
                 }
                 r.status = 'Published';
                 r.publishType = 'auto';
+                r.publishSource = 'auto_scheduled';
                 r.publishedAt = new Date().toISOString();
                 r.updatedAt = Date.now();
                 updated = true;
@@ -6433,6 +6738,7 @@ const checkAndFinalizeScheduledPublishes = async () => {
             updatedAt: Date.now()
         }, { merge: true });
         resultCenterSettings.publishHistory = history;
+        renderPublishClassExamMatrix();
         renderPublishedHistoryTable();
         renderPublishedDraftTables();
         updateDashboard();
@@ -6498,12 +6804,64 @@ document.getElementById('published-history-table-body')?.addEventListener('click
     }
 });
 document.getElementById('publish-history-year-filter')?.addEventListener('change', renderPublishedHistoryTable);
+document.getElementById('publish-matrix-year-select')?.addEventListener('change', (e) => {
+    if (e.target) e.target.dataset.userChangedYear = 'true';
+    renderPublishClassExamMatrix();
+});
+document.getElementById('publish-class-exam-matrix')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.publish-matrix-exam-btn');
+    if (!btn) return;
+    const year = btn.dataset.year || currentAcademicYear;
+    const examKey = btn.dataset.examKey || '';
+    const examLabel = btn.dataset.examLabel || examKey;
+    if (editingPublishRecordId) {
+        cancelEditingPublishRecord();
+    }
+    const yearSelect = document.getElementById('publish-academic-year');
+    if (yearSelect && year) {
+        yearSelect.dataset.userChangedYear = 'true';
+        if (!Array.from(yearSelect.options).some((opt) => opt.value === year)) {
+            const yrOpt = document.createElement('option');
+            yrOpt.value = year;
+            yrOpt.textContent = year;
+            yearSelect.appendChild(yrOpt);
+        }
+        yearSelect.value = year;
+        renderPublishControls();
+    }
+    const examSelect = document.getElementById('publish-exam-select');
+    if (examSelect && examKey) {
+        const hasOption = Array.from(examSelect.options).some((opt) => opt.value === examKey);
+        if (!hasOption) {
+            const opt = document.createElement('option');
+            opt.value = examKey;
+            opt.textContent = examLabel;
+            examSelect.appendChild(opt);
+        }
+        examSelect.value = examKey;
+        syncSmartSelectDisplay(examSelect);
+    }
+    const titleInput = document.getElementById('publish-title');
+    if (titleInput && examLabel) {
+        titleInput.value = examLabel;
+    }
+    const matchedRecord = getPublishHistoryRecords().find((r) => (r.academicYear || currentAcademicYear) === year && r.examKey === examKey);
+    const blockedSet = new Set(Array.isArray(matchedRecord?.blockedClasses) ? matchedRecord.blockedClasses : []);
+    document.querySelectorAll('.blocked-class-checkbox').forEach((cb) => {
+        cb.checked = blockedSet.has(cb.value);
+    });
+    updatePublishLiveStatus();
+    document.getElementById('publish-control-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 
 ['publish-title', 'publish-at-input'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', updatePublishLiveStatus);
     document.getElementById(id)?.addEventListener('change', updatePublishLiveStatus);
 });
-document.getElementById('publish-academic-year')?.addEventListener('change', renderPublishControls);
+document.getElementById('publish-academic-year')?.addEventListener('change', (e) => {
+    if (e.target) e.target.dataset.userChangedYear = 'true';
+    renderPublishControls();
+});
 const getSelectedSchemaForExamConfig = () => {
     const classLabel = document.getElementById('exam-config-class-select')?.value || '';
     return classLabel ? getSchemaForClass(currentAcademicYear, classLabel) : null;
@@ -9724,6 +10082,112 @@ const validateMarkValueForMax = (value = '', maxMarks = 0) => {
     const asNum = Number(raw);
     return Number.isFinite(asNum) && asNum >= 0 && asNum <= Number(maxMarks || 0);
 };
+const updateResultEditLivePreview = () => {
+    const row = examResultsCache.find((entry) => entry.id === editingResultId);
+    const totalEl = document.getElementById('result-edit-preview-total');
+    const pctEl = document.getElementById('result-edit-preview-pct');
+    const attEl = document.getElementById('result-edit-preview-att');
+    const statusEl = document.getElementById('result-edit-preview-status');
+    const errorEl = document.getElementById('result-edit-error');
+    if (!row || !totalEl || !pctEl || !attEl || !statusEl) return;
+
+    const inputs = Array.from(document.querySelectorAll('#result-edit-fields .result-edit-mark-input'));
+    const workInput = document.getElementById('result-edit-working-days');
+    const presInput = document.getElementById('result-edit-present-days');
+
+    let obtained = 0;
+    let maximum = 0;
+    let hasInvalidMark = false;
+    let firstInvalidMsg = '';
+    let enteredCount = 0;
+    let absentCount = 0;
+    let allPassed = true;
+
+    inputs.forEach((input) => {
+        const val = String(input.value || '').trim();
+        const max = Number(input.dataset.max || 0);
+        const pass = Number(input.dataset.pass || 0);
+        const isValid = validateMarkValueForMax(val, max);
+        input.classList.toggle('input-error', !isValid);
+        if (!isValid) {
+            hasInvalidMark = true;
+            if (!firstInvalidMsg) {
+                firstInvalidMsg = `Invalid mark for ${input.dataset.subjectName || 'subject'}. Use 0-${max}, P for pass, or A for absent.`;
+            }
+            allPassed = false;
+            return;
+        }
+        if (!val) {
+            allPassed = false;
+            return;
+        }
+        enteredCount++;
+        maximum += max;
+        const upper = val.toUpperCase();
+        if (upper === 'A' || upper === 'AB') {
+            absentCount++;
+            allPassed = false;
+        } else if (upper === 'P') {
+            // Pass mark without numeric score
+        } else {
+            const num = Number(val);
+            if (Number.isFinite(num)) {
+                obtained += num;
+                if (num < pass) allPassed = false;
+            } else {
+                allPassed = false;
+            }
+        }
+    });
+
+    const rawWork = workInput ? workInput.value.trim() : '';
+    const rawPres = presInput ? presInput.value.trim() : '';
+    const workVal = rawWork === '' ? 0 : Number(rawWork);
+    const presVal = rawPres === '' ? 0 : Number(rawPres);
+    const isWorkValid = Number.isFinite(workVal) && workVal >= 0;
+    const isPresValid = Number.isFinite(presVal) && presVal >= 0 && (workVal > 0 ? presVal <= workVal : presVal === 0);
+
+    workInput?.classList.toggle('input-error', !isWorkValid);
+    presInput?.classList.toggle('input-error', !isPresValid);
+
+    if (!isWorkValid || !isPresValid) {
+        if (!firstInvalidMsg) {
+            firstInvalidMsg = !isWorkValid
+                ? 'Working Days must be 0 or greater.'
+                : (workVal === 0 && presVal > 0 ? 'Enter Working Days before entering Present Days.' : 'Present Days cannot exceed Working Days.');
+        }
+    }
+
+    if (errorEl) {
+        if (firstInvalidMsg) {
+            errorEl.textContent = firstInvalidMsg;
+            errorEl.classList.remove('hidden');
+        } else {
+            errorEl.classList.add('hidden');
+        }
+    }
+
+    const pct = maximum > 0 ? Math.round((obtained / maximum) * 1000) / 10 : 0;
+    const attPct = (isWorkValid && isPresValid && workVal > 0) ? Math.round((presVal / workVal) * 100) : 0;
+    totalEl.textContent = `${obtained} / ${maximum}`;
+    pctEl.textContent = `${pct}%`;
+    attEl.textContent = `${isPresValid ? presVal : 0} / ${isWorkValid ? workVal : 0} (${attPct}%)`;
+
+    if (hasInvalidMark || enteredCount === 0) {
+        statusEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-slate-200 text-slate-700 w-fit';
+        statusEl.textContent = hasInvalidMark ? 'INVALID' : 'NO MARKS';
+    } else if (absentCount === enteredCount) {
+        statusEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 w-fit';
+        statusEl.textContent = 'ABSENT';
+    } else if (allPassed) {
+        statusEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 w-fit';
+        statusEl.textContent = 'PASS';
+    } else {
+        statusEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200 w-fit';
+        statusEl.textContent = 'FAIL';
+    }
+};
+
 const openResultEditModal = (resultId = '') => {
     const row = examResultsCache.find((entry) => entry.id === resultId);
     if (!row) return alert('Result record not found.');
@@ -9741,15 +10205,39 @@ const openResultEditModal = (resultId = '') => {
     const summary = document.getElementById('result-edit-summary');
     if (summary) summary.textContent = `${getStudentNameById(row.studentId)} • ${getExamNameById(row.examId, row)} • ${row.classLabel || ''}`;
     if (fields) {
-        fields.innerHTML = subjects.map((subject) => {
+        const subjectFieldsHtml = subjects.map((subject) => {
             const existing = row.marks?.[subject.id] ?? row.marks?.[subject.name] ?? '';
             const value = getStoredMarkValue(existing);
-            return `<label class="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-2 items-center border rounded-lg p-3 bg-slate-50">
-                <span class="font-semibold text-sm text-slate-700">${escapeHtml(subject.name)} <span class="text-xs text-slate-400">(${subject.maxMarks}/${subject.passMarks})</span></span>
-                <input type="text" class="result-edit-mark-input p-2 border rounded text-center" data-subject="${escapeHtml(subject.id)}" data-subject-name="${escapeHtml(subject.name)}" data-max="${subject.maxMarks}" data-pass="${subject.passMarks}" value="${escapeHtml(value)}" placeholder="Mark / P / A">
+            return `<label class="grid grid-cols-1 sm:grid-cols-[1fr_130px] gap-2 items-center border border-slate-200 rounded-xl p-2.5 sm:p-3 bg-slate-50">
+                <span class="font-semibold text-xs sm:text-sm text-slate-700">${escapeHtml(subject.name)} <span class="text-xs text-slate-400">(Max ${subject.maxMarks} / Pass ${subject.passMarks})</span></span>
+                <input type="text" class="result-edit-mark-input p-2 border border-slate-300 rounded-lg bg-white text-center font-mono font-bold text-sm text-slate-800 outline-none focus:border-indigo-500" data-subject="${escapeHtml(subject.id)}" data-subject-name="${escapeHtml(subject.name)}" data-max="${subject.maxMarks}" data-pass="${subject.passMarks}" value="${escapeHtml(value)}" placeholder="Mark / P / A">
             </label>`;
         }).join('');
+        const attWork = Number(row.attendance?.workingDays ?? 0);
+        const attPres = Number(row.attendance?.presentDays ?? 0);
+        const attendanceHtml = `
+            <div class="border border-indigo-200/80 rounded-xl p-3 bg-indigo-50/40 space-y-2 mt-1">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                        <i class="fas fa-calendar-check text-indigo-600"></i> Attendance
+                    </span>
+                    <span class="text-[11px] font-medium text-slate-500">Enter 0 if not tracked</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2.5">
+                    <label class="block">
+                        <span class="block text-[11px] font-semibold text-slate-600 mb-1">Working Days</span>
+                        <input type="number" id="result-edit-working-days" min="0" step="1" class="result-edit-att-input w-full p-2 border border-slate-300 rounded-lg bg-white text-center font-mono font-bold text-sm text-slate-800 outline-none focus:border-indigo-500" value="${Number.isFinite(attWork) ? attWork : 0}" placeholder="0">
+                    </label>
+                    <label class="block">
+                        <span class="block text-[11px] font-semibold text-slate-600 mb-1">Present Days</span>
+                        <input type="number" id="result-edit-present-days" min="0" step="1" class="result-edit-att-input w-full p-2 border border-slate-300 rounded-lg bg-white text-center font-mono font-bold text-sm text-slate-800 outline-none focus:border-indigo-500" value="${Number.isFinite(attPres) ? attPres : 0}" placeholder="0">
+                    </label>
+                </div>
+            </div>
+        `;
+        fields.innerHTML = `${subjectFieldsHtml}${attendanceHtml}`;
     }
+    updateResultEditLivePreview();
     if (modal) {
         modal.classList.remove('hidden');
         modal.classList.add('flex');
@@ -9784,6 +10272,30 @@ const saveResultEditModal = async () => {
         }
         return;
     }
+
+    const workInput = document.getElementById('result-edit-working-days');
+    const presInput = document.getElementById('result-edit-present-days');
+    const workingDays = workInput && workInput.value.trim() !== '' ? Number(workInput.value.trim()) : 0;
+    const presentDays = presInput && presInput.value.trim() !== '' ? Number(presInput.value.trim()) : 0;
+    if (!Number.isFinite(workingDays) || workingDays < 0) {
+        workInput?.classList.add('input-error');
+        if (errorEl) {
+            errorEl.textContent = 'Working Days must be 0 or greater.';
+            errorEl.classList.remove('hidden');
+        }
+        return;
+    }
+    if (!Number.isFinite(presentDays) || presentDays < 0 || (workingDays > 0 ? presentDays > workingDays : presentDays > 0)) {
+        presInput?.classList.add('input-error');
+        if (errorEl) {
+            errorEl.textContent = workingDays === 0 && presentDays > 0
+                ? 'Enter Working Days before entering Present Days.'
+                : 'Present Days cannot exceed Working Days.';
+            errorEl.classList.remove('hidden');
+        }
+        return;
+    }
+
     const marks = {};
     inputs.forEach((input) => {
         const value = input.value.trim();
@@ -9794,10 +10306,18 @@ const saveResultEditModal = async () => {
     const schema = getSchemaForResultRow(row);
     const subjectRows = getSchemaSubjectRows(schema || {}, row.examKey || parseExamValue(row.examId || '').examKey);
     const summary = buildResultSummary(marks, subjectRows);
+    const attendance = { workingDays, presentDays };
     await withBusyButton('result-edit-save', 'Saving...', async () => {
-        await updateDoc(doc(db, `${BASE_PATH}/examResults`, editingResultId), { marks, grades: summary.grades, totals: summary.totals, updatedAt: Date.now() });
+        await updateDoc(doc(db, `${BASE_PATH}/examResults`, editingResultId), { marks, attendance, grades: summary.grades, totals: summary.totals, updatedAt: Date.now() });
+        row.marks = marks;
+        row.attendance = attendance;
+        row.grades = summary.grades;
+        row.totals = summary.totals;
+        row.updatedAt = Date.now();
     });
     closeResultEditModal();
+    renderPublishedDraftTables();
+    showToast('Student result updated successfully', 'success');
 };
 const handleResultRowAction = async (event, expectedPublished = false) => {
     const menuToggle = event.target.closest('.result-row-menu-toggle');
@@ -9837,7 +10357,21 @@ const handleResultRowAction = async (event, expectedPublished = false) => {
     const deleteBtn = event.target.closest('.delete-result-btn');
     if (targetBtn) {
         const publish = targetBtn.dataset.next === 'published';
-        await updateDoc(doc(db, `${BASE_PATH}/examResults`, targetBtn.dataset.id), { published: publish, publishedAt: publish ? Date.now() : null, updatedAt: Date.now() });
+        const rowId = targetBtn.dataset.id;
+        const row = examResultsCache.find((entry) => entry.id === rowId);
+        await updateDoc(doc(db, `${BASE_PATH}/examResults`, rowId), { published: publish, publishedAt: publish ? Date.now() : null, updatedAt: Date.now() });
+        if (row) {
+            row.published = publish;
+            row.publishedAt = publish ? Date.now() : null;
+            row.updatedAt = Date.now();
+            await syncPublishRecordFromDirectAction({
+                academicYear: row.academicYear || currentAcademicYear,
+                examKey: row.examKey || parseExamValue(row.examId || '').examKey,
+                examLabel: getExamNameById(row.examId, row),
+                action: publish ? 'publish' : 'unpublish',
+                source: 'draft_review'
+            });
+        }
     }
     if (deleteBtn) {
         const ok = await showAppConfirm({
@@ -9857,9 +10391,10 @@ const handleResultRowAction = async (event, expectedPublished = false) => {
 document.getElementById('result-edit-cancel')?.addEventListener('click', closeResultEditModal);
 document.getElementById('result-edit-save')?.addEventListener('click', saveResultEditModal);
 document.getElementById('result-edit-fields')?.addEventListener('input', (event) => {
-    const input = event.target.closest('.result-edit-mark-input');
-    if (!input) return;
-    input.classList.toggle('input-error', !validateMarkValueForMax(input.value, input.dataset.max));
+    const target = event.target;
+    if (target.closest('.result-edit-mark-input') || target.closest('.result-edit-att-input')) {
+        updateResultEditLivePreview();
+    }
 });
 document.getElementById('published-results-table')?.addEventListener('click', async (event) => handleResultRowAction(event, true));
 document.getElementById('draft-results-table')?.addEventListener('click', async (event) => handleResultRowAction(event, false));
@@ -9870,9 +10405,9 @@ document.getElementById('published-class-filter')?.addEventListener('change', ()
     renderPublishedDraftTables();
 });
 document.getElementById('draft-class-filter')?.addEventListener('change', () => {
-    const classValue = document.getElementById('draft-class-filter')?.value || 'ALL';
+    const classValue = document.getElementById('draft-class-filter')?.value || '';
     const examSelect = document.getElementById('draft-exam-filter');
-    renderExamSelectOptions(examSelect, classValue, currentAcademicYear, '');
+    renderExamSelectOptions(examSelect, classValue || 'ALL', currentAcademicYear, '');
     renderPublishedDraftTables();
 });
 document.getElementById('published-exam-filter')?.addEventListener('change', renderPublishedDraftTables);
@@ -9892,6 +10427,22 @@ document.getElementById('published-bulk-unpublish-btn')?.addEventListener('click
     if (!ok) return;
     await withBusyButton('published-bulk-unpublish-btn', 'Moving to Draft...', async () => {
         await Promise.all(ids.map((id) => updateDoc(doc(db, `${BASE_PATH}/examResults`, id), { published: false, publishedAt: null, updatedAt: Date.now() })));
+        const affectedScopes = new Map();
+        ids.forEach((id) => {
+            const row = examResultsCache.find((entry) => entry.id === id);
+            if (!row) return;
+            row.published = false;
+            row.publishedAt = null;
+            row.updatedAt = Date.now();
+            const yr = row.academicYear || currentAcademicYear;
+            const exKey = row.examKey || parseExamValue(row.examId || '').examKey;
+            if (yr && exKey) {
+                affectedScopes.set(`${yr}::${exKey}`, { academicYear: yr, examKey: exKey, examLabel: getExamNameById(row.examId, row) });
+            }
+        });
+        for (const scope of affectedScopes.values()) {
+            await syncPublishRecordFromDirectAction({ ...scope, action: 'unpublish', source: 'draft_review' });
+        }
         notify(`Moved ${ids.length} result(s) back to draft.`);
     });
 });
@@ -9917,6 +10468,22 @@ document.getElementById('draft-bulk-publish-btn')?.addEventListener('click', asy
     if (!ids.length) return alert('Select at least one draft result.');
     await withBusyButton('draft-bulk-publish-btn', 'Publishing...', async () => {
         await Promise.all(ids.map((id) => updateDoc(doc(db, `${BASE_PATH}/examResults`, id), { published: true, publishedAt: Date.now(), updatedAt: Date.now() })));
+        const affectedScopes = new Map();
+        ids.forEach((id) => {
+            const row = examResultsCache.find((entry) => entry.id === id);
+            if (!row) return;
+            row.published = true;
+            row.publishedAt = Date.now();
+            row.updatedAt = Date.now();
+            const yr = row.academicYear || currentAcademicYear;
+            const exKey = row.examKey || parseExamValue(row.examId || '').examKey;
+            if (yr && exKey) {
+                affectedScopes.set(`${yr}::${exKey}`, { academicYear: yr, examKey: exKey, examLabel: getExamNameById(row.examId, row) });
+            }
+        });
+        for (const scope of affectedScopes.values()) {
+            await syncPublishRecordFromDirectAction({ ...scope, action: 'publish', source: 'draft_review' });
+        }
         notify(`Published ${ids.length} draft result(s).`);
     });
 });
