@@ -2079,55 +2079,77 @@ let promoModalState = {
     targetClass: '',
     draftDecisions: {},
     search: '',
+    genderFilter: 'all',
     filter: 'all',
     items: []
 };
 
-const renderClassPromotionStudentRow = (item) => {
-    const { student, annualInfo, defaultDecision, effectiveDecision, isOverridden } = item;
+const renderClassPromotionStudentRow = (item, rowIndex = 1) => {
+    const { student, annualInfo, effectiveDecision, isOverridden } = item;
     const isPromote = effectiveDecision === 'promote';
     const adm = student.adm || student.admissionNo || '-';
 
     let examBadgeHtml = '';
     if (directPromotionMode) {
-        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">Direct Mode</span>`;
+        examBadgeHtml = `<span class="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold whitespace-nowrap">DIRECT</span>`;
     } else if (!annualInfo.hasResult) {
-        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">No Annual Result</span>`;
+        examBadgeHtml = `<span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold whitespace-nowrap">NO RESULT</span>`;
     } else if (annualInfo.passed) {
-        const pctLabel = annualInfo.percentage !== null ? ` (${annualInfo.percentage}%)` : '';
-        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">Exam: PASS${pctLabel}</span>`;
+        const pctLabel = annualInfo.percentage !== null ? ` ${annualInfo.percentage}%` : '';
+        examBadgeHtml = `<span class="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold whitespace-nowrap">PASS${pctLabel}</span>`;
     } else {
-        const pctLabel = annualInfo.percentage !== null ? ` (${annualInfo.percentage}%)` : '';
-        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold">Exam: FAIL${pctLabel}</span>`;
+        const pctLabel = annualInfo.percentage !== null ? ` ${annualInfo.percentage}%` : '';
+        examBadgeHtml = `<span class="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold whitespace-nowrap">FAIL${pctLabel}</span>`;
     }
 
     const overrideBadgeHtml = isOverridden
-        ? `<span class="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold"><i class="fas fa-pen mr-0.5"></i>Manual Override</span>`
+        ? `<span class="inline-block ml-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-extrabold whitespace-nowrap">Edited</span>`
         : '';
 
     return `
-        <div class="p-2.5 rounded-xl border ${isPromote ? 'border-emerald-200/80 bg-emerald-50/20' : 'border-rose-200 bg-rose-50/30'} flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition" data-student-id="${escapeHtml(student.id)}">
-            <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="font-bold text-xs sm:text-sm text-slate-900 truncate">${escapeHtml(student.name || 'Unnamed Student')}</span>
-                    <span class="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Adm: ${escapeHtml(adm)}</span>
+        <tr class="${isPromote ? 'bg-white hover:bg-emerald-50/30' : 'bg-rose-50/35 hover:bg-rose-50/60'} transition-colors" data-student-id="${escapeHtml(student.id)}">
+            <td class="px-2 py-1.5 text-center text-[11px] font-mono text-slate-400 whitespace-nowrap">${rowIndex}</td>
+            <td class="px-2.5 py-1.5 whitespace-nowrap">
+                <span class="font-bold text-xs text-slate-900">${escapeHtml(student.name || 'Unnamed Student')}</span>
+                <span class="text-[11px] font-mono text-slate-500 ml-1">(${escapeHtml(adm)})</span>
+            </td>
+            <td class="px-2.5 py-1.5 whitespace-nowrap">
+                ${examBadgeHtml}${overrideBadgeHtml}
+            </td>
+            <td class="px-2.5 py-1.5 text-right whitespace-nowrap">
+                <div class="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 gap-0.5 flex-nowrap">
+                    <button type="button" class="promo-student-decision-btn px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${isPromote ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600 hover:text-emerald-700'}" data-student-id="${escapeHtml(student.id)}" data-decision="promote">Promote</button>
+                    <button type="button" class="promo-student-decision-btn px-2 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${!isPromote ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-600 hover:text-rose-700'}" data-student-id="${escapeHtml(student.id)}" data-decision="retain">Retain</button>
                 </div>
-                <div class="flex items-center gap-1.5 flex-wrap mt-1">
-                    ${examBadgeHtml}
-                    ${overrideBadgeHtml}
+            </td>
+        </tr>
+    `;
+};
+
+const renderClassPromotionSectionDividerRow = ({ label, total, promoteCount, genderKey, bgClass, textClass, borderClass, iconClass }) => {
+    const retainCount = total - promoteCount;
+    const bulkButtons = genderKey === 'boys' || genderKey === 'girls'
+        ? `
+            <div class="flex items-center gap-1 shrink-0">
+                <button type="button" class="promo-modal-gender-bulk-btn px-2 py-0.5 rounded bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold transition cursor-pointer whitespace-nowrap" data-gender="${genderKey}" data-action="promote">Promote ${escapeHtml(label)}</button>
+                <button type="button" class="promo-modal-gender-bulk-btn px-2 py-0.5 rounded bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold transition cursor-pointer whitespace-nowrap" data-gender="${genderKey}" data-action="retain">Retain ${escapeHtml(label)}</button>
+            </div>
+        `
+        : '';
+
+    return `
+        <tr class="${bgClass} border-y ${borderClass}">
+            <td colspan="4" class="px-2.5 py-1.5">
+                <div class="flex items-center justify-between gap-2 whitespace-nowrap">
+                    <div class="flex items-center gap-1.5 ${textClass} font-extrabold text-[11px]">
+                        <i class="${iconClass}"></i>
+                        <span>${escapeHtml(label)}</span>
+                        <span class="font-semibold opacity-80">(${total} Total · ${promoteCount} Promote · ${retainCount} Retain)</span>
+                    </div>
+                    ${bulkButtons}
                 </div>
-            </div>
-            <div class="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0 self-end sm:self-center">
-                <button type="button" class="promo-student-decision-btn px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${isPromote ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600 hover:text-emerald-700'}" data-student-id="${escapeHtml(student.id)}" data-decision="promote">
-                    <i class="fas fa-arrow-up text-[10px]"></i>
-                    <span>${defaultDecision === 'retain' ? 'Pass & Promote' : 'Promote'}</span>
-                </button>
-                <button type="button" class="promo-student-decision-btn px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${!isPromote ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-600 hover:text-rose-700'}" data-student-id="${escapeHtml(student.id)}" data-decision="retain">
-                    <i class="fas fa-xmark text-[10px]"></i>
-                    <span>Fail / Retain</span>
-                </button>
-            </div>
-        </div>
+            </td>
+        </tr>
     `;
 };
 
@@ -2166,15 +2188,17 @@ const renderClassPromotionModalBody = () => {
     setStat('promo-modal-stat-retain', retainTotal);
     setStat('promo-modal-stat-overrides', overrideTotal);
 
-    const boysPromote = allBoys.filter((i) => i.effectiveDecision === 'promote').length;
-    const girlsPromote = allGirls.filter((i) => i.effectiveDecision === 'promote').length;
-    const boysSummary = document.getElementById('promo-modal-boys-summary');
-    if (boysSummary) boysSummary.textContent = `${allBoys.length} Total · ${boysPromote} Promote · ${allBoys.length - boysPromote} Retain`;
-    const girlsSummary = document.getElementById('promo-modal-girls-summary');
-    if (girlsSummary) girlsSummary.textContent = `${allGirls.length} Total · ${girlsPromote} Promote · ${allGirls.length - girlsPromote} Retain`;
+    const genderFilterBtns = document.querySelectorAll('.promo-modal-gender-filter-btn');
+    genderFilterBtns.forEach((btn) => {
+        const g = btn.dataset.gender;
+        if (g === 'all') btn.textContent = `All (${evaluated.length})`;
+        else if (g === 'boys') btn.textContent = `Boys (${allBoys.length})`;
+        else if (g === 'girls') btn.textContent = `Girls (${allGirls.length})`;
+    });
 
     const queryText = String(promoModalState.search || '').trim().toLowerCase();
     const activeFilter = promoModalState.filter || 'all';
+    const activeGenderFilter = promoModalState.genderFilter || 'all';
     const matchesFilters = (item) => {
         if (activeFilter === 'promote' && item.effectiveDecision !== 'promote') return false;
         if (activeFilter === 'retain' && item.effectiveDecision !== 'retain') return false;
@@ -2191,35 +2215,90 @@ const renderClassPromotionModalBody = () => {
     const filteredGirls = allGirls.filter(matchesFilters);
     const filteredOther = allOther.filter(matchesFilters);
 
-    const boysList = document.getElementById('promo-modal-boys-list');
-    if (boysList) {
-        boysList.innerHTML = filteredBoys.length
-            ? filteredBoys.map(renderClassPromotionStudentRow).join('')
-            : `<div class="p-6 text-center text-xs text-slate-400 italic">${allBoys.length ? 'No boys match the current search/filter.' : 'No active boys found in this class.'}</div>`;
-    }
+    const tableBody = document.getElementById('promo-modal-table-body');
+    if (tableBody) {
+        const rowsHtml = [];
 
-    const girlsList = document.getElementById('promo-modal-girls-list');
-    if (girlsList) {
-        girlsList.innerHTML = filteredGirls.length
-            ? filteredGirls.map(renderClassPromotionStudentRow).join('')
-            : `<div class="p-6 text-center text-xs text-slate-400 italic">${allGirls.length ? 'No girls match the current search/filter.' : 'No active girls found in this class.'}</div>`;
-    }
-
-    const otherSection = document.getElementById('promo-modal-other-section');
-    const otherList = document.getElementById('promo-modal-other-list');
-    const otherSummary = document.getElementById('promo-modal-other-summary');
-    if (otherSection && otherList) {
-        if (allOther.length > 0) {
-            otherSection.classList.remove('hidden');
-            const otherPromote = allOther.filter((i) => i.effectiveDecision === 'promote').length;
-            if (otherSummary) otherSummary.textContent = `${allOther.length} Total · ${otherPromote} Promote · ${allOther.length - otherPromote} Retain`;
-            otherList.innerHTML = filteredOther.length
-                ? filteredOther.map(renderClassPromotionStudentRow).join('')
-                : `<div class="p-4 text-center text-xs text-slate-400 italic">No students match the current search/filter.</div>`;
+        if (evaluated.length === 0) {
+            rowsHtml.push(`
+                <tr>
+                    <td colspan="4" class="px-4 py-8 text-center text-xs text-slate-400 italic">No active students found in this class.</td>
+                </tr>
+            `);
         } else {
-            otherSection.classList.add('hidden');
-            otherList.innerHTML = '';
+            const appendSection = ({ show, label, totalItems, filteredItems, genderKey, bgClass, textClass, borderClass, iconClass, emptyLabel }) => {
+                if (!show) return;
+                const promoteCount = totalItems.filter((i) => i.effectiveDecision === 'promote').length;
+                rowsHtml.push(renderClassPromotionSectionDividerRow({
+                    label,
+                    total: totalItems.length,
+                    promoteCount,
+                    genderKey,
+                    bgClass,
+                    textClass,
+                    borderClass,
+                    iconClass
+                }));
+                if (filteredItems.length > 0) {
+                    filteredItems.forEach((item, idx) => {
+                        rowsHtml.push(renderClassPromotionStudentRow(item, idx + 1));
+                    });
+                } else {
+                    rowsHtml.push(`
+                        <tr>
+                            <td colspan="4" class="px-3 py-4 text-center text-[11px] text-slate-400 italic">${escapeHtml(emptyLabel)}</td>
+                        </tr>
+                    `);
+                }
+            };
+
+            if (activeGenderFilter === 'all' || activeGenderFilter === 'boys') {
+                appendSection({
+                    show: activeGenderFilter === 'boys' || allBoys.length > 0,
+                    label: 'Boys',
+                    totalItems: allBoys,
+                    filteredItems: filteredBoys,
+                    genderKey: 'boys',
+                    bgClass: 'bg-blue-50/95',
+                    textClass: 'text-blue-900',
+                    borderClass: 'border-blue-200',
+                    iconClass: 'fas fa-mars text-blue-600',
+                    emptyLabel: allBoys.length ? 'No boys match the current search/filter.' : 'No active boys found in this class.'
+                });
+            }
+
+            if (activeGenderFilter === 'all' || activeGenderFilter === 'girls') {
+                appendSection({
+                    show: activeGenderFilter === 'girls' || allGirls.length > 0,
+                    label: 'Girls',
+                    totalItems: allGirls,
+                    filteredItems: filteredGirls,
+                    genderKey: 'girls',
+                    bgClass: 'bg-pink-50/95',
+                    textClass: 'text-pink-900',
+                    borderClass: 'border-pink-200',
+                    iconClass: 'fas fa-venus text-pink-600',
+                    emptyLabel: allGirls.length ? 'No girls match the current search/filter.' : 'No active girls found in this class.'
+                });
+            }
+
+            if (activeGenderFilter === 'all' && allOther.length > 0) {
+                appendSection({
+                    show: true,
+                    label: 'Other / Unspecified',
+                    totalItems: allOther,
+                    filteredItems: filteredOther,
+                    genderKey: 'other',
+                    bgClass: 'bg-slate-100',
+                    textClass: 'text-slate-800',
+                    borderClass: 'border-slate-200',
+                    iconClass: 'fas fa-user text-slate-600',
+                    emptyLabel: 'No students match the current search/filter.'
+                });
+            }
         }
+
+        tableBody.innerHTML = rowsHtml.join('');
     }
 
     const targetClassLabel = promoModalState.targetClass || 'No Target Selected';
@@ -2227,8 +2306,8 @@ const renderClassPromotionModalBody = () => {
     if (footerSummary) {
         footerSummary.innerHTML = `
             <span class="text-emerald-700 font-bold">${promoteTotal} Promoting &rarr; ${escapeHtml(targetClassLabel)}</span>
-            <span class="mx-2 text-slate-300">|</span>
-            <span class="text-rose-700 font-bold">${retainTotal} Retaining &rarr; ${escapeHtml(promoModalState.classLabel)} (Same Class)</span>
+            <span class="mx-1.5 text-slate-300">|</span>
+            <span class="text-rose-700 font-bold">${retainTotal} Retaining &rarr; ${escapeHtml(promoModalState.classLabel)}</span>
         `;
     }
 };
@@ -2246,12 +2325,13 @@ const openClassPromotionModal = (cls = '') => {
         targetClass: currentTargetClass || '',
         draftDecisions: getSavedClassPromotionOverrides(cls, currentAcademicYear),
         search: '',
+        genderFilter: 'all',
         filter: 'all',
         items: []
     };
 
     const titleEl = document.getElementById('promo-modal-class-title');
-    if (titleEl) titleEl.textContent = `${cls} — Student Promotion Manager`;
+    if (titleEl) titleEl.textContent = `${cls} — Student Promotion`;
 
     const targetYear = document.getElementById('promotion-target-year')?.value || 'Not Selected';
     const yearFlowEl = document.getElementById('promo-modal-year-flow');
@@ -2260,11 +2340,11 @@ const openClassPromotionModal = (cls = '') => {
     const modeBadge = document.getElementById('promo-modal-mode-badge');
     if (modeBadge) {
         if (directPromotionMode) {
-            modeBadge.textContent = 'Direct Mode';
-            modeBadge.className = 'text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap';
+            modeBadge.textContent = 'Direct';
+            modeBadge.className = 'text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap';
         } else {
-            modeBadge.textContent = 'Exam-Based Mode';
-            modeBadge.className = 'text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap';
+            modeBadge.textContent = 'Exam-Based';
+            modeBadge.className = 'text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap';
         }
     }
 
@@ -2282,9 +2362,13 @@ const openClassPromotionModal = (cls = '') => {
 
     const searchInput = document.getElementById('promo-modal-search');
     if (searchInput) searchInput.value = '';
+    document.querySelectorAll('.promo-modal-gender-filter-btn').forEach((btn) => {
+        const isAll = btn.dataset.gender === 'all';
+        btn.className = `promo-modal-gender-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${isAll ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
+    });
     document.querySelectorAll('.promo-modal-filter-btn').forEach((btn) => {
         const isAll = btn.dataset.filter === 'all';
-        btn.className = `promo-modal-filter-btn px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${isAll ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
+        btn.className = `promo-modal-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${isAll ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
     });
 
     const warningBar = document.getElementById('promo-modal-year-warning-bar');
@@ -8067,12 +8151,25 @@ document.getElementById('promo-modal-search')?.addEventListener('input', (e) => 
     renderClassPromotionModalBody();
 });
 
+document.querySelectorAll('.promo-modal-gender-filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        promoModalState.genderFilter = btn.dataset.gender || 'all';
+        document.querySelectorAll('.promo-modal-gender-filter-btn').forEach((other) => {
+            const active = other === btn;
+            const g = other.dataset.gender;
+            const activeColor = g === 'boys' ? 'text-blue-700' : (g === 'girls' ? 'text-pink-700' : 'text-indigo-700');
+            other.className = `promo-modal-gender-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${active ? `bg-white ${activeColor} shadow-2xs` : 'text-slate-600 hover:text-slate-900'}`;
+        });
+        renderClassPromotionModalBody();
+    });
+});
+
 document.querySelectorAll('.promo-modal-filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
         promoModalState.filter = btn.dataset.filter || 'all';
         document.querySelectorAll('.promo-modal-filter-btn').forEach((other) => {
             const active = other === btn;
-            other.className = `promo-modal-filter-btn px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${active ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
+            other.className = `promo-modal-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${active ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
         });
         renderClassPromotionModalBody();
     });
