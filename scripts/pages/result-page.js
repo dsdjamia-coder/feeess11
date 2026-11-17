@@ -1703,7 +1703,7 @@ const renderPromotionCandidatesUI = () => {
     }
 
     container.innerHTML = `
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4">
             ${Array.from(summaryMap.entries()).map(([cls, stat]) => {
                 const selectedTarget = stat.nextClass;
                 const options = [
@@ -1715,43 +1715,43 @@ const renderPromotionCandidatesUI = () => {
                 const isAlumni = String(selectedTarget).trim().toLowerCase() === 'alumni';
 
                 const metricsBlock = directPromotionMode ? `
-                    <div class="grid grid-cols-2 gap-2 text-center text-xs mb-3">
-                        <div class="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                    <div class="grid grid-cols-2 gap-1.5 sm:gap-2 text-center text-xs mb-2.5 sm:mb-3">
+                        <div class="bg-slate-50 p-1.5 sm:p-2 rounded-xl border border-slate-100">
                             <span class="text-[10px] text-slate-400 block font-semibold uppercase">Active Students</span>
                             <strong class="text-slate-800 font-extrabold text-sm">${stat.total}</strong>
                         </div>
-                        <div class="bg-amber-50 p-2 rounded-xl border border-amber-200">
+                        <div class="bg-amber-50 p-1.5 sm:p-2 rounded-xl border border-amber-200">
                             <span class="text-[10px] text-amber-700 block font-semibold uppercase">Direct Eligible</span>
                             <strong class="text-amber-800 font-extrabold text-sm">${stat.pass}</strong>
                         </div>
                     </div>
-                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-3 px-1">
+                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-2.5 sm:mb-3 px-1">
                         <span>Boys: <strong class="text-slate-700">${stat.boys}</strong> • Girls: <strong class="text-slate-700">${stat.girls}</strong></span>
                         <span class="font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[10px]"><i class="fas fa-bolt mr-1"></i>Direct Mode</span>
                     </div>
                 ` : `
-                    <div class="grid grid-cols-3 gap-2 text-center text-xs mb-3">
-                        <div class="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                    <div class="grid grid-cols-3 gap-1.5 sm:gap-2 text-center text-xs mb-2.5 sm:mb-3">
+                        <div class="bg-slate-50 p-1.5 sm:p-2 rounded-xl border border-slate-100">
                             <span class="text-[10px] text-slate-400 block font-semibold uppercase">Total</span>
                             <strong class="text-slate-800 font-extrabold text-sm">${stat.total}</strong>
                         </div>
-                        <div class="bg-emerald-50 p-2 rounded-xl border border-emerald-100">
+                        <div class="bg-emerald-50 p-1.5 sm:p-2 rounded-xl border border-emerald-100">
                             <span class="text-[10px] text-emerald-600 block font-semibold uppercase">Pass</span>
                             <strong class="text-emerald-700 font-extrabold text-sm">${stat.pass}</strong>
                         </div>
-                        <div class="bg-red-50 p-2 rounded-xl border border-red-100">
+                        <div class="bg-red-50 p-1.5 sm:p-2 rounded-xl border border-red-100">
                             <span class="text-[10px] text-red-500 block font-semibold uppercase">Fail</span>
                             <strong class="text-red-700 font-extrabold text-sm">${stat.fail}</strong>
                         </div>
                     </div>
-                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-3 px-1">
+                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-2.5 sm:mb-3 px-1">
                         <span>Boys: <strong class="text-slate-700">${stat.boys}</strong> • Girls: <strong class="text-slate-700">${stat.girls}</strong></span>
                         <span class="font-bold text-indigo-600">${stat.total ? Math.round((stat.pass / stat.total) * 100) : 0}% Pass Rate</span>
                     </div>
                 `;
 
                 return `
-                <div class="border border-slate-200 rounded-2xl p-4 bg-white shadow-xs hover:border-indigo-300 transition flex flex-col justify-between" data-class="${escapeHtml(cls)}">
+                <div class="border border-slate-200 rounded-2xl p-3 sm:p-4 bg-white shadow-xs hover:border-indigo-300 transition flex flex-col justify-between" data-class="${escapeHtml(cls)}">
                     <div>
                         <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
                             <span class="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -3059,35 +3059,35 @@ const renderPublishedDraftTables = () => {
 
             return `
             <tr class="hover:bg-slate-50 transition border-b border-slate-100" data-result-id="${escapeHtml(row.id)}">
-                <td class="p-3 text-center">
+                <td class="p-2 sm:p-3 text-center">
                     <input type="checkbox" class="${checkboxClass} rounded text-indigo-600" value="${escapeHtml(row.id)}">
                 </td>
-                <td class="p-3 text-center font-mono text-xs text-slate-400 font-semibold">${index + 1}</td>
-                <td class="p-3 font-mono text-xs font-bold text-slate-700">${escapeHtml(admNo)}</td>
-                <td class="p-3">
+                <td class="p-2 sm:p-3 text-center font-mono text-xs text-slate-400 font-semibold">${index + 1}</td>
+                <td class="p-2 sm:p-3 font-mono text-xs font-bold text-slate-700">${escapeHtml(admNo)}</td>
+                <td class="p-2 sm:p-3">
                     <div class="font-bold text-slate-800 flex items-center gap-1.5">${escapeHtml(studentName)} ${genderBadge}</div>
                 </td>
-                <td class="p-3">
+                <td class="p-2 sm:p-3">
                     <div class="text-xs font-semibold text-slate-700">${escapeHtml(row.classLabel || '-')}</div>
                     <div class="text-[10px] text-slate-500">${escapeHtml(getExamNameById(row.examId, row))}</div>
                 </td>
-                <td class="p-3">
+                <td class="p-2 sm:p-3">
                     <div class="flex flex-wrap gap-1 max-w-md">${subjectPills || '<span class="text-xs text-slate-400 italic">No marks</span>'}</div>
                 </td>
-                <td class="p-3 text-center">
+                <td class="p-2 sm:p-3 text-center">
                     <div class="font-mono text-xs font-bold text-slate-800">${obt} / ${max}</div>
                     <div class="text-[10px] font-semibold text-slate-500">${pct}%</div>
                 </td>
-                <td class="p-3 text-center whitespace-nowrap">
+                <td class="p-2 sm:p-3 text-center whitespace-nowrap">
                     ${statusBadge} ${pChip}
                 </td>
-                <td class="p-3 text-center">
+                <td class="p-2 sm:p-3 text-center">
                     <div class="relative inline-block text-left">
-                        <button class="result-row-menu-toggle w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-600 flex items-center justify-center transition" data-id="${row.id}" title="Actions">
+                        <button class="result-row-menu-toggle w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-600 flex items-center justify-center transition cursor-pointer" data-id="${row.id}" title="Actions">
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                         <div class="result-row-menu hidden absolute right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 min-w-[130px] py-1" data-id="${row.id}">
-                            <button class="edit-result-btn block w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-1.5" data-id="${row.id}">
+                            <button class="edit-result-btn block w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer" data-id="${row.id}">
                                 <i class="fas fa-edit text-blue-500"></i> Edit Marks
                             </button>
                             ${roleScope === 'admin' ? adminRowActions(isPublished, row.id) : ''}
@@ -3101,19 +3101,19 @@ const renderPublishedDraftTables = () => {
         const selectAllId = isPublished ? 'published-table-select-all' : 'draft-table-select-all';
 
         return `
-            <div class="overflow-x-auto border border-slate-200 rounded-xl shadow-xs bg-white">
+            <div class="overflow-auto max-h-[62vh] sm:max-h-[68vh] border border-slate-200 rounded-xl shadow-xs bg-white">
                 <table class="w-full text-left text-xs whitespace-nowrap">
-                    <thead class="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                    <thead class="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                         <tr>
-                            <th class="p-3 w-8 text-center"><input type="checkbox" id="${selectAllId}" class="rounded text-indigo-600" title="Select All"></th>
-                            <th class="p-3 w-10 text-center">#</th>
-                            <th class="p-3 w-20">Adm No</th>
-                            <th class="p-3 min-w-[140px]">Student Name</th>
-                            <th class="p-3 min-w-[110px]">Class & Exam</th>
-                            <th class="p-3 min-w-[200px]">Subject Breakdown</th>
-                            <th class="p-3 text-center min-w-[90px]">Total</th>
-                            <th class="p-3 text-center min-w-[90px]">Status</th>
-                            <th class="p-3 text-center w-16">Actions</th>
+                            <th class="p-2 sm:p-3 w-8 text-center"><input type="checkbox" id="${selectAllId}" class="rounded text-indigo-600" title="Select All"></th>
+                            <th class="p-2 sm:p-3 w-10 text-center">#</th>
+                            <th class="p-2 sm:p-3 w-20">Adm No</th>
+                            <th class="p-2 sm:p-3 min-w-[135px]">Student Name</th>
+                            <th class="p-2 sm:p-3 min-w-[105px]">Class & Exam</th>
+                            <th class="p-2 sm:p-3 min-w-[185px]">Subject Breakdown</th>
+                            <th class="p-2 sm:p-3 text-center min-w-[85px]">Total</th>
+                            <th class="p-2 sm:p-3 text-center min-w-[85px]">Status</th>
+                            <th class="p-2 sm:p-3 text-center w-14">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -3227,23 +3227,23 @@ const renderExamSetup = () => {
 
         return `
         <tr class="hover:bg-slate-50/70 transition border-b border-slate-100">
-            <td class="p-3 align-top font-bold text-slate-800 whitespace-nowrap">
+            <td class="p-2 sm:p-3 align-top font-bold text-slate-800 whitespace-nowrap">
                 <div class="flex items-center gap-2">
-                    <span class="text-sm font-extrabold text-slate-800">${escapeHtml(schema.classLabel || '--')}</span>
+                    <span class="text-xs sm:text-sm font-extrabold text-slate-800">${escapeHtml(schema.classLabel || '--')}</span>
                     <span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold tabular-nums">${subjectRows.length} Subs</span>
                 </div>
                 <div class="text-[11px] text-slate-400 font-normal mt-0.5">${escapeHtml(schema.academicYear || currentAcademicYear || '')}</div>
             </td>
-            <td class="p-3 align-top">
+            <td class="p-2 sm:p-3 align-top">
                 <div class="flex flex-wrap">${subjectsBadgeHtml}</div>
             </td>
-            <td class="p-3 align-top">
+            <td class="p-2 sm:p-3 align-top">
                 <div class="flex flex-wrap items-center">
                     ${defaultExamsBadges}
                     ${customExamsBadges}
                 </div>
             </td>
-            <td class="p-3 align-top text-right whitespace-nowrap">
+            <td class="p-2 sm:p-3 align-top text-right whitespace-nowrap">
                 <div class="flex items-center justify-end gap-1.5">
                     <button type="button" class="schema-edit-btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold py-1.5 px-2.5 rounded-lg transition flex items-center gap-1 cursor-pointer" data-id="${schema.id}" title="Edit Subjects">
                         <i class="fas fa-edit"></i> Edit
@@ -3262,12 +3262,12 @@ const renderExamSetup = () => {
 
     cont.innerHTML = `
         <table class="w-full text-left text-xs sm:text-sm">
-            <thead class="bg-slate-50 text-slate-700 border-b font-semibold">
+            <thead class="bg-slate-50 text-slate-700 border-b font-semibold sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                 <tr>
-                    <th class="p-3 w-36">Class</th>
-                    <th class="p-3 min-w-[220px]">Configured Subjects</th>
-                    <th class="p-3 min-w-[220px]">Active Exams</th>
-                    <th class="p-3 text-right w-48">Actions</th>
+                    <th class="p-2 sm:p-3 w-32 sm:w-36">Class</th>
+                    <th class="p-2 sm:p-3 min-w-[200px] sm:min-w-[220px]">Configured Subjects</th>
+                    <th class="p-2 sm:p-3 min-w-[200px] sm:min-w-[220px]">Active Exams</th>
+                    <th class="p-2 sm:p-3 text-right w-44 sm:w-48">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -3861,9 +3861,9 @@ const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
 
     // Build Headers with Hybrid Total Mark + Auto/Editable Pass Mark
     let headHtml = `<tr>
-        <th class="p-3 text-center w-12 bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">#</th>
-        <th class="p-3 text-left min-w-[90px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">Adm No</th>
-        <th class="p-3 text-left min-w-[165px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">Student Name</th>`;
+        <th class="marks-sticky-idx p-2 md:p-3 text-center bg-slate-100 text-slate-600 font-bold text-xs">#</th>
+        <th class="marks-sticky-adm p-2 md:p-3 text-left bg-slate-100 text-slate-600 font-bold text-xs">Adm No</th>
+        <th class="marks-sticky-name p-2 md:p-3 text-left bg-slate-100 text-slate-600 font-bold text-xs">Student Name</th>`;
     resolvedSubjects.forEach((sub) => {
         const presetMenuHtml = totalPresets.map((val) => `
             <button type="button" class="header-max-preset-option w-full text-left px-2.5 py-1 text-[11px] font-bold font-mono text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center justify-between gap-2 cursor-pointer" data-subject="${escapeHtml(sub.id)}" data-value="${val}">
@@ -3871,13 +3871,13 @@ const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
                 <span class="text-[9px] text-slate-400 font-sans">Pass ${getDefaultPassMarkForTotal(val)}</span>
             </button>
         `).join('');
-        headHtml += `<th class="p-2 text-center min-w-[148px] bg-slate-100 text-slate-700 font-bold text-xs sticky top-0 border-b border-slate-200 z-10 align-top">
-            <div class="truncate max-w-[142px] mx-auto text-slate-800 font-extrabold normal-case text-xs mb-1.5" title="${escapeHtml(sub.name)}">${escapeHtml(sub.name)}</div>
+        headHtml += `<th class="p-1.5 md:p-2 text-center min-w-[122px] md:min-w-[148px] bg-slate-100 text-slate-700 font-bold text-xs align-top">
+            <div class="truncate max-w-[116px] md:max-w-[142px] mx-auto text-slate-800 font-extrabold normal-case text-[11px] md:text-xs mb-1" title="${escapeHtml(sub.name)}">${escapeHtml(sub.name)}</div>
             <div class="flex items-center justify-center gap-1 normal-case">
                 <div class="flex flex-col items-start">
                     <span class="text-[9px] font-bold text-slate-500 leading-none mb-0.5">Total</span>
                     <div class="header-max-preset-wrap relative flex items-center bg-white border border-slate-300 rounded-md shadow-2xs focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
-                        <input type="number" min="1" max="1000" step="1" inputmode="numeric" data-subject="${escapeHtml(sub.id)}" value="${sub.maxMarks}" title="Total Mark (type any mark or pick preset)" class="header-subject-max-input w-11 px-1 py-0.5 text-center font-extrabold font-mono tabular-nums text-[11px] text-indigo-900 bg-transparent outline-none">
+                        <input type="number" min="1" max="1000" step="1" inputmode="numeric" data-subject="${escapeHtml(sub.id)}" value="${sub.maxMarks}" title="Total Mark (type any mark or pick preset)" class="header-subject-max-input w-10 md:w-11 px-1 py-0.5 text-center font-extrabold font-mono tabular-nums text-[11px] text-indigo-900 bg-transparent outline-none">
                         <button type="button" class="header-max-preset-toggle px-1 py-0.5 text-slate-500 hover:text-indigo-700 border-l border-slate-200 bg-slate-50 rounded-r-md cursor-pointer leading-none" title="Choose preset Total Mark">
                             <i class="fas fa-chevron-down text-[9px]"></i>
                         </button>
@@ -3888,17 +3888,17 @@ const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
                 </div>
                 <div class="flex flex-col items-start">
                     <span class="text-[9px] font-bold text-slate-500 leading-none mb-0.5">Pass</span>
-                    <input type="number" min="0" max="1000" step="1" inputmode="numeric" data-subject="${escapeHtml(sub.id)}" value="${sub.passMarks}" title="Pass Mark (auto-calculated from Total Mark; edit anytime)" class="header-subject-pass-input w-12 px-1 py-0.5 text-center font-extrabold font-mono tabular-nums text-[11px] text-emerald-800 bg-white border border-slate-300 rounded-md shadow-2xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none">
+                    <input type="number" min="0" max="1000" step="1" inputmode="numeric" data-subject="${escapeHtml(sub.id)}" value="${sub.passMarks}" title="Pass Mark (auto-calculated from Total Mark; edit anytime)" class="header-subject-pass-input w-10 md:w-12 px-1 py-0.5 text-center font-extrabold font-mono tabular-nums text-[11px] text-emerald-800 bg-white border border-slate-300 rounded-md shadow-2xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none">
                 </div>
             </div>
         </th>`;
     });
-    headHtml += `<th class="p-2 text-center min-w-[115px] bg-slate-100 text-slate-700 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">
-        <div class="normal-case">Total Att.</div>
+    headHtml += `<th class="p-1.5 md:p-2 text-center min-w-[96px] md:min-w-[115px] bg-slate-100 text-slate-700 font-bold text-xs">
+        <div class="normal-case text-[11px] md:text-xs">Total Att.</div>
         <div class="mt-1 flex items-center justify-center">
-            <input type="number" min="0" id="header-col-total-attendance" value="${escapeHtml(activeTopTotalAtt)}" placeholder="Set All" title="Input Total Attendance here to set for all students" class="w-18 px-1.5 py-0.5 text-center font-extrabold font-mono tabular-nums text-xs bg-white text-indigo-900 border border-indigo-300 rounded shadow-2xs focus:border-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none">
+            <input type="number" min="0" id="header-col-total-attendance" value="${escapeHtml(activeTopTotalAtt)}" placeholder="Set All" title="Input Total Attendance here to set for all students" class="w-16 md:w-18 px-1.5 py-0.5 text-center font-extrabold font-mono tabular-nums text-xs bg-white text-indigo-900 border border-indigo-300 rounded shadow-2xs focus:border-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none">
         </div>
-    </th><th class="p-3 text-center min-w-[100px] bg-slate-100 text-slate-600 font-bold text-xs sticky top-0 border-b border-slate-200 z-10">Present Att.</th></tr>`;
+    </th><th class="p-2 md:p-3 text-center min-w-[88px] md:min-w-[100px] bg-slate-100 text-slate-600 font-bold text-[11px] md:text-xs">Present Att.</th></tr>`;
     document.getElementById('marks-table-head').innerHTML = headHtml;
 
     // Build Rows
@@ -3911,15 +3911,15 @@ const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
         const admNo = student.adm || student.admissionNo || student.uid || '-';
         const g = String(student.gender || '').trim().toLowerCase();
         const genderBadge = (g.startsWith('f') || g.includes('girl'))
-            ? '<span class="text-[10px] font-bold text-pink-700 bg-pink-50 border border-pink-200 px-1.5 py-0.5 rounded ml-1">F</span>'
+            ? '<span class="text-[9px] md:text-[10px] font-bold text-pink-700 bg-pink-50 border border-pink-200 px-1 md:px-1.5 py-0.5 rounded shrink-0">F</span>'
             : (g.startsWith('m') || g.includes('boy'))
-                ? '<span class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded ml-1">M</span>'
+                ? '<span class="text-[9px] md:text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1 md:px-1.5 py-0.5 rounded shrink-0">M</span>'
                 : '';
 
-        bodyHtml += `<tr class="border-b hover:bg-slate-50 transition" data-studentid="${student.id}">
-            <td class="p-3 text-center font-mono tabular-nums text-gray-400 text-xs">${index + 1}</td>
-            <td class="p-3 font-mono tabular-nums text-xs font-bold text-slate-600">${escapeHtml(admNo)}</td>
-            <td class="p-3 font-bold text-gray-800 text-sm whitespace-nowrap"><div class="flex items-center">${escapeHtml(student.name)} ${genderBadge}</div></td>`;
+        bodyHtml += `<tr class="transition" data-studentid="${student.id}">
+            <td class="marks-sticky-idx p-2 md:p-3 text-center font-mono tabular-nums text-gray-400 text-xs">${index + 1}</td>
+            <td class="marks-sticky-adm p-2 md:p-3 font-mono tabular-nums text-xs font-bold text-slate-600">${escapeHtml(admNo)}</td>
+            <td class="marks-sticky-name p-2 md:p-3 font-bold text-gray-800 text-xs md:text-sm"><div class="flex items-center gap-1 max-w-[138px] md:max-w-[225px]"><span class="truncate" title="${escapeHtml(student.name)}">${escapeHtml(student.name)}</span>${genderBadge}</div></td>`;
         
         resolvedSubjects.forEach((sub) => {
             let val = '';
@@ -3929,8 +3929,8 @@ const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
                 const rawMark = savedMarksObj[sub.id] ?? savedMarksObj[sub.name] ?? '';
                 val = rawMark && typeof rawMark === 'object' ? (rawMark.value ?? rawMark.mark ?? '') : rawMark;
             }
-            bodyHtml += `<td class="p-2 text-center">
-                <input type="text" data-subject="${escapeHtml(sub.id)}" data-subject-name="${escapeHtml(sub.name)}" data-max="${sub.maxMarks}" data-pass="${sub.passMarks}" class="mark-input w-full md:w-20 p-2 text-center font-bold font-mono tabular-nums text-sm border rounded focus:border-indigo-500 focus:bg-indigo-50 outline-none transition" value="${escapeHtml(String(val ?? ''))}" placeholder="-">
+            bodyHtml += `<td class="p-1.5 md:p-2 text-center">
+                <input type="text" data-subject="${escapeHtml(sub.id)}" data-subject-name="${escapeHtml(sub.name)}" data-max="${sub.maxMarks}" data-pass="${sub.passMarks}" class="mark-input w-14 sm:w-16 md:w-20 p-1.5 md:p-2 text-center font-bold font-mono tabular-nums text-xs md:text-sm border rounded focus:border-indigo-500 focus:bg-indigo-50 outline-none transition" value="${escapeHtml(String(val ?? ''))}" placeholder="-">
             </td>`;
         });
         const attendance = existingRecord?.attendance || {};
@@ -3948,8 +3948,8 @@ const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
         }
         const presVal = (pendingInput && pendingInput.present !== undefined) ? pendingInput.present : (attendance.presentDays ?? '');
 
-        bodyHtml += `<td class="p-2 text-center"><input type="number" min="0" class="attendance-working w-full md:w-24 p-2 text-center font-mono tabular-nums border rounded text-xs transition ${isOverridden ? 'border-amber-400 bg-amber-50/60 font-bold text-amber-900' : ''}" data-overridden="${isOverridden ? 'true' : 'false'}" value="${escapeHtml(String(workVal ?? ''))}" placeholder="0" title="${isOverridden ? 'Custom attendance for this student (will not change when top total is edited)' : 'Standard total attendance'}"></td>`;
-        bodyHtml += `<td class="p-2 text-center"><input type="number" min="0" class="attendance-present w-full md:w-24 p-2 text-center font-mono tabular-nums border rounded text-xs" value="${escapeHtml(String(presVal ?? ''))}" placeholder="0"></td>`;
+        bodyHtml += `<td class="p-1.5 md:p-2 text-center"><input type="number" min="0" class="attendance-working w-16 sm:w-20 md:w-24 p-1.5 md:p-2 text-center font-mono tabular-nums border rounded text-xs transition ${isOverridden ? 'border-amber-400 bg-amber-50/60 font-bold text-amber-900' : ''}" data-overridden="${isOverridden ? 'true' : 'false'}" value="${escapeHtml(String(workVal ?? ''))}" placeholder="0" title="${isOverridden ? 'Custom attendance for this student (will not change when top total is edited)' : 'Standard total attendance'}"></td>`;
+        bodyHtml += `<td class="p-1.5 md:p-2 text-center"><input type="number" min="0" class="attendance-present w-16 sm:w-20 md:w-24 p-1.5 md:p-2 text-center font-mono tabular-nums border rounded text-xs" value="${escapeHtml(String(presVal ?? ''))}" placeholder="0"></td>`;
         bodyHtml += `</tr>`;
     });
     document.getElementById('marks-table-body').innerHTML = bodyHtml;
@@ -4177,7 +4177,6 @@ const getBulkTemplateRows = () => {
         || resolveDefaultWorkingDays(className, examId, scopedStudents);
     return scopedStudents.map((student) => {
         const row = {
-            student_id: student.id,
             adm_no: student.adm || student.admissionNo || student.uid || '',
             student_name: student.name || '',
             class: className,
@@ -4367,9 +4366,9 @@ let currentMarksReviewData = null;
 
 const getMarksMappingFieldOptions = (subjectRows = []) => [
     { key: 'none', label: '-- Skip Column --' },
-    { key: 'student_id', label: 'Student ID' },
-    { key: 'adm_no', label: 'Adm No' },
+    { key: 'adm_no', label: 'Adm No *' },
     { key: 'student_name', label: 'Student Name *' },
+    { key: 'student_id', label: 'Student ID (Optional)' },
     { key: 'total_attendance', label: 'Total Att.' },
     { key: 'present_attendance', label: 'Present Att.' },
     ...subjectRows.map((sub) => ({ key: `sub::${sub.id}`, label: `${sub.name} (Max ${sub.maxMarks})` }))
@@ -4422,8 +4421,14 @@ const evaluateMarksReviewRow = (rowIdx) => {
     if (!matchedStudent && rawAdm && admMap.has(rawAdm.toLowerCase())) {
         matchedStudent = admMap.get(rawAdm.toLowerCase());
     }
+    let ambiguousNameError = false;
     if (!matchedStudent && rawName) {
-        matchedStudent = scopedStudents.find((s) => (s.name || '').trim().toLowerCase() === rawName.toLowerCase());
+        const nameMatches = scopedStudents.filter((s) => (s.name || '').trim().toLowerCase() === rawName.toLowerCase());
+        if (nameMatches.length === 1) {
+            matchedStudent = nameMatches[0];
+        } else if (nameMatches.length > 1) {
+            ambiguousNameError = true;
+        }
     }
 
     const studentId = matchedStudent ? matchedStudent.id : (rawStudentId || rawAdm);
@@ -4435,12 +4440,17 @@ const evaluateMarksReviewRow = (rowIdx) => {
     let hasFatalError = false;
     let blankFieldCount = 0;
 
-    if (!studentId || !matchedStudent) {
-        rowIssues.push(!studentId ? 'Missing Student ID / Adm No / Name' : `Student not found in ${className}`);
+    if (!matchedStudent) {
+        const reason = ambiguousNameError
+            ? `Multiple students named "${rawName}" in ${className} — enter Adm No`
+            : (!rawStudentId && !rawAdm && !rawName)
+                ? 'Missing Adm No or Student Name'
+                : `Student not found in ${className}`;
+        rowIssues.push(reason);
         hasFatalError = true;
-        if (columns.some((c) => c.mappedField === 'student_name')) fieldStatuses.student_name = { status: 'error', reason: rowIssues[0] };
-        if (columns.some((c) => c.mappedField === 'adm_no') && rawAdm) fieldStatuses.adm_no = { status: 'error', reason: rowIssues[0] };
-        if (columns.some((c) => c.mappedField === 'student_id') && rawStudentId) fieldStatuses.student_id = { status: 'error', reason: rowIssues[0] };
+        if (columns.some((c) => c.mappedField === 'student_name')) fieldStatuses.student_name = { status: 'error', reason };
+        if (columns.some((c) => c.mappedField === 'adm_no') && (rawAdm || ambiguousNameError || !rawName)) fieldStatuses.adm_no = { status: 'error', reason };
+        if (columns.some((c) => c.mappedField === 'student_id') && rawStudentId) fieldStatuses.student_id = { status: 'error', reason };
     }
 
     const isDuplicate = Boolean(matchedStudent && existingRecordMap.has(String(matchedStudent.id)));
@@ -7902,14 +7912,14 @@ const renderConsolidatedCanvas = (canvasEl, data) => {
     });
 
     canvasEl.innerHTML = `
-        <div class="bg-white rounded-2xl sm:rounded-3xl shadow-md border border-slate-200 p-4 sm:p-6 overflow-hidden">
+        <div class="bg-white rounded-2xl sm:rounded-3xl shadow-md border border-slate-200 p-3 sm:p-6 overflow-hidden">
             <!-- Institutional A4 Landscape Header with Logo, Name, Place, Reg No -->
-            <div class="flex flex-col sm:flex-row items-center justify-between pb-4 mb-4 border-b border-slate-200 gap-4 text-center sm:text-left">
-                <div class="flex items-center gap-3.5">
-                    <img src="${escapeHtml(logoSrc)}" alt="Logo" class="w-14 h-14 object-contain rounded-xl border border-slate-200 p-1 bg-white shadow-2xs shrink-0" onerror="this.style.display='none'">
+            <div class="flex flex-col sm:flex-row items-center justify-between pb-3 sm:pb-4 mb-3 sm:mb-4 border-b border-slate-200 gap-3 sm:gap-4 text-center sm:text-left">
+                <div class="flex items-center gap-2.5 sm:gap-3.5">
+                    <img src="${escapeHtml(logoSrc)}" alt="Logo" class="w-11 h-11 sm:w-14 sm:h-14 object-contain rounded-xl border border-slate-200 p-1 bg-white shadow-2xs shrink-0" onerror="this.style.display='none'">
                     <div>
-                        <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight uppercase">${escapeHtml(instName)}</h1>
-                        <div class="text-xs text-slate-500 font-semibold flex flex-wrap items-center gap-2 mt-0.5 justify-center sm:justify-start">
+                        <h1 class="text-base sm:text-2xl font-black text-slate-900 tracking-tight uppercase">${escapeHtml(instName)}</h1>
+                        <div class="text-[11px] sm:text-xs text-slate-500 font-semibold flex flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5 justify-center sm:justify-start">
                             ${instPlace ? `<span>${escapeHtml(instPlace)}</span>` : ''}
                             ${instPlace && instReg ? `<span class="text-slate-300">•</span>` : ''}
                             ${instReg ? `<span class="font-bold text-slate-700">Reg No: ${escapeHtml(instReg)}</span>` : ''}
@@ -7917,13 +7927,13 @@ const renderConsolidatedCanvas = (canvasEl, data) => {
                     </div>
                 </div>
                 <div class="text-right">
-                    <span class="inline-block px-3 py-1 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-700 text-xs font-black uppercase tracking-wider">
+                    <span class="inline-block px-2.5 sm:px-3 py-1 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-700 text-[11px] sm:text-xs font-black uppercase tracking-wider">
                         Consolidated Marksheet
                     </span>
                 </div>
             </div>
             
-            <div class="mb-4 px-4 py-2 bg-indigo-50/90 border border-indigo-100 rounded-xl flex flex-wrap items-center justify-between text-xs font-extrabold text-indigo-950 gap-2">
+            <div class="mb-3 sm:mb-4 px-3 sm:px-4 py-2 bg-indigo-50/90 border border-indigo-100 rounded-xl flex flex-wrap items-center justify-between text-[11px] sm:text-xs font-extrabold text-indigo-950 gap-2">
                 <div><span class="text-indigo-500 font-semibold uppercase text-[10px] mr-1">Class:</span>${escapeHtml(data.isAllClasses ? 'All Classes' : data.className)}</div>
                 <div><span class="text-indigo-500 font-semibold uppercase text-[10px] mr-1">Exam:</span>${escapeHtml(examLabel)}</div>
                 <div><span class="text-indigo-500 font-semibold uppercase text-[10px] mr-1">Academic Year:</span>${escapeHtml(data.reportYear)}</div>
@@ -7984,7 +7994,7 @@ const renderIndividualCanvas = (canvasEl, data) => {
         }).join('');
 
         return `
-            <div class="relative bg-white rounded-3xl border-4 border-indigo-600 outline outline-1 outline-indigo-200 outline-offset-4 p-5 sm:p-8 max-w-2xl mx-auto shadow-xl mb-6 last:mb-0">
+            <div class="relative bg-white rounded-2xl sm:rounded-3xl border-2 sm:border-4 border-indigo-600 outline outline-1 outline-indigo-200 outline-offset-2 sm:outline-offset-4 p-3.5 sm:p-8 max-w-2xl mx-auto shadow-xl mb-4 sm:mb-6 last:mb-0">
                 <!-- Institution Header with Logo, Name, Place, Reg No -->
                 <div class="flex items-center justify-between pb-3 border-b border-slate-200 gap-3">
                     <div class="flex items-center gap-3">
@@ -8087,9 +8097,9 @@ const renderIndividualCanvas = (canvasEl, data) => {
     }
 
     canvasEl.innerHTML = `
-        <div class="space-y-4">
+        <div class="space-y-3 sm:space-y-4">
             <!-- Student Switcher Toolbar -->
-            <div class="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div class="bg-white border border-slate-200 rounded-2xl p-2.5 sm:p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
                 <div class="flex items-center gap-2">
                     <button type="button" id="card-nav-prev" ${currentIdx <= 0 ? 'disabled' : ''} class="px-3 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none transition cursor-pointer">
                         <i class="fas fa-chevron-left mr-1"></i> Prev
@@ -8997,7 +9007,23 @@ const handleResultRowAction = async (event, expectedPublished = false) => {
         const menu = document.querySelector(`.result-row-menu[data-id="${id}"]`);
         const shouldOpen = menu?.classList.contains('hidden');
         document.querySelectorAll('.result-row-menu').forEach((entry) => entry.classList.add('hidden'));
-        if (shouldOpen) menu?.classList.remove('hidden');
+        if (shouldOpen && menu) {
+            menu.classList.remove('hidden');
+            const rect = menuToggle.getBoundingClientRect();
+            menu.style.position = 'fixed';
+            menu.style.zIndex = '6500';
+            menu.style.right = 'auto';
+            const menuWidth = menu.offsetWidth || 140;
+            const menuHeight = menu.offsetHeight || 110;
+            const vpWidth = Math.max(160, window.innerWidth || 0);
+            const vpHeight = Math.max(160, window.innerHeight || 0);
+            const left = Math.max(8, Math.min(rect.right - menuWidth, vpWidth - menuWidth - 8));
+            const top = (vpHeight - rect.bottom < menuHeight + 8 && rect.top > menuHeight + 8)
+                ? Math.max(8, rect.top - menuHeight - 4)
+                : Math.min(vpHeight - menuHeight - 8, rect.bottom + 4);
+            menu.style.left = `${left}px`;
+            menu.style.top = `${top}px`;
+        }
         return;
     }
     const editBtn = event.target.closest('.edit-result-btn');
@@ -9373,6 +9399,16 @@ document.addEventListener('click', (e) => {
         document.querySelectorAll('.schema-menu').forEach((menu) => menu.classList.add('hidden'));
     }
     // Dismiss modals if clicking on overlay backdrop
+});
+document.addEventListener('scroll', (e) => {
+    if (e.target && e.target.closest && e.target.closest('.result-row-menu')) return;
+    document.querySelectorAll('.result-row-menu').forEach((menu) => menu.classList.add('hidden'));
+}, true);
+window.addEventListener('resize', () => {
+    document.querySelectorAll('.result-row-menu').forEach((menu) => menu.classList.add('hidden'));
+});
+// Separate listener check kept below for modal backdrop
+document.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal-overlay')) {
         const modal = e.target;
         modal.classList.add('hidden');
