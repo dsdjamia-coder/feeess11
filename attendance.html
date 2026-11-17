@@ -239,6 +239,16 @@
       background: #ffffff;
       color: #64748b;
     }
+    .att-toggle-btn-mobile {
+      min-height: 44px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
     .att-toggle-btn:hover { background: #f8fafc; }
     .att-toggle-btn.active-p {
       background: #10b981;
@@ -519,28 +529,27 @@
               
               <!-- Left: Academic Year, Class & Date Navigator -->
               <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap flex-1">
-                <!-- Academic Year & Class (Side-by-side on mobile, compact) -->
+                <!-- Academic Year & Class (Side-by-side on mobile, matching Smart Select styling) -->
                 <div class="grid grid-cols-2 gap-1.5 sm:flex sm:items-center w-full sm:w-auto">
-                  <div class="w-full sm:w-28">
-                    <select id="daily-academic-year" class="w-full p-1.5 sm:p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 focus:border-emerald-500 outline-none shadow-2xs"></select>
+                  <div class="w-full sm:w-44">
+                    <select id="daily-academic-year" data-smart-select="true" class="w-full p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 focus:border-emerald-500 outline-none shadow-2xs"></select>
                   </div>
 
                   <div class="w-full sm:w-44">
-                    <select id="daily-class-select" data-smart-select="true" class="w-full p-1.5 sm:p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 focus:border-emerald-500 outline-none shadow-2xs">
+                    <select id="daily-class-select" data-smart-select="true" class="w-full p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 focus:border-emerald-500 outline-none shadow-2xs">
                       <option value="" selected>-- Select Class --</option>
-                      <option value="all">All Classes</option>
                     </select>
                   </div>
                 </div>
 
                 <!-- Date Navigator & Quick Date Picker -->
                 <div class="flex items-center justify-between sm:justify-start gap-1 w-full sm:w-auto">
-                  <button type="button" id="btn-prev-day" class="p-1.5 px-2 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs" title="Previous Day">
+                  <button type="button" id="btn-prev-day" class="min-h-[36px] sm:min-h-0 p-1.5 px-2.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer" title="Previous Day">
                     <i class="fas fa-chevron-left text-[11px]"></i>
                   </button>
-                  <input type="date" id="daily-date-input" class="flex-1 sm:flex-none p-1 sm:p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:border-emerald-500 outline-none shadow-2xs text-center sm:w-36">
-                  <button type="button" id="btn-today" class="p-1 px-2 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[11px]" title="Today">Today</button>
-                  <button type="button" id="btn-next-day" class="p-1.5 px-2 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs" title="Next Day">
+                  <input type="date" id="daily-date-input" class="flex-1 sm:flex-none min-h-[36px] sm:min-h-0 p-1 sm:p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-bold text-slate-800 focus:border-emerald-500 outline-none shadow-2xs text-center sm:w-36">
+                  <button type="button" id="btn-today" class="min-h-[36px] sm:min-h-0 p-1 px-2.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[11px] cursor-pointer" title="Today">Today</button>
+                  <button type="button" id="btn-next-day" class="min-h-[36px] sm:min-h-0 p-1.5 px-2.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer" title="Next Day">
                     <i class="fas fa-chevron-right text-[11px]"></i>
                   </button>
                 </div>
@@ -560,7 +569,7 @@
                   <span id="save-status-text" class="font-bold text-slate-500 text-[11px]">Ready</span>
                 </div>
 
-                <button type="button" id="btn-save-daily" class="flex-1 sm:flex-none px-4 py-1.5 sm:px-5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer">
+                <button type="button" id="btn-save-daily" class="flex-1 sm:flex-none min-h-[40px] sm:min-h-0 px-4 py-1.5 sm:px-5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer">
                   <i class="fas fa-floppy-disk text-xs"></i>
                   <span>Save Attendance</span>
                 </button>
@@ -632,18 +641,24 @@
             </div>
           </div>
 
-          <!-- Student Roster Table Container -->
+          <!-- Student Roster Container (Mobile Card Stack + Desktop Table) -->
           <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div class="overflow-x-auto">
+            <!-- Mobile Card View (< 640px) -->
+            <div id="daily-roster-mobile" class="sm:hidden divide-y divide-slate-100">
+              <div class="p-8 text-center text-slate-400 font-bold text-xs">Please select a class to load students.</div>
+            </div>
+
+            <!-- Tablet & Desktop Table View (>= 640px) -->
+            <div class="hidden sm:block overflow-x-auto">
               <table class="w-full text-left border-collapse text-xs sm:text-sm">
                 <thead>
                   <tr class="bg-slate-100 text-slate-600 uppercase text-[11px] font-extrabold tracking-wider border-b border-slate-200">
-                    <th class="py-2.5 px-3 text-center w-12 hidden sm:table-cell">#</th>
-                    <th class="py-2.5 px-3 w-16 text-center hidden sm:table-cell">Roll</th>
-                    <th class="py-2.5 px-3 w-20 hidden sm:table-cell">Adm No</th>
-                    <th class="py-2.5 px-3 sm:px-4">Student Details</th>
-                    <th class="py-2.5 px-2 sm:px-4 text-center w-36 sm:w-auto">Status</th>
-                    <th class="py-2.5 px-3 sm:px-4 min-w-[120px] sm:min-w-[160px]">Remarks</th>
+                    <th class="py-2.5 px-3 text-center w-12">#</th>
+                    <th class="py-2.5 px-3 w-16 text-center">Roll</th>
+                    <th class="py-2.5 px-3 w-24">Adm No</th>
+                    <th class="py-2.5 px-4">Student Details</th>
+                    <th class="py-2.5 px-4 text-center">Status</th>
+                    <th class="py-2.5 px-4 min-w-[160px]">Remarks</th>
                   </tr>
                 </thead>
                 <tbody id="daily-roster-tbody" class="divide-y divide-slate-100">
@@ -669,7 +684,6 @@
                 <label for="monthly-class-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Class</label>
                 <select id="monthly-class-select" data-smart-select="true" class="w-full p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none">
                   <option value="" selected>-- Select Class --</option>
-                  <option value="all">All Classes</option>
                 </select>
               </div>
               <div>
@@ -694,8 +708,8 @@
 
           <!-- Register Matrix Sheet -->
           <div class="register-table-wrapper shadow-2xs" id="monthly-matrix-wrapper">
-            <div id="monthly-matrix-empty" class="p-12 text-center text-slate-400 font-bold">
-              Select a class or choose All Classes and month to generate the monthly attendance register sheet.
+            <div id="monthly-matrix-empty" class="p-8 sm:p-12 text-center text-slate-400 font-bold text-xs sm:text-sm">
+              Select a class and month to generate the monthly attendance register sheet.
             </div>
             <table class="register-table hidden" id="monthly-matrix-table">
               <thead id="monthly-matrix-thead"></thead>
@@ -714,24 +728,23 @@
           <div class="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between flex-wrap gap-2.5 sm:gap-3">
             <div class="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
               <!-- Academic Year Select -->
-              <div>
+              <div class="sm:w-44">
                 <label for="analytics-academic-year" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Academic Year</label>
-                <select id="analytics-academic-year" class="w-full sm:w-auto p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none"></select>
+                <select id="analytics-academic-year" data-smart-select="true" class="w-full p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none"></select>
               </div>
 
-              <!-- Class Select (With All Classes) -->
+              <!-- Class Select -->
               <div class="sm:w-44">
                 <label for="analytics-class-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Class</label>
                 <select id="analytics-class-select" data-smart-select="true" class="w-full p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none">
                   <option value="" selected>-- Select Class --</option>
-                  <option value="ALL">All Classes</option>
                 </select>
               </div>
 
               <!-- Comparator: Below (<) or Above (>=) -->
-              <div>
+              <div class="sm:w-32">
                 <label for="analytics-comparator-select" class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Condition</label>
-                <select id="analytics-comparator-select" class="w-full sm:w-auto p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none">
+                <select id="analytics-comparator-select" data-smart-select="true" class="w-full p-2 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none">
                   <option value="below">Below (&lt;)</option>
                   <option value="above">Above (&ge;)</option>
                 </select>
@@ -752,21 +765,27 @@
             </div>
 
             <div id="analytics-summary-badge" class="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 font-black text-xs border border-emerald-200 w-full sm:w-auto text-center">
-              Calculating...
+              Select a class to calculate
             </div>
           </div>
 
-          <!-- Defaulters / Filtered Students Table -->
+          <!-- Defaulters / Filtered Students Container -->
           <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-            <div class="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div class="p-3.5 sm:p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap">
               <div class="flex items-center gap-2">
                 <i class="fas fa-list-check text-emerald-600 text-base"></i>
-                <h3 id="analytics-table-heading" class="font-black text-sm text-slate-900 uppercase tracking-wider">Filtered Student Attendance List</h3>
+                <h3 id="analytics-table-heading" class="font-black text-xs sm:text-sm text-slate-900 uppercase tracking-wider">Filtered Student Attendance List</h3>
               </div>
               <span id="defaulter-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-slate-200 text-slate-800">0 Students</span>
             </div>
 
-            <div class="overflow-x-auto">
+            <!-- Mobile Card View (< 768px) -->
+            <div id="analytics-mobile-list" class="md:hidden divide-y divide-slate-100">
+              <div class="p-8 text-center text-slate-400 font-bold text-xs">Please select a class to view attendance analytics.</div>
+            </div>
+
+            <!-- Tablet & Desktop Table View (>= 768px) -->
+            <div class="hidden md:block overflow-x-auto">
               <table class="w-full text-left border-collapse text-xs sm:text-sm">
                 <thead>
                   <tr class="bg-slate-100 text-slate-500 uppercase text-[10px] font-extrabold tracking-wider border-b border-slate-200">
@@ -784,7 +803,7 @@
                 </thead>
                 <tbody id="defaulters-tbody" class="divide-y divide-slate-100">
                   <tr>
-                    <td colspan="10" class="p-8 text-center text-slate-400 font-bold">No students match the criteria.</td>
+                    <td colspan="10" class="p-8 text-center text-slate-400 font-bold">Please select a class to view attendance analytics.</td>
                   </tr>
                 </tbody>
               </table>
@@ -819,7 +838,7 @@
                 <!-- Academic Year Select -->
                 <div>
                   <label for="session-academic-year" class="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1">Academic Year</label>
-                  <select id="session-academic-year" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:border-emerald-500"></select>
+                  <select id="session-academic-year" data-smart-select="true" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:border-emerald-500"></select>
                 </div>
 
                 <!-- Admin Period Display (Read-only) -->
@@ -914,11 +933,11 @@
                 <div class="grid grid-cols-2 gap-2 text-center pt-1">
                   <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
                     <span class="text-[10px] font-bold text-slate-400 uppercase">Elapsed Days</span>
-                    <div id="session-stat-elapsed" class="text-lg font-black text-slate-800 mt-0.5">--</div>
+                    <div id="session-stat-elapsed" class="text-lg font-black text-slate-800 mt-0.5 font-mono">--</div>
                   </div>
-                  <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <span class="text-[10px] font-bold text-slate-400 uppercase">Working Days Recorded</span>
-                    <div id="session-stat-working-days" class="text-lg font-black text-slate-800 mt-0.5">--</div>
+                  <div class="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200">
+                    <span class="text-[10px] font-bold text-emerald-700 uppercase">Working Days (Till Date)</span>
+                    <div id="session-stat-working-days" class="text-lg font-black text-emerald-800 mt-0.5 font-mono">--</div>
                   </div>
                 </div>
               </div>
@@ -1027,8 +1046,8 @@
           </div>
 
           <!-- Declared Holidays List Card -->
-          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2 gap-2 flex-wrap">
               <div class="flex items-center gap-2">
                 <i class="fas fa-calendar-check text-indigo-600"></i>
                 <h3 class="font-extrabold text-sm text-slate-800">Declared Holidays List</h3>
@@ -1036,7 +1055,13 @@
               </div>
               <p class="text-[11px] text-slate-400 font-medium">All declared institutional &amp; class-specific holidays</p>
             </div>
-            <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <!-- Mobile Card View (< 768px) -->
+            <div id="holidays-mobile-list" class="md:hidden divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
+              <div class="px-3 py-6 text-center text-slate-400 italic text-xs">No holidays configured yet. Use the form above to add holidays.</div>
+            </div>
+
+            <!-- Tablet & Desktop Table View (>= 768px) -->
+            <div class="hidden md:block overflow-x-auto rounded-xl border border-slate-200">
               <table class="w-full text-left text-xs text-slate-700">
                 <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[10px] font-extrabold">
                   <tr>
@@ -1142,6 +1167,77 @@
   </div>
 
   <!-- ========================================== -->
+  <!-- MODAL: MONTHLY REGISTER PDF EXPORT OPTIONS -->
+  <!-- ========================================== -->
+  <div id="monthly-pdf-options-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center text-sm shadow-sm">
+            <i class="fas fa-file-pdf"></i>
+          </div>
+          <div>
+            <h3 class="font-black text-sm text-slate-900">Export Monthly Register PDF</h3>
+            <p class="text-[11px] text-slate-500 font-semibold">12pt print layout · Half-month split (Days 1–15 &amp; 16–31)</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs cursor-pointer" data-modal="monthly-pdf-options-modal" aria-label="Close Export Dialog">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-5 space-y-4">
+        <!-- Orientation -->
+        <div>
+          <label class="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-2">Page Orientation</label>
+          <div class="grid grid-cols-2 gap-2.5">
+            <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-emerald-50/40 cursor-pointer text-xs font-bold text-slate-800">
+              <input type="radio" name="pdf-orientation" value="landscape" checked class="text-emerald-600 focus:ring-emerald-500">
+              <span class="flex items-center gap-1.5"><i class="fas fa-image text-slate-500"></i> Landscape</span>
+            </label>
+            <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-emerald-50/40 cursor-pointer text-xs font-bold text-slate-800">
+              <input type="radio" name="pdf-orientation" value="portrait" class="text-emerald-600 focus:ring-emerald-500">
+              <span class="flex items-center gap-1.5"><i class="fas fa-file-lines text-slate-500"></i> Portrait</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Paper Size -->
+        <div>
+          <label for="pdf-paper-size" class="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-1.5">Paper Size</label>
+          <select id="pdf-paper-size" class="w-full p-2.5 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:border-emerald-500">
+            <option value="a4" selected>A4 Standard (210 × 297 mm)</option>
+          </select>
+        </div>
+
+        <!-- Color Mode -->
+        <div>
+          <label class="block text-[11px] font-extrabold uppercase tracking-wider text-slate-600 mb-2">Color Mode</label>
+          <div class="grid grid-cols-2 gap-2.5">
+            <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-emerald-50/40 cursor-pointer text-xs font-bold text-slate-800">
+              <input type="radio" name="pdf-color-mode" value="color" checked class="text-emerald-600 focus:ring-emerald-500">
+              <span class="flex items-center gap-1.5"><i class="fas fa-palette text-emerald-600"></i> Color</span>
+            </label>
+            <label class="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-emerald-50/40 cursor-pointer text-xs font-bold text-slate-800">
+              <input type="radio" name="pdf-color-mode" value="bw" class="text-emerald-600 focus:ring-emerald-500">
+              <span class="flex items-center gap-1.5"><i class="fas fa-circle-half-stroke text-slate-700"></i> Black &amp; White</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button type="button" class="btn-close-modal px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer" data-modal="monthly-pdf-options-modal">
+            Cancel
+          </button>
+          <button type="button" id="btn-confirm-export-pdf" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5">
+            <i class="fas fa-download"></i> Download PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
   <!-- MOBILE BOTTOM NAVIGATION (Phones only)     -->
   <!-- ========================================== -->
   <nav id="attendance-bottom-nav" class="attendance-bottom-nav" aria-label="Mobile Navigation">
@@ -1157,9 +1253,9 @@
       <i class="fas fa-chart-pie"></i>
       <span>Analytics</span>
     </button>
-    <button type="button" class="bottom-nav-link" data-tab="tab-session" aria-label="Session Schedule">
-      <i class="fas fa-calendar-check"></i>
-      <span>Schedule</span>
+    <button type="button" class="bottom-nav-link" data-tab="tab-calendar" aria-label="Holidays &amp; Setup">
+      <i class="fas fa-calendar-week"></i>
+      <span>Holidays</span>
     </button>
     <button type="button" id="btn-attendance-more" class="bottom-nav-link" aria-label="More Options">
       <i class="fas fa-ellipsis"></i>
@@ -1170,7 +1266,7 @@
   <!-- ========================================== -->
   <!-- MOBILE MORE ACTIONS BOTTOM SHEET (matching student.html design) -->
   <!-- ========================================== -->
-  <div id="attendance-more-sheet" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden items-end sm:items-center justify-center p-0 sm:p-4 transition-all duration-200">
+  <div id="attendance-more-sheet" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden items-end sm:items-center justify-center p-0 sm:p-4 transition-all duration-200">
     <div class="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-slate-200 animate-[slideUp_.2s_ease-out] space-y-4">
       <div class="flex items-center justify-between border-b border-slate-100 pb-3">
         <h3 class="font-black text-sm text-slate-900 flex items-center gap-2">
@@ -1181,11 +1277,11 @@
         </button>
       </div>
       <div id="attendance-more-sheet-items" class="grid grid-cols-2 gap-2.5">
-        <button type="button" class="p-3 sm:p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 transition flex flex-col items-center justify-center text-center gap-1.5 sm:gap-2 group cursor-pointer attendance-more-tile" data-tab="tab-calendar">
+        <button type="button" class="p-3 sm:p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 transition flex flex-col items-center justify-center text-center gap-1.5 sm:gap-2 group cursor-pointer attendance-more-tile col-span-2" data-tab="tab-session">
           <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white shadow-2xs border border-slate-200 flex items-center justify-center text-emerald-600 text-base sm:text-lg group-hover:scale-110 transition">
-            <i class="fas fa-calendar-week"></i>
+            <i class="fas fa-calendar-check"></i>
           </div>
-          <span class="font-extrabold text-[11px] sm:text-xs text-slate-800">Holidays &amp; Setup</span>
+          <span class="font-extrabold text-[11px] sm:text-xs text-slate-800">Session Schedule</span>
         </button>
         <a href="official.html" class="p-3 sm:p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 transition flex flex-col items-center justify-center text-center gap-1.5 sm:gap-2 group cursor-pointer text-decoration-none">
           <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white shadow-2xs border border-slate-200 flex items-center justify-center text-blue-600 text-base sm:text-lg group-hover:scale-110 transition">
@@ -1193,7 +1289,7 @@
           </div>
           <span class="font-extrabold text-[11px] sm:text-xs text-slate-800">Official Hub</span>
         </a>
-        <button type="button" id="mobile-more-logout-btn" class="p-3 sm:p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-rose-50 hover:border-rose-200 transition flex flex-col items-center justify-center text-center gap-1.5 sm:gap-2 group cursor-pointer col-span-2">
+        <button type="button" id="mobile-more-logout-btn" class="p-3 sm:p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-rose-50 hover:border-rose-200 transition flex flex-col items-center justify-center text-center gap-1.5 sm:gap-2 group cursor-pointer">
           <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white shadow-2xs border border-slate-200 flex items-center justify-center text-rose-600 text-base sm:text-lg group-hover:scale-110 transition">
             <i class="fas fa-sign-out-alt"></i>
           </div>

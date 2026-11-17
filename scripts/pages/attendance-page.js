@@ -27,9 +27,15 @@ let currentAcademicYear = '';
 let availableAcademicYears = [];
 let academicYearRecords = []; // Full year objects from settings/academicYears
 let hasLoadedAttendanceAcademicYears = false;
-let allStudents = [];
 let configuredClasses = [];
 let allClasses = [];
+
+// Firestore Read-Saving Caches
+const classStudentsCache = new Map(); // `${year}__${normCls}` -> Student[]
+const dailyAttendanceCache = new Map(); // `${year}__${normCls}__${dateStr}` -> doc | null
+const monthlyDocsCache = new Map(); // `${year}__${normCls}__${monthVal}` -> Doc[]
+const yearClassAttendanceCache = new Map(); // `${year}__${normCls}` -> Doc[]
+
 let calendarConfig = {
     weekendDays: [5], // Default: Friday (index 5)
     weekendHistory: [], // [{ effectiveFrom: 'YYYY-MM-DD', weekendDays: number[], updatedAt: number }]
@@ -37,16 +43,26 @@ let calendarConfig = {
     sessionSchedules: {} // { [academicYear]: { startDate: 'YYYY-MM-DD', notes: '' } }
 };
 
+// Local Date Helper (Avoids UTC off-by-one shift)
+const toLocalDateStr = (dt = new Date()) => {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const getTodayDateString = () => toLocalDateStr(new Date());
+
 // Daily State
 let selectedDailyClass = '';
-let selectedDailyDate = new Date().toISOString().split('T')[0];
+let selectedDailyDate = getTodayDateString();
 let currentDailyAttendanceDoc = null;
 let dailyAttendanceMap = {}; // studentId -> { status: 'P'|'A'|'L', remarks: '' }
 let hasUnsavedChanges = false;
 
 // Monthly State
 let selectedMonthlyClass = '';
-let selectedMonthlyMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+let selectedMonthlyMonth = getTodayDateString().slice(0, 7); // 'YYYY-MM'
 let monthlyAttendanceDocs = [];
 let lastCompiledMonthlyRegister = null;
 
@@ -58,9 +74,6 @@ let editingHolidayIndex = -1;
 
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-// Helper: Normalize Date String
-const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
 const formatDisplayDate = (dateStr) => {
     if (!dateStr) return '';
@@ -176,6 +189,7 @@ const openModal = (modalId) => {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.remove('hidden');
+        modal.classList.add('flex');
     }
 };
 
@@ -183,6 +197,7 @@ const closeModal = (modalId) => {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.add('hidden');
+        modal.classList.remove('flex');
     }
 };
 
@@ -203,7 +218,7 @@ const activateTab = (targetTabId) => {
         link.classList.toggle('active', isActive);
     });
 
-    const isOverflowActive = targetTabId === 'tab-calendar';
+    const isOverflowActive = targetTabId === 'tab-session';
     const moreBtn = document.getElementById('btn-attendance-more');
     if (moreBtn) moreBtn.classList.toggle('active', isOverflowActive);
 
@@ -229,7 +244,7 @@ const activateTab = (targetTabId) => {
     if (targetTabId === 'tab-monthly') {
         const monthInput = document.getElementById('monthly-month-input');
         if (monthInput && !monthInput.value) {
-            monthInput.value = selectedMonthlyMonth || new Date().toISOString().slice(0, 7);
+            monthInput.value = selectedMonthlyMonth || getTodayDateString().slice(0, 7);
         }
         loadMonthlyRegister();
     } else if (targetTabId === 'tab-analytics') {
@@ -339,8 +354,10 @@ const initApp = async () => {
 
     const monthInput = document.getElementById('monthly-month-input');
     if (monthInput && !monthInput.value) {
-        monthInput.value = selectedMonthlyMonth || new Date().toISOString().slice(0, 7);
+        monthInput.value = selectedMonthlyMonth || getTodayDateString().slice(0, 7);
     }
+
+    syncSmartSelectDisplay(document);
 
     // Check AppSession
     const role = window.AppSession?.getRole?.() || '';
@@ -440,7 +457,7 @@ const setupFirestoreListeners = () => {
             academicYears: academicYearRecords,
             targetYear: currentAcademicYear,
             configuredClasses,
-            students: allStudents
+            students: []
         });
         if (!allClasses.length) {
             allClasses = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
@@ -480,24 +497,18 @@ const setupFirestoreListeners = () => {
         refreshAllClasses();
     });
 
-    // 3. Staff Roster
-    onSnapshot(collection(db, `${BASE_PATH}/staff`), (snap) => {
-        const staffDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (!isSuperAdmin) {
-            const staffAccess = window.AppSession?.getStaffAccess?.() || {};
-            const staffEmailKey = String(staffAccess.email || currentUserKey || '').trim().toLowerCase();
-            const staffPhoneKey = String(staffAccess.phone || currentUserKey || '').replace(/\D/g, '');
-            const staffIdKey = staffAccess.staffId || '';
+    // 3. Role-Scoped Staff Check (Skip entire collection read for Super Admin; single-doc read for Staff)
+    if (isSuperAdmin) {
+        populateClassDropdowns();
+    } else {
+        const staffAccess = window.AppSession?.getStaffAccess?.() || {};
+        const staffEmailKey = String(staffAccess.email || currentUserKey || '').trim().toLowerCase();
+        const staffPhoneKey = String(staffAccess.phone || currentUserKey || '').replace(/\D/g, '');
+        const staffIdKey = String(staffAccess.staffId || '').trim();
 
-            const matchedStaff = staffDocs.find(s => 
-                (staffIdKey && s.id === staffIdKey) ||
-                (currentUserKey && (s.username === currentUserKey || s.email === currentUserKey || s.id === currentUserKey)) ||
-                (staffEmailKey && s.email && s.email.toLowerCase() === staffEmailKey) ||
-                (staffPhoneKey && s.phone && String(s.phone).replace(/\D/g, '').includes(staffPhoneKey)) ||
-                (s.name && s.name.toLowerCase() === currentStaffName.toLowerCase())
-            );
+        const handleMatchedStaffDoc = (matchedStaff, fromCache = false) => {
             if (!matchedStaff || matchedStaff.isActive === false) {
-                if (!snap.metadata?.fromCache && (window.AppSession?.getRole?.() || '') !== 'admin') {
+                if (!fromCache && (window.AppSession?.getRole?.() || '') !== 'admin') {
                     window.AppSession?.revokeCurrentAccount?.({
                         accountId: matchedStaff?.id || staffIdKey || '',
                         message: 'Your staff account is no longer active or has been removed by the administrator.',
@@ -527,18 +538,29 @@ const setupFirestoreListeners = () => {
             if (!teacherAssignedClasses.length && Array.isArray(window.AppSession?.getDutyClasses?.())) {
                 teacherAssignedClasses = window.AppSession.getDutyClasses();
             }
+            populateClassDropdowns();
+        };
+
+        if (staffIdKey) {
+            onSnapshot(doc(db, `${BASE_PATH}/staff`, staffIdKey), (snap) => {
+                const matchedStaff = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+                handleMatchedStaffDoc(matchedStaff, Boolean(snap.metadata?.fromCache));
+            });
+        } else {
+            onSnapshot(collection(db, `${BASE_PATH}/staff`), (snap) => {
+                const staffDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const matchedStaff = staffDocs.find(s =>
+                    (currentUserKey && (s.username === currentUserKey || s.email === currentUserKey || s.id === currentUserKey)) ||
+                    (staffEmailKey && s.email && s.email.toLowerCase() === staffEmailKey) ||
+                    (staffPhoneKey && s.phone && String(s.phone).replace(/\D/g, '').includes(staffPhoneKey)) ||
+                    (s.name && s.name.toLowerCase() === currentStaffName.toLowerCase())
+                ) || null;
+                handleMatchedStaffDoc(matchedStaff, Boolean(snap.metadata?.fromCache));
+            });
         }
-        populateClassDropdowns();
-    });
+    }
 
-    // 4. Students Roster
-    onSnapshot(collection(db, `${BASE_PATH}/students`), (snap) => {
-        allStudents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        refreshAllClasses();
-        loadDailyAttendanceRoster();
-    });
-
-    // 5. Calendar Settings
+    // 4. Calendar Settings (Note: Students are lazy-loaded per selected class to minimize Firestore reads)
     onSnapshot(doc(db, `${BASE_PATH}/settings`, 'attendanceConfig'), (snap) => {
         if (snap.exists()) {
             const data = snap.data();
@@ -578,6 +600,7 @@ const populateAcademicYearDropdowns = (forceCurrent = false) => {
             selectedValue: currentVal,
             preferCurrentUnlessUserChanged: !forceCurrent
         });
+        syncSmartSelectDisplay(yearSelect);
     });
 };
 
@@ -593,12 +616,36 @@ const getAllowedClassesForTeacher = () => {
 
 const isFemaleGender = (g = '') => {
     const low = String(g || '').trim().toLowerCase();
-    return low === 'female' || low === 'f' || low === 'girl';
+    return low === 'female' || low === 'f' || low === 'girl' || low === 'girls';
+};
+
+// Unified Student Ordering: All Boys first, then all Girls, each sorted by Admission No ascending
+const compareByAdmNoAsc = (a = {}, b = {}) => {
+    const admA = String(a.adm || a.admNo || a.admissionNo || '').trim();
+    const admB = String(b.adm || b.admNo || b.admissionNo || '').trim();
+    if (admA && admB) {
+        const cmp = admA.localeCompare(admB, undefined, { numeric: true, sensitivity: 'base' });
+        if (cmp !== 0) return cmp;
+    } else if (admA || admB) {
+        return admA ? -1 : 1;
+    }
+    const rollA = Number(a.rollNo || a.roll || 999999);
+    const rollB = Number(b.rollNo || b.roll || 999999);
+    if (rollA !== rollB) return rollA - rollB;
+    return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+};
+
+const sortStudentsBoysThenGirlsByAdm = (list = []) => {
+    return list.slice().sort((a, b) => {
+        const aFemale = isFemaleGender(a.gender);
+        const bFemale = isFemaleGender(b.gender);
+        if (aFemale !== bFemale) return aFemale ? 1 : -1;
+        return compareByAdmNoAsc(a, b);
+    });
 };
 
 const formatClassPillText = (clsVal = '') => {
     if (!clsVal) return '--';
-    if (String(clsVal).toLowerCase() === 'all') return 'All Classes';
     const clean = String(clsVal).trim();
     return clean.toLowerCase().startsWith('class') ? clean : `Class: ${clean}`;
 };
@@ -606,20 +653,17 @@ const formatClassPillText = (clsVal = '') => {
 const populateClassDropdowns = () => {
     const allowed = getAllowedClassesForTeacher();
 
-    // Daily & Monthly Class Dropdowns (Default: -- Select Class --, includes All Classes)
-    ['daily-class-select', 'monthly-class-select'].forEach(id => {
+    ['daily-class-select', 'monthly-class-select', 'analytics-class-select'].forEach(id => {
         const select = document.getElementById(id);
         if (!select) return;
 
         const prev = select.value;
-        const validPrev = prev && (prev === 'all' || allowed.some(c => isClassInDutyScope(prev, [c]))) ? prev : '';
+        const validPrev = prev && allowed.some(c => isClassInDutyScope(prev, [c])) ? prev : '';
 
         populateClassSelect(select, allowed, {
             selectedValue: validPrev,
             placeholder: '-- Select Class --',
-            includeAllOption: true,
-            allOptionLabel: 'All Classes',
-            allOptionValue: 'all'
+            includeAllOption: false
         });
 
         if (!allowed.length) {
@@ -629,28 +673,6 @@ const populateClassDropdowns = () => {
         }
     });
 
-    // Analytics Class Dropdown (Default: -- Select Class --, includes All Classes)
-    const analyticsSelect = document.getElementById('analytics-class-select');
-    if (analyticsSelect) {
-        const prev = analyticsSelect.value;
-        const normalizedPrev = prev === 'all' ? 'ALL' : prev;
-        const validPrev = normalizedPrev && (normalizedPrev === 'ALL' || allowed.some(c => isClassInDutyScope(normalizedPrev, [c]))) ? normalizedPrev : '';
-
-        populateClassSelect(analyticsSelect, allowed, {
-            selectedValue: validPrev,
-            placeholder: '-- Select Class --',
-            includeAllOption: true,
-            allOptionLabel: 'All Classes',
-            allOptionValue: 'ALL'
-        });
-
-        if (!allowed.length) {
-            analyticsSelect.innerHTML = `<option value="">No Classes Assigned</option>`;
-            analyticsSelect.value = '';
-            syncSmartSelectDisplay(analyticsSelect);
-        }
-    }
-
     selectedDailyClass = document.getElementById('daily-class-select')?.value || '';
     selectedMonthlyClass = document.getElementById('monthly-class-select')?.value || '';
     selectedAnalyticsClass = document.getElementById('analytics-class-select')?.value || '';
@@ -659,13 +681,131 @@ const populateClassDropdowns = () => {
     if (rosterClassPill) rosterClassPill.textContent = formatClassPillText(selectedDailyClass);
 };
 
+// --- Lazy Student & Attendance Data Loaders (Firestore Read Optimizations) ---
+const resolveStudentClassForYear = (student, year) => {
+    return String(student?.academicYears?.[year]?.class || student?.class || '').trim();
+};
 
-// --- Daily Attendance Logic ---
+const getClassQueryVariants = (classLabel = '') => {
+    const clean = String(classLabel || '').trim();
+    if (!clean) return [];
+    const stripped = clean.replace(/^class\s*/i, '').trim();
+    const set = new Set([clean]);
+    if (stripped) {
+        set.add(stripped);
+        set.add(`Class ${stripped}`);
+    }
+    return Array.from(set).slice(0, 10);
+};
+
+const fetchStudentsForClass = async (classLabel, year, { force = false } = {}) => {
+    if (!classLabel) return [];
+    const effectiveYear = year || currentAcademicYear || '';
+    const cacheKey = `${effectiveYear}__${normalizeClassLabel(classLabel)}`;
+    if (!force && classStudentsCache.has(cacheKey)) {
+        return classStudentsCache.get(cacheKey);
+    }
+
+    const variants = getClassQueryVariants(classLabel);
+    if (!variants.length) return [];
+
+    const mergedById = new Map();
+    const qCurrent = query(collection(db, `${BASE_PATH}/students`), where('class', 'in', variants));
+    const snapCurrent = await getDocs(qCurrent);
+    snapCurrent.docs.forEach(d => mergedById.set(d.id, { id: d.id, ...d.data() }));
+
+    if (effectiveYear && (!currentAcademicYear || effectiveYear !== currentAcademicYear)) {
+        try {
+            const qYear = query(
+                collection(db, `${BASE_PATH}/students`),
+                where(`academicYears.${effectiveYear}.class`, 'in', variants)
+            );
+            const snapYear = await getDocs(qYear);
+            snapYear.docs.forEach(d => {
+                if (!mergedById.has(d.id)) mergedById.set(d.id, { id: d.id, ...d.data() });
+            });
+        } catch (_) {}
+    }
+
+    const filtered = Array.from(mergedById.values())
+        .filter(s => {
+            if (s.status === 'alumni' || s.isAlumni || String(s.class || '').toUpperCase() === 'ALUMNI') return false;
+            const stuCls = resolveStudentClassForYear(s, effectiveYear);
+            if (!stuCls) return false;
+            const matchesYear = (!s.academicYear || s.academicYear === effectiveYear || Boolean(s.academicYears?.[effectiveYear]));
+            if (!matchesYear) return false;
+            return normalizeClassLabel(stuCls) === normalizeClassLabel(classLabel);
+        })
+        .map(s => ({
+            ...s,
+            _resolvedYearClass: resolveStudentClassForYear(s, effectiveYear)
+        }));
+
+    const sorted = sortStudentsBoysThenGirlsByAdm(filtered);
+    classStudentsCache.set(cacheKey, sorted);
+    return sorted;
+};
+
+const fetchYearClassAttendanceDocs = async (year, classLabel, { force = false } = {}) => {
+    if (!year || !classLabel) return [];
+    const cacheKey = `${year}__${normalizeClassLabel(classLabel)}`;
+    if (!force && yearClassAttendanceCache.has(cacheKey)) {
+        return yearClassAttendanceCache.get(cacheKey);
+    }
+    const q = query(
+        collection(db, `${BASE_PATH}/attendance`),
+        where('academicYear', '==', year),
+        where('classLabel', '==', classLabel)
+    );
+    const snap = await getDocs(q);
+    const docs = snap.docs.map(d => d.data());
+    yearClassAttendanceCache.set(cacheKey, docs);
+    return docs;
+};
+
+const invalidateClassAttendanceCache = (year, classLabel, dateStr = '') => {
+    const normCls = normalizeClassLabel(classLabel);
+    if (!normCls) return;
+    if (dateStr) {
+        dailyAttendanceCache.delete(`${year}__${normCls}__${dateStr}`);
+    }
+    yearClassAttendanceCache.delete(`${year}__${normCls}`);
+    const prefix = `${year}__${normCls}__`;
+    Array.from(monthlyDocsCache.keys()).forEach(k => {
+        if (k.startsWith(prefix)) monthlyDocsCache.delete(k);
+    });
+};
+
+
+// --- Daily Attendance & Calendar Helpers ---
 const getDailyDocId = (academicYear, classLabel, dateStr) => {
     const cleanYear = String(academicYear || currentAcademicYear || '').trim().replace(/[^\w-]/g, '_');
     const cleanClass = String(classLabel || '').trim().replace(/[^\w-]/g, '_');
     const cleanDate = String(dateStr || '').trim();
     return `${cleanYear}__${cleanClass}__${cleanDate}`;
+};
+
+const getEffectiveWeekendDaysForDate = (dateStr) => {
+    let activeWeekendDays = calendarConfig.weekendDays || [5];
+    if (Array.isArray(calendarConfig.weekendHistory) && calendarConfig.weekendHistory.length > 0) {
+        const history = [...calendarConfig.weekendHistory]
+            .filter(h => h && h.effectiveFrom && Array.isArray(h.weekendDays))
+            .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+
+        let matchedEntry = null;
+        for (let i = history.length - 1; i >= 0; i--) {
+            if (history[i].effectiveFrom <= dateStr) {
+                matchedEntry = history[i];
+                break;
+            }
+        }
+        if (matchedEntry) {
+            activeWeekendDays = matchedEntry.weekendDays;
+        } else if (history.length > 0) {
+            activeWeekendDays = history[0].weekendDays;
+        }
+    }
+    return Array.isArray(activeWeekendDays) ? activeWeekendDays : [5];
 };
 
 const isDateHoliday = (dateStr, targetClass = '') => {
@@ -679,7 +819,7 @@ const isDateHoliday = (dateStr, targetClass = '') => {
             if (h.date !== dateStr) return false;
             const isAll = !h.scope || h.scope === 'all' || !Array.isArray(h.classes) || h.classes.length === 0;
             if (isAll) return true;
-            if (targetClass && Array.isArray(h.classes) && h.classes.includes(targetClass)) return true;
+            if (targetClass && Array.isArray(h.classes) && h.classes.some(c => normalizeClassLabel(c) === normalizeClassLabel(targetClass))) return true;
             return false;
         });
 
@@ -691,27 +831,8 @@ const isDateHoliday = (dateStr, targetClass = '') => {
         }
 
         // 2. Weekly off (weekend) days with historical effective dating support
-        let activeWeekendDays = calendarConfig.weekendDays || [5];
-        if (Array.isArray(calendarConfig.weekendHistory) && calendarConfig.weekendHistory.length > 0) {
-            const history = [...calendarConfig.weekendHistory]
-                .filter(h => h && h.effectiveFrom && Array.isArray(h.weekendDays))
-                .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-
-            let matchedEntry = null;
-            for (let i = history.length - 1; i >= 0; i--) {
-                if (history[i].effectiveFrom <= dateStr) {
-                    matchedEntry = history[i];
-                    break;
-                }
-            }
-            if (matchedEntry) {
-                activeWeekendDays = matchedEntry.weekendDays;
-            } else if (history.length > 0) {
-                activeWeekendDays = history[0].weekendDays;
-            }
-        }
-
-        if (Array.isArray(activeWeekendDays) && activeWeekendDays.includes(dayOfWeek)) {
+        const activeWeekendDays = getEffectiveWeekendDaysForDate(dateStr);
+        if (activeWeekendDays.includes(dayOfWeek)) {
             const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             const dayName = dayNames[dayOfWeek] || 'Weekly Off';
             const reason = `Weekly Off (${dayName})`;
@@ -719,6 +840,29 @@ const isDateHoliday = (dateStr, targetClass = '') => {
         }
     } catch (_) {}
     return { isHoliday: false, reason: '', title: '', isWeeklyOff: false };
+};
+
+const calculateWorkingDaysInRange = (startDateStr, endDateStr, targetClass = '') => {
+    if (!startDateStr || !endDateStr || endDateStr < startDateStr) {
+        return { elapsedDays: 0, workingDays: 0 };
+    }
+    const [sy, sm, sd] = startDateStr.split('-').map(Number);
+    const [ey, em, ed] = endDateStr.split('-').map(Number);
+    if (!sy || !sm || !sd || !ey || !em || !ed) return { elapsedDays: 0, workingDays: 0 };
+
+    const cursor = new Date(sy, sm - 1, sd, 12, 0, 0);
+    const endDt = new Date(ey, em - 1, ed, 12, 0, 0);
+    let elapsedDays = 0;
+    let workingDays = 0;
+
+    while (cursor.getTime() <= endDt.getTime()) {
+        elapsedDays += 1;
+        const dStr = toLocalDateStr(cursor);
+        const { isHoliday } = isDateHoliday(dStr, targetClass);
+        if (!isHoliday) workingDays += 1;
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return { elapsedDays, workingDays };
 };
 
 const updateDailyDateDisplay = () => {
@@ -734,8 +878,7 @@ const updateDailyDateDisplay = () => {
 
     // Holiday notice
     const holidayNotice = document.getElementById('daily-holiday-notice');
-    const holidayTargetClass = selectedDailyClass === 'all' ? '' : selectedDailyClass;
-    const { isHoliday, reason } = isDateHoliday(selectedDailyDate, holidayTargetClass);
+    const { isHoliday, reason } = isDateHoliday(selectedDailyDate, selectedDailyClass);
     if (holidayNotice) {
         if (isHoliday) {
             holidayNotice.innerHTML = `<i class="fas fa-umbrella-beach mr-1"></i> ${escapeHtml(reason)}`;
@@ -759,10 +902,6 @@ const updateDailyDateDisplay = () => {
     }
 };
 
-const resolveStudentClassForYear = (student, year) => {
-    return String(student?.academicYears?.[year]?.class || student?.class || '').trim();
-};
-
 const loadDailyAttendanceRoster = async () => {
     updateDailyDateDisplay();
     selectedDailyClass = document.getElementById('daily-class-select')?.value || '';
@@ -771,14 +910,16 @@ const loadDailyAttendanceRoster = async () => {
     if (rosterClassPill) rosterClassPill.textContent = formatClassPillText(selectedDailyClass);
 
     const tbody = document.getElementById('daily-roster-tbody');
+    const mobileList = document.getElementById('daily-roster-mobile');
     const saveStatusText = document.getElementById('save-status-text');
     const saveIndicator = document.getElementById('save-status-indicator');
 
     if (!selectedDailyClass) {
         const noClassMsg = (!isSuperAdmin && (!teacherAssignedClasses || teacherAssignedClasses.length === 0))
             ? 'No classes assigned to your account. Please contact administrator to assign your classes.'
-            : 'Please select a class or choose All Classes to load students.';
+            : 'Please select a class to load students.';
         if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">${noClassMsg}</td></tr>`;
+        if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs">${noClassMsg}</div>`;
         if (saveStatusText) saveStatusText.textContent = 'Ready';
         if (saveIndicator) saveIndicator.className = 'w-2 h-2 rounded-full bg-slate-400';
         dailyAttendanceMap = {};
@@ -787,103 +928,57 @@ const loadDailyAttendanceRoster = async () => {
         return;
     }
 
-    const isAllClasses = selectedDailyClass === 'all';
-    const allowed = getAllowedClassesForTeacher().slice().sort(compareClassLabelsNatural);
-    const targetClasses = isAllClasses ? allowed : [selectedDailyClass];
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold"><i class="fas fa-spinner fa-spin mr-2 text-emerald-600"></i>Loading students...</td></tr>`;
+    if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs"><i class="fas fa-spinner fa-spin mr-2 text-emerald-600"></i>Loading students...</div>`;
 
-    const classStudents = allStudents.filter(s => {
-        if (s.status === 'alumni' || s.isAlumni || String(s.class || '').toUpperCase() === 'ALUMNI') return false;
-        const stuCls = resolveStudentClassForYear(s, year);
-        if (!stuCls) return false;
-        const matchesYear = (!s.academicYear || s.academicYear === year || Boolean(s.academicYears?.[year]));
-        if (!matchesYear) return false;
-        if (isAllClasses) {
-            return targetClasses.some(tc => normalizeClassLabel(tc) === normalizeClassLabel(stuCls));
+    try {
+        const classStudents = await fetchStudentsForClass(selectedDailyClass, year);
+        document.getElementById('stat-total-students').textContent = classStudents.length;
+
+        const dailyCacheKey = `${year}__${normalizeClassLabel(selectedDailyClass)}__${selectedDailyDate}`;
+        let cachedDoc = dailyAttendanceCache.has(dailyCacheKey) ? dailyAttendanceCache.get(dailyCacheKey) : undefined;
+
+        if (cachedDoc === undefined) {
+            const docId = getDailyDocId(year, selectedDailyClass, selectedDailyDate);
+            const snap = await getDoc(doc(db, `${BASE_PATH}/attendance`, docId));
+            cachedDoc = snap.exists() ? snap.data() : null;
+            dailyAttendanceCache.set(dailyCacheKey, cachedDoc);
         }
-        return normalizeClassLabel(stuCls) === normalizeClassLabel(selectedDailyClass);
-    }).map(s => ({
-        ...s,
-        _resolvedYearClass: resolveStudentClassForYear(s, year)
-    })).sort((a, b) => {
-        const clsCmp = compareClassLabelsNatural(a._resolvedYearClass, b._resolvedYearClass);
-        if (clsCmp !== 0) return clsCmp;
-        const rollA = Number(a.rollNo || a.roll || 9999);
-        const rollB = Number(b.rollNo || b.roll || 9999);
-        if (rollA !== rollB) return rollA - rollB;
-        return String(a.name || '').localeCompare(String(b.name || ''));
-    });
 
-    document.getElementById('stat-total-students').textContent = classStudents.length;
-
-    if (isAllClasses) {
-        try {
-            const activeClassesInRoster = Array.from(new Set(classStudents.map(s => s._resolvedYearClass))).sort(compareClassLabelsNatural);
-            const fetchClasses = activeClassesInRoster.length ? activeClassesInRoster : targetClasses;
-            const snaps = await Promise.all(
-                fetchClasses.map(cls => getDoc(doc(db, `${BASE_PATH}/attendance`, getDailyDocId(year, cls, selectedDailyDate))))
-            );
-            dailyAttendanceMap = {};
-            let recordedClassesCount = 0;
-            snaps.forEach(snap => {
-                if (snap.exists()) {
-                    recordedClassesCount++;
-                    const recs = snap.data()?.records || {};
-                    Object.entries(recs).forEach(([stuId, rec]) => {
-                        dailyAttendanceMap[stuId] = { ...rec };
-                    });
-                }
-            });
+        if (cachedDoc) {
+            currentDailyAttendanceDoc = cachedDoc;
+            dailyAttendanceMap = JSON.parse(JSON.stringify(cachedDoc.records || {}));
+            const timeStr = cachedDoc.updatedAt
+                ? new Date(cachedDoc.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : 'Earlier';
+            const markerName = cachedDoc.markedByName || 'Teacher';
+            if (saveStatusText) saveStatusText.textContent = `Recorded at ${timeStr} by ${markerName}`;
+            if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+        } else {
             currentDailyAttendanceDoc = null;
-            if (saveStatusText) {
-                saveStatusText.textContent = recordedClassesCount > 0
-                    ? `Loaded ${recordedClassesCount}/${fetchClasses.length} classes`
-                    : `Not yet recorded for ${selectedDailyDate}`;
-            }
-            if (saveIndicator) {
-                saveIndicator.className = recordedClassesCount > 0
-                    ? 'w-2.5 h-2.5 rounded-full bg-emerald-500'
-                    : 'w-2.5 h-2.5 rounded-full bg-amber-400';
-            }
-        } catch (err) {
-            console.warn('Failed to load all-class daily attendance docs:', err);
+            dailyAttendanceMap = {};
+            if (saveStatusText) saveStatusText.textContent = `Not yet recorded for ${selectedDailyDate}`;
+            if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
         }
-    } else {
-        const docId = getDailyDocId(year, selectedDailyClass, selectedDailyDate);
-        try {
-            const docRef = doc(db, `${BASE_PATH}/attendance`, docId);
-            const snap = await getDoc(docRef);
 
-            if (snap.exists()) {
-                currentDailyAttendanceDoc = snap.data();
-                dailyAttendanceMap = currentDailyAttendanceDoc.records || {};
-                const timeStr = currentDailyAttendanceDoc.updatedAt
-                    ? new Date(currentDailyAttendanceDoc.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    : 'Earlier';
-                const markerName = currentDailyAttendanceDoc.markedByName || 'Teacher';
-                if (saveStatusText) saveStatusText.textContent = `Recorded at ${timeStr} by ${markerName}`;
-                if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
-            } else {
-                currentDailyAttendanceDoc = null;
-                dailyAttendanceMap = {};
-                if (saveStatusText) saveStatusText.textContent = `Not yet recorded for ${selectedDailyDate}`;
-                if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
-            }
-        } catch (err) {
-            console.warn('Failed to load daily attendance doc:', err);
-        }
+        renderDailyStudentRows(classStudents);
+        hasUnsavedChanges = false;
+    } catch (err) {
+        console.warn('Failed to load daily attendance roster:', err);
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-rose-600 font-bold">Failed to load students: ${escapeHtml(err.message)}</td></tr>`;
+        if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-rose-600 font-bold text-xs">Failed to load students: ${escapeHtml(err.message)}</div>`;
     }
-
-    renderDailyStudentRows(classStudents, isAllClasses);
-    hasUnsavedChanges = false;
 };
 
-const renderDailyStudentRows = (classStudents, isAllClasses = false) => {
+const renderDailyStudentRows = (classStudents) => {
     const tbody = document.getElementById('daily-roster-tbody');
-    if (!tbody) return;
+    const mobileList = document.getElementById('daily-roster-mobile');
+    if (!tbody && !mobileList) return;
 
     if (!classStudents.length) {
-        const scopeLabel = isAllClasses ? 'any assigned class' : `Class ${escapeHtml(selectedDailyClass)}`;
-        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">No active students found in ${scopeLabel}.</td></tr>`;
+        const emptyText = `No active students found in Class ${escapeHtml(selectedDailyClass)}.`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">${emptyText}</td></tr>`;
+        if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs">${emptyText}</div>`;
         updateDailyMetrics(0, 0, 0, 0);
         return;
     }
@@ -892,36 +987,11 @@ const renderDailyStudentRows = (classStudents, isAllClasses = false) => {
     let aCount = 0;
     let lCount = 0;
 
-    const classCounts = {};
-    if (isAllClasses) {
-        classStudents.forEach(s => {
-            const cls = s._resolvedYearClass || s.class || '-';
-            classCounts[cls] = (classCounts[cls] || 0) + 1;
-        });
-    }
-
-    let lastRenderedClass = '';
     const rowsHtml = [];
+    const mobileCardsHtml = [];
 
     classStudents.forEach((student, idx) => {
         const stuCls = student._resolvedYearClass || student.class || '';
-        if (isAllClasses && stuCls !== lastRenderedClass) {
-            lastRenderedClass = stuCls;
-            rowsHtml.push(`
-                <tr class="bg-slate-100/90 border-y border-slate-200">
-                    <td colspan="6" class="py-2 px-3 sm:px-4">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                                <i class="fas fa-chalkboard-user text-emerald-600"></i>
-                                Class: ${escapeHtml(stuCls)}
-                            </span>
-                            <span class="text-[11px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200">${classCounts[stuCls] || 0} Students</span>
-                        </div>
-                    </td>
-                </tr>
-            `);
-        }
-
         const record = dailyAttendanceMap[student.id] || {};
         let status = record.status || '';
         if (status === 'E') status = 'L';
@@ -934,42 +1004,72 @@ const renderDailyStudentRows = (classStudents, isAllClasses = false) => {
         const photo = student.photo || student.profile?.photo || '';
         const roll = student.rollNo || student.roll || (idx + 1);
         const adm = student.adm || student.admNo || '-';
+        const genderLabel = isFemaleGender(student.gender) ? 'Girl' : 'Boy';
 
         rowsHtml.push(`
             <tr class="hover:bg-slate-50/80 transition-colors" data-student-id="${escapeHtml(student.id)}" data-student-class="${escapeHtml(stuCls)}">
-                <td class="py-2.5 sm:py-3 px-3 text-center font-bold text-slate-400 hidden sm:table-cell">${idx + 1}</td>
-                <td class="py-2.5 sm:py-3 px-3 text-center font-mono font-bold text-slate-700 hidden sm:table-cell">${escapeHtml(String(roll))}</td>
-                <td class="py-2.5 sm:py-3 px-3 font-mono text-slate-500 font-semibold hidden sm:table-cell">${escapeHtml(adm)}</td>
-                <td class="py-2.5 sm:py-3 px-2 sm:px-4">
-                    <div class="flex items-center gap-2 sm:gap-2.5">
-                        <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
+                <td class="py-2.5 sm:py-3 px-3 text-center font-bold text-slate-400 tabular-nums">${idx + 1}</td>
+                <td class="py-2.5 sm:py-3 px-3 text-center font-mono font-bold text-slate-700 tabular-nums">${escapeHtml(String(roll))}</td>
+                <td class="py-2.5 sm:py-3 px-3 font-mono text-slate-500 font-semibold tabular-nums">${escapeHtml(adm)}</td>
+                <td class="py-2.5 sm:py-3 px-4">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
                             ${photo ? `<img src="${photo}" class="w-full h-full object-cover">` : `<i class="fas fa-user text-slate-400 text-xs"></i>`}
                         </div>
                         <div class="min-w-0">
-                            <div class="font-extrabold text-slate-900 text-xs sm:text-sm truncate">${escapeHtml(student.name || '--')}</div>
-                            <div class="text-[10px] text-slate-500 font-bold flex items-center gap-1.5 sm:hidden">
-                                <span>Roll: ${escapeHtml(String(roll))}</span>
-                                <span>•</span>
-                                <span>Adm: ${escapeHtml(adm)}</span>
-                            </div>
+                            <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(student.name || '--')}</div>
+                            <div class="text-[11px] text-slate-400 font-semibold">${genderLabel}</div>
                         </div>
                     </div>
                 </td>
-                <td class="py-2.5 sm:py-3 px-1 sm:px-4 text-center">
+                <td class="py-2.5 sm:py-3 px-4 text-center">
                     <div class="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200" data-toggle-group="${escapeHtml(student.id)}">
                         <button type="button" class="att-toggle-btn ${status === 'P' ? 'active-p' : ''}" data-status="P" title="Present (P): Attended class">P</button>
                         <button type="button" class="att-toggle-btn ${status === 'A' ? 'active-a' : ''}" data-status="A" title="Absent (A): Absent without prior notice">A</button>
                         <button type="button" class="att-toggle-btn ${status === 'L' ? 'active-l' : ''}" data-status="L" title="Leave (L): Informed leave in advance">L</button>
                     </div>
                 </td>
-                <td class="py-2.5 sm:py-3 px-2 sm:px-4">
-                    <input type="text" class="student-remarks-input w-full p-1.5 px-2 text-xs rounded-lg border border-slate-200 focus:border-emerald-500 outline-none bg-white transition" placeholder="Remark..." value="${escapeHtml(remarks)}">
+                <td class="py-2.5 sm:py-3 px-4">
+                    <input type="text" data-student-id="${escapeHtml(student.id)}" class="student-remarks-input w-full p-1.5 px-2.5 text-xs rounded-lg border border-slate-200 focus:border-emerald-500 outline-none bg-white transition" placeholder="Remark..." value="${escapeHtml(remarks)}">
                 </td>
             </tr>
         `);
+
+        mobileCardsHtml.push(`
+            <div class="p-3 space-y-2.5 bg-white" data-student-id="${escapeHtml(student.id)}" data-student-class="${escapeHtml(stuCls)}">
+                <div class="flex items-center justify-between gap-2.5">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <div class="w-9 h-9 rounded-full overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
+                            ${photo ? `<img src="${photo}" class="w-full h-full object-cover">` : `<i class="fas fa-user text-slate-400 text-xs"></i>`}
+                        </div>
+                        <div class="min-w-0">
+                            <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(student.name || '--')}</div>
+                            <div class="text-[11px] text-slate-500 font-semibold font-mono tabular-nums truncate">
+                                #${idx + 1} · Adm: ${escapeHtml(adm)} · Roll: ${escapeHtml(String(roll))} · ${genderLabel}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2" data-toggle-group="${escapeHtml(student.id)}">
+                    <button type="button" class="att-toggle-btn att-toggle-btn-mobile ${status === 'P' ? 'active-p' : ''}" data-status="P" title="Present">
+                        <span>P</span><span class="text-[11px] font-bold opacity-85">Present</span>
+                    </button>
+                    <button type="button" class="att-toggle-btn att-toggle-btn-mobile ${status === 'A' ? 'active-a' : ''}" data-status="A" title="Absent">
+                        <span>A</span><span class="text-[11px] font-bold opacity-85">Absent</span>
+                    </button>
+                    <button type="button" class="att-toggle-btn att-toggle-btn-mobile ${status === 'L' ? 'active-l' : ''}" data-status="L" title="Leave">
+                        <span>L</span><span class="text-[11px] font-bold opacity-85">Leave</span>
+                    </button>
+                </div>
+                <div>
+                    <input type="text" data-student-id="${escapeHtml(student.id)}" class="student-remarks-input w-full min-h-[40px] px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-emerald-500 outline-none bg-slate-50 focus:bg-white transition" placeholder="Add remark (optional)..." value="${escapeHtml(remarks)}">
+                </div>
+            </div>
+        `);
     });
 
-    tbody.innerHTML = rowsHtml.join('');
+    if (tbody) tbody.innerHTML = rowsHtml.join('');
+    if (mobileList) mobileList.innerHTML = mobileCardsHtml.join('');
     updateDailyMetrics(classStudents.length, pCount, aCount, lCount);
 };
 
@@ -990,15 +1090,14 @@ const setStudentStatus = (studentId, status) => {
     if (!dailyAttendanceMap[studentId]) dailyAttendanceMap[studentId] = {};
     dailyAttendanceMap[studentId].status = status;
 
-    const group = document.querySelector(`[data-toggle-group="${studentId}"]`);
-    if (group) {
+    document.querySelectorAll(`[data-toggle-group="${studentId}"]`).forEach(group => {
         group.querySelectorAll('.att-toggle-btn').forEach(btn => {
             btn.classList.remove('active-p', 'active-a', 'active-l');
             if (btn.dataset.status === status) {
                 btn.classList.add(`active-${status.toLowerCase()}`);
             }
         });
-    }
+    });
 
     markUnsavedChanges();
     recalculateDailyTotals();
@@ -1038,17 +1137,13 @@ const markAllStudents = (status) => {
         }
     });
 
-    rows.forEach(row => {
-        const studentId = row.dataset.studentId;
-        const group = row.querySelector(`[data-toggle-group="${studentId}"]`);
-        if (group) {
-            group.querySelectorAll('.att-toggle-btn').forEach(btn => {
-                btn.classList.remove('active-p', 'active-a', 'active-l');
-                if (btn.dataset.status === status) {
-                    btn.classList.add(`active-${status.toLowerCase()}`);
-                }
-            });
-        }
+    document.querySelectorAll('[data-toggle-group]').forEach(group => {
+        group.querySelectorAll('.att-toggle-btn').forEach(btn => {
+            btn.classList.remove('active-p', 'active-a', 'active-l');
+            if (btn.dataset.status === status) {
+                btn.classList.add(`active-${status.toLowerCase()}`);
+            }
+        });
     });
 
     markUnsavedChanges();
@@ -1057,29 +1152,25 @@ const markAllStudents = (status) => {
 
 const clearAllStudents = () => {
     dailyAttendanceMap = {};
-    const rows = document.querySelectorAll('#daily-roster-tbody tr[data-student-id]');
-    rows.forEach(row => {
-        const studentId = row.dataset.studentId;
-        const group = row.querySelector(`[data-toggle-group="${studentId}"]`);
-        if (group) {
-            group.querySelectorAll('.att-toggle-btn').forEach(btn => {
-                btn.classList.remove('active-p', 'active-a', 'active-l');
-            });
-        }
-        const remarksInput = row.querySelector('.student-remarks-input');
-        if (remarksInput) remarksInput.value = '';
+    document.querySelectorAll('[data-toggle-group]').forEach(group => {
+        group.querySelectorAll('.att-toggle-btn').forEach(btn => {
+            btn.classList.remove('active-p', 'active-a', 'active-l');
+        });
+    });
+    document.querySelectorAll('.student-remarks-input').forEach(input => {
+        input.value = '';
     });
     markUnsavedChanges();
     recalculateDailyTotals();
 };
 
 const saveDailyAttendance = async () => {
-    if (!selectedDailyClass) return alert('Please select a class or choose All Classes first.');
-    if (selectedDailyClass !== 'all' && !isSuperAdmin && (!teacherAssignedClasses.length || !isClassInDutyScope(selectedDailyClass, teacherAssignedClasses))) {
-        return alert('You can only record attendance for your assigned classes.');
+    if (!selectedDailyClass) return showToast('Please select a class first.', 'info');
+    if (!isSuperAdmin && (!teacherAssignedClasses.length || !isClassInDutyScope(selectedDailyClass, teacherAssignedClasses))) {
+        return showToast('You can only record attendance for your assigned classes.', 'error');
     }
     const year = document.getElementById('daily-academic-year')?.value || currentAcademicYear;
-    if (!year) return alert('Academic year is not set.');
+    if (!year) return showToast('Academic year is not set.', 'error');
 
     const saveBtn = document.getElementById('btn-save-daily');
     const saveStatusText = document.getElementById('save-status-text');
@@ -1094,121 +1185,63 @@ const saveDailyAttendance = async () => {
         const rows = Array.from(document.querySelectorAll('#daily-roster-tbody tr[data-student-id]'));
         rows.forEach(row => {
             const studentId = row.dataset.studentId;
-            const input = row.querySelector('.student-remarks-input');
-            if (studentId && input) {
+            if (!studentId) return;
+            const visibleInput = Array.from(document.querySelectorAll(`.student-remarks-input[data-student-id="${studentId}"]`))
+                .find(el => el.offsetParent !== null) || row.querySelector('.student-remarks-input');
+            if (visibleInput) {
                 if (!dailyAttendanceMap[studentId]) dailyAttendanceMap[studentId] = {};
-                dailyAttendanceMap[studentId].remarks = input.value.trim();
+                dailyAttendanceMap[studentId].remarks = visibleInput.value.trim();
             }
         });
 
-        if (selectedDailyClass === 'all') {
-            if (!rows.length) {
-                throw new Error('No active students loaded to save.');
-            }
-            const groupedByClass = {};
-            rows.forEach(row => {
-                const stuId = row.dataset.studentId;
-                const cls = row.dataset.studentClass || '';
-                if (!stuId || !cls) return;
-                if (!isSuperAdmin && (!teacherAssignedClasses.length || !isClassInDutyScope(cls, teacherAssignedClasses))) return;
-                if (!groupedByClass[cls]) groupedByClass[cls] = [];
-                groupedByClass[cls].push(stuId);
-            });
+        let pCount = 0;
+        let aCount = 0;
+        let lCount = 0;
 
-            const classEntries = Object.entries(groupedByClass);
-            if (!classEntries.length) {
-                throw new Error('You do not have permission to save attendance for these classes.');
-            }
+        Object.values(dailyAttendanceMap).forEach(rec => {
+            const s = rec.status === 'E' ? 'L' : rec.status;
+            if (s === 'P') pCount++;
+            else if (s === 'A') aCount++;
+            else if (s === 'L') lCount++;
+        });
 
-            await Promise.all(classEntries.map(([cls, studentIds]) => {
-                let pCount = 0;
-                let aCount = 0;
-                let lCount = 0;
-                const clsRecords = {};
-                studentIds.forEach(sid => {
-                    const rec = dailyAttendanceMap[sid] ? { ...dailyAttendanceMap[sid] } : {};
-                    if (Object.keys(rec).length) {
-                        clsRecords[sid] = rec;
-                    }
-                    const s = rec.status === 'E' ? 'L' : rec.status;
-                    if (s === 'P') pCount++;
-                    else if (s === 'A') aCount++;
-                    else if (s === 'L') lCount++;
-                });
+        const totalEnrolled = rows.length;
+        const { isHoliday, reason } = isDateHoliday(selectedDailyDate, selectedDailyClass);
+        const docId = getDailyDocId(year, selectedDailyClass, selectedDailyDate);
 
-                const { isHoliday, reason } = isDateHoliday(selectedDailyDate, cls);
-                const docId = getDailyDocId(year, cls, selectedDailyDate);
-                const payload = {
-                    id: docId,
-                    academicYear: year,
-                    classLabel: cls,
-                    date: selectedDailyDate,
-                    markedByUid: currentUserKey || 'teacher',
-                    markedByName: currentStaffName,
-                    updatedAt: Date.now(),
-                    totalStudents: studentIds.length,
-                    presentCount: pCount,
-                    absentCount: aCount,
-                    leaveCount: lCount,
-                    lateCount: 0,
-                    isHoliday: Boolean(isHoliday),
-                    holidayReason: reason || '',
-                    records: clsRecords
-                };
-                return setDoc(doc(db, `${BASE_PATH}/attendance`, docId), payload);
-            }));
+        const payload = {
+            id: docId,
+            academicYear: year,
+            classLabel: selectedDailyClass,
+            date: selectedDailyDate,
+            markedByUid: currentUserKey || 'teacher',
+            markedByName: currentStaffName,
+            updatedAt: Date.now(),
+            totalStudents: totalEnrolled,
+            presentCount: pCount,
+            absentCount: aCount,
+            leaveCount: lCount,
+            lateCount: 0,
+            isHoliday: Boolean(isHoliday),
+            holidayReason: reason || '',
+            records: dailyAttendanceMap
+        };
 
-            hasUnsavedChanges = false;
-            const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            if (saveStatusText) saveStatusText.textContent = `Saved ${classEntries.length} classes at ${timeNow}`;
-            if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
-            showToast(`Attendance saved for ${classEntries.length} classes!`, 'success');
-        } else {
-            let pCount = 0;
-            let aCount = 0;
-            let lCount = 0;
+        await setDoc(doc(db, `${BASE_PATH}/attendance`, docId), payload);
 
-            Object.values(dailyAttendanceMap).forEach(rec => {
-                const s = rec.status === 'E' ? 'L' : rec.status;
-                if (s === 'P') pCount++;
-                else if (s === 'A') aCount++;
-                else if (s === 'L') lCount++;
-            });
+        // Refresh daily cache and invalidate monthly/analytics caches for this class
+        invalidateClassAttendanceCache(year, selectedDailyClass, selectedDailyDate);
+        dailyAttendanceCache.set(`${year}__${normalizeClassLabel(selectedDailyClass)}__${selectedDailyDate}`, payload);
 
-            const totalEnrolled = rows.length;
-            const { isHoliday, reason } = isDateHoliday(selectedDailyDate, selectedDailyClass);
-            const docId = getDailyDocId(year, selectedDailyClass, selectedDailyDate);
+        hasUnsavedChanges = false;
+        const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (saveStatusText) saveStatusText.textContent = `Saved at ${timeNow} by ${currentStaffName}`;
+        if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
 
-            const payload = {
-                id: docId,
-                academicYear: year,
-                classLabel: selectedDailyClass,
-                date: selectedDailyDate,
-                markedByUid: currentUserKey || 'teacher',
-                markedByName: currentStaffName,
-                updatedAt: Date.now(),
-                totalStudents: totalEnrolled,
-                presentCount: pCount,
-                absentCount: aCount,
-                leaveCount: lCount,
-                lateCount: 0,
-                isHoliday: Boolean(isHoliday),
-                holidayReason: reason || '',
-                records: dailyAttendanceMap
-            };
-
-            await setDoc(doc(db, `${BASE_PATH}/attendance`, docId), payload);
-
-            hasUnsavedChanges = false;
-            const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            if (saveStatusText) saveStatusText.textContent = `Saved at ${timeNow} by ${currentStaffName}`;
-            if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
-
-            showToast(`Attendance for Class ${selectedDailyClass} saved successfully!`, 'success');
-        }
+        showToast(`Attendance for Class ${selectedDailyClass} saved successfully!`, 'success');
     } catch (err) {
         console.error('Save attendance error:', err);
-        alert('Failed to save attendance: ' + err.message);
+        showToast('Failed to save attendance: ' + err.message, 'error');
         if (saveStatusText) saveStatusText.textContent = 'Failed to save';
         if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
     } finally {
@@ -1222,13 +1255,13 @@ const saveDailyAttendance = async () => {
 // --- Monthly Register Sheet Logic ---
 const getDaysInMonth = (year, monthIndex) => new Date(year, monthIndex + 1, 0).getDate();
 
-const loadMonthlyRegister = async () => {
+const loadMonthlyRegister = async ({ force = false } = {}) => {
     selectedMonthlyClass = document.getElementById('monthly-class-select')?.value || '';
     const monthInput = document.getElementById('monthly-month-input');
     if (monthInput && !monthInput.value) {
-        monthInput.value = selectedMonthlyMonth || new Date().toISOString().slice(0, 7);
+        monthInput.value = selectedMonthlyMonth || getTodayDateString().slice(0, 7);
     }
-    const monthVal = monthInput?.value || selectedMonthlyMonth || new Date().toISOString().slice(0, 7);
+    const monthVal = monthInput?.value || selectedMonthlyMonth || getTodayDateString().slice(0, 7);
     selectedMonthlyMonth = monthVal;
 
     const table = document.getElementById('monthly-matrix-table');
@@ -1239,43 +1272,32 @@ const loadMonthlyRegister = async () => {
     if (!selectedMonthlyClass || !monthVal) {
         lastCompiledMonthlyRegister = null;
         if (emptyNotice) {
-            emptyNotice.innerHTML = 'Select a class or choose All Classes and month to generate the monthly attendance register sheet.';
+            emptyNotice.innerHTML = 'Select a class and month to generate the monthly attendance register sheet.';
             emptyNotice.classList.remove('hidden');
         }
         if (table) table.classList.add('hidden');
         return;
     }
 
-    const isAllClasses = selectedMonthlyClass === 'all';
     const [yearNum, monthNum] = monthVal.split('-').map(Number);
     const daysInMonth = getDaysInMonth(yearNum, monthNum - 1);
     const startDateStr = `${monthVal}-01`;
     const endDateStr = `${monthVal}-${String(daysInMonth).padStart(2, '0')}`;
     const year = document.getElementById('daily-academic-year')?.value || currentAcademicYear;
-    const allowed = getAllowedClassesForTeacher().slice().sort(compareClassLabelsNatural);
 
     if (emptyNotice) {
-        const loadingLabel = isAllClasses ? 'All Classes' : `Class ${escapeHtml(selectedMonthlyClass)}`;
-        emptyNotice.innerHTML = `<i class="fas fa-spinner fa-spin text-2xl text-emerald-600 mb-2"></i><div class="font-bold text-sm">Compiling Monthly Register for ${loadingLabel}...</div>`;
+        emptyNotice.innerHTML = `<i class="fas fa-spinner fa-spin text-2xl text-emerald-600 mb-2"></i><div class="font-bold text-sm">Compiling Monthly Register for Class ${escapeHtml(selectedMonthlyClass)}...</div>`;
         emptyNotice.classList.remove('hidden');
     }
     if (table) table.classList.add('hidden');
 
     try {
+        const normSelectedCls = normalizeClassLabel(selectedMonthlyClass);
+        const monthCacheKey = `${year}__${normSelectedCls}__${monthVal}`;
         let curMonthDocs = [];
-        let allYearDocsForAllMode = null;
 
-        if (isAllClasses) {
-            const qAll = query(
-                collection(db, `${BASE_PATH}/attendance`),
-                where('academicYear', '==', year)
-            );
-            const snapAll = await getDocs(qAll);
-            allYearDocsForAllMode = snapAll.docs.map(d => d.data());
-            curMonthDocs = allYearDocsForAllMode.filter(d => {
-                const dt = String(d.date || '');
-                return dt >= startDateStr && dt <= endDateStr && allowed.some(ac => normalizeClassLabel(ac) === normalizeClassLabel(d.classLabel));
-            });
+        if (!force && monthlyDocsCache.has(monthCacheKey)) {
+            curMonthDocs = monthlyDocsCache.get(monthCacheKey);
         } else {
             const q = query(
                 collection(db, `${BASE_PATH}/attendance`),
@@ -1285,13 +1307,14 @@ const loadMonthlyRegister = async () => {
             );
             const snap = await getDocs(q);
             curMonthDocs = snap.docs.map(d => d.data());
+            monthlyDocsCache.set(monthCacheKey, curMonthDocs);
         }
         monthlyAttendanceDocs = curMonthDocs;
 
         // Index month documents by normalized class label -> dayNum -> doc
         const monthDayMapByClass = {};
         curMonthDocs.forEach(docData => {
-            const normCls = normalizeClassLabel(docData.classLabel || '');
+            const normCls = normalizeClassLabel(docData.classLabel || selectedMonthlyClass);
             const dayNum = Number(String(docData.date || '').split('-')[2]);
             if (normCls && dayNum) {
                 if (!monthDayMapByClass[normCls]) monthDayMapByClass[normCls] = {};
@@ -1299,25 +1322,7 @@ const loadMonthlyRegister = async () => {
             }
         });
 
-        const targetClasses = isAllClasses ? allowed : [selectedMonthlyClass];
-        const relevantStudents = allStudents.filter(s => {
-            if (s.status === 'alumni' || s.isAlumni || String(s.class || '').toUpperCase() === 'ALUMNI') return false;
-            const stuCls = resolveStudentClassForYear(s, year);
-            if (!stuCls) return false;
-            const matchesYear = (!s.academicYear || s.academicYear === year || Boolean(s.academicYears?.[year]));
-            if (!matchesYear) return false;
-            return targetClasses.some(tc => normalizeClassLabel(tc) === normalizeClassLabel(stuCls));
-        }).map(s => ({
-            ...s,
-            _resolvedYearClass: resolveStudentClassForYear(s, year)
-        }));
-
-        const sortWithinGroup = (arr) => arr.slice().sort((a, b) => {
-            const rollA = Number(a.rollNo || a.roll || 9999);
-            const rollB = Number(b.rollNo || b.roll || 9999);
-            if (rollA !== rollB) return rollA - rollB;
-            return String(a.name || '').localeCompare(String(b.name || ''));
-        });
+        const relevantStudents = await fetchStudentsForClass(selectedMonthlyClass, year, { force });
 
         // Build header day metadata
         const dayMetaList = [];
@@ -1327,8 +1332,7 @@ const loadMonthlyRegister = async () => {
             const dt = new Date(yearNum, monthNum - 1, day);
             const dayOfWeek = dt.getDay();
             const dayLetter = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'][dayOfWeek];
-            const holidayScopeClass = isAllClasses ? '' : selectedMonthlyClass;
-            const { isHoliday: isOff, title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, holidayScopeClass);
+            const { isHoliday: isOff, title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, selectedMonthlyClass);
             const isPreSession = isDateBeforeSessionStart(dateStr, year);
             const isPostSession = isDateAfterSessionEnd(dateStr, year);
             let holidayLabel = '';
@@ -1371,52 +1375,39 @@ const loadMonthlyRegister = async () => {
 
         if (!relevantStudents.length) {
             lastCompiledMonthlyRegister = null;
-            const scopeMsg = isAllClasses ? 'assigned classes' : `Class ${escapeHtml(selectedMonthlyClass)}`;
-            tbody.innerHTML = `<tr><td colspan="${daysInMonth + 10}" class="p-8 text-center text-slate-400 font-bold">No active students found in ${scopeMsg} for session ${escapeHtml(year)}.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="${daysInMonth + 10}" class="p-8 text-center text-slate-400 font-bold">No active students found in Class ${escapeHtml(selectedMonthlyClass)} for session ${escapeHtml(year)}.</td></tr>`;
             if (emptyNotice) emptyNotice.classList.add('hidden');
             if (table) table.classList.remove('hidden');
             return;
         }
 
-        // Prior session cumulative stats
+        // Prior session cumulative stats (reuses cached full-year docs per class)
         const sessionStartDate = getSessionStartDate(year) || `${yearNum}-01-01`;
         const curMonthStartDate = `${monthVal}-01`;
         const prevStatsByStudent = {};
         relevantStudents.forEach(s => {
             prevStatsByStudent[s.id] = { work: 0, pres: 0, abs: 0, leave: 0 };
         });
-        const prevWorkingDaysByClass = {};
+        let prevWorkingDays = 0;
 
         if (sessionStartDate < curMonthStartDate) {
             try {
-                let prevDocs = [];
-                if (isAllClasses && Array.isArray(allYearDocsForAllMode)) {
-                    prevDocs = allYearDocsForAllMode.filter(d => {
-                        const dt = String(d.date || '');
-                        return dt >= sessionStartDate && dt < curMonthStartDate;
-                    });
-                } else {
-                    const prevQuery = query(
-                        collection(db, `${BASE_PATH}/attendance`),
-                        where('classLabel', '==', selectedMonthlyClass),
-                        where('date', '>=', sessionStartDate),
-                        where('date', '<', curMonthStartDate)
-                    );
-                    const prevSnap = await getDocs(prevQuery);
-                    prevDocs = prevSnap.docs.map(d => d.data());
-                }
+                const yearDocs = await fetchYearClassAttendanceDocs(year, selectedMonthlyClass, { force });
+                const prevDocs = yearDocs.filter(d => {
+                    const dt = String(d.date || '');
+                    return dt >= sessionStartDate && dt < curMonthStartDate;
+                });
 
                 prevDocs.forEach(pDoc => {
                     const pDate = pDoc.date || '';
                     const pCls = pDoc.classLabel || selectedMonthlyClass;
-                    const normCls = normalizeClassLabel(pCls);
                     const { isHoliday } = isDateHoliday(pDate, pCls);
                     const isPre = isDateBeforeSessionStart(pDate, year);
                     const isPost = isDateAfterSessionEnd(pDate, year);
                     const isWorking = !pDoc.isHoliday && !isHoliday && !isPre && !isPost;
 
-                    if (isWorking && normCls) {
-                        prevWorkingDaysByClass[normCls] = (prevWorkingDaysByClass[normCls] || 0) + 1;
+                    if (isWorking) {
+                        prevWorkingDays++;
                     }
 
                     const records = pDoc.records || {};
@@ -1431,195 +1422,169 @@ const loadMonthlyRegister = async () => {
                 });
 
                 relevantStudents.forEach(s => {
-                    const normCls = normalizeClassLabel(s._resolvedYearClass);
-                    prevStatsByStudent[s.id].work = prevWorkingDaysByClass[normCls] || 0;
+                    prevStatsByStudent[s.id].work = prevWorkingDays;
                 });
             } catch (prevErr) {
                 console.warn('Could not query prior session attendance records:', prevErr);
             }
         }
 
-        // Group students by class in natural class order
-        const groupedByClassMap = {};
-        relevantStudents.forEach(s => {
-            const cls = s._resolvedYearClass;
-            if (!groupedByClassMap[cls]) groupedByClassMap[cls] = [];
-            groupedByClassMap[cls].push(s);
-        });
-        const sortedClassNames = Object.keys(groupedByClassMap).sort(compareClassLabelsNatural);
+        const boys = relevantStudents.filter(s => !isFemaleGender(s.gender)).sort(compareByAdmNoAsc);
+        const girls = relevantStudents.filter(s => isFemaleGender(s.gender)).sort(compareByAdmNoAsc);
+        const orderedClsStudents = [...boys, ...girls];
+        const monthDayMap = monthDayMapByClass[normSelectedCls] || {};
 
-        const compiledClassGroups = [];
-        const allBodyHtmlChunks = [];
+        let markedWorkingDaysCount = 0;
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = `${monthVal}-${String(day).padStart(2, '0')}`;
+            const dayDoc = monthDayMap[day];
+            const isPreSession = isDateBeforeSessionStart(dateStr, year);
+            const isPostSession = isDateAfterSessionEnd(dateStr, year);
+            const { isHoliday } = isDateHoliday(dateStr, selectedMonthlyClass);
+            if (dayDoc && !dayDoc.isHoliday && !isHoliday && !isPreSession && !isPostSession) {
+                markedWorkingDaysCount++;
+            }
+        }
 
-        sortedClassNames.forEach(clsName => {
-            const normCls = normalizeClassLabel(clsName);
-            const clsStudents = groupedByClassMap[clsName];
-            const boys = sortWithinGroup(clsStudents.filter(s => !isFemaleGender(s.gender)));
-            const girls = sortWithinGroup(clsStudents.filter(s => isFemaleGender(s.gender)));
-            const orderedClsStudents = isAllClasses ? [...boys, ...girls] : sortWithinGroup(clsStudents);
-            const monthDayMap = monthDayMapByClass[normCls] || {};
+        const buildStudentComputed = (student) => {
+            let presentCount = 0;
+            let absentCount = 0;
+            let leaveCount = 0;
+            const dayTokens = [];
 
-            let markedWorkingDaysCount = 0;
             for (let day = 1; day <= daysInMonth; day++) {
                 const dateStr = `${monthVal}-${String(day).padStart(2, '0')}`;
-                const dayDoc = monthDayMap[day];
+                const { isHoliday, title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, selectedMonthlyClass);
                 const isPreSession = isDateBeforeSessionStart(dateStr, year);
                 const isPostSession = isDateAfterSessionEnd(dateStr, year);
-                const { isHoliday } = isDateHoliday(dateStr, clsName);
-                if (dayDoc && !dayDoc.isHoliday && !isHoliday && !isPreSession && !isPostSession) {
-                    markedWorkingDaysCount++;
+                const dayDoc = monthDayMap[day];
+                const studentRecord = dayDoc?.records?.[student.id];
+                const rawStatus = studentRecord?.status;
+                const status = rawStatus === 'E' ? 'L' : rawStatus;
+
+                if (isHoliday) {
+                    dayTokens.push({ type: 'H', label: 'H', title: holidayTitle || (isWeeklyOff ? 'Weekly Off' : 'Holiday') });
+                } else if (isPreSession || isPostSession) {
+                    dayTokens.push({ type: 'DIM', label: '-', title: isPreSession ? 'Pre-session' : 'Post-session' });
+                } else if (!dayDoc) {
+                    dayTokens.push({ type: 'NONE', label: '-', title: '' });
+                } else if (status === 'P') {
+                    presentCount++;
+                    dayTokens.push({ type: 'P', label: 'P', title: 'Present' });
+                } else if (status === 'A') {
+                    absentCount++;
+                    dayTokens.push({ type: 'A', label: 'A', title: 'Absent' });
+                } else if (status === 'L') {
+                    leaveCount++;
+                    dayTokens.push({ type: 'L', label: 'L', title: 'Leave' });
+                } else {
+                    dayTokens.push({ type: 'NONE', label: '-', title: '' });
                 }
             }
 
-            if (isAllClasses) {
-                allBodyHtmlChunks.push(`
-                    <tr class="bg-slate-100 border-y border-slate-300">
-                        <td colspan="${daysInMonth + 10}" class="text-left px-3 py-2 font-black text-xs text-slate-900 uppercase tracking-wider">
-                            Class: ${escapeHtml(clsName)} (${orderedClsStudents.length} Students — Boys: ${boys.length}, Girls: ${girls.length})
-                        </td>
-                    </tr>
-                `);
-            }
+            const curWork = markedWorkingDaysCount > 0 ? markedWorkingDaysCount : (presentCount + absentCount + leaveCount);
+            const prevStats = prevStatsByStudent[student.id] || { work: 0, pres: 0, abs: 0, leave: 0 };
+            const prevWork = prevStats.work || 0;
+            const prevPres = prevStats.pres || 0;
+            const prevLeave = prevStats.leave || 0;
+            const totalWork = prevWork + curWork;
+            const totalPres = prevPres + presentCount;
+            const totalLeave = prevLeave + leaveCount;
+            const totalPercentage = totalWork > 0 ? Math.round((totalPres / totalWork) * 100) : 0;
 
-            const buildStudentComputed = (student) => {
-                let presentCount = 0;
-                let absentCount = 0;
-                let leaveCount = 0;
-                const dayTokens = [];
-
-                for (let day = 1; day <= daysInMonth; day++) {
-                    const dateStr = `${monthVal}-${String(day).padStart(2, '0')}`;
-                    const { isHoliday, title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, clsName);
-                    const isPreSession = isDateBeforeSessionStart(dateStr, year);
-                    const isPostSession = isDateAfterSessionEnd(dateStr, year);
-                    const dayDoc = monthDayMap[day];
-                    const studentRecord = dayDoc?.records?.[student.id];
-                    const rawStatus = studentRecord?.status;
-                    const status = rawStatus === 'E' ? 'L' : rawStatus;
-
-                    if (isHoliday) {
-                        dayTokens.push({ type: 'H', label: 'H', title: holidayTitle || (isWeeklyOff ? 'Weekly Off' : 'Holiday') });
-                    } else if (isPreSession || isPostSession) {
-                        dayTokens.push({ type: 'DIM', label: '-', title: isPreSession ? 'Pre-session' : 'Post-session' });
-                    } else if (!dayDoc) {
-                        dayTokens.push({ type: 'NONE', label: '-', title: '' });
-                    } else if (status === 'P') {
-                        presentCount++;
-                        dayTokens.push({ type: 'P', label: 'P', title: 'Present' });
-                    } else if (status === 'A') {
-                        absentCount++;
-                        dayTokens.push({ type: 'A', label: 'A', title: 'Absent' });
-                    } else if (status === 'L') {
-                        leaveCount++;
-                        dayTokens.push({ type: 'L', label: 'L', title: 'Leave' });
-                    } else {
-                        dayTokens.push({ type: 'NONE', label: '-', title: '' });
-                    }
-                }
-
-                const curWork = markedWorkingDaysCount > 0 ? markedWorkingDaysCount : (presentCount + absentCount + leaveCount);
-                const prevStats = prevStatsByStudent[student.id] || { work: 0, pres: 0, abs: 0, leave: 0 };
-                const prevWork = prevStats.work || 0;
-                const prevPres = prevStats.pres || 0;
-                const prevLeave = prevStats.leave || 0;
-                const totalWork = prevWork + curWork;
-                const totalPres = prevPres + presentCount;
-                const totalLeave = prevLeave + leaveCount;
-                const totalPercentage = totalWork > 0 ? Math.round((totalPres / totalWork) * 100) : 0;
-
-                return {
-                    student,
-                    dayTokens,
-                    curWork,
-                    curPres: presentCount,
-                    curAbs: absentCount,
-                    prevWork,
-                    prevPres,
-                    totalWork,
-                    totalPres,
-                    totalLeave,
-                    totalPercentage
-                };
+            return {
+                student,
+                dayTokens,
+                curWork,
+                curPres: presentCount,
+                curAbs: absentCount,
+                prevWork,
+                prevPres,
+                totalWork,
+                totalPres,
+                totalLeave,
+                totalPercentage
             };
+        };
 
-            const computedBoys = boys.map(buildStudentComputed);
-            const computedGirls = girls.map(buildStudentComputed);
-            const computedById = new Map([...computedBoys, ...computedGirls].map(c => [c.student.id, c]));
+        const computedBoys = boys.map(buildStudentComputed);
+        const computedGirls = girls.map(buildStudentComputed);
+        const computedById = new Map([...computedBoys, ...computedGirls].map(c => [c.student.id, c]));
 
-            compiledClassGroups.push({
-                classLabel: clsName,
-                boys: computedBoys,
-                girls: computedGirls
-            });
+        const compiledClassGroups = [{
+            classLabel: selectedMonthlyClass,
+            boys: computedBoys,
+            girls: computedGirls
+        }];
 
-            orderedClsStudents.forEach((student, idx) => {
-                const comp = computedById.get(student.id);
-                let dayCellsHtml = '';
+        const allBodyHtmlChunks = [];
+        orderedClsStudents.forEach((student, idx) => {
+            const comp = computedById.get(student.id);
+            let dayCellsHtml = '';
 
-                for (let day = 1; day <= daysInMonth; day++) {
-                    const tok = comp.dayTokens[day - 1];
-                    if (tok.type === 'H') {
-                        if (idx === 0) {
-                            const dateStr = `${monthVal}-${String(day).padStart(2, '0')}`;
-                            const { title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, clsName);
-                            let hLabel = 'HOLIDAY';
-                            if (isWeeklyOff) {
-                                hLabel = holidayTitle ? `HOLIDAY - ${holidayTitle.toUpperCase()}` : 'HOLIDAY - WEEKLY OFF';
-                            } else if (holidayTitle) {
-                                const trimmedTitle = holidayTitle.trim();
-                                hLabel = trimmedTitle.toLowerCase().includes('holiday')
-                                    ? trimmedTitle.toUpperCase()
-                                    : `HOLIDAY - ${trimmedTitle.toUpperCase()}`;
-                            } else {
-                                hLabel = 'INSTITUTIONAL HOLIDAY';
-                            }
-                            dayCellsHtml += `
-                                <td rowspan="${orderedClsStudents.length}" class="holiday-merged-cell bg-amber-50/90 border-x border-amber-200 text-amber-900 text-center font-black p-0 select-none align-middle" style="writing-mode: vertical-rl; transform: rotate(180deg); min-width: 32px; max-width: 36px; letter-spacing: 0.12em; font-size: 10px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(hLabel)}">
-                                    <span class="inline-block py-2 uppercase font-black tracking-widest">${escapeHtml(hLabel)}</span>
-                                </td>
-                            `;
+            for (let day = 1; day <= daysInMonth; day++) {
+                const tok = comp.dayTokens[day - 1];
+                if (tok.type === 'H') {
+                    if (idx === 0) {
+                        const dateStr = `${monthVal}-${String(day).padStart(2, '0')}`;
+                        const { title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, selectedMonthlyClass);
+                        let hLabel = 'HOLIDAY';
+                        if (isWeeklyOff) {
+                            hLabel = holidayTitle ? `HOLIDAY - ${holidayTitle.toUpperCase()}` : 'HOLIDAY - WEEKLY OFF';
+                        } else if (holidayTitle) {
+                            const trimmedTitle = holidayTitle.trim();
+                            hLabel = trimmedTitle.toLowerCase().includes('holiday')
+                                ? trimmedTitle.toUpperCase()
+                                : `HOLIDAY - ${trimmedTitle.toUpperCase()}`;
+                        } else {
+                            hLabel = 'INSTITUTIONAL HOLIDAY';
                         }
-                        continue;
+                        dayCellsHtml += `
+                            <td rowspan="${orderedClsStudents.length}" class="holiday-merged-cell bg-amber-50/90 border-x border-amber-200 text-amber-900 text-center font-black p-0 select-none align-middle" style="writing-mode: vertical-rl; transform: rotate(180deg); min-width: 32px; max-width: 36px; letter-spacing: 0.12em; font-size: 10px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(hLabel)}">
+                                <span class="inline-block py-2 uppercase font-black tracking-widest">${escapeHtml(hLabel)}</span>
+                            </td>
+                        `;
                     }
-
-                    let cellClass = 'text-slate-300 font-bold';
-                    let cellContent = '•';
-                    if (tok.type === 'DIM') {
-                        cellClass = 'bg-slate-50 text-slate-300 font-bold';
-                        cellContent = '·';
-                    } else if (tok.type === 'P') {
-                        cellClass = 'bg-emerald-100/60 text-emerald-800 font-black';
-                        cellContent = 'P';
-                    } else if (tok.type === 'A') {
-                        cellClass = 'bg-rose-100/70 text-rose-800 font-black';
-                        cellContent = 'A';
-                    } else if (tok.type === 'L') {
-                        cellClass = 'bg-amber-100/80 text-amber-900 font-black';
-                        cellContent = 'L';
-                    }
-                    dayCellsHtml += `<td class="${cellClass} text-center px-1 py-1.5 text-[11px]" title="${escapeHtml(tok.title)}">${cellContent}</td>`;
+                    continue;
                 }
 
-                const pctBadgeColor = comp.totalPercentage >= 85
-                    ? 'text-emerald-700 bg-emerald-50'
-                    : (comp.totalPercentage >= 75 ? 'text-amber-700 bg-amber-50' : 'text-rose-700 bg-rose-50 font-black');
+                let cellClass = 'text-slate-300 font-bold';
+                let cellContent = '•';
+                if (tok.type === 'DIM') {
+                    cellClass = 'bg-slate-50 text-slate-300 font-bold';
+                    cellContent = '·';
+                } else if (tok.type === 'P') {
+                    cellClass = 'bg-emerald-100/60 text-emerald-800 font-black';
+                    cellContent = 'P';
+                } else if (tok.type === 'A') {
+                    cellClass = 'bg-rose-100/70 text-rose-800 font-black';
+                    cellContent = 'A';
+                } else if (tok.type === 'L') {
+                    cellClass = 'bg-amber-100/80 text-amber-900 font-black';
+                    cellContent = 'L';
+                }
+                dayCellsHtml += `<td class="${cellClass} text-center px-1 py-1.5 text-[11px]" title="${escapeHtml(tok.title)}">${cellContent}</td>`;
+            }
 
-                allBodyHtmlChunks.push(`
-                    <tr class="hover:bg-slate-50/70">
-                        <td class="sticky-col-1 font-bold text-slate-400 text-center">${idx + 1}</td>
-                        <td class="sticky-col-2 font-mono font-bold text-slate-600 text-center">${escapeHtml(student.adm || student.admNo || '-')}</td>
-                        <td class="sticky-col-3 font-extrabold text-slate-900 text-left truncate max-w-[130px] sm:max-w-none text-xs" title="${escapeHtml(student.name || '')}">${escapeHtml(student.name || '--')}</td>
-                        ${dayCellsHtml}
-                        <td class="font-bold text-slate-600 text-center">${comp.curWork}</td>
-                        <td class="font-black text-emerald-600 text-center">${comp.curPres}</td>
-                        <td class="font-black text-rose-600 text-center">${comp.curAbs}</td>
-                        <td class="font-bold text-indigo-800 text-center bg-indigo-50/40">${comp.prevWork} / ${comp.prevPres}</td>
-                        <td class="font-black text-indigo-950 text-center bg-indigo-50/80">${comp.totalWork} / ${comp.totalPres}</td>
-                        <td class="font-black text-amber-700 text-center">${comp.totalLeave}</td>
-                        <td class="text-center"><span class="px-1.5 py-0.5 rounded text-xs ${pctBadgeColor}">${comp.totalPercentage}%</span></td>
-                    </tr>
-                `);
-            });
+            const pctBadgeColor = comp.totalPercentage >= 85
+                ? 'text-emerald-700 bg-emerald-50'
+                : (comp.totalPercentage >= 75 ? 'text-amber-700 bg-amber-50' : 'text-rose-700 bg-rose-50 font-black');
+
+            allBodyHtmlChunks.push(`
+                <tr class="hover:bg-slate-50/70">
+                    <td class="sticky-col-1 font-bold text-slate-400 text-center">${idx + 1}</td>
+                    <td class="sticky-col-2 font-mono font-bold text-slate-600 text-center">${escapeHtml(student.adm || student.admNo || '-')}</td>
+                    <td class="sticky-col-3 font-extrabold text-slate-900 text-left truncate max-w-[130px] sm:max-w-none text-xs" title="${escapeHtml(student.name || '')}">${escapeHtml(student.name || '--')}</td>
+                    ${dayCellsHtml}
+                    <td class="font-bold text-slate-600 text-center">${comp.curWork}</td>
+                    <td class="font-black text-emerald-600 text-center">${comp.curPres}</td>
+                    <td class="font-black text-rose-600 text-center">${comp.curAbs}</td>
+                    <td class="font-bold text-indigo-800 text-center bg-indigo-50/40">${comp.prevWork} / ${comp.prevPres}</td>
+                    <td class="font-black text-indigo-950 text-center bg-indigo-50/80">${comp.totalWork} / ${comp.totalPres}</td>
+                    <td class="font-black text-amber-700 text-center">${comp.totalLeave}</td>
+                    <td class="text-center"><span class="px-1.5 py-0.5 rounded text-xs ${pctBadgeColor}">${comp.totalPercentage}%</span></td>
+                </tr>
+            `);
         });
 
         tbody.innerHTML = allBodyHtmlChunks.join('');
@@ -1627,7 +1592,7 @@ const loadMonthlyRegister = async () => {
             year,
             monthVal,
             daysInMonth,
-            isAllClasses,
+            classLabel: selectedMonthlyClass,
             dayMetaList,
             classGroups: compiledClassGroups,
             totalStudents: relevantStudents.length
@@ -1644,31 +1609,31 @@ const loadMonthlyRegister = async () => {
 
 // --- Export Monthly Register to Excel (.xlsx) ---
 const exportMonthlyRegisterToExcel = () => {
-    if (!window.XLSX) return alert('Excel export engine is loading. Please try again.');
+    if (!window.XLSX) return showToast('Excel export engine is loading. Please try again.', 'info');
     const table = document.getElementById('monthly-matrix-table');
-    if (!table || table.classList.contains('hidden')) return alert('Please load the monthly register first.');
+    if (!table || table.classList.contains('hidden')) return showToast('Please load the monthly register first.', 'info');
 
     try {
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.table_to_sheet(table);
-        const safeCls = selectedMonthlyClass === 'all' ? 'All_Classes' : String(selectedMonthlyClass).replace(/[^\w-]/g, '_');
+        const safeCls = String(selectedMonthlyClass || 'Class').replace(/[^\w-]/g, '_');
         XLSX.utils.book_append_sheet(wb, ws, `Attendance_${safeCls}`.slice(0, 31));
         XLSX.writeFile(wb, `Attendance_Register_${safeCls}_${selectedMonthlyMonth}.xlsx`);
         showToast('Monthly register exported to Excel.', 'success');
     } catch (err) {
         console.error('Excel export failed:', err);
-        alert('Failed to export Excel file: ' + err.message);
+        showToast('Failed to export Excel file: ' + err.message, 'error');
     }
 };
 
-// --- Export Monthly Register to PDF (Class-wise Boys then Girls) ---
-const exportMonthlyRegisterToPDF = () => {
+// --- Export Monthly Register to PDF (>=12pt Half-Month Split Layout) ---
+const exportMonthlyRegisterToPDF = (options = {}) => {
     if (!window.jspdf?.jsPDF) {
         showToast('PDF generator is loading, please try again.', 'info');
         return;
     }
     if (!selectedMonthlyClass) {
-        showToast('Please select a class or choose All Classes first.', 'info');
+        showToast('Please select a class first.', 'info');
         return;
     }
     if (!lastCompiledMonthlyRegister || !lastCompiledMonthlyRegister.classGroups?.length) {
@@ -1676,247 +1641,363 @@ const exportMonthlyRegisterToPDF = () => {
         return;
     }
 
-    const { year, monthVal, daysInMonth, isAllClasses, classGroups, totalStudents } = lastCompiledMonthlyRegister;
+    const {
+        orientation = 'landscape',
+        paperSize = 'a4',
+        colorMode = 'color'
+    } = options || {};
+    const isBW = colorMode === 'bw';
+    const isPortrait = orientation === 'portrait';
+
+    const { year, monthVal, daysInMonth, classGroups, totalStudents } = lastCompiledMonthlyRegister;
     const [yNum, mNum] = monthVal.split('-').map(Number);
     const monthTitle = `${MONTH_NAMES[(mNum || 1) - 1] || monthVal} ${yNum || ''}`.trim();
 
     const { jsPDF } = window.jspdf;
-    const docPdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const docPdf = new jsPDF({ orientation, unit: 'pt', format: paperSize || 'a4' });
     const pageWidth = docPdf.internal.pageSize.getWidth();
     const pageHeight = docPdf.internal.pageSize.getHeight();
-    const marginH = 16;
+    const marginH = 14;
 
     const instName = institutionConfig.appName || document.getElementById('header-title')?.textContent?.trim() || 'Institution Name';
     const place = institutionConfig.place || document.getElementById('header-place')?.textContent?.trim() || '';
     const regNo = institutionConfig.regNo || document.getElementById('header-regno')?.textContent?.trim() || '';
 
-    // 1. Header
+    // 1. Document Header
     docPdf.setFont('helvetica', 'bold');
-    docPdf.setFontSize(14);
+    docPdf.setFontSize(15);
     docPdf.setTextColor(15, 23, 42);
     docPdf.text(instName.toUpperCase(), pageWidth / 2, 26, { align: 'center' });
 
     docPdf.setFont('helvetica', 'normal');
-    docPdf.setFontSize(8.5);
-    docPdf.setTextColor(100, 116, 139);
+    docPdf.setFontSize(9.5);
+    docPdf.setTextColor(71, 85, 105);
     const subtitle = [place, regNo ? `Reg No: ${regNo}` : '', `Academic Year: ${year}`].filter(Boolean).join(' • ');
-    docPdf.text(subtitle, pageWidth / 2, 39, { align: 'center' });
+    docPdf.text(subtitle, pageWidth / 2, 40, { align: 'center' });
 
     docPdf.setFont('helvetica', 'bold');
-    docPdf.setFontSize(10.5);
-    docPdf.setTextColor(5, 150, 105);
-    docPdf.text('MONTHLY ATTENDANCE REGISTER', marginH, 55);
+    docPdf.setFontSize(11.5);
+    docPdf.setTextColor(isBW ? 15 : 5, isBW ? 23 : 150, isBW ? 42 : 105);
+    docPdf.text('MONTHLY ATTENDANCE REGISTER', marginH, 58);
 
     docPdf.setFont('helvetica', 'normal');
-    docPdf.setFontSize(8);
+    docPdf.setFontSize(9);
     docPdf.setTextColor(71, 85, 105);
-    const classScopeText = isAllClasses ? 'All Classes' : `Class: ${selectedMonthlyClass}`;
+    const classScopeText = `Class: ${selectedMonthlyClass}`;
     docPdf.text(
-        `${classScopeText} | Month: ${monthTitle} | Total Students: ${totalStudents} | Generated: ${new Date().toLocaleString('en-GB')}`,
+        `${classScopeText} | Month: ${monthTitle} | Total Students: ${totalStudents}`,
         pageWidth - marginH,
-        55,
+        58,
         { align: 'right' }
     );
 
-    // Dynamic Column Width Calculation to strictly fit A4 Landscape (841.89 - 32 = 809.89pt)
-    const usableWidth = pageWidth - (marginH * 2);
-    const colNo = 18;
-    const colAdm = 32;
-    const targetNameWidth = 78;
-    const minNameWidth = 60;
-    const colSummary = { w: 20, p: 19, a: 19, prev: 28, tot: 28, l: 19, pct: 23 };
-    const fixedOthers = colNo + colAdm + Object.values(colSummary).reduce((s, v) => s + v, 0);
-    const dayBudget = Math.min(usableWidth - fixedOthers - minNameWidth - 4, usableWidth - fixedOthers - targetNameWidth - 2);
-    const dayColWidth = Math.floor((dayBudget / daysInMonth) * 10) / 10;
+    const splitDay = Math.min(15, daysInMonth);
+    const part1Days = Array.from({ length: splitDay }, (_, i) => i + 1);
+    const part2Days = daysInMonth > splitDay
+        ? Array.from({ length: daysInMonth - splitDay }, (_, i) => splitDay + 1 + i)
+        : [];
 
-    const buildHead = (genderTitle) => [[
-        'NO',
-        'ADM',
-        genderTitle,
-        ...Array.from({ length: daysInMonth }, (_, i) => String(i + 1)),
-        'W',
-        'P',
-        'A',
-        'PRV',
-        'TOT',
-        'L',
-        '%'
-    ]];
-
-    const buildRows = (items = []) => items.map((comp, idx) => {
-        const stu = comp.student;
-        const dayVals = comp.dayTokens.map(t => t.label || '-');
-        return [
-            idx + 1,
-            stu.adm || stu.admNo || '-',
-            stu.name || '--',
-            ...dayVals,
-            comp.curWork,
-            comp.curPres,
-            comp.curAbs,
-            `${comp.prevWork}/${comp.prevPres}`,
-            `${comp.totalWork}/${comp.totalPres}`,
-            comp.totalLeave,
-            `${comp.totalPercentage}%`
-        ];
-    });
-
-    const columnStyles = {
-        0: { cellWidth: colNo, halign: 'center' },
-        1: { cellWidth: colAdm, halign: 'center', fontStyle: 'bold' },
-        2: { cellWidth: 'auto', minCellWidth: minNameWidth, halign: 'left', fontStyle: 'bold' }
-    };
-    for (let dIdx = 0; dIdx < daysInMonth; dIdx++) {
-        columnStyles[3 + dIdx] = { cellWidth: dayColWidth, halign: 'center' };
-    }
-    const baseSummaryIdx = 3 + daysInMonth;
-    columnStyles[baseSummaryIdx] = { cellWidth: colSummary.w, halign: 'center', fontStyle: 'bold' };
-    columnStyles[baseSummaryIdx + 1] = { cellWidth: colSummary.p, halign: 'center', fontStyle: 'bold' };
-    columnStyles[baseSummaryIdx + 2] = { cellWidth: colSummary.a, halign: 'center', fontStyle: 'bold' };
-    columnStyles[baseSummaryIdx + 3] = { cellWidth: colSummary.prev, halign: 'center' };
-    columnStyles[baseSummaryIdx + 4] = { cellWidth: colSummary.tot, halign: 'center', fontStyle: 'bold' };
-    columnStyles[baseSummaryIdx + 5] = { cellWidth: colSummary.l, halign: 'center' };
-    columnStyles[baseSummaryIdx + 6] = { cellWidth: colSummary.pct, halign: 'center', fontStyle: 'bold' };
-
-    const sharedDidParseCell = (data) => {
+    const makeCellParser = (dayStartCol, dayCount) => (data) => {
         if (data.section !== 'body') return;
         const colIdx = data.column.index;
-        if (colIdx >= 3 && colIdx < 3 + daysInMonth) {
+        if (colIdx >= dayStartCol && colIdx < dayStartCol + dayCount) {
             const val = String(data.cell.raw || '').trim();
-            if (val === 'P') {
-                data.cell.styles.textColor = [5, 150, 105];
-                data.cell.styles.fillColor = [236, 253, 245];
+            if (val === 'P' || val === 'A' || val === 'L' || val === 'H') {
                 data.cell.styles.fontStyle = 'bold';
-            } else if (val === 'A') {
-                data.cell.styles.textColor = [220, 38, 38];
-                data.cell.styles.fillColor = [254, 242, 242];
-                data.cell.styles.fontStyle = 'bold';
-            } else if (val === 'L') {
-                data.cell.styles.textColor = [217, 119, 6];
-                data.cell.styles.fillColor = [255, 251, 235];
-                data.cell.styles.fontStyle = 'bold';
-            } else if (val === 'H') {
-                data.cell.styles.textColor = [146, 64, 14];
-                data.cell.styles.fillColor = [254, 243, 199];
-                data.cell.styles.fontStyle = 'bold';
+                if (isBW) {
+                    data.cell.styles.textColor = [15, 23, 42];
+                    data.cell.styles.fillColor = false;
+                } else if (val === 'P') {
+                    data.cell.styles.textColor = [5, 150, 105];
+                    data.cell.styles.fillColor = [236, 253, 245];
+                } else if (val === 'A') {
+                    data.cell.styles.textColor = [220, 38, 38];
+                    data.cell.styles.fillColor = [254, 242, 242];
+                } else if (val === 'L') {
+                    data.cell.styles.textColor = [217, 119, 6];
+                    data.cell.styles.fillColor = [255, 251, 235];
+                } else if (val === 'H') {
+                    data.cell.styles.textColor = [146, 64, 14];
+                    data.cell.styles.fillColor = [254, 243, 199];
+                }
             }
         }
     };
 
-    let currentY = 64;
+    const baseTableTheme = {
+        theme: 'grid',
+        styles: {
+            fontSize: 12,
+            cellPadding: { top: 2.5, bottom: 2.5, left: 1.2, right: 1.2 },
+            lineColor: isBW ? [148, 163, 184] : [203, 213, 225],
+            lineWidth: 0.45,
+            valign: 'middle',
+            overflow: 'linebreak',
+            textColor: [15, 23, 42]
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] }
+    };
+
+    const getHeaderFill = (genderKey) => {
+        if (isBW) return [51, 65, 85];
+        return genderKey === 'GIRLS' ? [16, 185, 129] : [37, 99, 235];
+    };
+
+    const renderGenderBlock = (items, genderKey, startY) => {
+        if (!items.length) return startY;
+        let curY = startY;
+        const headerFill = getHeaderFill(genderKey);
+
+        // Helper for Part 1 (Days 1-15)
+        const p1DayW = isPortrait ? 22.5 : 34;
+        const p1ColStyles = {
+            0: { cellWidth: isPortrait ? 24 : 28, halign: 'center' },
+            1: { cellWidth: isPortrait ? 44 : 58, halign: 'center', fontStyle: 'bold' },
+            2: { cellWidth: 'auto', minCellWidth: isPortrait ? 130 : 160, halign: 'left', fontStyle: 'bold' }
+        };
+        part1Days.forEach((_, i) => {
+            p1ColStyles[3 + i] = { cellWidth: p1DayW, halign: 'center' };
+        });
+
+        const p1Head = [['NO', 'ADM', `STUDENT NAME (${genderKey} • Days 1-${splitDay})`, ...part1Days.map(String)]];
+        const p1Body = items.map((comp, idx) => [
+            idx + 1,
+            comp.student.adm || comp.student.admNo || '-',
+            comp.student.name || '--',
+            ...part1Days.map(d => comp.dayTokens[d - 1]?.label || '-')
+        ]);
+
+        if (curY > pageHeight - 95) {
+            docPdf.addPage();
+            curY = 28;
+        }
+
+        docPdf.autoTable({
+            startY: curY,
+            margin: { left: marginH, right: marginH },
+            tableWidth: 'auto',
+            head: p1Head,
+            body: p1Body,
+            ...baseTableTheme,
+            headStyles: {
+                fillColor: headerFill,
+                textColor: [255, 255, 255],
+                fontStyle: 'bold',
+                halign: 'center',
+                fontSize: 12
+            },
+            columnStyles: p1ColStyles,
+            didParseCell: makeCellParser(3, part1Days.length)
+        });
+        curY = docPdf.lastAutoTable.finalY + 12;
+
+        if (!isPortrait) {
+            // Landscape Part 2: Days 16-End + Summary Columns
+            if (curY > pageHeight - 95) {
+                docPdf.addPage();
+                curY = 28;
+            }
+            const p2ColStyles = {
+                0: { cellWidth: 25, halign: 'center' },
+                1: { cellWidth: 45, halign: 'center', fontStyle: 'bold' },
+                2: { cellWidth: 'auto', minCellWidth: 125, halign: 'left', fontStyle: 'bold' }
+            };
+            part2Days.forEach((_, i) => {
+                p2ColStyles[3 + i] = { cellWidth: 23.5, halign: 'center' };
+            });
+            const sumStart = 3 + part2Days.length;
+            p2ColStyles[sumStart] = { cellWidth: 26, halign: 'center', fontStyle: 'bold' };
+            p2ColStyles[sumStart + 1] = { cellWidth: 26, halign: 'center', fontStyle: 'bold' };
+            p2ColStyles[sumStart + 2] = { cellWidth: 26, halign: 'center', fontStyle: 'bold' };
+            p2ColStyles[sumStart + 3] = { cellWidth: 44, halign: 'center' };
+            p2ColStyles[sumStart + 4] = { cellWidth: 46, halign: 'center', fontStyle: 'bold' };
+            p2ColStyles[sumStart + 5] = { cellWidth: 25, halign: 'center' };
+            p2ColStyles[sumStart + 6] = { cellWidth: 38, halign: 'center', fontStyle: 'bold' };
+
+            const p2Label = part2Days.length
+                ? `STUDENT NAME (${genderKey} • Days ${splitDay + 1}-${daysInMonth} & Summary)`
+                : `STUDENT NAME (${genderKey} • Summary)`;
+            const p2Head = [['NO', 'ADM', p2Label, ...part2Days.map(String), 'W', 'P', 'A', 'PRV', 'TOT', 'L', '%']];
+            const p2Body = items.map((comp, idx) => [
+                idx + 1,
+                comp.student.adm || comp.student.admNo || '-',
+                comp.student.name || '--',
+                ...part2Days.map(d => comp.dayTokens[d - 1]?.label || '-'),
+                comp.curWork,
+                comp.curPres,
+                comp.curAbs,
+                `${comp.prevWork}/${comp.prevPres}`,
+                `${comp.totalWork}/${comp.totalPres}`,
+                comp.totalLeave,
+                `${comp.totalPercentage}%`
+            ]);
+
+            docPdf.autoTable({
+                startY: curY,
+                margin: { left: marginH, right: marginH },
+                tableWidth: 'auto',
+                head: p2Head,
+                body: p2Body,
+                ...baseTableTheme,
+                headStyles: {
+                    fillColor: headerFill,
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                    fontSize: 12
+                },
+                columnStyles: p2ColStyles,
+                didParseCell: makeCellParser(3, part2Days.length)
+            });
+            curY = docPdf.lastAutoTable.finalY + 14;
+        } else {
+            // Portrait Part 2: Days 16-End (if month > 15 days)
+            if (part2Days.length > 0) {
+                if (curY > pageHeight - 95) {
+                    docPdf.addPage();
+                    curY = 28;
+                }
+                const p2ColStyles = {
+                    0: { cellWidth: 24, halign: 'center' },
+                    1: { cellWidth: 44, halign: 'center', fontStyle: 'bold' },
+                    2: { cellWidth: 'auto', minCellWidth: 125, halign: 'left', fontStyle: 'bold' }
+                };
+                part2Days.forEach((_, i) => {
+                    p2ColStyles[3 + i] = { cellWidth: 22, halign: 'center' };
+                });
+
+                const p2Head = [['NO', 'ADM', `STUDENT NAME (${genderKey} • Days ${splitDay + 1}-${daysInMonth})`, ...part2Days.map(String)]];
+                const p2Body = items.map((comp, idx) => [
+                    idx + 1,
+                    comp.student.adm || comp.student.admNo || '-',
+                    comp.student.name || '--',
+                    ...part2Days.map(d => comp.dayTokens[d - 1]?.label || '-')
+                ]);
+
+                docPdf.autoTable({
+                    startY: curY,
+                    margin: { left: marginH, right: marginH },
+                    tableWidth: 'auto',
+                    head: p2Head,
+                    body: p2Body,
+                    ...baseTableTheme,
+                    headStyles: {
+                        fillColor: headerFill,
+                        textColor: [255, 255, 255],
+                        fontStyle: 'bold',
+                        halign: 'center',
+                        fontSize: 12
+                    },
+                    columnStyles: p2ColStyles,
+                    didParseCell: makeCellParser(3, part2Days.length)
+                });
+                curY = docPdf.lastAutoTable.finalY + 12;
+            }
+
+            // Portrait Part 3: Dedicated Summary Table
+            if (curY > pageHeight - 95) {
+                docPdf.addPage();
+                curY = 28;
+            }
+            const sumColStyles = {
+                0: { cellWidth: 26, halign: 'center' },
+                1: { cellWidth: 48, halign: 'center', fontStyle: 'bold' },
+                2: { cellWidth: 'auto', minCellWidth: 140, halign: 'left', fontStyle: 'bold' },
+                3: { cellWidth: 36, halign: 'center', fontStyle: 'bold' },
+                4: { cellWidth: 36, halign: 'center', fontStyle: 'bold' },
+                5: { cellWidth: 36, halign: 'center', fontStyle: 'bold' },
+                6: { cellWidth: 58, halign: 'center' },
+                7: { cellWidth: 62, halign: 'center', fontStyle: 'bold' },
+                8: { cellWidth: 36, halign: 'center' },
+                9: { cellWidth: 50, halign: 'center', fontStyle: 'bold' }
+            };
+            const sumHead = [['NO', 'ADM', `STUDENT NAME (${genderKey} • Summary)`, 'W', 'P', 'A', 'PRV', 'TOT', 'L', '%']];
+            const sumBody = items.map((comp, idx) => [
+                idx + 1,
+                comp.student.adm || comp.student.admNo || '-',
+                comp.student.name || '--',
+                comp.curWork,
+                comp.curPres,
+                comp.curAbs,
+                `${comp.prevWork}/${comp.prevPres}`,
+                `${comp.totalWork}/${comp.totalPres}`,
+                comp.totalLeave,
+                `${comp.totalPercentage}%`
+            ]);
+
+            docPdf.autoTable({
+                startY: curY,
+                margin: { left: marginH, right: marginH },
+                tableWidth: 'auto',
+                head: sumHead,
+                body: sumBody,
+                ...baseTableTheme,
+                headStyles: {
+                    fillColor: headerFill,
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                    fontSize: 12
+                },
+                columnStyles: sumColStyles
+            });
+            curY = docPdf.lastAutoTable.finalY + 14;
+        }
+
+        return curY;
+    };
+
+    let currentY = 68;
     classGroups.forEach((group, gIdx) => {
         if (gIdx > 0) {
-            currentY = docPdf.lastAutoTable ? docPdf.lastAutoTable.finalY + 14 : currentY + 14;
+            currentY = docPdf.lastAutoTable ? docPdf.lastAutoTable.finalY + 16 : currentY + 16;
         }
-        if (currentY > pageHeight - 105) {
+        if (currentY > pageHeight - 110) {
             docPdf.addPage();
             currentY = 28;
         }
 
         // Class Banner
         docPdf.setFillColor(241, 245, 249);
-        docPdf.rect(marginH, currentY, pageWidth - (marginH * 2), 18, 'F');
+        docPdf.rect(marginH, currentY, pageWidth - (marginH * 2), 20, 'F');
         docPdf.setFont('helvetica', 'bold');
-        docPdf.setFontSize(9.5);
+        docPdf.setFontSize(10.5);
         docPdf.setTextColor(15, 23, 42);
-        docPdf.text(`CLASS: ${String(group.classLabel || '').toUpperCase()}`, marginH + 6, currentY + 12.5);
+        docPdf.text(`CLASS: ${String(group.classLabel || '').toUpperCase()}`, marginH + 8, currentY + 14);
 
         const clsTotal = group.boys.length + group.girls.length;
         docPdf.setFont('helvetica', 'normal');
-        docPdf.setFontSize(8);
-        docPdf.setTextColor(100, 116, 139);
+        docPdf.setFontSize(9);
+        docPdf.setTextColor(71, 85, 105);
         docPdf.text(
             `Students: ${clsTotal} (Boys: ${group.boys.length}, Girls: ${group.girls.length})`,
-            pageWidth - marginH - 6,
-            currentY + 12.5,
+            pageWidth - marginH - 8,
+            currentY + 14,
             { align: 'right' }
         );
-        currentY += 22;
+        currentY += 26;
 
-        // 1. Boys Table
-        if (group.boys.length > 0) {
-            docPdf.autoTable({
-                startY: currentY,
-                margin: { left: marginH, right: marginH },
-                tableWidth: 'auto',
-                head: buildHead('STUDENT NAME (BOYS)'),
-                body: buildRows(group.boys),
-                theme: 'grid',
-                styles: {
-                    fontSize: 5.5,
-                    cellPadding: 1.2,
-                    lineColor: [226, 232, 240],
-                    lineWidth: 0.4,
-                    valign: 'middle',
-                    overflow: 'linebreak'
-                },
-                headStyles: {
-                    fillColor: [37, 99, 235],
-                    textColor: [255, 255, 255],
-                    fontStyle: 'bold',
-                    halign: 'center',
-                    fontSize: 5.5
-                },
-                alternateRowStyles: { fillColor: [248, 250, 252] },
-                columnStyles,
-                didParseCell: sharedDidParseCell
-            });
-            currentY = docPdf.lastAutoTable.finalY + 8;
-        }
-
-        // 2. Girls Table
-        if (group.girls.length > 0) {
-            if (currentY > pageHeight - 70) {
-                docPdf.addPage();
-                currentY = 28;
-            }
-            docPdf.autoTable({
-                startY: currentY,
-                margin: { left: marginH, right: marginH },
-                tableWidth: 'auto',
-                head: buildHead('STUDENT NAME (GIRLS)'),
-                body: buildRows(group.girls),
-                theme: 'grid',
-                styles: {
-                    fontSize: 5.5,
-                    cellPadding: 1.2,
-                    lineColor: [226, 232, 240],
-                    lineWidth: 0.4,
-                    valign: 'middle',
-                    overflow: 'linebreak'
-                },
-                headStyles: {
-                    fillColor: [16, 185, 129],
-                    textColor: [255, 255, 255],
-                    fontStyle: 'bold',
-                    halign: 'center',
-                    fontSize: 5.5
-                },
-                alternateRowStyles: { fillColor: [248, 250, 252] },
-                columnStyles,
-                didParseCell: sharedDidParseCell
-            });
-            currentY = docPdf.lastAutoTable.finalY + 8;
-        }
+        currentY = renderGenderBlock(group.boys, 'BOYS', currentY);
+        currentY = renderGenderBlock(group.girls, 'GIRLS', currentY);
     });
 
     const totalPages = docPdf.internal.getNumberOfPages();
     for (let i = 1; i <= totalPages; i++) {
         docPdf.setPage(i);
         docPdf.setFont('helvetica', 'normal');
-        docPdf.setFontSize(8);
-        docPdf.setTextColor(148, 163, 184);
+        docPdf.setFontSize(8.5);
+        docPdf.setTextColor(100, 116, 139);
         docPdf.text(`Page ${i} of ${totalPages}`, pageWidth - marginH, pageHeight - 12, { align: 'right' });
-        docPdf.text(`Monthly Attendance Register • ${monthTitle}`, marginH, pageHeight - 12);
+        docPdf.text(`Monthly Attendance Register • Class ${selectedMonthlyClass} • ${monthTitle}`, marginH, pageHeight - 12);
     }
 
-    const safeCls = isAllClasses ? 'all-classes' : String(selectedMonthlyClass).replace(/[^\w-]/g, '_');
+    const safeCls = String(selectedMonthlyClass).replace(/[^\w-]/g, '_');
     docPdf.save(`attendance-register-${safeCls}-${monthVal}.pdf`);
     showToast('Monthly Attendance PDF downloaded!', 'success');
 };
 
 // --- Analytics & Defaulters ---
-const loadAnalytics = async () => {
+const loadAnalytics = async ({ force = false } = {}) => {
     const yearSelect = document.getElementById('analytics-academic-year');
     const classSelect = document.getElementById('analytics-class-select');
     const compSelect = document.getElementById('analytics-comparator-select');
@@ -1930,6 +2011,7 @@ const loadAnalytics = async () => {
     if (targetPct > 100) targetPct = 100;
 
     const tbody = document.getElementById('defaulters-tbody');
+    const mobileList = document.getElementById('analytics-mobile-list');
     const summaryBadge = document.getElementById('analytics-summary-badge');
     const countBadge = document.getElementById('defaulter-count-badge');
     const tableHeading = document.getElementById('analytics-table-heading');
@@ -1939,44 +2021,36 @@ const loadAnalytics = async () => {
         if (summaryBadge) summaryBadge.textContent = 'Select a class to calculate';
         if (countBadge) countBadge.textContent = '0 Students';
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Please select a class or choose All Classes to view attendance analytics.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Please select a class to view attendance analytics.</td></tr>`;
+        }
+        if (mobileList) {
+            mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs">Please select a class to view attendance analytics.</div>`;
         }
         return;
     }
 
     if (tableHeading) {
         const compSymbol = comparator === 'below' ? '<' : '≥';
-        const classTitle = selectedClass === 'ALL' ? 'All Classes' : `Class ${selectedClass}`;
-        tableHeading.textContent = `${classTitle} Attendance (${compSymbol} ${targetPct}%)`;
+        tableHeading.textContent = `Class ${selectedClass} Attendance (${compSymbol} ${targetPct}%)`;
     }
 
     if (tbody) {
         tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold"><i class="fas fa-spinner fa-spin mr-2"></i>Analyzing attendance records...</td></tr>`;
     }
+    if (mobileList) {
+        mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs"><i class="fas fa-spinner fa-spin mr-2"></i>Analyzing attendance records...</div>`;
+    }
 
     try {
-        let q;
-        if (selectedClass === 'ALL') {
-            q = query(
-                collection(db, `${BASE_PATH}/attendance`),
-                where('academicYear', '==', year)
-            );
-        } else {
-            q = query(
-                collection(db, `${BASE_PATH}/attendance`),
-                where('academicYear', '==', year),
-                where('classLabel', '==', selectedClass)
-            );
-        }
-
-        const snap = await getDocs(q);
-        const docs = snap.docs.map(d => d.data());
+        const [docs, relevantStudents] = await Promise.all([
+            fetchYearClassAttendanceDocs(year, selectedClass, { force }),
+            fetchStudentsForClass(selectedClass, year, { force })
+        ]);
 
         const sessionStartDate = getSessionStartDate(year);
 
-        const classWorkingDays = {};
+        let classWorkingDays = 0;
         const studentStats = {};
-        let totalDocsEvaluated = 0;
 
         docs.forEach(d => {
             const dDate = d.date || '';
@@ -1987,11 +2061,10 @@ const loadAnalytics = async () => {
                 return;
             }
 
-            const cLabel = d.classLabel || '';
+            const cLabel = d.classLabel || selectedClass;
             const { isHoliday } = isDateHoliday(dDate, cLabel);
             if (!d.isHoliday && !isHoliday) {
-                classWorkingDays[cLabel] = (classWorkingDays[cLabel] || 0) + 1;
-                totalDocsEvaluated++;
+                classWorkingDays++;
 
                 const records = d.records || {};
                 Object.entries(records).forEach(([stuId, rec]) => {
@@ -2004,31 +2077,20 @@ const loadAnalytics = async () => {
             }
         });
 
-        const allowed = getAllowedClassesForTeacher();
-        const targetClasses = selectedClass === 'ALL' ? allowed : [selectedClass];
-
-        const relevantStudents = allStudents.filter(s => {
-            if (s.status === 'alumni' || s.isAlumni) return false;
-            const stuClass = s.academicYears?.[year]?.class || s.class || '';
-            const matchesYear = (!s.academicYear || s.academicYear === year || s.academicYears?.[year]);
-            return targetClasses.some(tc => isClassInDutyScope(stuClass, [tc])) && matchesYear;
-        });
-
         const filteredList = [];
         let grandPresent = 0;
         let grandTotal = 0;
 
         relevantStudents.forEach(student => {
-            const stuClass = student.academicYears?.[year]?.class || student.class || '';
+            const stuClass = student._resolvedYearClass || student.academicYears?.[year]?.class || student.class || selectedClass;
             const st = studentStats[student.id] || { present: 0, absent: 0, leave: 0 };
-            const classDays = classWorkingDays[stuClass] || 0;
-            const effectiveTotal = classDays > 0 ? classDays : (st.present + st.absent + st.leave);
+            const effectiveTotal = classWorkingDays > 0 ? classWorkingDays : (st.present + st.absent + st.leave);
             const pct = effectiveTotal > 0 ? Math.round((st.present / effectiveTotal) * 100) : 0;
 
             grandPresent += st.present;
             grandTotal += effectiveTotal;
 
-            const matchesCondition = comparator === 'below' 
+            const matchesCondition = comparator === 'below'
                 ? (pct < targetPct && effectiveTotal > 0)
                 : (pct >= targetPct && effectiveTotal > 0);
 
@@ -2045,11 +2107,13 @@ const loadAnalytics = async () => {
             }
         });
 
-        if (comparator === 'below') {
-            filteredList.sort((a, b) => a.percentage - b.percentage);
-        } else {
-            filteredList.sort((a, b) => b.percentage - a.percentage);
-        }
+        // Order filtered students: Boys first, then Girls, each sorted by Admission No ascending
+        filteredList.sort((a, b) => {
+            const aFemale = isFemaleGender(a.student.gender);
+            const bFemale = isFemaleGender(b.student.gender);
+            if (aFemale !== bFemale) return aFemale ? 1 : -1;
+            return compareByAdmNoAsc(a.student, b.student);
+        });
 
         const averagePct = grandTotal > 0 ? Math.round((grandPresent / grandTotal) * 100) : 0;
         if (summaryBadge) {
@@ -2059,14 +2123,18 @@ const loadAnalytics = async () => {
             countBadge.textContent = `${filteredList.length} Students`;
         }
 
-        if (!tbody) return;
-
         if (filteredList.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-emerald-700 font-extrabold bg-emerald-50/50"><i class="fas fa-check-circle mr-1"></i> No students match the condition (${comparator === 'below' ? '<' : '≥'} ${targetPct}%).</td></tr>`;
+            const emptyMsg = `<i class="fas fa-check-circle mr-1"></i> No students match the condition (${comparator === 'below' ? '<' : '≥'} ${targetPct}%).`;
+            if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-emerald-700 font-extrabold bg-emerald-50/50">${emptyMsg}</td></tr>`;
+            if (mobileList) mobileList.innerHTML = `<div class="p-6 text-center text-emerald-700 font-extrabold text-xs bg-emerald-50/50">${emptyMsg}</div>`;
             return;
         }
 
-        tbody.innerHTML = filteredList.map((item, idx) => {
+        const senderInst = document.getElementById('header-title')?.textContent?.trim() || 'Our Institution';
+        const desktopRows = [];
+        const mobileCards = [];
+
+        filteredList.forEach((item, idx) => {
             const stu = item.student;
             const fatherPhone = stu.mobile || stu.phone || stu.fatherMobile || stu.profile?.mobile || stu.profile?.phone || stu.profile?.fatherMobile || stu.parentMobile || stu.whatsapp || '';
             const motherPhone = stu.motherMobile || stu.mother_mobile || stu.profile?.motherMobile || stu.profile?.mother_mobile || stu.motherPhone || '';
@@ -2074,21 +2142,22 @@ const loadAnalytics = async () => {
             const cleanFather = String(fatherPhone).replace(/\D/g, '');
             const cleanMother = String(motherPhone).replace(/\D/g, '');
 
-            const senderInst = document.getElementById('header-title')?.textContent?.trim() || 'Our Institution';
             const msgText = encodeURIComponent(`Dear Parent, Attendance notification from ${senderInst} for ${stu.name || 'Student'}: Current attendance is ${item.percentage}% (${item.presentDays}/${item.totalDays} days). Please ensure regular attendance.`);
             const fatherWaLink = cleanFather ? `https://wa.me/91${cleanFather}?text=${msgText}` : '';
             const motherWaLink = cleanMother ? `https://wa.me/91${cleanMother}?text=${msgText}` : '';
 
-            const badgeColor = item.percentage >= 75 
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+            const badgeColor = item.percentage >= 75
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                 : (item.percentage >= 60 ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-rose-100 text-rose-800 border-rose-300');
+            const admDisplay = stu.adm || stu.admNo || '-';
+            const genderLabel = isFemaleGender(stu.gender) ? 'Girl' : 'Boy';
 
-            return `
+            desktopRows.push(`
                 <tr class="hover:bg-slate-50/80">
                     <td class="py-2.5 px-3 font-bold text-slate-400">${idx + 1}</td>
                     <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 font-extrabold text-slate-700 text-xs">Class ${escapeHtml(item.studentClass)}</span></td>
-                    <td class="py-2.5 px-3 font-mono font-bold text-slate-700">${escapeHtml(stu.adm || stu.admNo || '-')}</td>
-                    <td class="py-2.5 px-4 font-extrabold text-slate-900">${escapeHtml(stu.name || '--')}</td>
+                    <td class="py-2.5 px-3 font-mono font-bold text-slate-700">${escapeHtml(admDisplay)}</td>
+                    <td class="py-2.5 px-4 font-extrabold text-slate-900">${escapeHtml(stu.name || '--')} <span class="text-[10px] font-bold text-slate-400 ml-1">(${genderLabel})</span></td>
                     <td class="py-2.5 px-3 text-center font-bold text-slate-600">${item.totalDays}</td>
                     <td class="py-2.5 px-3 text-center font-bold text-emerald-600">${item.presentDays}</td>
                     <td class="py-2.5 px-3 text-center font-black text-rose-600">${item.absentDays}</td>
@@ -2120,11 +2189,61 @@ const loadAnalytics = async () => {
                         </div>
                     </td>
                 </tr>
-            `;
-        }).join('');
+            `);
+
+            mobileCards.push(`
+                <div class="p-3.5 space-y-2.5 bg-white">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(stu.name || '--')}</div>
+                            <div class="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                <span class="font-mono font-bold text-slate-700">#${idx + 1} · Adm: ${escapeHtml(admDisplay)}</span>
+                                <span>· Class ${escapeHtml(item.studentClass)}</span>
+                                <span>· ${genderLabel}</span>
+                            </div>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-full text-xs font-black ${badgeColor} border shrink-0">${item.percentage}%</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center bg-slate-50 border border-slate-200 rounded-xl p-2 text-[11px]">
+                        <div>
+                            <div class="text-[9px] font-bold text-slate-400 uppercase">Working</div>
+                            <div class="font-black text-slate-700 tabular-nums">${item.totalDays}</div>
+                        </div>
+                        <div>
+                            <div class="text-[9px] font-bold text-emerald-600 uppercase">Present</div>
+                            <div class="font-black text-emerald-700 tabular-nums">${item.presentDays}</div>
+                        </div>
+                        <div>
+                            <div class="text-[9px] font-bold text-rose-600 uppercase">Absent</div>
+                            <div class="font-black text-rose-700 tabular-nums">${item.absentDays}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 text-[11px] text-slate-600 font-mono">
+                        <span class="truncate"><strong class="text-blue-700">F:</strong> ${escapeHtml(fatherPhone || '--')}</span>
+                        <span class="truncate"><strong class="text-pink-700">M:</strong> ${escapeHtml(motherPhone || '--')}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        ${fatherWaLink ? `
+                            <a href="${fatherWaLink}" target="_blank" class="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition">
+                                <i class="fab fa-whatsapp"></i> Father
+                            </a>` : `<span class="min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200">Father N/A</span>`
+                        }
+                        ${motherWaLink ? `
+                            <a href="${motherWaLink}" target="_blank" class="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition">
+                                <i class="fab fa-whatsapp"></i> Mother
+                            </a>` : `<span class="min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200">Mother N/A</span>`
+                        }
+                    </div>
+                </div>
+            `);
+        });
+
+        if (tbody) tbody.innerHTML = desktopRows.join('');
+        if (mobileList) mobileList.innerHTML = mobileCards.join('');
     } catch (err) {
         console.error('Failed to load analytics:', err);
         if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-rose-600 font-bold">Failed to load analytics: ${escapeHtml(err.message)}</td></tr>`;
+        if (mobileList) mobileList.innerHTML = `<div class="p-6 text-center text-rose-600 font-bold text-xs">Failed to load analytics: ${escapeHtml(err.message)}</div>`;
     }
 };
 
@@ -2159,37 +2278,64 @@ const renderCalendarSettingsUI = () => {
     }
 
     const tbody = document.getElementById('holidays-tbody');
-    if (tbody) {
-        if (!holidays.length) {
-            tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 font-bold">No special holidays configured.</td></tr>`;
-            return;
-        }
+    const mobileList = document.getElementById('holidays-mobile-list');
 
-        tbody.innerHTML = holidays.map((h, idx) => {
-            const isAll = !h.scope || h.scope === 'all' || !Array.isArray(h.classes) || h.classes.length === 0;
-            const scopeBadge = isAll 
-                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200"><i class="fas fa-globe mr-1"></i>All Classes</span>`
-                : `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-900 border border-indigo-200"><i class="fas fa-users-rectangle mr-1"></i>Class ${escapeHtml(h.classes.join(', '))}</span>`;
-
-            return `
-                <tr class="hover:bg-slate-50">
-                    <td class="py-2.5 px-4 font-bold text-slate-800">${escapeHtml(formatDisplayDate(h.date))}</td>
-                    <td class="py-2.5 px-4 font-extrabold text-slate-900">${escapeHtml(h.title || 'Official Holiday')}</td>
-                    <td class="py-2.5 px-4">${scopeBadge}</td>
-                    <td class="py-2.5 px-4 text-center">
-                        <div class="inline-flex items-center gap-3">
-                            <button type="button" class="btn-edit-holiday text-indigo-600 hover:text-indigo-800 font-bold text-xs" data-index="${idx}" title="Edit holiday">
-                                <i class="fas fa-pen-to-square"></i> Edit
-                            </button>
-                            <button type="button" class="btn-del-holiday text-rose-600 hover:text-rose-800 font-bold text-xs" data-index="${idx}" title="Delete holiday">
-                                <i class="fas fa-trash-can"></i> Delete
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+    if (!holidays.length) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 font-bold">No special holidays configured.</td></tr>`;
+        if (mobileList) mobileList.innerHTML = `<div class="p-4 text-center text-slate-400 font-bold text-xs">No special holidays configured.</div>`;
+        return;
     }
+
+    const desktopRows = [];
+    const mobileCards = [];
+
+    holidays.forEach((h, idx) => {
+        const isAll = !h.scope || h.scope === 'all' || !Array.isArray(h.classes) || h.classes.length === 0;
+        const scopeBadge = isAll
+            ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200"><i class="fas fa-globe mr-1"></i>All Classes</span>`
+            : `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-900 border border-indigo-200"><i class="fas fa-users-rectangle mr-1"></i>Class ${escapeHtml(h.classes.join(', '))}</span>`;
+
+        desktopRows.push(`
+            <tr class="hover:bg-slate-50">
+                <td class="py-2.5 px-4 font-bold text-slate-800">${escapeHtml(formatDisplayDate(h.date))}</td>
+                <td class="py-2.5 px-4 font-extrabold text-slate-900">${escapeHtml(h.title || 'Official Holiday')}</td>
+                <td class="py-2.5 px-4">${scopeBadge}</td>
+                <td class="py-2.5 px-4 text-center">
+                    <div class="inline-flex items-center gap-3">
+                        <button type="button" class="btn-edit-holiday text-indigo-600 hover:text-indigo-800 font-bold text-xs cursor-pointer" data-index="${idx}" title="Edit holiday">
+                            <i class="fas fa-pen-to-square"></i> Edit
+                        </button>
+                        <button type="button" class="btn-del-holiday text-rose-600 hover:text-rose-800 font-bold text-xs cursor-pointer" data-index="${idx}" title="Delete holiday">
+                            <i class="fas fa-trash-can"></i> Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `);
+
+        mobileCards.push(`
+            <div class="p-3 bg-white space-y-2">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(h.title || 'Official Holiday')}</div>
+                        <div class="text-xs font-bold text-slate-500 mt-0.5">${escapeHtml(formatDisplayDate(h.date))}</div>
+                    </div>
+                    <div class="shrink-0">${scopeBadge}</div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                    <button type="button" class="btn-edit-holiday min-h-[40px] px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer" data-index="${idx}">
+                        <i class="fas fa-pen-to-square"></i> Edit
+                    </button>
+                    <button type="button" class="btn-del-holiday min-h-[40px] px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer" data-index="${idx}">
+                        <i class="fas fa-trash-can"></i> Delete
+                    </button>
+                </div>
+            </div>
+        `);
+    });
+
+    if (tbody) tbody.innerHTML = desktopRows.join('');
+    if (mobileList) mobileList.innerHTML = mobileCards.join('');
 };
 
 let pendingSelectedWeekends = null;
@@ -2470,22 +2616,23 @@ const renderSessionScheduleUI = () => {
     }
 
     const sDate = schedule.startDate || getSessionStartDate(selectedYear);
+    const todayStr = getTodayDateString();
+    const effectiveEndDate = (schedule.endDate && schedule.endDate < todayStr) ? schedule.endDate : todayStr;
     const elapsedEl = document.getElementById('session-stat-elapsed');
-    if (elapsedEl) {
-        if (sDate) {
-            const startDt = new Date(sDate);
-            const todayDt = new Date();
-            const diffTime = todayDt.getTime() - startDt.getTime();
-            const diffDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
-            elapsedEl.textContent = `${diffDays} Days`;
-        } else {
-            elapsedEl.textContent = '--';
-        }
-    }
-
     const workingDaysEl = document.getElementById('session-stat-working-days');
-    if (workingDaysEl) {
-        workingDaysEl.textContent = 'Active Sync';
+
+    if (sDate) {
+        if (effectiveEndDate < sDate) {
+            if (elapsedEl) elapsedEl.textContent = '0 Days';
+            if (workingDaysEl) workingDaysEl.textContent = '0 Days';
+        } else {
+            const { elapsedDays, workingDays } = calculateWorkingDaysInRange(sDate, effectiveEndDate, '');
+            if (elapsedEl) elapsedEl.textContent = `${elapsedDays} Days`;
+            if (workingDaysEl) workingDaysEl.textContent = `${workingDays} Days`;
+        }
+    } else {
+        if (elapsedEl) elapsedEl.textContent = '--';
+        if (workingDaysEl) workingDaysEl.textContent = '--';
     }
 };
 
@@ -2585,18 +2732,20 @@ const setupEventListeners = () => {
     });
 
     document.getElementById('btn-prev-day')?.addEventListener('click', () => {
-        const cur = new Date(selectedDailyDate);
+        const [y, m, d] = (selectedDailyDate || getTodayDateString()).split('-').map(Number);
+        const cur = new Date(y, m - 1, d, 12, 0, 0);
         cur.setDate(cur.getDate() - 1);
-        selectedDailyDate = cur.toISOString().split('T')[0];
+        selectedDailyDate = toLocalDateStr(cur);
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
         loadDailyAttendanceRoster();
     });
 
     document.getElementById('btn-next-day')?.addEventListener('click', () => {
-        const cur = new Date(selectedDailyDate);
+        const [y, m, d] = (selectedDailyDate || getTodayDateString()).split('-').map(Number);
+        const cur = new Date(y, m - 1, d, 12, 0, 0);
         cur.setDate(cur.getDate() + 1);
-        selectedDailyDate = cur.toISOString().split('T')[0];
+        selectedDailyDate = toLocalDateStr(cur);
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
         loadDailyAttendanceRoster();
@@ -2615,7 +2764,7 @@ const setupEventListeners = () => {
     document.getElementById('btn-mark-all-l')?.addEventListener('click', () => markAllStudents('L'));
     document.getElementById('btn-clear-all')?.addEventListener('click', clearAllStudents);
 
-    // Individual Toggle Delegation
+    // Individual Toggle Delegation (Desktop Table + Mobile Cards)
     document.getElementById('daily-roster-tbody')?.addEventListener('click', (e) => {
         const btn = e.target.closest('.att-toggle-btn');
         if (!btn) return;
@@ -2627,27 +2776,74 @@ const setupEventListeners = () => {
         }
     });
 
+    document.getElementById('daily-roster-mobile')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.att-toggle-btn');
+        if (!btn) return;
+        const card = btn.closest('[data-student-id]');
+        const studentId = card?.dataset.studentId;
+        const status = btn.dataset.status;
+        if (studentId && status) {
+            setStudentStatus(studentId, status);
+        }
+    });
+
+    const handleRemarkInputSync = (inputEl) => {
+        const sid = inputEl?.dataset?.studentId;
+        if (!sid) return;
+        if (!dailyAttendanceMap[sid]) dailyAttendanceMap[sid] = {};
+        dailyAttendanceMap[sid].remarks = inputEl.value;
+        document.querySelectorAll(`.student-remarks-input[data-student-id="${sid}"]`).forEach(sibling => {
+            if (sibling !== inputEl) sibling.value = inputEl.value;
+        });
+        markUnsavedChanges();
+    };
+
     document.getElementById('daily-roster-tbody')?.addEventListener('input', (e) => {
         if (e.target.classList.contains('student-remarks-input')) {
-            markUnsavedChanges();
+            handleRemarkInputSync(e.target);
+        }
+    });
+
+    document.getElementById('daily-roster-mobile')?.addEventListener('input', (e) => {
+        if (e.target.classList.contains('student-remarks-input')) {
+            handleRemarkInputSync(e.target);
         }
     });
 
     document.getElementById('btn-save-daily')?.addEventListener('click', saveDailyAttendance);
 
     // 3. Monthly Listeners
-    document.getElementById('btn-load-monthly')?.addEventListener('click', loadMonthlyRegister);
-    document.getElementById('monthly-class-select')?.addEventListener('change', loadMonthlyRegister);
-    document.getElementById('monthly-month-input')?.addEventListener('change', loadMonthlyRegister);
+    document.getElementById('btn-load-monthly')?.addEventListener('click', () => loadMonthlyRegister({ force: true }));
+    document.getElementById('monthly-class-select')?.addEventListener('change', () => loadMonthlyRegister());
+    document.getElementById('monthly-month-input')?.addEventListener('change', () => loadMonthlyRegister());
     document.getElementById('btn-export-excel')?.addEventListener('click', exportMonthlyRegisterToExcel);
-    document.getElementById('btn-export-monthly-pdf')?.addEventListener('click', exportMonthlyRegisterToPDF);
+
+    document.getElementById('btn-export-monthly-pdf')?.addEventListener('click', () => {
+        if (!selectedMonthlyClass) {
+            showToast('Please select a class first.', 'info');
+            return;
+        }
+        if (!lastCompiledMonthlyRegister || !lastCompiledMonthlyRegister.classGroups?.length) {
+            showToast('No monthly attendance records loaded to export.', 'error');
+            return;
+        }
+        openModal('monthly-pdf-options-modal');
+    });
+
+    document.getElementById('btn-confirm-export-pdf')?.addEventListener('click', () => {
+        const orientation = document.querySelector('input[name="pdf-orientation"]:checked')?.value || 'landscape';
+        const paperSize = document.getElementById('pdf-paper-size')?.value || 'a4';
+        const colorMode = document.querySelector('input[name="pdf-color-mode"]:checked')?.value || 'color';
+        closeModal('monthly-pdf-options-modal');
+        exportMonthlyRegisterToPDF({ orientation, paperSize, colorMode });
+    });
 
     // 4. Analytics Listeners
-    document.getElementById('btn-refresh-analytics')?.addEventListener('click', loadAnalytics);
-    document.getElementById('analytics-academic-year')?.addEventListener('change', loadAnalytics);
-    document.getElementById('analytics-class-select')?.addEventListener('change', loadAnalytics);
-    document.getElementById('analytics-comparator-select')?.addEventListener('change', loadAnalytics);
-    document.getElementById('analytics-percentage-input')?.addEventListener('change', loadAnalytics);
+    document.getElementById('btn-refresh-analytics')?.addEventListener('click', () => loadAnalytics({ force: true }));
+    document.getElementById('analytics-academic-year')?.addEventListener('change', () => loadAnalytics());
+    document.getElementById('analytics-class-select')?.addEventListener('change', () => loadAnalytics());
+    document.getElementById('analytics-comparator-select')?.addEventListener('change', () => loadAnalytics());
+    document.getElementById('analytics-percentage-input')?.addEventListener('change', () => loadAnalytics());
 
     // 5. Calendar & Holidays Listeners
     document.getElementById('btn-save-weekends')?.addEventListener('click', saveWeekendConfig);
@@ -2692,7 +2888,7 @@ const setupEventListeners = () => {
         document.querySelectorAll('.holiday-class-check').forEach(chk => { chk.checked = false; });
     });
 
-    document.getElementById('holidays-tbody')?.addEventListener('click', (e) => {
+    const handleHolidayActionClick = (e) => {
         const editBtn = e.target.closest('.btn-edit-holiday');
         if (editBtn) {
             startEditHoliday(Number(editBtn.dataset.index));
@@ -2702,7 +2898,9 @@ const setupEventListeners = () => {
         if (delBtn) {
             deleteHoliday(Number(delBtn.dataset.index));
         }
-    });
+    };
+    document.getElementById('holidays-tbody')?.addEventListener('click', handleHolidayActionClick);
+    document.getElementById('holidays-mobile-list')?.addEventListener('click', handleHolidayActionClick);
 
     // 6. Session Schedule Listeners
     document.getElementById('session-academic-year')?.addEventListener('change', renderSessionScheduleUI);

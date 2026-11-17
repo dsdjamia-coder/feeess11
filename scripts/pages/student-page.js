@@ -5358,14 +5358,184 @@ const studentPwa = registerPortalForPwa('student', {
         let selectedAttendanceMonth = '';
         let studentAttendanceStats = { workingDays: 0, presentDays: 0, absentDays: 0, leaveDays: 0, rate: 0 };
         let cachedAttendanceDocs = [];
-        let cachedAttendanceConfig = { weekendDays: [5] };
+        let cachedAttendanceConfig = { weekendDays: [5], weekendHistory: [], holidays: [], sessionSchedules: {} };
+
+        const toLocalAttDateStr = (dt) => {
+            if (!(dt instanceof Date) || isNaN(dt.getTime())) return '';
+            return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        };
+
+        const normalizeAttClassLabel = (cls = '') => {
+            return String(cls || '').trim().toLowerCase().replace(/^class\s*/i, '').replace(/[^\w]/g, '');
+        };
+
+        const getEffectiveWeekendDaysForDate = (dateStr, cfg = cachedAttendanceConfig) => {
+            let activeWeekendDays = Array.isArray(cfg?.weekendDays) ? cfg.weekendDays : [5];
+            if (Array.isArray(cfg?.weekendHistory) && cfg.weekendHistory.length > 0) {
+                const history = cfg.weekendHistory
+                    .filter((h) => h && h.effectiveFrom && Array.isArray(h.weekendDays))
+                    .slice()
+                    .sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom)));
+                let matchedEntry = null;
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (history[i].effectiveFrom <= dateStr) {
+                        matchedEntry = history[i];
+                        break;
+                    }
+                }
+                if (matchedEntry) {
+                    activeWeekendDays = matchedEntry.weekendDays;
+                } else if (history.length > 0) {
+                    activeWeekendDays = history[0].weekendDays;
+                }
+            }
+            return Array.isArray(activeWeekendDays) ? activeWeekendDays : [5];
+        };
+
+        const getStudentHolidayMatch = (dateStr, studentClass = '', cfg = cachedAttendanceConfig) => {
+            if (!dateStr) return null;
+            const holidays = Array.isArray(cfg?.holidays) ? cfg.holidays : [];
+            const normStuCls = normalizeAttClassLabel(studentClass);
+            const matched = holidays.find((h) => {
+                if (!h || h.date !== dateStr) return false;
+                const isAll = !h.scope || h.scope === 'all' || !Array.isArray(h.classes) || h.classes.length === 0;
+                if (isAll) return true;
+                return normStuCls && h.classes.some((c) => normalizeAttClassLabel(c) === normStuCls);
+            });
+            if (!matched) return null;
+            return {
+                title: String(matched.title || '').trim() || 'Institutional Holiday'
+            };
+        };
+
+        const getStudentSessionStartDate = (yearLabel, cfg = cachedAttendanceConfig) => {
+            const schedStart = cfg?.sessionSchedules?.[yearLabel]?.startDate;
+            if (schedStart) return schedStart;
+
+            const yearRec = getAcademicYearRecord(yearLabel);
+            if (yearRec && Number.isInteger(Number(yearRec.startMonth))) {
+                const mNum = Number(yearRec.startMonth) + 1;
+                const match = String(yearLabel || '').match(/^(\d{4})/);
+                const yNum = match ? Number(match[1]) : new Date().getFullYear();
+                return `${yNum}-${String(mNum).padStart(2, '0')}-01`;
+            }
+            return '';
+        };
+
+        const getStudentSessionEndDate = (yearLabel, cfg = cachedAttendanceConfig) => {
+            return String(cfg?.sessionSchedules?.[yearLabel]?.endDate || '').trim();
+        };
+
+        const calculateStudentWorkingDays = (yearLabel, studentClass = '', cfg = cachedAttendanceConfig) => {
+            const startDateStr = getStudentSessionStartDate(yearLabel, cfg);
+            if (!startDateStr) return 0;
+
+            const todayStr = getTodayDateKey();
+            const configuredEnd = getStudentSessionEndDate(yearLabel, cfg);
+            const effectiveEndStr = (configuredEnd && configuredEnd < todayStr) ? configuredEnd : todayStr;
+            if (effectiveEndStr < startDateStr) return 0;
+
+            const [sy, sm, sd] = startDateStr.split('-').map(Number);
+            const [ey, em, ed] = effectiveEndStr.split('-').map(Number);
+            if (!sy || !sm || !sd || !ey || !em || !ed) return 0;
+
+            const cursor = new Date(sy, sm - 1, sd, 12, 0, 0);
+            const endDt = new Date(ey, em - 1, ed, 12, 0, 0);
+            let workingDays = 0;
+
+            while (cursor.getTime() <= endDt.getTime()) {
+                const dStr = toLocalAttDateStr(cursor);
+                const declaredHoliday = getStudentHolidayMatch(dStr, studentClass, cfg);
+                if (!declaredHoliday) {
+                    const weekendDays = getEffectiveWeekendDaysForDate(dStr, cfg);
+                    if (!weekendDays.includes(cursor.getDay())) {
+                        workingDays++;
+                    }
+                }
+                cursor.setDate(cursor.getDate() + 1);
+            }
+            return workingDays;
+        };
+
+        const openStudentAttDetailModal = ({ dateText, dayText, statusLabel, detailText, markedBy }) => {
+            const modal = document.getElementById('stu-att-detail-modal');
+            if (!modal) return;
+
+            const dateEl = document.getElementById('stu-att-modal-date');
+            const badgeEl = document.getElementById('stu-att-modal-status-badge');
+            const detailLabelEl = document.getElementById('stu-att-modal-detail-label');
+            const detailEl = document.getElementById('stu-att-modal-detail');
+            const metaWrap = document.getElementById('stu-att-modal-meta');
+            const metaText = document.getElementById('stu-att-modal-meta-text');
+
+            if (dateEl) dateEl.textContent = dayText ? `${dateText} (${dayText})` : dateText;
+
+            const badgeStyles = {
+                Present: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+                Absent: 'bg-rose-100 text-rose-800 border-rose-300',
+                Leave: 'bg-amber-100 text-amber-900 border-amber-300',
+                Holiday: 'bg-amber-100 text-amber-900 border-amber-300',
+                'Off Day': 'bg-slate-100 text-slate-700 border-slate-300'
+            };
+            if (badgeEl) {
+                badgeEl.className = `px-2.5 py-1 rounded-full text-xs font-black border ${badgeStyles[statusLabel] || 'bg-slate-100 text-slate-700 border-slate-300'}`;
+                badgeEl.textContent = statusLabel || '--';
+            }
+
+            if (detailLabelEl) {
+                detailLabelEl.textContent = (statusLabel === 'Holiday' || statusLabel === 'Off Day')
+                    ? 'Holiday / Schedule Details'
+                    : 'Teacher Remarks / Notes';
+            }
+            if (detailEl) {
+                detailEl.textContent = detailText || (statusLabel === 'Present' ? 'No special remarks recorded for this day.' : 'No remarks recorded.');
+            }
+            if (metaWrap && metaText) {
+                if (markedBy) {
+                    metaText.textContent = `Marked by ${markedBy}`;
+                    metaWrap.classList.remove('hidden');
+                } else {
+                    metaWrap.classList.add('hidden');
+                }
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        const closeStudentAttDetailModal = () => {
+            const modal = document.getElementById('stu-att-detail-modal');
+            if (!modal) return;
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        const bindStudentAttDetailModal = () => {
+            const modal = document.getElementById('stu-att-detail-modal');
+            if (!modal || modal.dataset.bound === 'true') return;
+            modal.dataset.bound = 'true';
+
+            document.getElementById('btn-close-att-detail-modal')?.addEventListener('click', closeStudentAttDetailModal);
+            document.getElementById('btn-ok-att-detail-modal')?.addEventListener('click', closeStudentAttDetailModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeStudentAttDetailModal();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+                    closeStudentAttDetailModal();
+                }
+            });
+        };
 
         const renderStudentAttendanceModule = async (profile, targetYear = '') => {
             const pageEl = document.getElementById('attendance-page');
             if (!pageEl || !profile) return;
 
+            bindStudentAttDetailModal();
+
             const year = targetYear || currentAcademicYear || profile.academicYear || '--';
             selectedAttendanceAcademicYear = year;
+            const studentClass = String(profile.academicYears?.[year]?.class || profile.class || '').trim();
 
             // Populate Year Dropdown
             const yearSelect = document.getElementById('stu-att-year-select');
@@ -5381,7 +5551,7 @@ const studentPwa = registerPortalForPwa('student', {
 
                 const attQuery = query(
                     collection(db, `${BASE_PATH}/attendance`),
-                    where('classLabel', '==', profile.class || '')
+                    where('classLabel', '==', studentClass)
                 );
                 const snap = await getDocs(attQuery);
                 const allDocs = snap.docs.map((d) => d.data());
@@ -5389,17 +5559,35 @@ const studentPwa = registerPortalForPwa('student', {
                 // Filter by selected year
                 cachedAttendanceDocs = allDocs.filter((d) => {
                     if (d.academicYear) return d.academicYear === year;
-                    return String(d.date || '').startsWith(year.split('-')[0]);
+                    return String(d.date || '').startsWith(String(year).split('-')[0]);
                 }).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
 
-                let workingCount = 0;
+                const sessionStartDate = getStudentSessionStartDate(year, cachedAttendanceConfig);
+                const sessionEndDate = getStudentSessionEndDate(year, cachedAttendanceConfig);
+                const todayStr = getTodayDateKey();
+
+                let recordedWorkingCount = 0;
                 let presCount = 0;
                 let absCount = 0;
                 let leaveCount = 0;
 
                 cachedAttendanceDocs.forEach((d) => {
-                    if (d.isHoliday) return;
-                    workingCount++;
+                    const dDate = String(d.date || '');
+                    if (sessionStartDate && dDate && dDate < sessionStartDate) return;
+                    if (sessionEndDate && dDate && dDate > sessionEndDate) return;
+
+                    const declaredHoliday = getStudentHolidayMatch(dDate, studentClass, cachedAttendanceConfig);
+                    if (d.isHoliday || declaredHoliday) return;
+                    if (dDate) {
+                        const [dy, dm, dd] = dDate.split('-').map(Number);
+                        if (dy && dm && dd) {
+                            const dt = new Date(dy, dm - 1, dd, 12, 0, 0);
+                            const wkDays = getEffectiveWeekendDaysForDate(dDate, cachedAttendanceConfig);
+                            if (wkDays.includes(dt.getDay())) return;
+                        }
+                    }
+
+                    recordedWorkingCount++;
                     const rec = d.records?.[profile.id];
                     const rawStatus = typeof rec === 'object' ? rec?.status : rec;
                     const st = rawStatus === 'E' ? 'L' : rawStatus;
@@ -5409,7 +5597,10 @@ const studentPwa = registerPortalForPwa('student', {
                     else if (st === 'L') leaveCount++;
                 });
 
-                const rate = workingCount > 0 ? Math.round((presCount / workingCount) * 100) : 100;
+                const calendarWorkingDays = calculateStudentWorkingDays(year, studentClass, cachedAttendanceConfig);
+                const workingCount = calendarWorkingDays > 0 ? calendarWorkingDays : recordedWorkingCount;
+
+                const rate = workingCount > 0 ? Math.min(100, Math.round((presCount / workingCount) * 100)) : 100;
                 studentAttendanceStats = {
                     workingDays: workingCount,
                     presentDays: presCount,
@@ -5466,19 +5657,18 @@ const studentPwa = registerPortalForPwa('student', {
                     return `${calYear}-${mNum}`;
                 });
 
+                const currentMonthStr = todayStr.slice(0, 7);
                 if (!availableMonths.length) {
-                    const nowStr = new Date().toISOString().slice(0, 7);
-                    availableMonths.push(nowStr);
+                    availableMonths.push(currentMonthStr);
                 }
 
-                const currentMonthStr = new Date().toISOString().slice(0, 7);
                 if (!selectedAttendanceMonth || !availableMonths.includes(selectedAttendanceMonth)) {
                     selectedAttendanceMonth = availableMonths.includes(currentMonthStr)
                         ? currentMonthStr
                         : availableMonths[0];
                 }
 
-                // Populate and sync Month Select Dropdown
+                // Populate and sync Top Month Select Dropdown
                 const monthSelect = document.getElementById('stu-att-month-select');
                 if (monthSelect) {
                     monthSelect.innerHTML = availableMonths.map((mStr) => {
@@ -5490,12 +5680,10 @@ const studentPwa = registerPortalForPwa('student', {
 
                     monthSelect.onchange = (e) => {
                         selectedAttendanceMonth = e.target.value;
-                        renderStudentAttendanceMonthPills(availableMonths, selectedAttendanceMonth);
                         renderStudentAttendanceDailyGrid(selectedAttendanceMonth, profile);
                     };
                 }
 
-                renderStudentAttendanceMonthPills(availableMonths, selectedAttendanceMonth);
                 renderStudentAttendanceDailyGrid(selectedAttendanceMonth, profile);
 
             } catch (err) {
@@ -5503,49 +5691,26 @@ const studentPwa = registerPortalForPwa('student', {
             }
         };
 
-        const renderStudentAttendanceMonthPills = (availableMonths, activeMonth) => {
-            const container = document.getElementById('stu-att-month-pills');
-            const monthSelect = document.getElementById('stu-att-month-select');
-            if (monthSelect && monthSelect.value !== activeMonth) {
-                monthSelect.value = activeMonth;
-            }
-            if (!container) return;
-
-            const formatMonthPillLabel = (mStr) => {
-                const parts = mStr.split('-');
-                if (parts.length < 2) return mStr;
-                const dt = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
-                return dt.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
-            };
-
-            container.innerHTML = availableMonths.map((mStr) => {
-                const isActive = mStr === activeMonth;
-                return `
-                    <button type="button" class="stu-att-month-btn px-3.5 py-1.5 rounded-xl text-xs font-black transition border cursor-pointer shrink-0 ${
-                        isActive
-                            ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
-                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                    }" data-month="${mStr}">
-                        ${formatMonthPillLabel(mStr)}
-                    </button>
-                `;
-            }).join('');
-
-            container.querySelectorAll('.stu-att-month-btn').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    selectedAttendanceMonth = btn.dataset.month;
-                    if (monthSelect) monthSelect.value = selectedAttendanceMonth;
-                    renderStudentAttendanceMonthPills(availableMonths, selectedAttendanceMonth);
-                    renderStudentAttendanceDailyGrid(selectedAttendanceMonth, studentProfile);
-                });
-            });
-        };
-
         const renderStudentAttendanceDailyGrid = (monthStr, profile) => {
             const grid = document.getElementById('stu-att-daily-grid');
             const emptyState = document.getElementById('stu-att-empty-state');
             const monthTitle = document.getElementById('stu-att-month-title');
             if (!grid) return;
+
+            if (grid.dataset.detailBound !== 'true') {
+                grid.dataset.detailBound = 'true';
+                grid.addEventListener('click', (e) => {
+                    const card = e.target.closest('.stu-att-day-card');
+                    if (!card) return;
+                    openStudentAttDetailModal({
+                        dateText: card.dataset.date || '--',
+                        dayText: card.dataset.day || '',
+                        statusLabel: card.dataset.status || '--',
+                        detailText: card.dataset.detail || '',
+                        markedBy: card.dataset.markedBy || ''
+                    });
+                });
+            }
 
             const [yearNumStr, monthNumStr] = monthStr.split('-');
             const yearNum = parseInt(yearNumStr, 10);
@@ -5556,6 +5721,7 @@ const studentPwa = registerPortalForPwa('student', {
                 monthTitle.textContent = `${dt.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })} Daily Record`;
             }
 
+            const studentClass = String(profile?.academicYears?.[selectedAttendanceAcademicYear]?.class || profile?.class || '').trim();
             const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
             const docsInMonth = cachedAttendanceDocs.filter((d) => String(d.date || '').startsWith(monthStr));
             const dayDocsMap = {};
@@ -5564,7 +5730,11 @@ const studentPwa = registerPortalForPwa('student', {
                 if (dayNum) dayDocsMap[dayNum] = d;
             });
 
-            if (docsInMonth.length === 0) {
+            const declaredHolidaysInMonth = (Array.isArray(cachedAttendanceConfig?.holidays) ? cachedAttendanceConfig.holidays : []).filter((h) => {
+                return String(h?.date || '').startsWith(monthStr) && getStudentHolidayMatch(h.date, studentClass, cachedAttendanceConfig);
+            });
+
+            if (docsInMonth.length === 0 && declaredHolidaysInMonth.length === 0) {
                 grid.innerHTML = '';
                 if (emptyState) emptyState.classList.remove('hidden');
                 return;
@@ -5572,54 +5742,67 @@ const studentPwa = registerPortalForPwa('student', {
             if (emptyState) emptyState.classList.add('hidden');
 
             const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
             let html = '';
 
             for (let day = 1; day <= daysInMonth; day++) {
-                const dt = new Date(yearNum, monthNum - 1, day);
+                const dateStr = `${monthStr}-${String(day).padStart(2, '0')}`;
+                const dt = new Date(yearNum, monthNum - 1, day, 12, 0, 0);
                 const dayName = dayNames[dt.getDay()];
+                const fullDayName = fullDayNames[dt.getDay()];
+                const displayDate = dt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
                 const dayDoc = dayDocsMap[day];
+                const declaredHoliday = getStudentHolidayMatch(dateStr, studentClass, cachedAttendanceConfig);
+                const weekendDays = getEffectiveWeekendDaysForDate(dateStr, cachedAttendanceConfig);
+                const isWeeklyOff = weekendDays.includes(dt.getDay());
 
-                if (!dayDoc) {
-                    const isWeeklyOff = Array.isArray(cachedAttendanceConfig?.weekendDays) && cachedAttendanceConfig.weekendDays.includes(dt.getDay());
-                    if (isWeeklyOff) {
-                        html += `
-                            <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-100 flex flex-col justify-between min-h-[50px] sm:min-h-[64px]" title="Weekly Off">
-                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-slate-700">
-                                    <span>${day}</span>
-                                    <span class="text-[8px] sm:text-[9px] uppercase font-bold text-slate-500">${dayName}</span>
-                                </div>
-                                <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-extrabold text-slate-500 mt-0.5 truncate">
-                                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-400"></span>
-                                    <span class="truncate">Off Day</span>
-                                </div>
+                // 1. Declared Holiday (from config or non-weekly holiday doc)
+                const docHolidayReason = String(dayDoc?.holidayReason || '').trim();
+                const isDocDeclaredHoliday = Boolean(dayDoc?.isHoliday) && docHolidayReason && !/^weekly\s*off/i.test(docHolidayReason);
+
+                if (declaredHoliday || isDocDeclaredHoliday) {
+                    const holidayTitle = declaredHoliday?.title || docHolidayReason || 'Institutional Holiday';
+                    html += `
+                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-amber-200/80 bg-amber-50/70 hover:border-amber-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Holiday" data-detail="${escapeHtml(holidayTitle)}" data-marked-by="" title="${escapeHtml(holidayTitle)}">
+                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-amber-900 w-full">
+                                <span>${day}</span>
+                                <span class="text-[8px] sm:text-[9px] uppercase font-bold text-amber-700">${dayName}</span>
                             </div>
-                        `;
-                    } else {
-                        html += `
-                            <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-100 bg-slate-50/60 flex flex-col justify-between min-h-[50px] sm:min-h-[64px] text-slate-400">
-                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black">
-                                    <span>${day}</span>
-                                    <span class="text-[8px] sm:text-[9px] uppercase font-bold">${dayName}</span>
-                                </div>
-                                <div class="text-[9px] sm:text-[10px] font-semibold text-slate-400 mt-0.5">--</div>
+                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-extrabold text-amber-800 mt-0.5 w-full truncate">
+                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 shrink-0"></span>
+                                <span class="truncate">${escapeHtml(holidayTitle)}</span>
                             </div>
-                        `;
-                    }
+                        </button>
+                    `;
                     continue;
                 }
 
-                if (dayDoc.isHoliday) {
-                    const reason = dayDoc.holidayReason || 'Holiday';
+                // 2. Weekly Off Day (keep "Off Day" label)
+                if ((!dayDoc && isWeeklyOff) || (dayDoc?.isHoliday && (!docHolidayReason || /^weekly\s*off/i.test(docHolidayReason)))) {
                     html += `
-                        <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-100 flex flex-col justify-between min-h-[50px] sm:min-h-[64px]" title="${escapeHtml(reason)}">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-slate-700">
+                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-100 hover:border-slate-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Off Day" data-detail="Weekly Off (${escapeHtml(fullDayName)})" data-marked-by="" title="Weekly Off">
+                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-slate-700 w-full">
                                 <span>${day}</span>
                                 <span class="text-[8px] sm:text-[9px] uppercase font-bold text-slate-500">${dayName}</span>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-extrabold text-slate-600 mt-0.5 truncate">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-400"></span>
-                                <span class="truncate">Holiday</span>
+                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-extrabold text-slate-500 mt-0.5 w-full truncate">
+                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-400 shrink-0"></span>
+                                <span class="truncate">Off Day</span>
                             </div>
+                        </button>
+                    `;
+                    continue;
+                }
+
+                // 3. Unmarked date with no doc
+                if (!dayDoc) {
+                    html += `
+                        <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-100 bg-slate-50/60 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] text-slate-400">
+                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black">
+                                <span>${day}</span>
+                                <span class="text-[8px] sm:text-[9px] uppercase font-bold">${dayName}</span>
+                            </div>
+                            <div class="text-[9px] sm:text-[10px] font-semibold text-slate-400 mt-0.5">--</div>
                         </div>
                     `;
                     continue;
@@ -5628,50 +5811,54 @@ const studentPwa = registerPortalForPwa('student', {
                 const rec = dayDoc.records?.[profile.id];
                 const rawStatus = typeof rec === 'object' ? rec?.status : rec;
                 const status = rawStatus === 'E' ? 'L' : rawStatus;
-                const reason = (typeof rec === 'object' ? rec?.reason : '') || '';
+                const remarkText = String((typeof rec === 'object' ? (rec?.remarks || rec?.reason) : '') || '').trim();
+                const markedBy = String(dayDoc.markedByName || '').trim();
+                const remarkBadgeHtml = remarkText
+                    ? `<i class="fas fa-comment-dots text-[9px] sm:text-[10px] opacity-80" title="Remark available"></i>`
+                    : '';
 
                 if (status === 'P') {
                     html += `
-                        <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50/70 flex flex-col justify-between min-h-[50px] sm:min-h-[64px]">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-emerald-950">
+                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50/70 hover:border-emerald-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Present" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml(remarkText ? 'Present — ' + remarkText : 'Present')}">
+                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-emerald-950 w-full">
                                 <span>${day}</span>
-                                <span class="text-[8px] sm:text-[9px] uppercase font-bold text-emerald-700">${dayName}</span>
+                                <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-emerald-700">${remarkBadgeHtml}${dayName}</span>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-emerald-700 mt-0.5">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500"></span>
-                                <span>Present</span>
+                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-emerald-700 mt-0.5 w-full truncate">
+                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                                <span class="truncate">Present</span>
                             </div>
-                        </div>
+                        </button>
                     `;
                 } else if (status === 'A') {
                     html += `
-                        <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-rose-200 bg-rose-50/70 flex flex-col justify-between min-h-[50px] sm:min-h-[64px]" title="${escapeHtml(reason ? 'Reason: ' + reason : 'Absent')}">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-rose-950">
+                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-rose-200 bg-rose-50/70 hover:border-rose-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Absent" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml(remarkText ? 'Remark: ' + remarkText : 'Absent')}">
+                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-rose-950 w-full">
                                 <span>${day}</span>
-                                <span class="text-[8px] sm:text-[9px] uppercase font-bold text-rose-700">${dayName}</span>
+                                <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-rose-700">${remarkBadgeHtml}${dayName}</span>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-rose-700 mt-0.5 truncate">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-500"></span>
-                                <span class="truncate">${escapeHtml(reason || 'Absent')}</span>
+                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-rose-700 mt-0.5 w-full truncate">
+                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-500 shrink-0"></span>
+                                <span class="truncate">${escapeHtml(remarkText || 'Absent')}</span>
                             </div>
-                        </div>
+                        </button>
                     `;
                 } else if (status === 'L') {
                     html += `
-                        <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-amber-200 bg-amber-50/70 flex flex-col justify-between min-h-[50px] sm:min-h-[64px]" title="${escapeHtml(reason ? 'Leave Reason: ' + reason : 'Excused Leave')}">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-amber-950">
+                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-amber-200 bg-amber-50/70 hover:border-amber-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Leave" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml(remarkText ? 'Leave Remark: ' + remarkText : 'Excused Leave')}">
+                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-amber-950 w-full">
                                 <span>${day}</span>
-                                <span class="text-[8px] sm:text-[9px] uppercase font-bold text-amber-700">${dayName}</span>
+                                <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-amber-700">${remarkBadgeHtml}${dayName}</span>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-amber-700 mt-0.5 truncate">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500"></span>
-                                <span class="truncate">${escapeHtml(reason || 'Leave')}</span>
+                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-amber-700 mt-0.5 w-full truncate">
+                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 shrink-0"></span>
+                                <span class="truncate">${escapeHtml(remarkText || 'Leave')}</span>
                             </div>
-                        </div>
+                        </button>
                     `;
                 } else {
                     html += `
-                        <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-white flex flex-col justify-between min-h-[50px] sm:min-h-[64px]">
+                        <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-white flex flex-col justify-between min-h-[54px] sm:min-h-[66px]">
                             <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-slate-600">
                                 <span>${day}</span>
                                 <span class="text-[8px] sm:text-[9px] uppercase font-bold text-slate-400">${dayName}</span>
