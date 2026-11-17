@@ -1250,66 +1250,72 @@
                             </form>
                         </div>
 
-                        <!-- Class-by-Exam Publish Overview Card -->
+                        <!-- Unified Publish Overview & Records Card -->
                         <div class="card p-2.5 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2.5 border-b border-slate-100">
-                                <div class="min-w-0">
-                                    <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                        <i class="fas fa-table-cells text-indigo-600"></i>
-                                        <span>Class-by-Exam Publish Overview</span>
-                                    </h3>
-                                    <p class="text-[11px] text-slate-500 mt-0.5">One compact row per class showing every exam's live status. Click any exam badge to load it into Publish Controls.</p>
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2.5 mb-2.5 border-b border-slate-100">
+                                <div role="tablist" aria-label="Publish Overview and Records" class="inline-flex w-full md:w-auto p-1 bg-slate-100 rounded-xl border border-slate-200 gap-1">
+                                    <button type="button" id="publish-subtab-overview" role="tab" aria-selected="true" aria-controls="publish-tab-panel-overview" data-publish-subtab="overview" class="publish-subtab-btn flex-1 md:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 bg-white text-indigo-700 shadow-2xs border border-indigo-100">
+                                        <i class="fas fa-table-cells"></i>
+                                        <span>Class-by-Exam Overview</span>
+                                    </button>
+                                    <button type="button" id="publish-subtab-history" role="tab" aria-selected="false" aria-controls="publish-tab-panel-history" data-publish-subtab="history" class="publish-subtab-btn flex-1 md:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 text-slate-600 hover:text-slate-900 border border-transparent">
+                                        <i class="fas fa-table-list"></i>
+                                        <span>Published Exam Records</span>
+                                        <span id="publish-history-count-badge" class="px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700 text-[10px] font-mono tabular-nums leading-none">0</span>
+                                    </button>
                                 </div>
-                                <div class="flex items-center gap-2 w-full sm:w-auto shrink-0">
-                                    <label for="publish-matrix-year-select" class="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0">Academic Year:</label>
-                                    <select id="publish-matrix-year-select" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="w-full sm:w-44" class="p-1.5 border rounded-lg bg-white text-xs font-semibold text-slate-700"></select>
+
+                                <div class="flex items-center gap-2 w-full md:w-auto shrink-0">
+                                    <label for="publish-records-year-filter" class="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0">Academic Year:</label>
+                                    <select id="publish-records-year-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="w-full md:w-48" class="p-1.5 border rounded-lg bg-white text-xs font-semibold text-slate-700">
+                                        <option value="">All Academic Years</option>
+                                    </select>
                                 </div>
                             </div>
 
-                            <div class="flex flex-wrap items-center gap-1.5 text-[10px] font-bold mb-2.5">
-                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Live</span>
-                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Partial</span>
-                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Scheduled</span>
-                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Blocked</span>
-                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200"><span class="w-1.5 h-1.5 rounded-full bg-orange-400"></span> Draft</span>
-                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> No Marks</span>
+                            <!-- Sub-Tab 1: Class-by-Exam Publish Overview (Default) -->
+                            <div id="publish-tab-panel-overview" role="tabpanel" aria-labelledby="publish-subtab-overview">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
+                                        <span>One compact row per class showing every exam's status. Click any exam badge to load it into Publish Controls.</span>
+                                        <span id="publish-overview-year-note" class="hidden font-semibold text-indigo-700"></span>
+                                    </div>
+                                    <div class="flex flex-wrap items-center gap-1.5 text-[10px] font-bold shrink-0">
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Live</span>
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Partial</span>
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Scheduled</span>
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Blocked</span>
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200"><span class="w-1.5 h-1.5 rounded-full bg-orange-400"></span> Draft</span>
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> No Marks</span>
+                                    </div>
+                                </div>
+
+                                <div id="publish-class-exam-matrix" class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+                                    <div class="p-5 text-center text-xs text-slate-400">Loading class-by-exam status overview...</div>
+                                </div>
                             </div>
 
-                            <div id="publish-class-exam-matrix" class="overflow-x-auto border border-slate-200 rounded-xl bg-white">
-                                <div class="p-5 text-center text-xs text-slate-400">Loading class-by-exam status overview...</div>
-                            </div>
-                        </div>
-
-                        <!-- Published Exam Records Table Card -->
-                        <div class="card p-2.5 sm:p-4 shadow-xs border border-slate-200 rounded-xl">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2.5 sm:mb-3 border-b border-slate-100">
-                                <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                    <i class="fas fa-table-list text-indigo-600"></i>
-                                    <span>Published Exam Records</span>
-                                </h3>
-                                <select id="publish-history-year-filter" data-smart-select="true" data-smart-floating="true" data-smart-wrapper-class="w-full sm:w-48" class="p-1.5 border rounded-lg bg-white text-xs font-semibold text-slate-700">
-                                    <option value="">All Academic Years</option>
-                                </select>
-                            </div>
-
-                            <div class="overflow-auto max-h-[58vh] sm:max-h-[65vh] border border-slate-200 rounded-xl bg-white">
-                                <table class="w-full text-left text-xs text-slate-700">
-                                    <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
-                                        <tr>
-                                            <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Academic Year</th>
-                                            <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Exam &amp; Display Name</th>
-                                            <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Publish Status</th>
-                                            <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Live Results &amp; Sync</th>
-                                            <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Class Scope &amp; Blocked</th>
-                                            <th class="py-2 px-2.5 sm:py-2.5 sm:px-3 text-center">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="published-history-table-body" class="divide-y divide-slate-100 font-medium">
-                                        <tr>
-                                            <td colspan="6" class="p-5 text-center text-slate-400">Loading published records...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                            <!-- Sub-Tab 2: Published Exam Records -->
+                            <div id="publish-tab-panel-history" role="tabpanel" aria-labelledby="publish-subtab-history" class="hidden">
+                                <div class="overflow-auto max-h-[58vh] sm:max-h-[65vh] border border-slate-200 rounded-xl bg-white">
+                                    <table class="w-full text-left text-xs text-slate-700">
+                                        <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px] sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
+                                            <tr>
+                                                <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Academic Year</th>
+                                                <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Exam &amp; Display Name</th>
+                                                <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Publish Status</th>
+                                                <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Live Results &amp; Sync</th>
+                                                <th class="py-2 px-2.5 sm:py-2.5 sm:px-3">Class Scope &amp; Blocked</th>
+                                                <th class="py-2 px-2.5 sm:py-2.5 sm:px-3 text-center">Student View &amp; Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="published-history-table-body" class="divide-y divide-slate-100 font-medium">
+                                            <tr>
+                                                <td colspan="6" class="p-5 text-center text-slate-400">Loading published records...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2238,9 +2244,10 @@
                 <i id="app-confirm-icon" class="fas fa-triangle-exclamation"></i>
             </div>
             <h3 id="app-confirm-title" class="text-lg font-extrabold text-slate-800 mb-2">Confirm Action</h3>
-            <div id="app-confirm-message" class="text-xs sm:text-sm text-slate-600 mb-6 leading-relaxed whitespace-pre-line text-left bg-slate-50 p-3.5 rounded-xl border border-slate-100 max-h-56 overflow-y-auto">
+            <div id="app-confirm-message" class="text-xs sm:text-sm text-slate-600 mb-4 leading-relaxed whitespace-pre-line text-left bg-slate-50 p-3.5 rounded-xl border border-slate-100 max-h-56 overflow-y-auto">
                 Are you sure you want to proceed?
             </div>
+            <div id="app-confirm-extra" class="hidden mb-4 text-left"></div>
             <div class="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
                 <button type="button" id="app-confirm-cancel-btn" class="w-1/2 sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold text-xs transition">
                     Cancel

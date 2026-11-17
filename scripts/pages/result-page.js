@@ -384,6 +384,7 @@ export const showAppConfirm = ({
         const modal = document.getElementById('app-confirm-modal');
         const titleEl = document.getElementById('app-confirm-title');
         const msgEl = document.getElementById('app-confirm-message');
+        const extraEl = document.getElementById('app-confirm-extra');
         const actionBtn = document.getElementById('app-confirm-action-btn');
         const actionLabel = document.getElementById('app-confirm-action-label');
         const cancelBtn = document.getElementById('app-confirm-cancel-btn');
@@ -393,6 +394,11 @@ export const showAppConfirm = ({
         if (!modal) {
             resolve(window.confirm(message));
             return;
+        }
+
+        if (extraEl) {
+            extraEl.classList.add('hidden');
+            extraEl.innerHTML = '';
         }
 
         if (titleEl) titleEl.textContent = title;
@@ -437,6 +443,10 @@ export const showAppConfirm = ({
             modal.classList.add('hidden');
             modal.style.display = 'none';
             document.body.classList.remove('modal-scroll-lock');
+            if (extraEl) {
+                extraEl.classList.add('hidden');
+                extraEl.innerHTML = '';
+            }
             if (actionBtn) actionBtn.onclick = null;
             if (cancelBtn) cancelBtn.onclick = null;
             document.removeEventListener('keydown', keyHandler);
@@ -2489,6 +2499,201 @@ const updatePublishLiveStatus = () => {
     if (el) el.textContent = line;
 };
 
+const normalizePublishDisplayMode = (mode = 'both') => {
+    const raw = String(mode || '').trim().toLowerCase();
+    if (raw === 'grades' || raw === 'grade_only') return 'grades';
+    if (raw === 'marks' || raw === 'marks_only') return 'marks';
+    return 'both';
+};
+
+const buildExamDisplayScopeKey = (academicYear = '', examKey = '') => {
+    return `${String(academicYear || currentAcademicYear || '').trim()}__${String(examKey || '').trim()}`;
+};
+
+const getDisplayModeMeta = (mode = 'both') => {
+    const normalized = normalizePublishDisplayMode(mode);
+    if (normalized === 'grades') {
+        return {
+            mode: 'grades',
+            label: 'Grade Only',
+            description: 'Shows grades only (hides subject marks & total marks)',
+            badgeCls: 'bg-purple-50 text-purple-700 border-purple-200',
+            icon: 'fa-award'
+        };
+    }
+    if (normalized === 'marks') {
+        return {
+            mode: 'marks',
+            label: 'Marks Only',
+            description: 'Shows subject marks & total marks only (hides grades)',
+            badgeCls: 'bg-sky-50 text-sky-700 border-sky-200',
+            icon: 'fa-hashtag'
+        };
+    }
+    return {
+        mode: 'both',
+        label: 'Grade & Marks',
+        description: 'Shows subject marks, total marks, and grades',
+        badgeCls: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+        icon: 'fa-layer-group'
+    };
+};
+
+const getRecordDisplayMode = (record = {}) => {
+    if (record?.displayMode) return normalizePublishDisplayMode(record.displayMode);
+    const scopeKey = buildExamDisplayScopeKey(record?.academicYear, record?.examKey);
+    const mapMode = resultCenterSettings.examDisplayModes?.[scopeKey];
+    if (mapMode) return normalizePublishDisplayMode(mapMode);
+    return 'both';
+};
+
+const confirmPublishWithDisplayMode = ({
+    title = 'Publish Results',
+    message = 'Choose how results should appear in Student Portal.',
+    confirmText = 'Confirm Publish',
+    cancelText = 'Cancel',
+    type = 'warning',
+    defaultMode = 'both'
+} = {}) => {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('app-confirm-modal');
+        const titleEl = document.getElementById('app-confirm-title');
+        const msgEl = document.getElementById('app-confirm-message');
+        const extraEl = document.getElementById('app-confirm-extra');
+        const actionBtn = document.getElementById('app-confirm-action-btn');
+        const actionLabel = document.getElementById('app-confirm-action-label');
+        const cancelBtn = document.getElementById('app-confirm-cancel-btn');
+        const iconContainer = document.getElementById('app-confirm-icon-container');
+        const iconEl = document.getElementById('app-confirm-icon');
+
+        let selectedMode = normalizePublishDisplayMode(defaultMode);
+
+        if (!modal || !extraEl) {
+            resolve({ confirmed: window.confirm(message), displayMode: selectedMode });
+            return;
+        }
+
+        if (titleEl) titleEl.textContent = title;
+        if (msgEl) msgEl.textContent = message;
+        if (actionLabel) actionLabel.textContent = confirmText;
+        if (cancelBtn) cancelBtn.textContent = cancelText;
+
+        if (iconContainer && iconEl && actionBtn) {
+            if (type === 'danger') {
+                iconContainer.className = 'w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl mb-4 bg-red-100 text-red-600';
+                iconEl.className = 'fas fa-triangle-exclamation';
+                actionBtn.className = 'w-1/2 sm:w-auto px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer';
+            } else if (type === 'warning') {
+                iconContainer.className = 'w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl mb-4 bg-amber-100 text-amber-600';
+                iconEl.className = 'fas fa-triangle-exclamation';
+                actionBtn.className = 'w-1/2 sm:w-auto px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer';
+            } else {
+                iconContainer.className = 'w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl mb-4 bg-indigo-100 text-indigo-600';
+                iconEl.className = 'fas fa-bullhorn';
+                actionBtn.className = 'w-1/2 sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer';
+            }
+        }
+
+        const options = ['both', 'grades', 'marks'].map((modeKey) => getDisplayModeMeta(modeKey));
+        const renderOptionsHtml = () => {
+            extraEl.innerHTML = `
+                <div class="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <span class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-900">
+                            <i class="fas fa-eye mr-1 text-indigo-600"></i> Student Portal Result Display
+                        </span>
+                        <span class="text-[10px] font-bold text-slate-500">Editable anytime later</span>
+                    </div>
+                    <div class="space-y-1.5">
+                        ${options.map((opt) => {
+                            const isSelected = selectedMode === opt.mode;
+                            return `
+                                <label class="publish-display-mode-option flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${isSelected ? 'bg-white border-indigo-500 ring-1 ring-indigo-500 shadow-2xs' : 'bg-white/80 border-slate-200 hover:border-indigo-300'}" data-mode="${opt.mode}">
+                                    <input type="radio" name="publish-confirm-display-mode" value="${opt.mode}" class="mt-0.5 accent-indigo-600 cursor-pointer" ${isSelected ? 'checked' : ''}>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <span class="text-xs font-extrabold text-slate-800">${opt.label}</span>
+                                            ${opt.mode === 'both' ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-100 text-indigo-700">Default</span>' : ''}
+                                        </div>
+                                        <p class="text-[11px] text-slate-500 leading-snug mt-0.5">${opt.description}</p>
+                                    </div>
+                                </label>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+
+            extraEl.querySelectorAll('input[name="publish-confirm-display-mode"]').forEach((radio) => {
+                radio.addEventListener('change', (e) => {
+                    selectedMode = normalizePublishDisplayMode(e.target.value);
+                    extraEl.querySelectorAll('.publish-display-mode-option').forEach((card) => {
+                        const active = card.dataset.mode === selectedMode;
+                        card.className = `publish-display-mode-option flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition ${active ? 'bg-white border-indigo-500 ring-1 ring-indigo-500 shadow-2xs' : 'bg-white/80 border-slate-200 hover:border-indigo-300'}`;
+                    });
+                });
+            });
+        };
+
+        renderOptionsHtml();
+        extraEl.classList.remove('hidden');
+
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        document.body.classList.add('modal-scroll-lock');
+
+        const keyHandler = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                cleanUp(false);
+            }
+        };
+
+        const cleanUp = (confirmed) => {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+            document.body.classList.remove('modal-scroll-lock');
+            extraEl.classList.add('hidden');
+            extraEl.innerHTML = '';
+            if (actionBtn) actionBtn.onclick = null;
+            if (cancelBtn) cancelBtn.onclick = null;
+            document.removeEventListener('keydown', keyHandler);
+            resolve({ confirmed: Boolean(confirmed), displayMode: selectedMode });
+        };
+
+        if (actionBtn) actionBtn.onclick = () => cleanUp(true);
+        if (cancelBtn) cancelBtn.onclick = () => cleanUp(false);
+        document.addEventListener('keydown', keyHandler);
+    });
+};
+
+const applyDisplayModeToPublishedRows = async (academicYear = '', examKey = '', displayMode = 'both') => {
+    const cleanYear = String(academicYear || currentAcademicYear || '').trim();
+    const cleanKey = String(examKey || '').trim();
+    if (!cleanKey) return;
+    const expectedShowMarks = normalizePublishDisplayMode(displayMode) !== 'grades';
+    const matchingRows = examResultsCache.filter((row) => {
+        if (row.published !== true) return false;
+        const matchesYear = !row.academicYear || row.academicYear === cleanYear;
+        return matchesYear && resultMatchesExam(row, cleanKey) && row.showMarksToStudents !== expectedShowMarks;
+    });
+    if (!matchingRows.length) return;
+    const nowTs = Date.now();
+    for (let i = 0; i < matchingRows.length; i += 400) {
+        const chunk = matchingRows.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach((row) => {
+            batch.update(doc(db, `${BASE_PATH}/examResults`, row.id), {
+                showMarksToStudents: expectedShowMarks,
+                updatedAt: nowTs
+            });
+            row.showMarksToStudents = expectedShowMarks;
+            row.updatedAt = nowTs;
+        });
+        await batch.commit();
+    }
+};
+
 const getPublishHistoryRecords = () => {
     let history = Array.isArray(resultCenterSettings.publishHistory) ? [...resultCenterSettings.publishHistory] : [];
     if (!history.length && resultCenterSettings.publishAt && (resultCenterSettings.publishAcademicYear || resultCenterSettings.examLabel)) {
@@ -2515,10 +2720,14 @@ const getPublishHistoryRecords = () => {
 const renderPublishedHistoryTable = () => {
     const tbody = document.getElementById('published-history-table-body');
     if (!tbody) return;
-    const yearFilter = document.getElementById('publish-history-year-filter')?.value || '';
+    const yearFilter = document.getElementById('publish-records-year-filter')?.value || '';
     let records = getPublishHistoryRecords();
     if (yearFilter) {
         records = records.filter((r) => (r.academicYear || '') === yearFilter);
+    }
+    const countBadge = document.getElementById('publish-history-count-badge');
+    if (countBadge) {
+        countBadge.textContent = String(records.length);
     }
     if (!records.length) {
         tbody.innerHTML = `
@@ -2648,15 +2857,38 @@ const renderPublishedHistoryTable = () => {
             ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Live</span>`
             : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Countdown</span>`;
 
+        const effectiveDisplayMode = getRecordDisplayMode(record);
+        const displayMeta = getDisplayModeMeta(effectiveDisplayMode);
+        const displayModeBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${displayMeta.badgeCls}"><i class="fas ${displayMeta.icon} text-[9px]"></i> View: ${displayMeta.label}</span>`;
+
+        const displaySwitcherHtml = `
+            <div class="inline-flex items-center rounded-lg bg-slate-100 p-0.5 border border-slate-200" role="group" aria-label="Student Result Display Mode">
+                ${[
+                    { mode: 'both', label: 'Grade & Marks', title: 'Show Grade, Subject Marks & Total Marks' },
+                    { mode: 'grades', label: 'Grade Only', title: 'Show Grades only (Hide Marks & Total Marks)' },
+                    { mode: 'marks', label: 'Marks Only', title: 'Show Marks & Total Marks only (Hide Grades)' }
+                ].map((opt) => {
+                    const isActive = effectiveDisplayMode === opt.mode;
+                    return `<button type="button" class="record-display-mode-btn px-2 py-1 rounded-md text-[10px] font-bold transition cursor-pointer whitespace-nowrap ${isActive ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'}" data-id="${escapeHtml(record.id)}" data-mode="${opt.mode}" aria-pressed="${isActive ? 'true' : 'false'}" title="${opt.title}">${opt.label}</button>`;
+                }).join('')}
+            </div>
+        `;
+
+        const republishBtnHtml = isUnpublished
+            ? `<button type="button" class="republish-record-btn px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition inline-flex items-center gap-1 shadow-2xs cursor-pointer" data-id="${escapeHtml(record.id)}" title="Republish results directly">
+                    <i class="fas fa-paper-plane text-[10px]"></i> Republish
+               </button>`
+            : '';
+
         const unpublishBtnHtml = !isUnpublished
-            ? `<button type="button" class="unpublish-record-btn px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs transition flex items-center gap-1" data-id="${escapeHtml(record.id)}" title="Unpublish results back to draft">
-                    <i class="fas fa-undo"></i> Unpublish
+            ? `<button type="button" class="unpublish-record-btn px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[11px] transition inline-flex items-center gap-1 cursor-pointer" data-id="${escapeHtml(record.id)}" title="Unpublish results back to draft">
+                    <i class="fas fa-undo text-[10px]"></i> Unpublish
                </button>`
             : '';
 
         const publishPendingBtnHtml = (draftsInOpenClasses.length > 0 && !isUnpublished)
-            ? `<button type="button" class="publish-pending-record-btn px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1 shadow-sm" data-id="${escapeHtml(record.id)}" title="Publish all ${draftsInOpenClasses.length} new draft results in open classes">
-                    <i class="fas fa-bolt"></i> Publish ${draftsInOpenClasses.length} Pending
+            ? `<button type="button" class="publish-pending-record-btn px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition inline-flex items-center gap-1 shadow-2xs cursor-pointer" data-id="${escapeHtml(record.id)}" title="Publish all ${draftsInOpenClasses.length} new draft results in open classes">
+                    <i class="fas fa-bolt text-[10px]"></i> Publish ${draftsInOpenClasses.length} Pending
                </button>`
             : '';
 
@@ -2675,6 +2907,7 @@ const renderPublishedHistoryTable = () => {
                     <div class="flex flex-col gap-1 items-start">
                         ${statusBadge}
                         ${modeBadge}
+                        ${displayModeBadge}
                         ${sourceBadge}
                     </div>
                 </td>
@@ -2684,16 +2917,20 @@ const renderPublishedHistoryTable = () => {
                 <td class="py-3 px-4">
                     ${classScopeHtml}
                 </td>
-                <td class="py-3 px-4 text-center whitespace-nowrap">
-                    <div class="inline-flex items-center gap-1">
-                        ${publishPendingBtnHtml}
-                        ${unpublishBtnHtml}
-                        <button type="button" class="edit-publish-record-btn px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition flex items-center gap-1" data-id="${escapeHtml(record.id)}">
-                            <i class="fas fa-edit"></i> Edit
-                        </button>
-                        <button type="button" class="delete-publish-record-btn px-2.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs transition flex items-center gap-1" data-id="${escapeHtml(record.id)}" title="Delete record and revert results to draft">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                <td class="py-3 px-3 text-center whitespace-nowrap">
+                    <div class="flex flex-col items-center gap-1.5">
+                        ${displaySwitcherHtml}
+                        <div class="inline-flex flex-wrap items-center justify-center gap-1">
+                            ${republishBtnHtml}
+                            ${publishPendingBtnHtml}
+                            ${unpublishBtnHtml}
+                            <button type="button" class="edit-publish-record-btn px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] transition inline-flex items-center gap-1 cursor-pointer" data-id="${escapeHtml(record.id)}" title="Edit publish settings">
+                                <i class="fas fa-edit text-[10px]"></i> Edit
+                            </button>
+                            <button type="button" class="delete-publish-record-btn px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-[11px] transition inline-flex items-center justify-center cursor-pointer" data-id="${escapeHtml(record.id)}" title="Delete record and revert results to draft">
+                                <i class="fas fa-trash text-[10px]"></i>
+                            </button>
+                        </div>
                     </div>
                 </td>
             </tr>
@@ -2730,28 +2967,27 @@ const renderPublishControls = () => {
     if (prevExam) examSelect.value = prevExam;
     syncSmartSelectDisplay(examSelect);
 
-    const historyYearSelect = document.getElementById('publish-history-year-filter');
-    if (historyYearSelect) {
-        const prevFilter = historyYearSelect.value;
-        populateAcademicYearSelect(historyYearSelect, years, currentAcademicYear, {
+    const recordsYearSelect = document.getElementById('publish-records-year-filter');
+    if (recordsYearSelect) {
+        const allRecordsYears = [
+            ...new Set([
+                ...years,
+                ...examResultsCache.map((r) => r.academicYear).filter(Boolean),
+                ...getPublishHistoryRecords().map((r) => r.academicYear).filter(Boolean)
+            ])
+        ].filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
+        const hasUserPicked = recordsYearSelect.dataset.userChangedYear === 'true';
+        const prevRecordsYear = hasUserPicked ? recordsYearSelect.value : currentAcademicYear;
+        populateAcademicYearSelect(recordsYearSelect, allRecordsYears, currentAcademicYear, {
             placeholder: 'All Academic Years',
-            selectedValue: prevFilter,
-            defaultToCurrent: false
+            selectedValue: prevRecordsYear,
+            defaultToCurrent: !hasUserPicked,
+            preferCurrentUnlessUserChanged: false
         });
-        syncSmartSelectDisplay(historyYearSelect);
-    }
-
-    const matrixYearSelect = document.getElementById('publish-matrix-year-select');
-    if (matrixYearSelect) {
-        const allMatrixYears = [...new Set([...years, ...examResultsCache.map((r) => r.academicYear).filter(Boolean)])].filter(Boolean).sort((a, b) => String(b).localeCompare(String(a)));
-        const prevMatrixYear = matrixYearSelect.dataset.userChangedYear === 'true'
-            ? (matrixYearSelect.value || currentAcademicYear)
-            : currentAcademicYear;
-        populateAcademicYearSelect(matrixYearSelect, allMatrixYears, currentAcademicYear, {
-            selectedValue: prevMatrixYear,
-            preferCurrentUnlessUserChanged: true
-        });
-        syncSmartSelectDisplay(matrixYearSelect);
+        if (hasUserPicked && prevRecordsYear === '') {
+            recordsYearSelect.value = '';
+        }
+        syncSmartSelectDisplay(recordsYearSelect);
     }
 
     renderPublishClassExamMatrix();
@@ -2761,8 +2997,19 @@ const renderPublishControls = () => {
 const renderPublishClassExamMatrix = () => {
     const container = document.getElementById('publish-class-exam-matrix');
     if (!container) return;
-    const yearSelect = document.getElementById('publish-matrix-year-select');
-    const selectedYear = yearSelect?.value || currentAcademicYear || '';
+    const yearSelect = document.getElementById('publish-records-year-filter');
+    const rawYearValue = yearSelect?.value || '';
+    const selectedYear = rawYearValue || currentAcademicYear || '';
+    const yearNoteEl = document.getElementById('publish-overview-year-note');
+    if (yearNoteEl) {
+        if (!rawYearValue && selectedYear) {
+            yearNoteEl.textContent = `(Showing current year: ${selectedYear})`;
+            yearNoteEl.classList.remove('hidden');
+        } else {
+            yearNoteEl.textContent = '';
+            yearNoteEl.classList.add('hidden');
+        }
+    }
 
     const classSet = new Set(Array.isArray(classes) ? classes : []);
     resultSchemas
@@ -2911,6 +3158,10 @@ const syncPublishRecordFromDirectAction = async ({
     const existingIdx = history.findIndex((r) => (r.academicYear || cleanYear) === cleanYear && r.examKey === cleanKey);
     const nowTs = Date.now();
     const nowIso = new Date(nowTs).toISOString();
+    const scopeKey = buildExamDisplayScopeKey(cleanYear, cleanKey);
+    const resolvedDisplayMode = existingIdx >= 0
+        ? getRecordDisplayMode(history[existingIdx])
+        : normalizePublishDisplayMode(resultCenterSettings.examDisplayModes?.[scopeKey] || 'both');
 
     if (action === 'publish') {
         if (existingIdx >= 0) {
@@ -2922,6 +3173,7 @@ const syncPublishRecordFromDirectAction = async ({
                 examLabel: existing.examLabel || examLabel || cleanKey,
                 publishType: (existing.publishType === 'scheduled' || existing.publishType === 'unpublished') ? 'now' : (existing.publishType || 'now'),
                 status: 'Published',
+                displayMode: resolvedDisplayMode,
                 publishAt: existing.publishAt || nowIso,
                 publishSource: source,
                 lastUpdatedByRole: roleScope,
@@ -2936,6 +3188,7 @@ const syncPublishRecordFromDirectAction = async ({
                 examLabel: examLabel || cleanKey,
                 publishType: 'now',
                 status: 'Published',
+                displayMode: resolvedDisplayMode,
                 publishAt: nowIso,
                 blockedClasses: [],
                 publishSource: source,
@@ -2975,11 +3228,17 @@ const syncPublishRecordFromDirectAction = async ({
     }
 
     try {
+        const nextExamDisplayModes = {
+            ...(resultCenterSettings.examDisplayModes || {}),
+            [scopeKey]: resolvedDisplayMode
+        };
         await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
             publishHistory: history,
+            examDisplayModes: nextExamDisplayModes,
             updatedAt: nowTs
         }, { merge: true });
         resultCenterSettings.publishHistory = history;
+        resultCenterSettings.examDisplayModes = nextExamDisplayModes;
         renderPublishClassExamMatrix();
         renderPublishedHistoryTable();
     } catch (err) {
@@ -4092,15 +4351,15 @@ const renderExamSetup = () => {
         
         const subjectsBadgeHtml = subjectRows.length
             ? subjectRows.map((sub) => `
-                <span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold mr-1 mb-1">
+                <span class="inline-flex items-center bg-slate-100 text-slate-800 border border-slate-200 px-1.5 py-0.5 rounded text-[11px] font-semibold leading-tight">
                     ${escapeHtml(sub.name)}
                 </span>
             `).join('')
-            : '<span class="text-xs text-slate-400 italic">No subjects configured</span>';
+            : '<span class="text-[11px] text-slate-400 italic">No subjects</span>';
 
         const defaultExamsBadges = DEFAULT_EXAM_DEFS.map((exam) => `
-            <span class="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded text-[11px] font-semibold mr-1 mb-1">
-                ${escapeHtml(exam.label)} <span class="text-[9px] bg-indigo-200 text-indigo-800 px-1 rounded">Default</span>
+            <span class="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded text-[11px] font-semibold leading-tight whitespace-nowrap">
+                <span>${escapeHtml(exam.label)}</span><span class="text-[9px] bg-indigo-200/80 text-indigo-800 px-1 rounded leading-tight">Default</span>
             </span>
         `).join('');
 
@@ -4108,10 +4367,10 @@ const renderExamSetup = () => {
             ? customExams.map(([key, config]) => {
                 const examLabel = config?.label || key;
                 return `
-                <span class="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded text-[11px] font-medium mr-1 mb-1">
+                <span class="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded text-[11px] font-semibold leading-tight whitespace-nowrap">
                     <span>${escapeHtml(examLabel)}</span>
-                    <button type="button" class="custom-exam-edit-btn text-blue-600 hover:text-blue-800 font-bold p-0.5 cursor-pointer" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Edit Custom Exam"><i class="fas fa-pen text-[9px]"></i></button>
-                    <button type="button" class="custom-exam-delete-btn text-red-600 hover:text-red-800 font-bold p-0.5 cursor-pointer" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Delete Custom Exam"><i class="fas fa-times text-[9px]"></i></button>
+                    <button type="button" class="custom-exam-edit-btn text-blue-600 hover:text-blue-800 font-bold px-0.5 cursor-pointer" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Edit Custom Exam"><i class="fas fa-pen text-[9px]"></i></button>
+                    <button type="button" class="custom-exam-delete-btn text-red-600 hover:text-red-800 font-bold px-0.5 cursor-pointer" data-schema-id="${schema.id}" data-exam-key="${escapeHtml(key)}" title="Delete Custom Exam"><i class="fas fa-times text-[9px]"></i></button>
                 </span>
                 `;
             }).join('')
@@ -4119,31 +4378,28 @@ const renderExamSetup = () => {
 
         return `
         <tr class="hover:bg-slate-50/70 transition border-b border-slate-100">
-            <td class="p-2 sm:p-3 align-top font-bold text-slate-800 whitespace-nowrap">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs sm:text-sm font-extrabold text-slate-800">${escapeHtml(schema.classLabel || '--')}</span>
-                    <span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold tabular-nums">${subjectRows.length} Subs</span>
-                </div>
-                <div class="text-[11px] text-slate-400 font-normal mt-0.5">${escapeHtml(schema.academicYear || currentAcademicYear || '')}</div>
+            <td class="px-2.5 py-2 align-top font-bold text-slate-800 whitespace-nowrap w-px">
+                <div class="text-xs font-extrabold text-slate-800 leading-tight">${escapeHtml(schema.classLabel || '--')}</div>
+                <div class="text-[10px] text-slate-500 font-medium mt-0.5 tabular-nums">${subjectRows.length} Subs · ${escapeHtml(schema.academicYear || currentAcademicYear || '')}</div>
             </td>
-            <td class="p-2 sm:p-3 align-top">
-                <div class="flex flex-wrap">${subjectsBadgeHtml}</div>
+            <td class="px-2.5 py-2 align-top">
+                <div class="flex flex-wrap gap-1">${subjectsBadgeHtml}</div>
             </td>
-            <td class="p-2 sm:p-3 align-top">
-                <div class="flex flex-wrap items-center">
+            <td class="px-2.5 py-2 align-top">
+                <div class="flex flex-wrap items-center gap-1">
                     ${defaultExamsBadges}
                     ${customExamsBadges}
                 </div>
             </td>
-            <td class="p-2 sm:p-3 align-top text-right whitespace-nowrap">
-                <div class="flex items-center justify-end gap-1.5">
-                    <button type="button" class="schema-edit-btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold py-1.5 px-2.5 rounded-lg transition flex items-center gap-1 cursor-pointer" data-id="${schema.id}" title="Edit Subjects">
+            <td class="px-2.5 py-2 align-top text-right whitespace-nowrap w-px">
+                <div class="inline-flex items-center justify-end gap-1">
+                    <button type="button" class="schema-edit-btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold py-1 px-2 rounded-md transition inline-flex items-center gap-1 cursor-pointer whitespace-nowrap" data-id="${schema.id}" title="Edit Subjects">
                         <i class="fas fa-edit"></i> Edit
                     </button>
-                    <button type="button" class="schema-configure-exams-btn bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-1.5 px-2 rounded-lg transition flex items-center gap-1 cursor-pointer" data-id="${schema.id}" data-class="${escapeHtml(schema.classLabel)}" title="Configure Exams">
+                    <button type="button" class="schema-configure-exams-btn bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold py-1 px-2 rounded-md transition inline-flex items-center gap-1 cursor-pointer whitespace-nowrap" data-id="${schema.id}" data-class="${escapeHtml(schema.classLabel)}" title="Configure Exams">
                         <i class="fas fa-tasks"></i> Exams
                     </button>
-                    <button type="button" class="schema-delete-btn bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold py-1.5 px-2 rounded-lg transition cursor-pointer" data-id="${schema.id}" title="Delete Class Schema">
+                    <button type="button" class="schema-delete-btn bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[11px] font-bold py-1 px-2 rounded-md transition inline-flex items-center justify-center cursor-pointer" data-id="${schema.id}" title="Delete Class Schema">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
@@ -4153,13 +4409,13 @@ const renderExamSetup = () => {
     }).join('');
 
     cont.innerHTML = `
-        <table class="w-full text-left text-xs sm:text-sm">
+        <table class="w-full table-auto text-left text-xs">
             <thead class="bg-slate-50 text-slate-700 border-b font-semibold sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                 <tr>
-                    <th class="p-2 sm:p-3 w-32 sm:w-36">Class</th>
-                    <th class="p-2 sm:p-3 min-w-[200px] sm:min-w-[220px]">Configured Subjects</th>
-                    <th class="p-2 sm:p-3 min-w-[200px] sm:min-w-[220px]">Active Exams</th>
-                    <th class="p-2 sm:p-3 text-right w-44 sm:w-48">Actions</th>
+                    <th class="px-2.5 py-2 w-px whitespace-nowrap">Class</th>
+                    <th class="px-2.5 py-2">Configured Subjects</th>
+                    <th class="px-2.5 py-2">Active Exams</th>
+                    <th class="px-2.5 py-2 text-right w-px whitespace-nowrap">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -6372,15 +6628,22 @@ const publishPendingExamDrafts = async (recordId) => {
     if (!ok) return;
 
     await withBusyButton(null, 'Publishing...', async () => {
+        const expectedShowMarks = getRecordDisplayMode(record) !== 'grades';
         for (let i = 0; i < draftsToPublish.length; i += 400) {
             const chunk = draftsToPublish.slice(i, i + 400);
             const batch = writeBatch(db);
             chunk.forEach((row) => {
+                const nowTs = Date.now();
                 batch.update(doc(db, `${BASE_PATH}/examResults`, row.id), {
                     published: true,
-                    publishedAt: Date.now(),
-                    updatedAt: Date.now()
+                    publishedAt: nowTs,
+                    showMarksToStudents: expectedShowMarks,
+                    updatedAt: nowTs
                 });
+                row.published = true;
+                row.publishedAt = nowTs;
+                row.showMarksToStudents = expectedShowMarks;
+                row.updatedAt = nowTs;
             });
             await batch.commit();
         }
@@ -6526,8 +6789,13 @@ const deletePublishRecord = async (recordId) => {
     history = history.filter((r) => r.id !== recordId);
 
     const isCurrentActiveAnnouncement = (resultCenterSettings.publishExamKey === record.examKey && (!resultCenterSettings.publishAcademicYear || resultCenterSettings.publishAcademicYear === record.academicYear));
+    const scopeKey = buildExamDisplayScopeKey(record.academicYear, record.examKey);
+    const nextExamDisplayModes = { ...(resultCenterSettings.examDisplayModes || {}) };
+    delete nextExamDisplayModes[scopeKey];
+
     const settingsUpdate = {
         publishHistory: history,
+        examDisplayModes: nextExamDisplayModes,
         updatedAt: Date.now()
     };
     if (isCurrentActiveAnnouncement) {
@@ -6541,6 +6809,7 @@ const deletePublishRecord = async (recordId) => {
     await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), settingsUpdate, { merge: true });
 
     resultCenterSettings.publishHistory = history;
+    resultCenterSettings.examDisplayModes = nextExamDisplayModes;
     if (editingPublishRecordId === recordId) {
         cancelEditingPublishRecord();
     }
@@ -6549,6 +6818,155 @@ const deletePublishRecord = async (recordId) => {
     renderPublishedDraftTables();
     updateDashboard();
     notify('Published record removed and results returned to Draft.');
+};
+
+const updatePublishRecordDisplayMode = async (recordId, nextMode) => {
+    if (roleScope !== 'admin') return alert('Only administrators can change student display mode.');
+    const records = getPublishHistoryRecords();
+    const record = records.find((r) => r.id === recordId);
+    if (!record) return alert('Publish record not found.');
+
+    const normalizedMode = normalizePublishDisplayMode(nextMode);
+    const currentMode = getRecordDisplayMode(record);
+    if (normalizedMode === currentMode) return;
+
+    const history = Array.isArray(resultCenterSettings.publishHistory) ? [...resultCenterSettings.publishHistory] : [];
+    const idx = history.findIndex((r) => r.id === recordId);
+    const nowTs = Date.now();
+    if (idx >= 0) {
+        history[idx] = {
+            ...history[idx],
+            displayMode: normalizedMode,
+            lastUpdatedByRole: roleScope,
+            updatedAt: nowTs
+        };
+    }
+
+    const scopeKey = buildExamDisplayScopeKey(record.academicYear, record.examKey);
+    const nextExamDisplayModes = {
+        ...(resultCenterSettings.examDisplayModes || {}),
+        [scopeKey]: normalizedMode
+    };
+
+    try {
+        await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
+            publishHistory: history,
+            examDisplayModes: nextExamDisplayModes,
+            updatedAt: nowTs
+        }, { merge: true });
+
+        resultCenterSettings.publishHistory = history;
+        resultCenterSettings.examDisplayModes = nextExamDisplayModes;
+        await applyDisplayModeToPublishedRows(record.academicYear, record.examKey, normalizedMode);
+
+        renderPublishClassExamMatrix();
+        renderPublishedHistoryTable();
+        const meta = getDisplayModeMeta(normalizedMode);
+        showToast(`Student display updated to ${meta.label} for ${record.examLabel || record.examKey}.`, 'success');
+    } catch (err) {
+        console.error('Display mode update failed:', err);
+        alert(err?.message || 'Failed to update display mode.');
+    }
+};
+
+const republishExamResults = async (recordId) => {
+    if (roleScope !== 'admin') return alert('Only admin can republish results.');
+    const record = getPublishHistoryRecords().find((r) => r.id === recordId);
+    if (!record) return alert('Publish record not found.');
+
+    const blockedList = Array.isArray(record.blockedClasses) ? record.blockedClasses : [];
+    const draftsToPublish = examResultsCache.filter((row) => {
+        if (row.published === true) return false;
+        const matchesYear = !row.academicYear || row.academicYear === record.academicYear;
+        const matchesExam = resultMatchesExam(row, record.examKey);
+        const isOpenClass = !blockedList.includes(row.classLabel);
+        return matchesYear && matchesExam && isOpenClass;
+    });
+
+    const { confirmed, displayMode } = await confirmPublishWithDisplayMode({
+        title: 'Republish Examination Results',
+        message: `Republish "${record.examLabel || record.examKey}" (${record.academicYear}) immediately?${draftsToPublish.length ? `\n\n${draftsToPublish.length} draft result(s) in open classes will become live right away.` : '\n\nThis will mark the exam as Live in Publish Control and apply your chosen student display setting.'}`,
+        confirmText: 'Republish Now',
+        type: 'warning',
+        defaultMode: getRecordDisplayMode(record)
+    });
+    if (!confirmed) return;
+
+    await withBusyButton(null, 'Republishing...', async () => {
+        const nowTs = Date.now();
+        const expectedShowMarks = displayMode !== 'grades';
+
+        if (draftsToPublish.length > 0) {
+            for (let i = 0; i < draftsToPublish.length; i += 400) {
+                const chunk = draftsToPublish.slice(i, i + 400);
+                const batch = writeBatch(db);
+                chunk.forEach((row) => {
+                    const updatePayload = {
+                        published: true,
+                        publishedAt: nowTs,
+                        publishType: 'now',
+                        publishAt: null,
+                        showMarksToStudents: expectedShowMarks,
+                        updatedAt: nowTs
+                    };
+                    batch.update(doc(db, `${BASE_PATH}/examResults`, row.id), updatePayload);
+                    Object.assign(row, updatePayload);
+                });
+                await batch.commit();
+            }
+        }
+
+        await applyDisplayModeToPublishedRows(record.academicYear, record.examKey, displayMode);
+
+        let history = Array.isArray(resultCenterSettings.publishHistory) ? [...resultCenterSettings.publishHistory] : [];
+        const idx = history.findIndex((r) => r.id === recordId);
+        if (idx >= 0) {
+            history[idx] = {
+                ...history[idx],
+                publishType: 'now',
+                status: 'Published',
+                displayMode,
+                publishAt: new Date(nowTs).toISOString(),
+                publishSource: 'publish_control',
+                lastUpdatedByRole: roleScope,
+                lastSyncedAt: nowTs,
+                updatedAt: nowTs
+            };
+        }
+
+        const scopeKey = buildExamDisplayScopeKey(record.academicYear, record.examKey);
+        const nextExamDisplayModes = {
+            ...(resultCenterSettings.examDisplayModes || {}),
+            [scopeKey]: displayMode
+        };
+
+        await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
+            publishAt: null,
+            examLabel: record.examLabel || record.examKey,
+            publishAcademicYear: record.academicYear,
+            publishExamKey: record.examKey,
+            blockedClasses: blockedList,
+            publishHistory: history,
+            examDisplayModes: nextExamDisplayModes,
+            locked: false,
+            countdownStartedAt: '',
+            updatedAt: nowTs
+        }, { merge: true });
+
+        resultCenterSettings.publishHistory = history;
+        resultCenterSettings.examDisplayModes = nextExamDisplayModes;
+        resultCenterSettings.publishAt = null;
+        resultCenterSettings.examLabel = record.examLabel || record.examKey;
+        resultCenterSettings.publishAcademicYear = record.academicYear;
+        resultCenterSettings.publishExamKey = record.examKey;
+
+        renderPublishClassExamMatrix();
+        renderPublishedHistoryTable();
+        renderPublishedDraftTables();
+        updateDashboard();
+        const meta = getDisplayModeMeta(displayMode);
+        showToast(`Republished ${record.examLabel || record.examKey} (${meta.label})!`, 'success');
+    });
 };
 
 const runPublishAction = async () => {
@@ -6576,6 +6994,7 @@ const runPublishAction = async () => {
     }
 
     const existingRec = getPublishHistoryRecords().find((r) => r.academicYear === publishAcademicYear && r.examKey === publishExamKey);
+    const editingRec = editingPublishRecordId ? getPublishHistoryRecords().find((r) => r.id === editingPublishRecordId) : null;
     const isAlreadyLive = existingRec && (existingRec.publishType !== 'unpublished' && existingRec.status !== 'Unpublished');
 
     let actionPrompt = isNow
@@ -6586,11 +7005,13 @@ const runPublishAction = async () => {
         actionPrompt = `Notice: "${title} (${publishAcademicYear})" is already published.\n\nDo you want to re-publish and update this record with current drafts and settings?`;
     }
 
-    const ok = await showAppConfirm({
-        title: isNow ? 'Publish Results Now' : 'Schedule Result Publishing',
+    const defaultModalDisplayMode = editingRec ? getRecordDisplayMode(editingRec) : 'both';
+    const { confirmed: ok, displayMode } = await confirmPublishWithDisplayMode({
+        title: editingRec ? 'Update & Publish Result Settings' : (isNow ? 'Publish Results Now' : 'Schedule Result Publishing'),
         message: actionPrompt,
-        confirmText: isNow ? 'Publish Now' : 'Save Schedule',
-        type: 'warning'
+        confirmText: editingRec ? 'Update Record' : (isNow ? 'Publish Now' : 'Save Schedule'),
+        type: 'warning',
+        defaultMode: defaultModalDisplayMode
     });
     if (!ok) return;
 
@@ -6601,6 +7022,7 @@ const runPublishAction = async () => {
             : history.findIndex((r) => r.academicYear === publishAcademicYear && r.examKey === publishExamKey);
 
         const recordId = (existingIdx >= 0 && history[existingIdx].id) ? history[existingIdx].id : (editingPublishRecordId || `pub_${Date.now()}`);
+        const expectedShowMarks = displayMode !== 'grades';
 
         const newRecord = {
             id: recordId,
@@ -6609,6 +7031,7 @@ const runPublishAction = async () => {
             examLabel: title,
             publishType: isNow ? 'now' : 'scheduled',
             status: isNow ? 'Published' : 'Scheduled',
+            displayMode,
             publishAt,
             blockedClasses: blocked,
             publishSource: 'publish_control',
@@ -6646,6 +7069,7 @@ const runPublishAction = async () => {
                         publishedAt: isNow ? Date.now() : (new Date(publishAt).getTime() || Date.now()),
                         publishType: isNow ? 'now' : 'scheduled',
                         publishAt: isNow ? null : publishAt,
+                        showMarksToStudents: expectedShowMarks,
                         updatedAt: Date.now()
                     };
                     batch.update(doc(db, `${BASE_PATH}/examResults`, row.id), updatePayload);
@@ -6653,11 +7077,20 @@ const runPublishAction = async () => {
                     row.publishedAt = updatePayload.publishedAt;
                     row.publishType = updatePayload.publishType;
                     row.publishAt = updatePayload.publishAt;
+                    row.showMarksToStudents = updatePayload.showMarksToStudents;
                     row.updatedAt = updatePayload.updatedAt;
                 });
                 await batch.commit();
             }
         }
+
+        await applyDisplayModeToPublishedRows(publishAcademicYear, publishExamKey, displayMode);
+
+        const scopeKey = buildExamDisplayScopeKey(publishAcademicYear, publishExamKey);
+        const nextExamDisplayModes = {
+            ...(resultCenterSettings.examDisplayModes || {}),
+            [scopeKey]: displayMode
+        };
 
         const effectivePublishAt = isNow ? null : publishAt;
         await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
@@ -6667,12 +7100,14 @@ const runPublishAction = async () => {
             publishExamKey,
             blockedClasses: blocked,
             publishHistory: history,
+            examDisplayModes: nextExamDisplayModes,
             locked: false,
             updatedAt: Date.now(),
             countdownStartedAt: isNow ? '' : ((publishAt && new Date(publishAt).getTime() > Date.now()) ? Date.now() : '')
         }, { merge: true });
 
         resultCenterSettings.publishHistory = history;
+        resultCenterSettings.examDisplayModes = nextExamDisplayModes;
         resultCenterSettings.blockedClasses = blocked;
         resultCenterSettings.publishAt = effectivePublishAt;
         resultCenterSettings.examLabel = title;
@@ -6684,9 +7119,10 @@ const runPublishAction = async () => {
         renderPublishedHistoryTable();
         renderPublishedDraftTables();
         updateDashboard();
+        const meta = getDisplayModeMeta(displayMode);
         alert(isNow
-            ? (publishedCount > 0 ? `Results Published Successfully! (${publishedCount} row(s) published)` : 'Results Published! (All matching rows are now live)')
-            : `Auto Publish scheduled successfully! (${publishedCount} result(s) set for automatic release at ${formatDateTimeLabel(publishAt)})`);
+            ? (publishedCount > 0 ? `Results Published Successfully (${meta.label})! (${publishedCount} row(s) published)` : `Results Published (${meta.label})! (All matching rows are now live)`)
+            : `Auto Publish scheduled (${meta.label})! (${publishedCount} result(s) set for automatic release at ${formatDateTimeLabel(publishAt)})`);
     });
 };
 
@@ -6700,6 +7136,7 @@ const checkAndFinalizeScheduledPublishes = async () => {
             const schedTs = new Date(r.publishAt).getTime();
             if (Number.isFinite(schedTs) && schedTs <= now) {
                 const blocked = Array.isArray(r.blockedClasses) ? r.blockedClasses : [];
+                const expectedShowMarks = getRecordDisplayMode(r) !== 'grades';
                 const pendingDrafts = examResultsCache.filter((row) => {
                     if (row.published === true) return false;
                     const matchesYear = !row.academicYear || row.academicYear === r.academicYear;
@@ -6715,10 +7152,12 @@ const checkAndFinalizeScheduledPublishes = async () => {
                             batch.update(doc(db, `${BASE_PATH}/examResults`, row.id), {
                                 published: true,
                                 publishedAt: Date.now(),
+                                showMarksToStudents: expectedShowMarks,
                                 updatedAt: Date.now()
                             });
                             row.published = true;
                             row.publishedAt = Date.now();
+                            row.showMarksToStudents = expectedShowMarks;
                         });
                         await batch.commit();
                     }
@@ -6778,6 +7217,19 @@ document.getElementById('clear-all-blocked-btn')?.addEventListener('click', () =
 
 // Published History Table Event Delegation
 document.getElementById('published-history-table-body')?.addEventListener('click', (e) => {
+    const displayModeBtn = e.target.closest('.record-display-mode-btn');
+    if (displayModeBtn) {
+        const id = displayModeBtn.dataset.id;
+        const mode = displayModeBtn.dataset.mode;
+        if (id && mode) updatePublishRecordDisplayMode(id, mode);
+        return;
+    }
+    const republishBtn = e.target.closest('.republish-record-btn');
+    if (republishBtn) {
+        const id = republishBtn.dataset.id;
+        if (id) republishExamResults(id);
+        return;
+    }
     const publishPendingBtn = e.target.closest('.publish-pending-record-btn');
     if (publishPendingBtn) {
         const id = publishPendingBtn.dataset.id;
@@ -6803,10 +7255,44 @@ document.getElementById('published-history-table-body')?.addEventListener('click
         return;
     }
 });
-document.getElementById('publish-history-year-filter')?.addEventListener('change', renderPublishedHistoryTable);
-document.getElementById('publish-matrix-year-select')?.addEventListener('change', (e) => {
+let activePublishRecordsTab = 'overview';
+const activatePublishRecordsTab = (tabKey = 'overview') => {
+    const resolved = tabKey === 'history' ? 'history' : 'overview';
+    activePublishRecordsTab = resolved;
+    const overviewPanel = document.getElementById('publish-tab-panel-overview');
+    const historyPanel = document.getElementById('publish-tab-panel-history');
+    if (overviewPanel) overviewPanel.classList.toggle('hidden', resolved !== 'overview');
+    if (historyPanel) historyPanel.classList.toggle('hidden', resolved !== 'history');
+
+    const overviewBtn = document.getElementById('publish-subtab-overview');
+    const historyBtn = document.getElementById('publish-subtab-history');
+    const activeCls = 'publish-subtab-btn flex-1 md:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 bg-white text-indigo-700 shadow-2xs border border-indigo-100';
+    const inactiveCls = 'publish-subtab-btn flex-1 md:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 text-slate-600 hover:text-slate-900 border border-transparent';
+
+    if (overviewBtn) {
+        overviewBtn.className = resolved === 'overview' ? activeCls : inactiveCls;
+        overviewBtn.setAttribute('aria-selected', resolved === 'overview' ? 'true' : 'false');
+    }
+    if (historyBtn) {
+        historyBtn.className = resolved === 'history' ? activeCls : inactiveCls;
+        historyBtn.setAttribute('aria-selected', resolved === 'history' ? 'true' : 'false');
+    }
+    const countBadge = document.getElementById('publish-history-count-badge');
+    if (countBadge) {
+        countBadge.className = resolved === 'history'
+            ? 'px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px] font-mono tabular-nums leading-none'
+            : 'px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700 text-[10px] font-mono tabular-nums leading-none';
+    }
+};
+document.querySelectorAll('.publish-subtab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        activatePublishRecordsTab(btn.dataset.publishSubtab || 'overview');
+    });
+});
+document.getElementById('publish-records-year-filter')?.addEventListener('change', (e) => {
     if (e.target) e.target.dataset.userChangedYear = 'true';
     renderPublishClassExamMatrix();
+    renderPublishedHistoryTable();
 });
 document.getElementById('publish-class-exam-matrix')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.publish-matrix-exam-btn');

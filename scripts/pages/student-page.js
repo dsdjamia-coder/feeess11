@@ -1959,6 +1959,51 @@ const studentPwa = registerPortalForPwa('student', {
             const schema = getStudentResultSchema(result, result.academicYear || '');
             return result.examLabel || schema?.examConfigs?.[examKey]?.label || examLabels[examKey] || examKey || result.examId || 'Exam';
         };
+        const resolveStudentExamDisplayFlags = (result = {}, schema = null, activeYear = '') => {
+            const resolvedYear = String(result.academicYear || activeYear || studentProfile?.academicYear || '').trim();
+            const examKey = String(getStudentResultExamKey(result) || '').trim();
+            const classLabel = result.classLabel || studentProfile?.class || '--';
+            const scopeKey = `${resolvedYear}__${examKey}`;
+
+            let explicitMode = resultCenterSettings.examDisplayModes?.[scopeKey] || '';
+            if (!explicitMode && Array.isArray(resultCenterSettings.publishHistory)) {
+                const matchedRec = resultCenterSettings.publishHistory.find((r) => {
+                    const recYear = String(r.academicYear || resolvedYear).trim();
+                    return recYear === resolvedYear && String(r.examKey || '').trim() === examKey;
+                });
+                if (matchedRec?.displayMode) {
+                    explicitMode = matchedRec.displayMode;
+                }
+            }
+
+            const normalized = String(explicitMode || '').trim().toLowerCase();
+            if (normalized === 'grades' || normalized === 'grade_only') {
+                return { mode: 'grades', showMarks: false, showGrades: true, showTotalMarks: false };
+            }
+            if (normalized === 'marks' || normalized === 'marks_only') {
+                return { mode: 'marks', showMarks: true, showGrades: false, showTotalMarks: true };
+            }
+            if (normalized === 'both' || normalized === 'grade_and_marks') {
+                return { mode: 'both', showMarks: true, showGrades: true, showTotalMarks: true };
+            }
+
+            const visibilityKey = `${classLabel}__${examKey}`;
+            const rawVisibility = resultCenterSettings.resultVisibilityMap?.[visibilityKey];
+            const visibility = rawVisibility && typeof rawVisibility === 'object'
+                ? { marks: rawVisibility.marks !== false, grades: rawVisibility.grades !== false }
+                : { marks: rawVisibility !== false, grades: rawVisibility !== false };
+            const examConfigShowMarks = schema?.examConfigs?.[examKey]?.showMarksToStudents === true;
+            const showMarks = result.showMarksToStudents === false
+                ? false
+                : (visibility.marks && (result.showMarksToStudents === true || examConfigShowMarks));
+            const showGrades = visibility.grades !== false;
+            return {
+                mode: showMarks && showGrades ? 'both' : (showMarks ? 'marks' : 'grades'),
+                showMarks,
+                showGrades,
+                showTotalMarks: showMarks
+            };
+        };
 
         // Canvas drawing helpers for Colourful Annual Result Certificate
         const drawMortarboardCap = (ctx, cx, cy, scale = 1) => {
@@ -2341,16 +2386,7 @@ const studentPwa = registerPortalForPwa('student', {
             const photoSrc = studentProfile?.photo || result.photo || '';
             const hasPhoto = Boolean(photoSrc);
 
-            const visibilityKey = `${classLabel}__${examKey}`;
-            const rawVisibility = resultCenterSettings.resultVisibilityMap?.[visibilityKey];
-            const visibility = rawVisibility && typeof rawVisibility === 'object'
-                ? { marks: rawVisibility.marks !== false, grades: rawVisibility.grades !== false }
-                : { marks: rawVisibility !== false, grades: rawVisibility !== false };
-            const examConfigShowMarks = schema?.examConfigs?.[examKey]?.showMarksToStudents === true;
-            const showMarks = result.showMarksToStudents === false
-                ? false
-                : (visibility.marks && (result.showMarksToStudents === true || examConfigShowMarks));
-            const showGrades = visibility.grades !== false;
+            const { showMarks, showGrades, showTotalMarks } = resolveStudentExamDisplayFlags(result, schema, activeYear);
 
             const subjectKeys = Object.keys(result.grades || result.marks || {});
             const subjectCount = Math.max(1, subjectKeys.length);
@@ -2570,9 +2606,20 @@ const studentPwa = registerPortalForPwa('student', {
             ctx.textAlign = 'left';
             ctx.fillText('SUBJECT', tableX + 45, tableY + 34);
 
+            const markColX = (showMarks && showGrades)
+                ? tableX + (tableW * 0.58)
+                : tableX + (tableW * 0.80);
+            const gradeColX = (showMarks && showGrades)
+                ? tableX + (tableW * 0.84)
+                : tableX + (tableW * 0.82);
+
             ctx.textAlign = 'center';
-            ctx.fillText('MARK', tableX + (tableW * 0.58), tableY + 34);
-            ctx.fillText('GRADE', tableX + (tableW * 0.84), tableY + 34);
+            if (showMarks) {
+                ctx.fillText('MARK', markColX, tableY + 34);
+            }
+            if (showGrades) {
+                ctx.fillText('GRADE', gradeColX, tableY + 34);
+            }
 
             // Table Body Container
             drawRoundedRect(ctx, tableX, tableY + tableHeadHeight, tableW, subjectCount * rowHeight, [0, 0, 18, 18], '#ffffff', '#e2e8f0', 1.5);
@@ -2611,32 +2658,34 @@ const studentPwa = registerPortalForPwa('student', {
                 const subjectTitle = resolveSubjectLabel(schema, key).toUpperCase();
                 ctx.fillText(subjectTitle, tableX + 45, currentRowY + 38);
 
-                // Marks Column
+                // Marks Column (only shown when marks are enabled)
                 ctx.textAlign = 'center';
-                ctx.font = '800 22px "Plus Jakarta Sans", Arial, sans-serif';
-                ctx.fillStyle = isFailed ? '#dc2626' : '#0f172a';
-                const markDisplay = showMarks ? (markValue || '-') : '-';
-                ctx.fillText(String(markDisplay), tableX + (tableW * 0.58), currentRowY + 38);
+                if (showMarks) {
+                    ctx.font = '800 22px "Plus Jakarta Sans", Arial, sans-serif';
+                    ctx.fillStyle = isFailed ? '#dc2626' : '#0f172a';
+                    ctx.fillText(String(markValue || '-'), markColX, currentRowY + 38);
+                }
 
                 // Grade Column - Lilac Rounded Pill Badge
                 if (showGrades) {
                     const pillW = 120;
                     const pillH = 40;
-                    const pillX = tableX + (tableW * 0.84) - (pillW / 2);
+                    const pillX = gradeColX - (pillW / 2);
                     const pillY = currentRowY + ((rowHeight - pillH) / 2);
                     drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 12, '#ede9fe', null);
 
                     ctx.fillStyle = isFailed ? '#dc2626' : '#7c3aed';
                     ctx.font = '900 22px "Plus Jakarta Sans", Arial, sans-serif';
-                    ctx.fillText(String(gradeValue || '-'), tableX + (tableW * 0.84), currentRowY + 38);
+                    ctx.fillText(String(gradeValue || '-'), gradeColX, currentRowY + 38);
                 }
 
                 currentRowY += rowHeight;
             });
 
-            // 7. Three Metric Cards: Total, Rank, Attendance
+            // 7. Metric Cards: Total (hidden in Grade Only mode), Rank, Attendance
             const metricY = currentRowY + gapY;
-            const metricCardW = (tableW - 32) / 3;
+            const metricCardCount = showTotalMarks ? 3 : 2;
+            const metricCardW = (tableW - (16 * (metricCardCount - 1))) / metricCardCount;
             const metricCardH = metricSectionHeight;
 
             const displayTotObtained = result.totals?.obtained ?? (totalObtainedMarks || '-');
@@ -2647,56 +2696,61 @@ const studentPwa = registerPortalForPwa('student', {
             const currentRank = rankRows.findIndex((row) => row.studentId === result.studentId) + 1;
             const attendanceText = `${result.attendance?.presentDays ?? 82}/${result.attendance?.workingDays ?? 90}`;
 
-            // Card 1: Total (Light Sky Blue)
-            const c1X = tableX;
-            drawRoundedRect(ctx, c1X, metricY, metricCardW, metricCardH, 18, '#e0f2fe', '#bae6fd', 1.5);
-            // Drawn Bar Chart Icon
-            ctx.fillStyle = '#0284c7';
-            ctx.fillRect(c1X + 28, metricY + 68, 8, 24);
-            ctx.fillRect(c1X + 40, metricY + 54, 8, 38);
-            ctx.fillRect(c1X + 52, metricY + 60, 8, 32);
+            if (showTotalMarks) {
+                // Card 1: Total (Light Sky Blue)
+                const c1X = tableX;
+                drawRoundedRect(ctx, c1X, metricY, metricCardW, metricCardH, 18, '#e0f2fe', '#bae6fd', 1.5);
+                // Drawn Bar Chart Icon
+                ctx.fillStyle = '#0284c7';
+                ctx.fillRect(c1X + 28, metricY + 68, 8, 24);
+                ctx.fillRect(c1X + 40, metricY + 54, 8, 38);
+                ctx.fillRect(c1X + 52, metricY + 60, 8, 32);
+
+                ctx.textAlign = 'left';
+                ctx.fillStyle = '#475569';
+                ctx.font = '700 16px "Plus Jakarta Sans", Arial, sans-serif';
+                ctx.fillText('Total', c1X + 74, metricY + 52);
+                ctx.fillStyle = '#0f172a';
+                ctx.font = '900 28px "Plus Jakarta Sans", Arial, sans-serif';
+                ctx.fillText(`${displayTotObtained}/${displayTotMax}`, c1X + 74, metricY + 86);
+            }
+
+            // Rank Card (Light Warm Yellow)
+            const c2X = showTotalMarks ? (tableX + metricCardW + 16) : tableX;
+            const c2IconOffset = showTotalMarks ? 44 : 88;
+            const c2TextOffset = showTotalMarks ? 78 : 126;
+            drawRoundedRect(ctx, c2X, metricY, metricCardW, metricCardH, 18, '#fef9c3', '#fef08a', 1.5);
+            drawAuthenticTrophy(ctx, c2X + c2IconOffset, metricY + 68, 44);
 
             ctx.textAlign = 'left';
             ctx.fillStyle = '#475569';
             ctx.font = '700 16px "Plus Jakarta Sans", Arial, sans-serif';
-            ctx.fillText('Total', c1X + 74, metricY + 52);
-            ctx.fillStyle = '#0f172a';
-            ctx.font = '900 28px "Plus Jakarta Sans", Arial, sans-serif';
-            ctx.fillText(`${displayTotObtained}/${displayTotMax}`, c1X + 74, metricY + 86);
-
-            // Card 2: Rank (Light Warm Yellow)
-            const c2X = tableX + metricCardW + 16;
-            drawRoundedRect(ctx, c2X, metricY, metricCardW, metricCardH, 18, '#fef9c3', '#fef08a', 1.5);
-            // Drawn Authentic Trophy Icon
-            drawAuthenticTrophy(ctx, c2X + 44, metricY + 68, 44);
-
-            ctx.fillStyle = '#475569';
-            ctx.font = '700 16px "Plus Jakarta Sans", Arial, sans-serif';
-            ctx.fillText('Rank', c2X + 78, metricY + 52);
+            ctx.fillText('Rank', c2X + c2TextOffset, metricY + 52);
             ctx.fillStyle = '#0f172a';
             ctx.font = '900 32px "Plus Jakarta Sans", Arial, sans-serif';
-            ctx.fillText(currentRank > 0 ? String(currentRank) : '1', c2X + 74, metricY + 86);
+            ctx.fillText(currentRank > 0 ? String(currentRank) : '1', c2X + c2TextOffset, metricY + 86);
 
-            // Card 3: Attendance (Light Rose)
-            const c3X = tableX + (metricCardW + 16) * 2;
+            // Attendance Card (Light Rose)
+            const c3X = showTotalMarks ? (tableX + (metricCardW + 16) * 2) : (tableX + metricCardW + 16);
+            const c3IconOffset = showTotalMarks ? 28 : 74;
+            const c3TextOffset = showTotalMarks ? 72 : 122;
             drawRoundedRect(ctx, c3X, metricY, metricCardW, metricCardH, 18, '#ffe4e6', '#fecdd3', 1.5);
-            // Drawn Calendar Icon
-            drawRoundedRect(ctx, c3X + 28, metricY + 52, 30, 32, 6, '#ffffff', '#e11d48', 2);
+            drawRoundedRect(ctx, c3X + c3IconOffset, metricY + 52, 30, 32, 6, '#ffffff', '#e11d48', 2);
             ctx.fillStyle = '#e11d48';
-            ctx.fillRect(c3X + 28, metricY + 52, 30, 10);
-            // grid dots
+            ctx.fillRect(c3X + c3IconOffset, metricY + 52, 30, 10);
             ctx.fillStyle = '#e11d48';
-            ctx.fillRect(c3X + 34, metricY + 68, 4, 4);
-            ctx.fillRect(c3X + 44, metricY + 68, 4, 4);
-            ctx.fillRect(c3X + 34, metricY + 75, 4, 4);
-            ctx.fillRect(c3X + 44, metricY + 75, 4, 4);
+            ctx.fillRect(c3X + c3IconOffset + 6, metricY + 68, 4, 4);
+            ctx.fillRect(c3X + c3IconOffset + 16, metricY + 68, 4, 4);
+            ctx.fillRect(c3X + c3IconOffset + 6, metricY + 75, 4, 4);
+            ctx.fillRect(c3X + c3IconOffset + 16, metricY + 75, 4, 4);
 
+            ctx.textAlign = 'left';
             ctx.fillStyle = '#475569';
             ctx.font = '700 16px "Plus Jakarta Sans", Arial, sans-serif';
-            ctx.fillText('Attendance', c3X + 72, metricY + 52);
+            ctx.fillText('Attendance', c3X + c3TextOffset, metricY + 52);
             ctx.fillStyle = '#0f172a';
             ctx.font = '900 28px "Plus Jakarta Sans", Arial, sans-serif';
-            ctx.fillText(attendanceText, c3X + 72, metricY + 86);
+            ctx.fillText(attendanceText, c3X + c3TextOffset, metricY + 86);
 
             // 8. Large Prominent PASS / Status Banner
             const statusY = metricY + metricCardH + gapY;
@@ -3044,16 +3098,8 @@ const studentPwa = registerPortalForPwa('student', {
                 const cards = examScopedResults.map((result) => {
                     const schema = getStudentResultSchema(result, activeYear);
                     const examKey = getStudentResultExamKey(result);
-                    const visibilityKey = `${result.classLabel || classLabel}__${examKey}`;
-                    const rawVisibility = resultCenterSettings.resultVisibilityMap?.[visibilityKey];
-                    const visibility = rawVisibility && typeof rawVisibility === 'object'
-                        ? { marks: rawVisibility.marks !== false, grades: rawVisibility.grades !== false }
-                        : { marks: rawVisibility !== false, grades: rawVisibility !== false };
-                    const examConfigShowMarks = schema?.examConfigs?.[examKey]?.showMarksToStudents === true;
-                    const showMarks = result.showMarksToStudents === false
-                        ? false
-                        : (visibility.marks && (result.showMarksToStudents === true || examConfigShowMarks));
-                    const showGrades = visibility.grades;
+                    const { showMarks, showGrades, showTotalMarks } = resolveStudentExamDisplayFlags(result, schema, activeYear);
+                    const subjectColCount = 1 + (showMarks ? 1 : 0) + (showGrades ? 1 : 0);
                     const subjectKeys = Object.keys(result.grades || result.marks || {});
                     const rankRows = filteredResults
                         .filter((item) => getStudentResultExamKey(item) === examKey)
@@ -3191,18 +3237,19 @@ const studentPwa = registerPortalForPwa('student', {
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100">
-                                        ${tableRows || '<tr><td class="py-4 text-center text-sm text-slate-500" colspan="3">No subject-wise entries.</td></tr>'}
+                                        ${tableRows || `<tr><td class="py-4 text-center text-sm text-slate-500" colspan="${subjectColCount}">No subject-wise entries.</td></tr>`}
                                     </tbody>
                                 </table>
                             </div>
 
-                            <!-- 3 Pastel Metric Cards: Total, Rank, Attendance -->
-                            <div class="relative z-10 grid grid-cols-3 gap-2 sm:gap-3 mb-5 text-center">
+                            <!-- Pastel Metric Cards: Total (omitted in Grade Only), Rank, Attendance -->
+                            <div class="relative z-10 grid ${showTotalMarks ? 'grid-cols-3' : 'grid-cols-2'} gap-2 sm:gap-3 mb-5 text-center">
+                                ${showTotalMarks ? `
                                 <div class="bg-sky-50 border border-sky-200 rounded-2xl p-3 shadow-2xs">
                                     <div class="text-sky-600 text-base mb-0.5"><i class="fas fa-chart-simple"></i></div>
                                     <div class="text-[11px] font-bold text-slate-500 uppercase">Total</div>
                                     <div class="text-sm sm:text-base font-black text-slate-900 mt-0.5">${escapeHtml(String(result.totals?.obtained ?? '-'))}/${escapeHtml(String(result.totals?.maximum ?? '-'))}</div>
-                                </div>
+                                </div>` : ''}
                                 <div class="bg-amber-50 border border-amber-200 rounded-2xl p-3 shadow-2xs">
                                     <div class="text-amber-500 text-base mb-0.5"><i class="fas fa-trophy"></i></div>
                                     <div class="text-[11px] font-bold text-slate-500 uppercase">Rank</div>
