@@ -3,6 +3,7 @@ import { doc, onSnapshot, collection, getDocs, writeBatch, setDoc, query, where,
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '../../config/app-config.js';
 import { BASE_PATH, applyInstitutionBranding, enableSmartSelectWindowing, escapeHtml, isPastAcademicYearLabel, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 import { showToast } from '../shared/toaster.js';
 
 // --- Global Variables ---
@@ -13,6 +14,48 @@ let currentStaffDoc = null;
 let teacherAssignedClasses = [];
 
 let students = [];
+let resultConfigStats = normalizeInstitutionalStats();
+let hasStartedStudentsListener = false;
+let studentsLoaded = false;
+let studentsLoadPromise = null;
+let studentsLoadResolve = null;
+let onStudentsUpdatedCallback = null;
+
+const ensureStudentsLoaded = () => {
+    if (studentsLoaded) return Promise.resolve(students);
+    if (studentsLoadPromise) return studentsLoadPromise;
+    studentsLoadPromise = new Promise((resolve) => {
+        studentsLoadResolve = resolve;
+    });
+    if (!hasStartedStudentsListener) {
+        hasStartedStudentsListener = true;
+        onSnapshot(
+            collection(db, `${BASE_PATH}/students`),
+            (snap) => {
+                students = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                studentsLoaded = true;
+                if (studentsLoadResolve) {
+                    studentsLoadResolve(students);
+                    studentsLoadResolve = null;
+                }
+                if (typeof onStudentsUpdatedCallback === 'function') {
+                    onStudentsUpdatedCallback();
+                }
+            },
+            (err) => {
+                console.warn('Lazy students listener warning:', err);
+                hasStartedStudentsListener = false;
+                studentsLoadPromise = null;
+                if (studentsLoadResolve) {
+                    studentsLoadResolve(students);
+                    studentsLoadResolve = null;
+                }
+            }
+        );
+    }
+    return studentsLoadPromise;
+};
+
 let configuredClasses = [];
 let classes = [];
 let resultSchemas = [];
@@ -1138,6 +1181,11 @@ const activateResultTab = (tabEl, { updateHash = true } = {}) => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     document.body.classList.remove('modal-scroll-lock');
 
+    const studentRosterTabs = ['marks-page', 'draft-page', 'published-page', 'report-cards-page', 'promotion-page'];
+    if (studentRosterTabs.includes(targetId)) {
+        ensureStudentsLoaded();
+    }
+
     if (targetId === 'published-page' || targetId === 'draft-page') {
         if (typeof renderPublishedDraftTables === 'function') {
             renderPublishedDraftTables();
@@ -1149,7 +1197,7 @@ const activateResultTab = (tabEl, { updateHash = true } = {}) => {
     } else if (targetId === 'report-cards-page') {
         populateReportYears();
         populateDropdowns();
-        renderExamSelectOptions(document.getElementById('report-exam-select'), document.getElementById('report-class-select')?.value || '', document.getElementById('report-academic-year')?.value || currentAcademicYear, '-- Choose Exam --', true);
+        renderExamSelectOptions(document.getElementById('report-exam-select'), document.getElementById('report-class-select')?.value || '', document.getElementById('report-academic-year')?.value || currentAcademicYear, '-- Choose Exam --', activeReportStatus);
         updateReportPreview();
     } else if (targetId === 'promotion-page') {
         if (typeof renderPromotionCandidatesUI === 'function') {
@@ -1405,6 +1453,7 @@ function initializeDataListeners() {
     onSnapshot(doc(db, `${BASE_PATH}/settings`, 'config'), (snap) => {
         const conf = snap.exists() ? (snap.data() || {}) : {};
         institutionConfig = conf;
+        resultConfigStats = normalizeInstitutionalStats(conf.stats || {});
         if (conf.enabledModules && typeof conf.enabledModules === 'object') {
             try {
                 localStorage.setItem('app_enabled_modules', JSON.stringify(conf.enabledModules));
@@ -1421,6 +1470,7 @@ function initializeDataListeners() {
             updateDocumentTitle: true,
             documentTitleSuffix: 'Result Management'
         });
+        scheduleRefresh();
     });
 
     onSnapshot(doc(db, `${BASE_PATH}/settings`, 'sessionControl'), (snap) => {
@@ -1434,10 +1484,9 @@ function initializeDataListeners() {
         }
     });
 
-    onSnapshot(collection(db, `${BASE_PATH}/students`), (snap) => {
-        students = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    onStudentsUpdatedCallback = () => {
         refreshResultClasses();
-    });
+    };
 
     onSnapshot(collection(db, `${BASE_PATH}/resultSchemas`), (snap) => {
         resultSchemas = snap.docs.map((d) => normalizeResultSchema({ id: d.id, ...d.data() }));
@@ -1905,6 +1954,12 @@ const renderPromotionCandidatesUI = () => {
     const container = document.getElementById('promotion-preview-list');
     if (!container) return;
 
+    if (!studentsLoaded) {
+        ensureStudentsLoaded();
+        container.innerHTML = `<div class="p-8 text-center text-xs font-semibold text-slate-500 bg-slate-50 rounded-xl border border-slate-200"><i class="fas fa-spinner fa-spin text-indigo-600 mr-2"></i>Loading class promotion student roster...</div>`;
+        return;
+    }
+
     const promotableClasses = classes.filter((cls) => String(cls).trim().toLowerCase() !== 'alumni');
     const progressionMap = resultCenterSettings.classProgressionMap || {};
 
@@ -2006,11 +2061,11 @@ const renderPromotionCandidatesUI = () => {
                 `;
 
                 return `
-                <div class="promotion-class-card border border-slate-200 rounded-2xl p-3 sm:p-4 bg-white shadow-xs hover:border-indigo-400 hover:shadow-md transition flex flex-col justify-between cursor-pointer group" data-class="${escapeHtml(cls)}">
+                <div class="promotion-class-card border border-slate-200 rounded-2xl p-3 sm:p-4 bg-white shadow-xs transition flex flex-col justify-between" data-class="${escapeHtml(cls)}">
                     <div>
                         <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3 gap-2">
                             <span class="font-bold text-slate-800 text-sm flex items-center gap-2 min-w-0">
-                                <span class="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-extrabold shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
+                                <span class="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-extrabold shrink-0">
                                     <i class="fas fa-layer-group"></i>
                                 </span>
                                 <span class="truncate">${escapeHtml(cls)}</span>
@@ -2019,8 +2074,8 @@ const renderPromotionCandidatesUI = () => {
                                 <span id="badge-target-${escapeHtml(cls)}" class="text-[10px] font-bold ${isAlumni ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-indigo-50 text-indigo-700 border border-indigo-200'} px-2 py-0.5 rounded-full">
                                     ${isAlumni ? '🎓 To Alumni' : (selectedTarget ? `To ${escapeHtml(selectedTarget)}` : 'No Promotion')}
                                 </span>
-                                <button type="button" class="open-promo-class-modal-btn w-7 h-7 rounded-lg bg-slate-100 group-hover:bg-indigo-100 text-slate-600 group-hover:text-indigo-700 flex items-center justify-center text-xs transition cursor-pointer" data-class="${escapeHtml(cls)}" title="Manage Boys & Girls">
-                                    <i class="fas fa-up-right-from-square"></i>
+                                <button type="button" class="open-promo-class-modal-btn w-7 h-7 rounded-lg bg-slate-100 hover:bg-indigo-600 text-slate-600 hover:text-white flex items-center justify-center text-xs transition cursor-pointer" data-class="${escapeHtml(cls)}" title="Manage Students" aria-label="Manage students in ${escapeHtml(cls)}">
+                                    <i class="fas fa-up-right-from-square pointer-events-none"></i>
                                 </button>
                             </div>
                         </div>
@@ -2033,9 +2088,6 @@ const renderPromotionCandidatesUI = () => {
                             <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 <i class="fas fa-sign-in-alt text-indigo-500 mr-1"></i> Promote Eligible Students To:
                             </label>
-                            <button type="button" class="open-promo-class-modal-btn text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer" data-class="${escapeHtml(cls)}">
-                                Manage Students &rarr;
-                            </button>
                         </div>
                         <select data-smart-select="true" data-smart-floating="true" class="promotion-target-class-select w-full p-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" data-class="${escapeHtml(cls)}">
                             ${options}
@@ -2049,15 +2101,6 @@ const renderPromotionCandidatesUI = () => {
 
     enableSmartSelectWindowing(container, { visibleCount: 0 });
     syncSmartSelectDisplay(container);
-
-    // Stop clicks in the dropdown zone from triggering the class student popup
-    container.querySelectorAll('.promotion-card-select-zone').forEach((zone) => {
-        zone.addEventListener('click', (e) => {
-            if (!e.target.closest('.open-promo-class-modal-btn')) {
-                e.stopPropagation();
-            }
-        });
-    });
 
     // Listen to changes on promotion target class selects
     container.querySelectorAll('.promotion-target-class-select').forEach((sel) => {
@@ -2073,13 +2116,12 @@ const renderPromotionCandidatesUI = () => {
         });
     });
 
-    // Open full-screen student promotion manager when clicking a class card or its manage button
-    container.querySelectorAll('.promotion-class-card').forEach((card) => {
-        card.addEventListener('click', (e) => {
-            if (e.target.closest('.promotion-card-select-zone') && !e.target.closest('.open-promo-class-modal-btn')) {
-                return;
-            }
-            const cls = card.dataset.class || '';
+    // Open full-screen student promotion manager ONLY when clicking the top-right header action icon
+    container.querySelectorAll('.open-promo-class-modal-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const cls = btn.dataset.class || '';
             if (cls) openClassPromotionModal(cls);
         });
     });
@@ -2199,13 +2241,28 @@ const renderClassPromotionModalBody = () => {
     setStat('promo-modal-stat-retain', retainTotal);
     setStat('promo-modal-stat-overrides', overrideTotal);
 
-    const genderFilterBtns = document.querySelectorAll('.promo-modal-gender-filter-btn');
-    genderFilterBtns.forEach((btn) => {
-        const g = btn.dataset.gender;
-        if (g === 'all') btn.textContent = `All (${evaluated.length})`;
-        else if (g === 'boys') btn.textContent = `Boys (${allBoys.length})`;
-        else if (g === 'girls') btn.textContent = `Girls (${allGirls.length})`;
-    });
+    const genderSelect = document.getElementById('promo-modal-gender-filter');
+    if (genderSelect) {
+        genderSelect.innerHTML = `
+            <option value="all">All (${evaluated.length})</option>
+            <option value="boys">Boys (${allBoys.length})</option>
+            <option value="girls">Girls (${allGirls.length})</option>
+        `;
+        genderSelect.value = promoModalState.genderFilter || 'all';
+        syncSmartSelectDisplay(genderSelect);
+    }
+
+    const decisionSelect = document.getElementById('promo-modal-decision-filter');
+    if (decisionSelect) {
+        decisionSelect.innerHTML = `
+            <option value="all">All (${evaluated.length})</option>
+            <option value="promote">Promote (${promoteTotal})</option>
+            <option value="retain">Retain (${retainTotal})</option>
+            <option value="overridden">Edited (${overrideTotal})</option>
+        `;
+        decisionSelect.value = promoModalState.filter || 'all';
+        syncSmartSelectDisplay(decisionSelect);
+    }
 
     const queryText = String(promoModalState.search || '').trim().toLowerCase();
     const activeFilter = promoModalState.filter || 'all';
@@ -2327,6 +2384,8 @@ const openClassPromotionModal = (cls = '') => {
     const modal = document.getElementById('promotion-class-students-modal');
     if (!modal || !cls) return;
 
+    ensureStudentsLoaded();
+
     const cardSelect = Array.from(document.querySelectorAll('.promotion-target-class-select')).find((sel) => sel.dataset.class === cls);
     const progressionMap = resultCenterSettings.classProgressionMap || {};
     const currentTargetClass = cardSelect ? cardSelect.value : (progressionMap[cls] !== undefined ? progressionMap[cls] : getNextClassLabel(cls));
@@ -2373,14 +2432,15 @@ const openClassPromotionModal = (cls = '') => {
 
     const searchInput = document.getElementById('promo-modal-search');
     if (searchInput) searchInput.value = '';
-    document.querySelectorAll('.promo-modal-gender-filter-btn').forEach((btn) => {
-        const isAll = btn.dataset.gender === 'all';
-        btn.className = `promo-modal-gender-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${isAll ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
-    });
-    document.querySelectorAll('.promo-modal-filter-btn').forEach((btn) => {
-        const isAll = btn.dataset.filter === 'all';
-        btn.className = `promo-modal-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${isAll ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
-    });
+    const genderSelect = document.getElementById('promo-modal-gender-filter');
+    if (genderSelect) genderSelect.value = 'all';
+    const decisionSelect = document.getElementById('promo-modal-decision-filter');
+    if (decisionSelect) decisionSelect.value = 'all';
+
+    enableSmartSelectWindowing(modal, { visibleCount: 0 });
+    if (modalTargetSelect) syncSmartSelectDisplay(modalTargetSelect);
+    if (genderSelect) syncSmartSelectDisplay(genderSelect);
+    if (decisionSelect) syncSmartSelectDisplay(decisionSelect);
 
     const warningBar = document.getElementById('promo-modal-year-warning-bar');
     if (warningBar) {
@@ -3247,7 +3307,13 @@ const syncPublishRecordFromDirectAction = async ({
 };
 let updateReportPreview = () => {};
 
-const renderExamSelectOptions = (selectEl, classLabel = '', year = currentAcademicYear, placeholder = '-- Choose Exam --', onlyPublished = false) => {
+const matchesReportResultStatus = (row = {}, statusFilter = 'published') => {
+    if (statusFilter === 'draft') return row.published !== true;
+    if (statusFilter === 'both') return true;
+    return row.published === true;
+};
+
+const renderExamSelectOptions = (selectEl, classLabel = '', year = currentAcademicYear, placeholder = '-- Choose Exam --', onlyPublishedOrStatus = false) => {
     if (!selectEl) return;
     const previous = selectEl.value;
     const isAll = (classLabel === 'ALL' || !classLabel);
@@ -3269,7 +3335,10 @@ const renderExamSelectOptions = (selectEl, classLabel = '', year = currentAcadem
         });
         baseOptions = Array.from(examMap.values());
     }
-    const options = baseOptions.filter((option) => !onlyPublished || examResultsCache.some((row) => row.published === true && (!classLabel || isAll || row.classLabel === classLabel) && (!year || row.academicYear === year) && resultMatchesExam(row, option.value)));
+
+    const requireMatchingRows = Boolean(onlyPublishedOrStatus);
+    const statusMode = (onlyPublishedOrStatus === true) ? 'published' : (typeof onlyPublishedOrStatus === 'string' ? onlyPublishedOrStatus : 'both');
+    const options = baseOptions.filter((option) => !requireMatchingRows || examResultsCache.some((row) => matchesReportResultStatus(row, statusMode) && (!classLabel || isAll || row.classLabel === classLabel) && (!year || row.academicYear === year) && resultMatchesExam(row, option.value)));
 
     const placeholderHtml = (placeholder && String(placeholder).trim() !== '') ? `<option value="">${placeholder}</option>` : '';
     selectEl.innerHTML = placeholderHtml + options.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('');
@@ -3281,13 +3350,13 @@ const renderExamSelectOptions = (selectEl, classLabel = '', year = currentAcadem
     }
     syncSmartSelectDisplay(selectEl);
 };
-const getReportClassesForYear = (targetYear) => {
+const getReportClassesForYear = (targetYear, statusFilter = (typeof activeReportStatus !== 'undefined' ? activeReportStatus : 'published')) => {
     const classSet = new Set();
     const effectiveYear = String(targetYear || document.getElementById('report-academic-year')?.value || currentAcademicYear || '').trim();
 
-    // 1. Classes from published results in that year
+    // 1. Classes from matching results in that year
     (examResultsCache || []).forEach((row) => {
-        if (row.published === true && (!effectiveYear || String(row.academicYear || '').trim() === effectiveYear) && row.classLabel) {
+        if (matchesReportResultStatus(row, statusFilter) && (!effectiveYear || String(row.academicYear || '').trim() === effectiveYear) && row.classLabel) {
             const cls = String(row.classLabel).trim();
             if (cls && cls.toLowerCase() !== 'alumni') classSet.add(cls);
         }
@@ -3693,8 +3762,35 @@ function updateDashboard() {
     const isDraftPreview = !isExamPublished && examRows.length > 0;
     const activeExamRows = isExamPublished ? examPublishedRows : (isDraftPreview ? examRows : []);
 
-    document.getElementById('dash-total-classes').textContent = targetClasses.length;
-    document.getElementById('dash-total-students').textContent = yearStudents.length;
+    const totalClassesCount = targetClasses.length > 0
+        ? targetClasses.length
+        : (!isTeacherScope ? (resultConfigStats.configuredClassesCount || resultConfigStats.activeClassesCount || 0) : 0);
+
+    let totalStudentsCount = 0;
+    let boysStatsCount = 0;
+    let girlsStatsCount = 0;
+    if (studentsLoaded) {
+        totalStudentsCount = yearStudents.length;
+    } else if (resultConfigStats.hasStats) {
+        if (isTeacherScope) {
+            if (teacherAssignedClasses.length > 0) {
+                Object.entries(resultConfigStats.byClass || {}).forEach(([clsKey, entry]) => {
+                    if (isClassInDutyScope(clsKey, teacherAssignedClasses)) {
+                        totalStudentsCount += Number(entry?.total || 0);
+                        boysStatsCount += Number(entry?.male || 0);
+                        girlsStatsCount += Number(entry?.female || 0);
+                    }
+                });
+            }
+        } else {
+            totalStudentsCount = Number(resultConfigStats.total || 0);
+            boysStatsCount = Number(resultConfigStats.male || 0);
+            girlsStatsCount = Number(resultConfigStats.female || 0);
+        }
+    }
+
+    document.getElementById('dash-total-classes').textContent = totalClassesCount;
+    document.getElementById('dash-total-students').textContent = totalStudentsCount;
 
     const statusEl = document.getElementById('dash-publish-status');
     if (statusEl) {
@@ -3821,28 +3917,36 @@ function updateDashboard() {
     const girlsPassEl = document.getElementById('dash-girls-pass');
     const girlsPctEl = document.getElementById('dash-girls-pct');
     if (boysPassEl && girlsPassEl) {
-        const boysStudents = new Set(yearStudents.filter(s => {
-            const g = String(s.gender || '').toLowerCase();
-            return g.startsWith('m') || g.includes('boy');
-        }).map(s => s.id));
-        const girlsStudents = new Set(yearStudents.filter(s => {
-            const g = String(s.gender || '').toLowerCase();
-            return g.startsWith('f') || g.includes('girl');
-        }).map(s => s.id));
+        if (studentsLoaded) {
+            const boysStudents = new Set(yearStudents.filter(s => {
+                const g = String(s.gender || '').toLowerCase();
+                return g.startsWith('m') || g.includes('boy');
+            }).map(s => s.id));
+            const girlsStudents = new Set(yearStudents.filter(s => {
+                const g = String(s.gender || '').toLowerCase();
+                return g.startsWith('f') || g.includes('girl');
+            }).map(s => s.id));
 
-        const boysRows = activeExamRows.filter(r => boysStudents.has(r.studentId));
-        const boysPassed = boysRows.filter(r => isPassFromMarks(r)).length;
-        const boysPct = boysRows.length ? Math.round((boysPassed / boysRows.length) * 100) : 0;
+            const boysRows = activeExamRows.filter(r => boysStudents.has(r.studentId));
+            const boysPassed = boysRows.filter(r => isPassFromMarks(r)).length;
+            const boysPct = boysRows.length ? Math.round((boysPassed / boysRows.length) * 100) : 0;
 
-        const girlsRows = activeExamRows.filter(r => girlsStudents.has(r.studentId));
-        const girlsPassed = girlsRows.filter(r => isPassFromMarks(r)).length;
-        const girlsPct = girlsRows.length ? Math.round((girlsPassed / girlsRows.length) * 100) : 0;
+            const girlsRows = activeExamRows.filter(r => girlsStudents.has(r.studentId));
+            const girlsPassed = girlsRows.filter(r => isPassFromMarks(r)).length;
+            const girlsPct = girlsRows.length ? Math.round((girlsPassed / girlsRows.length) * 100) : 0;
 
-        boysPassEl.textContent = `${boysPassed} / ${boysRows.length || boysStudents.size}`;
-        if (boysPctEl) boysPctEl.textContent = `${boysPct}% Pass Rate`;
+            boysPassEl.textContent = `${boysPassed} / ${boysRows.length || boysStudents.size}`;
+            if (boysPctEl) boysPctEl.textContent = `${boysPct}% Pass Rate`;
 
-        girlsPassEl.textContent = `${girlsPassed} / ${girlsRows.length || girlsStudents.size}`;
-        if (girlsPctEl) girlsPctEl.textContent = `${girlsPct}% Pass Rate`;
+            girlsPassEl.textContent = `${girlsPassed} / ${girlsRows.length || girlsStudents.size}`;
+            if (girlsPctEl) girlsPctEl.textContent = `${girlsPct}% Pass Rate`;
+        } else {
+            boysPassEl.textContent = `${boysStatsCount}`;
+            if (boysPctEl) boysPctEl.textContent = 'Enrolled Boys';
+
+            girlsPassEl.textContent = `${girlsStatsCount}`;
+            if (girlsPctEl) girlsPctEl.textContent = 'Enrolled Girls';
+        }
     }
 
     // 3. Top Performers Spotlight
@@ -3860,13 +3964,16 @@ function updateDashboard() {
         if (!topPerClass.length) {
             spotlightEl.innerHTML = `<p class="text-gray-400 text-xs italic">Top student ranks for ${escapeHtml(examLabel)} will appear once results are entered.</p>`;
         } else {
-            spotlightEl.innerHTML = topPerClass.map((item) => `
+            spotlightEl.innerHTML = topPerClass.map((item) => {
+                const displayName = item.student?.name || item.row?.studentName || 'Student';
+                const displayAdm = item.student?.adm || item.student?.admissionNo || item.row?.admissionNo || item.row?.admNo || '-';
+                return `
                 <div class="flex items-center justify-between p-2.5 bg-amber-50/60 border border-amber-200/70 rounded-xl text-xs">
                     <div class="flex items-center gap-2 min-w-0">
                         <span class="w-6 h-6 rounded-full bg-amber-500 text-white font-extrabold flex items-center justify-center text-[10px] shrink-0">#1</span>
                         <div class="truncate">
-                            <span class="font-bold text-slate-800">${escapeHtml(item.student?.name || 'Student')}</span>
-                            <span class="text-[10px] text-slate-500 block">${escapeHtml(item.cls)} &bull; Adm: ${escapeHtml(item.student?.adm || item.student?.admissionNo || '-')}</span>
+                            <span class="font-bold text-slate-800">${escapeHtml(displayName)}</span>
+                            <span class="text-[10px] text-slate-500 block">${escapeHtml(item.cls)} &bull; Adm: ${escapeHtml(displayAdm)}</span>
                         </div>
                     </div>
                     <div class="text-right shrink-0">
@@ -3874,7 +3981,8 @@ function updateDashboard() {
                         <span class="text-[10px] text-emerald-700 font-bold block">${Math.round((Number(item.row.totals?.obtained || 0) / Number(item.row.totals?.maximum || 1)) * 100)}%</span>
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
     }
 
@@ -4011,17 +4119,22 @@ const renderPublishedDraftTables = () => {
     const pubAllowedClasses = isTeacherScope ? (teacherAssignedClasses.length > 0 ? classes.filter((c) => isClassInDutyScope(c, teacherAssignedClasses)) : []) : classes;
     const draftAllowedClasses = pubAllowedClasses;
 
-    // 1. Populate Class Filter dropdowns: Published defaults to ALL, Draft defaults to Select Class ('')
-    populateClassFilterSelect(pubClassEl, pubAllowedClasses, 'ALL');
+    // 1. Populate Class Filter dropdowns: both Published & Draft default to Select Class ('')
+    populateClassFilterSelect(pubClassEl, pubAllowedClasses, '');
     populateClassFilterSelect(draftClassEl, draftAllowedClasses, '');
 
-    const publishedClass = pubClassEl?.value || 'ALL';
+    const publishedClass = pubClassEl?.value ?? '';
+    const isPublishedClassSelected = Boolean(publishedClass);
     const draftClass = draftClassEl?.value ?? '';
     const isDraftClassSelected = Boolean(draftClass);
 
+    if (isPublishedClassSelected || isDraftClassSelected) {
+        ensureStudentsLoaded();
+    }
+
     // 2. Populate Exam Filter dropdowns (NO "All Exams" option, only real exams)
     if (pubExamEl && !pubExamEl.options.length) {
-        renderExamSelectOptions(pubExamEl, publishedClass, currentAcademicYear, '');
+        renderExamSelectOptions(pubExamEl, publishedClass || 'ALL', currentAcademicYear, '');
     }
     if (draftExamEl && !draftExamEl.options.length) {
         renderExamSelectOptions(draftExamEl, draftClass || 'ALL', currentAcademicYear, '');
@@ -4032,13 +4145,15 @@ const renderPublishedDraftTables = () => {
 
     const yearRows = examResultsCache.filter((row) => !currentAcademicYear || !row.academicYear || row.academicYear === currentAcademicYear);
 
-    const isPubClassMatch = (row) => !publishedClass || publishedClass === 'ALL' || row.classLabel === publishedClass;
+    const isPubClassMatch = (row) => publishedClass === 'ALL' || row.classLabel === publishedClass;
     const isDraftClassMatch = (row) => draftClass === 'ALL' || row.classLabel === draftClass;
 
-    const publishedRowsRaw = yearRows.filter((row) => row.published === true)
-        .filter((row) => !isTeacherScope || isClassInDutyScope(row.classLabel, teacherAssignedClasses))
-        .filter(isPubClassMatch)
-        .filter((row) => !publishedExam || resultMatchesExam(row, publishedExam));
+    const publishedRowsRaw = isPublishedClassSelected
+        ? yearRows.filter((row) => row.published === true)
+            .filter((row) => !isTeacherScope || isClassInDutyScope(row.classLabel, teacherAssignedClasses))
+            .filter(isPubClassMatch)
+            .filter((row) => !publishedExam || resultMatchesExam(row, publishedExam))
+        : [];
 
     const draftRowsRaw = isDraftClassSelected
         ? yearRows.filter((row) => row.published !== true)
@@ -4072,6 +4187,14 @@ const renderPublishedDraftTables = () => {
         btn.disabled = !isDraftClassSelected;
         btn.classList.toggle('opacity-50', !isDraftClassSelected);
         btn.classList.toggle('cursor-not-allowed', !isDraftClassSelected);
+    });
+
+    ['published-bulk-unpublish-btn', 'published-bulk-delete-btn'].forEach((btnId) => {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.disabled = !isPublishedClassSelected;
+        btn.classList.toggle('opacity-50', !isPublishedClassSelected);
+        btn.classList.toggle('cursor-not-allowed', !isPublishedClassSelected);
     });
 
     const curPub = currentPublishedFilter || pubStatusEl?.value || 'all';
@@ -4267,7 +4390,15 @@ const renderPublishedDraftTables = () => {
         `;
     };
 
-    publishedEl.innerHTML = renderTableForResults(publishedRows, true);
+    publishedEl.innerHTML = isPublishedClassSelected
+        ? renderTableForResults(publishedRows, true)
+        : `
+            <div class="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+                <i class="fas fa-chalkboard-user text-3xl text-indigo-300 mb-2"></i>
+                <p class="text-sm font-bold text-slate-700">Select a Class to View Published Results</p>
+                <p class="text-xs text-slate-500 mt-1">Select a class or choose <strong>All Classes</strong> from the Class dropdown above to view published results.</p>
+            </div>
+        `;
     draftEl.innerHTML = isDraftClassSelected
         ? renderTableForResults(draftRows, false)
         : `
@@ -4954,17 +5085,29 @@ const loadMarksTable = ({ preserveUnsavedInputs = true } = {}) => {
 
     lastLoadedMarksContext = { class: className, exam: examId, academicYear: currentAcademicYear };
 
-    const sortMode = document.getElementById('entry-sort-order')?.value || 'name_asc';
-    const genderMode = document.getElementById('entry-gender-order')?.value || 'mixed';
-    const rawFiltered = students.filter(s => s.class === className && (s.academicYear === currentAcademicYear || !s.academicYear));
-    entryStudents = sortStudentList(rawFiltered, sortMode, genderMode);
-
     if(!currentExamSchema) {
         cont?.classList.add('hidden');
         updateMarksManualZeroState(false);
         alert("Exam configuration or schema not valid.");
         return;
     }
+
+    if (!studentsLoaded) {
+        ensureStudentsLoaded();
+        const loadingTitleEl = document.getElementById('entry-table-title');
+        if (loadingTitleEl) loadingTitleEl.textContent = `Class: ${className}`;
+        const loadingSubtitleEl = document.getElementById('entry-table-subtitle');
+        if (loadingSubtitleEl) loadingSubtitleEl.textContent = `Exam: ${currentExamContext?.label || currentExamSchema.name}`;
+        document.getElementById('marks-table-head').innerHTML = `<tr><th class="p-3 text-center bg-slate-100 text-slate-600 font-bold text-xs border-b border-slate-200">Loading</th></tr>`;
+        document.getElementById('marks-table-body').innerHTML = `<tr><td class="p-10 text-center text-slate-500 font-bold bg-white"><i class="fas fa-spinner fa-spin text-indigo-600 mr-2"></i>Loading students for ${escapeHtml(className)}...</td></tr>`;
+        cont?.classList.remove('hidden');
+        return;
+    }
+
+    const sortMode = document.getElementById('entry-sort-order')?.value || 'name_asc';
+    const genderMode = document.getElementById('entry-gender-order')?.value || 'mixed';
+    const rawFiltered = students.filter(s => s.class === className && (s.academicYear === currentAcademicYear || !s.academicYear));
+    entryStudents = sortStudentList(rawFiltered, sortMode, genderMode);
 
     if (entryStudents.length === 0) {
         const emptyTitleEl = document.getElementById('entry-table-title');
@@ -8995,28 +9138,14 @@ document.getElementById('promo-modal-search')?.addEventListener('input', (e) => 
     renderClassPromotionModalBody();
 });
 
-document.querySelectorAll('.promo-modal-gender-filter-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-        promoModalState.genderFilter = btn.dataset.gender || 'all';
-        document.querySelectorAll('.promo-modal-gender-filter-btn').forEach((other) => {
-            const active = other === btn;
-            const g = other.dataset.gender;
-            const activeColor = g === 'boys' ? 'text-blue-700' : (g === 'girls' ? 'text-pink-700' : 'text-indigo-700');
-            other.className = `promo-modal-gender-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${active ? `bg-white ${activeColor} shadow-2xs` : 'text-slate-600 hover:text-slate-900'}`;
-        });
-        renderClassPromotionModalBody();
-    });
+document.getElementById('promo-modal-gender-filter')?.addEventListener('change', (e) => {
+    promoModalState.genderFilter = e.target.value || 'all';
+    renderClassPromotionModalBody();
 });
 
-document.querySelectorAll('.promo-modal-filter-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-        promoModalState.filter = btn.dataset.filter || 'all';
-        document.querySelectorAll('.promo-modal-filter-btn').forEach((other) => {
-            const active = other === btn;
-            other.className = `promo-modal-filter-btn px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer whitespace-nowrap ${active ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
-        });
-        renderClassPromotionModalBody();
-    });
+document.getElementById('promo-modal-decision-filter')?.addEventListener('change', (e) => {
+    promoModalState.filter = e.target.value || 'all';
+    renderClassPromotionModalBody();
 });
 
 document.getElementById('promo-modal-target-class-select')?.addEventListener('change', (e) => {
@@ -9239,26 +9368,28 @@ const getAttendanceLabel = (row = {}) => {
 };
 // --- Report Cards & Marksheets Engine ---
 let activeReportModel = 'consolidated'; // 'consolidated' | 'individual'
+let activeReportStatus = 'published'; // 'published' | 'draft' | 'both'
 let activeIndividualStudentIndex = 0;
 let individualViewMode = 'single'; // 'single' | 'all'
 let cachedReportData = null;
 
-const compileReportData = ({ examId, className, reportYear, reportOrder } = {}) => {
+const compileReportData = ({ examId, className, reportYear, reportOrder, resultStatus = activeReportStatus } = {}) => {
     if (!reportYear || !className || !examId) return null;
 
+    const statusFilter = resultStatus || 'published';
     const isTeacherScope = (roleScope === 'staff');
     const isAllClasses = (className === 'ALL');
     let targetClasses;
     if (isAllClasses) {
         const cleanRepYear = cleanAcademicYearLabel(reportYear);
-        const publishedExamClasses = [...new Set(
+        const matchingExamClasses = [...new Set(
             (examResultsCache || [])
-                .filter(r => r.published === true && (!cleanRepYear || cleanAcademicYearLabel(r.academicYear) === cleanRepYear || !r.academicYear) && resultMatchesExam(r, examId) && r.classLabel)
+                .filter(r => matchesReportResultStatus(r, statusFilter) && (!cleanRepYear || cleanAcademicYearLabel(r.academicYear) === cleanRepYear || !r.academicYear) && resultMatchesExam(r, examId) && r.classLabel)
                 .map(r => String(r.classLabel).trim())
                 .filter(Boolean)
         )].sort(compareClassLabelsNatural);
 
-        const rawTargetClasses = publishedExamClasses.length ? publishedExamClasses : getReportClassesForYear(reportYear);
+        const rawTargetClasses = matchingExamClasses.length ? matchingExamClasses : getReportClassesForYear(reportYear, statusFilter);
         targetClasses = isTeacherScope ? rawTargetClasses.filter((c) => isClassInDutyScope(c, teacherAssignedClasses)) : rawTargetClasses;
     } else {
         if (isTeacherScope && !isClassInDutyScope(className, teacherAssignedClasses)) return null;
@@ -9276,19 +9407,21 @@ const compileReportData = ({ examId, className, reportYear, reportOrder } = {}) 
         const examSchema = examContext?.schema || getSchemaForClass(reportYear, cls);
         const reportSubjects = getSchemaSubjectRows(examSchema, examContext?.key || '');
 
-        // Gather all published result records for this exam, class, and year
+        // Gather all matching result records for this exam, class, year, and status filter (preferring published if both exist)
         const cleanRepYear = cleanAcademicYearLabel(reportYear);
-        const classResultRecords = (examResultsCache || []).filter(r => 
-            resultMatchesExam(r, examId) && 
-            r.published === true && 
-            r.classLabel === cls && 
-            (!cleanRepYear || cleanAcademicYearLabel(r.academicYear) === cleanRepYear || !r.academicYear)
-        );
+        const classResultRecords = (examResultsCache || [])
+            .filter(r =>
+                resultMatchesExam(r, examId) &&
+                matchesReportResultStatus(r, statusFilter) &&
+                r.classLabel === cls &&
+                (!cleanRepYear || cleanAcademicYearLabel(r.academicYear) === cleanRepYear || !r.academicYear)
+            )
+            .sort((a, b) => ((b.published === true ? 1 : 0) - (a.published === true ? 1 : 0)) || (Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
 
         // Map students who belong to this class in this academic year
         const studentMap = new Map();
 
-        // 1. Add students from published result records first
+        // 1. Add students from matching result records first
         classResultRecords.forEach((record) => {
             const matched = (students || []).find((s) => s.id === record.studentId);
             const studentObj = matched ? { ...matched, class: cls } : {
@@ -9316,7 +9449,7 @@ const compileReportData = ({ examId, className, reportYear, reportOrder } = {}) 
         const classStudents = Array.from(studentMap.values());
 
         const resultRows = classStudents.map(student => {
-            const resultRecord = classResultRecords.find(r => r.studentId === student.id) || (examResultsCache || []).find(r => resultMatchesExam(r, examId) && r.studentId === student.id && (!cleanRepYear || cleanAcademicYearLabel(r.academicYear) === cleanRepYear || !r.academicYear) && r.published === true);
+            const resultRecord = classResultRecords.find(r => r.studentId === student.id) || (examResultsCache || []).find(r => resultMatchesExam(r, examId) && r.studentId === student.id && (!cleanRepYear || cleanAcademicYearLabel(r.academicYear) === cleanRepYear || !r.academicYear) && matchesReportResultStatus(r, statusFilter));
             const marks = resultRecord ? (resultRecord.marks || {}) : {};
             let total = 0;
             let maximum = 0;
@@ -9805,6 +9938,8 @@ updateReportPreview = () => {
     const className = document.getElementById('report-class-select')?.value || '';
     const examId = document.getElementById('report-exam-select')?.value || '';
     const reportOrder = document.getElementById('report-order-select')?.value || 'rank';
+    const resultStatus = document.getElementById('report-status-filter')?.value || activeReportStatus || 'published';
+    activeReportStatus = resultStatus;
 
     if (!className || !examId) {
         if (summaryEl) summaryEl.textContent = 'Select year, class and exam to preview result availability.';
@@ -9821,17 +9956,25 @@ updateReportPreview = () => {
         return;
     }
 
-    const data = compileReportData({ examId, className, reportYear, reportOrder });
+    const data = compileReportData({ examId, className, reportYear, reportOrder, resultStatus });
     cachedReportData = data;
 
     if (!data || !data.classReports.length) {
-        if (summaryEl) summaryEl.textContent = `Academic Year: ${reportYear} | Records: 0 | Published: 0`;
+        const emptyTitle = resultStatus === 'draft'
+            ? 'No Draft Results Found'
+            : (resultStatus === 'both' ? 'No Matching Results Found' : 'No Published Results Found');
+        const emptyDesc = resultStatus === 'draft'
+            ? `There are no draft results matching ${escapeHtml(className === 'ALL' ? 'All Classes' : className)} for the selected exam.`
+            : (resultStatus === 'both'
+                ? `There are no published or draft results matching ${escapeHtml(className === 'ALL' ? 'All Classes' : className)} for the selected exam.`
+                : `There are no published results matching ${escapeHtml(className === 'ALL' ? 'All Classes' : className)} for the selected exam. Check Marks Entry or switch Result Status above to preview Draft marks.`);
+        if (summaryEl) summaryEl.textContent = `Academic Year: ${reportYear} | Records: 0`;
         if (canvasEl) {
             canvasEl.innerHTML = `
                 <div class="p-8 text-center bg-amber-50 border border-amber-200 rounded-2xl text-amber-800">
                     <i class="fas fa-exclamation-triangle text-2xl mb-2 text-amber-600"></i>
-                    <h4 class="font-extrabold text-sm">No Published Results Found</h4>
-                    <p class="text-xs mt-1">There are no published results matching ${escapeHtml(className === 'ALL' ? 'All Classes' : className)} for the selected exam. Check Marks Entry or Draft Review to publish marks first.</p>
+                    <h4 class="font-extrabold text-sm">${emptyTitle}</h4>
+                    <p class="text-xs mt-1">${emptyDesc}</p>
                 </div>`;
         }
         return;
@@ -10079,31 +10222,31 @@ const exportReportPDF = (optionsOrModel = {}) => {
             // Draw Institution Header with Logo
             if (hasLogo) {
                 try {
-                    docPdf.addImage(logoImg, 'PNG', 14, 8, isA5 ? 12 : 16, isA5 ? 12 : 16);
+                    docPdf.addImage(logoImg, 'PNG', 10, 6, isA5 ? 12 : 16, isA5 ? 12 : 16);
                 } catch (e) {
                     console.warn('Could not render logo in PDF:', e);
                 }
             }
 
             docPdf.setFont('helvetica', 'bold');
-            docPdf.setFontSize(isA5 ? 12 : 15);
+            docPdf.setFontSize(isA5 ? 14 : 18);
             docPdf.setTextColor(isBw ? 0 : 30, isBw ? 0 : 27, isBw ? 0 : 75);
             docPdf.text(instName, pageWidth / 2, isA5 ? 10 : 12, { align: 'center' });
 
             docPdf.setFont('helvetica', 'normal');
-            docPdf.setFontSize(isA5 ? 7.5 : 9);
-            docPdf.setTextColor(isBw ? 80 : 100);
-            if (subTitle) docPdf.text(subTitle, pageWidth / 2, isA5 ? 15 : 17, { align: 'center' });
+            docPdf.setFontSize(isA5 ? 10 : 12);
+            docPdf.setTextColor(isBw ? 60 : 85);
+            if (subTitle) docPdf.text(subTitle, pageWidth / 2, isA5 ? 15 : 17.5, { align: 'center' });
 
             docPdf.setFont('helvetica', 'bold');
-            docPdf.setFontSize(isA5 ? 8 : 10);
+            docPdf.setFontSize(isA5 ? 10 : 12);
             docPdf.setTextColor(isBw ? 20 : 51, isBw ? 20 : 65, isBw ? 20 : 85);
 
-            const col1 = 14;
-            const col2 = Math.round(pageWidth * 0.28);
-            const col3 = Math.round(pageWidth * 0.55);
+            const col1 = 10;
+            const col2 = Math.round(pageWidth * 0.25);
+            const col3 = Math.round(pageWidth * 0.54);
             const col4 = Math.round(pageWidth * 0.78);
-            const metaY = isA5 ? 22 : 27;
+            const metaY = isA5 ? 21 : 25.5;
 
             docPdf.text(`Class: ${cr.className}`, col1, metaY);
             docPdf.text(`Exam: ${cr.examContext?.label || data.examId}`, col2, metaY);
@@ -10140,30 +10283,42 @@ const exportReportPDF = (optionsOrModel = {}) => {
             });
 
             const headFill = isBw ? [45, 45, 45] : [79, 70, 229];
-            const tableStartY = isA5 ? 26 : 33;
-            const regMarginH = isA5 ? 8 : 10;
+            const tableStartY = isA5 ? 24.5 : 30;
+            const regMarginH = isA5 ? 4 : 5;
             const regUsableW = pageWidth - (regMarginH * 2);
-            const totalCols = headers.length;
-            const denseTable = isA5 || cr.reportSubjects.length > 7 || orientation === 'portrait';
-            const noColW = isA5 ? 6.5 : 8.5;
-            const admColW = isA5 ? 13 : 16;
-            const targetNameW = isA5 ? 23 : (orientation === 'portrait' ? 28 : 35);
-            const minNameW = isA5 ? 16 : 22;
-            const trailingCount = 4; // Total, Result, Att., Rank
             const subjectCount = cr.reportSubjects.length;
-            const otherColsCount = Math.max(1, subjectCount + trailingCount);
-            const maxOtherBudget = Math.max(20, regUsableW - (noColW + admColW + minNameW) - 1);
-            const idealOtherBudget = Math.max(20, regUsableW - (noColW + admColW + targetNameW) - 1);
-            const remainingW = Math.min(maxOtherBudget, idealOtherBudget);
-            const perSubColW = Math.floor((remainingW / otherColsCount) * 10) / 10;
+            const manySubjects = subjectCount > 8 || orientation === 'portrait';
+
+            // Compact column geometry sized so >=12pt text fits A4 Landscape notice-board tables cleanly
+            const noColW = isA5 ? 7 : 8.5;
+            const admColW = isA5 ? 14 : 18.5;
+            const totalColW = isA5 ? 13 : 16;
+            const resultColW = isA5 ? 14.5 : 17.5;
+            const attColW = isA5 ? 13.5 : 15.5;
+            const rankColW = isA5 ? 10.5 : 13.5;
+            const fixedTrailingW = totalColW + resultColW + attColW + rankColW;
+            const minNameW = isA5 ? 20 : (manySubjects ? 28 : 36);
+            const targetNameW = isA5 ? 25 : (orientation === 'portrait' ? 32 : (manySubjects ? 36 : 46));
+            const maxSubBudget = Math.max(20, regUsableW - (noColW + admColW + minNameW + fixedTrailingW) - 0.5);
+            const idealSubBudget = Math.max(20, regUsableW - (noColW + admColW + targetNameW + fixedTrailingW) - 0.5);
+            const subBudget = Math.min(maxSubBudget, idealSubBudget);
+            const perSubColW = Math.max(10.5, Math.floor((subBudget / Math.max(1, subjectCount)) * 10) / 10);
+
             const regColumnStyles = {
                 0: { cellWidth: noColW, halign: 'center' },
-                1: { cellWidth: admColW },
-                2: { cellWidth: 'auto', minCellWidth: minNameW }
+                1: { cellWidth: admColW, halign: 'left' },
+                2: { cellWidth: 'auto', minCellWidth: minNameW, halign: 'left' }
             };
-            for (let cIdx = 3; cIdx < totalCols; cIdx++) {
+            const totalColIdx = 3 + subjectCount;
+            for (let cIdx = 3; cIdx < totalColIdx; cIdx++) {
                 regColumnStyles[cIdx] = { cellWidth: perSubColW, halign: 'center' };
             }
+            regColumnStyles[totalColIdx] = { cellWidth: totalColW, halign: 'center' };
+            regColumnStyles[totalColIdx + 1] = { cellWidth: resultColW, halign: 'center' };
+            regColumnStyles[totalColIdx + 2] = { cellWidth: attColW, halign: 'center' };
+            regColumnStyles[totalColIdx + 3] = { cellWidth: rankColW, halign: 'center' };
+
+            const pdfTableFontSize = isA5 ? 10 : 12;
 
             docPdf.autoTable({
                 startY: tableStartY,
@@ -10171,8 +10326,19 @@ const exportReportPDF = (optionsOrModel = {}) => {
                 tableWidth: 'auto',
                 head: [headers],
                 body,
-                styles: { fontSize: denseTable ? 5.8 : 7, cellPadding: denseTable ? 0.9 : 1.4, overflow: 'linebreak', valign: 'middle' },
-                headStyles: { fillColor: headFill, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: denseTable ? 5.5 : 6.8 },
+                styles: {
+                    fontSize: pdfTableFontSize,
+                    cellPadding: isA5 ? { top: 0.9, right: 0.5, bottom: 0.9, left: 0.5 } : { top: 1.4, right: 0.7, bottom: 1.4, left: 0.7 },
+                    overflow: 'linebreak',
+                    valign: 'middle'
+                },
+                headStyles: {
+                    fillColor: headFill,
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    fontSize: pdfTableFontSize,
+                    cellPadding: isA5 ? { top: 1.0, right: 0.5, bottom: 1.0, left: 0.5 } : { top: 1.5, right: 0.7, bottom: 1.5, left: 0.7 }
+                },
                 columnStyles: regColumnStyles,
                 didParseCell: (cellData) => {
                     if (cellData.section !== 'body') return;
@@ -10181,7 +10347,7 @@ const exportReportPDF = (optionsOrModel = {}) => {
                         if (rowMeta?.passStatus === 'FAIL') {
                             if (cellData.column.index === studentNameColIndex || cellData.column.index === resultColIndex) {
                                 cellData.cell.styles.textColor = [0, 0, 0];
-                                cellData.cell.styles.fontStyle = 'bold';
+                                cellData.cell.styles.fontStyle = 'normal';
                             }
                         } else if (rowMeta?.passStatus === 'PASS' && cellData.column.index === resultColIndex) {
                             cellData.cell.styles.textColor = [15, 23, 42];
@@ -10189,13 +10355,9 @@ const exportReportPDF = (optionsOrModel = {}) => {
                         }
                     } else {
                         if (rowMeta?.passStatus === 'FAIL') {
-                            if (cellData.column.index === studentNameColIndex) {
+                            if (cellData.column.index === studentNameColIndex || cellData.column.index === resultColIndex) {
                                 cellData.cell.styles.textColor = [220, 38, 38];
-                                cellData.cell.styles.fontStyle = 'bold';
-                            }
-                            if (cellData.column.index === resultColIndex) {
-                                cellData.cell.styles.textColor = [220, 38, 38];
-                                cellData.cell.styles.fontStyle = 'bold';
+                                cellData.cell.styles.fontStyle = 'normal';
                             }
                         } else if (rowMeta?.passStatus === 'PASS' && cellData.column.index === resultColIndex) {
                             cellData.cell.styles.textColor = [16, 149, 101];
@@ -10205,9 +10367,9 @@ const exportReportPDF = (optionsOrModel = {}) => {
                 },
                 didDrawPage: () => {
                     const pageCount = docPdf.internal.getNumberOfPages();
-                    docPdf.setFontSize(8);
+                    docPdf.setFontSize(10);
                     docPdf.setTextColor(120);
-                    docPdf.text(`Page ${pageCount}`, pageWidth - 20, docPdf.internal.pageSize.getHeight() - 8);
+                    docPdf.text(`Page ${pageCount}`, pageWidth - 22, docPdf.internal.pageSize.getHeight() - 7);
                     docPdf.setTextColor(0);
                 }
             });
@@ -10224,9 +10386,9 @@ const exportReportPDF = (optionsOrModel = {}) => {
         const pageWidth = docPdf.internal.pageSize.getWidth();
         const pageHeight = docPdf.internal.pageSize.getHeight();
 
-        const outerMargin = isA5 ? 6 : 8;
-        const innerMargin = isA5 ? 7.5 : 10;
-        const margin = isA5 ? 10 : 14;
+        const outerMargin = isA5 ? 5 : 7;
+        const innerMargin = isA5 ? 6.5 : 9;
+        const margin = isA5 ? 9 : 13;
 
         const borderCol1 = isBw ? [45, 45, 45] : [79, 70, 229];
         const borderCol2 = isBw ? [215, 215, 215] : [224, 231, 255];
@@ -10246,7 +10408,7 @@ const exportReportPDF = (optionsOrModel = {}) => {
             // Draw Logo in Header
             if (hasLogo) {
                 try {
-                    docPdf.addImage(logoImg, 'PNG', margin, isA5 ? 9 : 13, isA5 ? 12 : 14, isA5 ? 12 : 14);
+                    docPdf.addImage(logoImg, 'PNG', margin, isA5 ? 8.5 : 12, isA5 ? 12 : 15, isA5 ? 12 : 15);
                 } catch (e) {
                     console.warn('Could not add logo to individual report PDF:', e);
                 }
@@ -10254,30 +10416,30 @@ const exportReportPDF = (optionsOrModel = {}) => {
 
             // Institution Name & Subtitle
             docPdf.setFont('helvetica', 'bold');
-            docPdf.setFontSize(isA5 ? 13 : 16);
+            docPdf.setFontSize(isA5 ? 15 : 18);
             docPdf.setTextColor(isBw ? 0 : 30, isBw ? 0 : 27, isBw ? 0 : 75);
-            docPdf.text(instName, pageWidth / 2, isA5 ? 14 : 20, { align: 'center' });
+            docPdf.text(instName, pageWidth / 2, isA5 ? 13 : 19, { align: 'center' });
 
             docPdf.setFont('helvetica', 'normal');
-            docPdf.setFontSize(isA5 ? 7.5 : 9);
+            docPdf.setFontSize(isA5 ? 9.5 : 12);
             docPdf.setTextColor(isBw ? 80 : 100);
-            if (subTitle) docPdf.text(subTitle, pageWidth / 2, isA5 ? 19 : 26, { align: 'center' });
+            if (subTitle) docPdf.text(subTitle, pageWidth / 2, isA5 ? 18 : 25.5, { align: 'center' });
 
             // "STUDENT REPORT CARD" Badge
-            const badgeW = isA5 ? 54 : 70;
-            const badgeH = isA5 ? 6 : 7;
-            const badgeY = isA5 ? 22 : 30;
+            const badgeW = isA5 ? 58 : 78;
+            const badgeH = isA5 ? 6.5 : 8;
+            const badgeY = isA5 ? 21 : 29.5;
             docPdf.setFillColor(isBw ? 240 : 238, isBw ? 240 : 242, isBw ? 240 : 255);
             docPdf.roundedRect(pageWidth / 2 - (badgeW / 2), badgeY, badgeW, badgeH, 1.5, 1.5, 'F');
 
             docPdf.setFont('helvetica', 'bold');
-            docPdf.setFontSize(isA5 ? 8.5 : 10);
+            docPdf.setFontSize(isA5 ? 10 : 12);
             docPdf.setTextColor(isBw ? 20 : 67, isBw ? 20 : 56, isBw ? 20 : 202);
-            docPdf.text('STUDENT REPORT CARD', pageWidth / 2, badgeY + (isA5 ? 4.3 : 5), { align: 'center' });
+            docPdf.text('STUDENT REPORT CARD', pageWidth / 2, badgeY + (isA5 ? 4.6 : 5.6), { align: 'center' });
 
             // Student Info Card Box
-            const infoY = isA5 ? 30 : 41;
-            const infoH = isA5 ? 23 : 28;
+            const infoY = isA5 ? 29.5 : 40.5;
+            const infoH = isA5 ? 25 : 33;
             docPdf.setFillColor(248, 250, 252);
             docPdf.setDrawColor(isBw ? 215 : 226, isBw ? 215 : 232, isBw ? 215 : 240);
             docPdf.roundedRect(margin, infoY, pageWidth - (margin * 2), infoH, 1.5, 1.5, 'FD');
@@ -10286,16 +10448,16 @@ const exportReportPDF = (optionsOrModel = {}) => {
             const stName = row.student?.name || '-';
             const crExam = data.classReports.find(cr => cr.className === row.className)?.examContext?.label || data.examId;
 
-            const leftLabelX = margin + (isA5 ? 3 : 4);
-            const leftValX = margin + (isA5 ? 24 : 30);
-            const rightLabelX = pageWidth / 2 + (isA5 ? 4 : 10);
-            const rightValX = pageWidth / 2 + (isA5 ? 26 : 37);
+            const leftLabelX = margin + (isA5 ? 2.5 : 4);
+            const leftValX = margin + (isA5 ? 27.5 : 35.5);
+            const rightLabelX = pageWidth / 2 + (isA5 ? 2 : 3);
+            const rightValX = pageWidth / 2 + (isA5 ? 27.5 : 37);
 
-            const row1Y = infoY + (isA5 ? 5.5 : 7);
-            const row2Y = infoY + (isA5 ? 12.5 : 15);
-            const row3Y = infoY + (isA5 ? 19.5 : 23);
+            const row1Y = infoY + (isA5 ? 6 : 8.5);
+            const row2Y = infoY + (isA5 ? 13.5 : 18);
+            const row3Y = infoY + (isA5 ? 21 : 27.5);
 
-            docPdf.setFontSize(isA5 ? 7.5 : 9);
+            docPdf.setFontSize(isA5 ? 9.5 : 12);
 
             // Row 1: Student Name & Academic Year
             docPdf.setFont('helvetica', 'normal');
@@ -10357,7 +10519,7 @@ const exportReportPDF = (optionsOrModel = {}) => {
                 ];
             });
 
-            const tableStartY = infoY + infoH + (isA5 ? 4 : 5);
+            const tableStartY = infoY + infoH + (isA5 ? 4 : 5.5);
 
             docPdf.autoTable({
                 startY: tableStartY,
@@ -10365,31 +10527,31 @@ const exportReportPDF = (optionsOrModel = {}) => {
                 tableWidth: 'auto',
                 head: [subHeaders],
                 body: subBody,
-                styles: { fontSize: isA5 ? 7 : 8.5, cellPadding: isA5 ? 1.4 : 2.2, valign: 'middle', overflow: 'linebreak' },
-                headStyles: { fillColor: tableHeadFill, textColor: [255, 255, 255], fontStyle: 'bold' },
+                styles: { fontSize: isA5 ? 9.5 : 12, cellPadding: isA5 ? 1.4 : 2.1, valign: 'middle', overflow: 'linebreak' },
+                headStyles: { fillColor: tableHeadFill, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: isA5 ? 9.5 : 12 },
                 columnStyles: isA5 ? {
-                    0: { cellWidth: 7, halign: 'center' },
-                    1: { cellWidth: 'auto', minCellWidth: 30 },
+                    0: { cellWidth: 8, halign: 'center' },
+                    1: { cellWidth: 'auto', minCellWidth: 28 },
                     2: { cellWidth: 15, halign: 'center' },
                     3: { cellWidth: 15, halign: 'center' },
-                    4: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
-                    5: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
-                    6: { cellWidth: 21, halign: 'center' }
+                    4: { cellWidth: 17, halign: 'center', fontStyle: 'bold' },
+                    5: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
+                    6: { cellWidth: 22, halign: 'center' }
                 } : {
                     0: { cellWidth: 10, halign: 'center' },
-                    1: { cellWidth: 'auto', minCellWidth: 48 },
-                    2: { cellWidth: 22, halign: 'center' },
-                    3: { cellWidth: 22, halign: 'center' },
-                    4: { cellWidth: 26, halign: 'center', fontStyle: 'bold' },
+                    1: { cellWidth: 'auto', minCellWidth: 46 },
+                    2: { cellWidth: 19, halign: 'center' },
+                    3: { cellWidth: 19, halign: 'center' },
+                    4: { cellWidth: 23, halign: 'center', fontStyle: 'bold' },
                     5: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
-                    6: { cellWidth: 26, halign: 'center' }
+                    6: { cellWidth: 28, halign: 'center' }
                 },
                 didParseCell: (cellData) => {
                     if (cellData.section === 'body' && cellData.column.index === 6) {
                         if (isBw) {
                             if (cellData.cell.raw === 'FAIL') {
                                 cellData.cell.styles.textColor = [0, 0, 0];
-                                cellData.cell.styles.fontStyle = 'bold';
+                                cellData.cell.styles.fontStyle = 'normal';
                             } else if (cellData.cell.raw === 'PASS') {
                                 cellData.cell.styles.textColor = [15, 23, 42];
                                 cellData.cell.styles.fontStyle = 'bold';
@@ -10400,7 +10562,7 @@ const exportReportPDF = (optionsOrModel = {}) => {
                         } else {
                             if (cellData.cell.raw === 'FAIL') {
                                 cellData.cell.styles.textColor = [220, 38, 38];
-                                cellData.cell.styles.fontStyle = 'bold';
+                                cellData.cell.styles.fontStyle = 'normal';
                             } else if (cellData.cell.raw === 'PASS') {
                                 cellData.cell.styles.textColor = [16, 149, 101];
                                 cellData.cell.styles.fontStyle = 'bold';
@@ -10414,19 +10576,19 @@ const exportReportPDF = (optionsOrModel = {}) => {
             });
 
             // Summary Box
-            const finalY = docPdf.lastAutoTable.finalY + (isA5 ? 3.5 : 6);
-            const summaryH = isA5 ? 18 : 24;
+            const finalY = docPdf.lastAutoTable.finalY + (isA5 ? 4 : 6);
+            const summaryH = isA5 ? 20 : 28;
 
             docPdf.setFillColor(248, 250, 252);
             docPdf.setDrawColor(isBw ? 215 : 226, isBw ? 215 : 232, isBw ? 215 : 240);
             docPdf.roundedRect(margin, finalY, pageWidth - (margin * 2), summaryH, 1.5, 1.5, 'FD');
 
             const pct = row.maximum > 0 ? Math.round((row.total / row.maximum) * 100) : 0;
-            const sumRow1Y = finalY + (isA5 ? 6 : 8);
-            const sumRow2Y = finalY + (isA5 ? 13 : 16);
+            const sumRow1Y = finalY + (isA5 ? 7 : 9.5);
+            const sumRow2Y = finalY + (isA5 ? 14.5 : 20);
 
             docPdf.setFont('helvetica', 'normal');
-            docPdf.setFontSize(isA5 ? 7.5 : 8.5);
+            docPdf.setFontSize(isA5 ? 9.5 : 12);
             docPdf.setTextColor(isBw ? 80 : 71, isBw ? 80 : 85, isBw ? 80 : 105);
             docPdf.text('Total Marks:', leftLabelX, sumRow1Y);
             docPdf.setFont('helvetica', 'bold');
@@ -10450,15 +10612,17 @@ const exportReportPDF = (optionsOrModel = {}) => {
             docPdf.setFont('helvetica', 'normal');
             docPdf.setTextColor(isBw ? 80 : 71, isBw ? 80 : 85, isBw ? 80 : 105);
             docPdf.text('Final Result:', rightLabelX, sumRow2Y);
-            docPdf.setFont('helvetica', 'bold');
             if (isBw) {
-                docPdf.setTextColor(row.passStatus === 'PASS' ? [15, 23, 42] : [0, 0, 0]);
+                docPdf.setFont('helvetica', row.passStatus === 'PASS' ? 'bold' : 'normal');
+                docPdf.setTextColor(row.passStatus === 'PASS' ? 15 : 0, row.passStatus === 'PASS' ? 23 : 0, row.passStatus === 'PASS' ? 42 : 0);
                 docPdf.text(row.passStatus === 'PASS' ? `PASSED (Grade: ${row.grade})` : 'FAILED', rightValX, sumRow2Y);
             } else {
                 if (row.passStatus === 'PASS') {
+                    docPdf.setFont('helvetica', 'bold');
                     docPdf.setTextColor(16, 149, 101);
                     docPdf.text(`PASSED (Grade: ${row.grade})`, rightValX, sumRow2Y);
                 } else {
+                    docPdf.setFont('helvetica', 'normal');
                     docPdf.setTextColor(220, 38, 38);
                     docPdf.text('FAILED', rightValX, sumRow2Y);
                 }
@@ -10493,6 +10657,7 @@ document.getElementById('report-pdf-modal-confirm-btn')?.addEventListener('click
     const className = document.getElementById('report-class-select')?.value || '';
     const examId = document.getElementById('report-exam-select')?.value || '';
     const reportOrder = document.getElementById('report-order-select')?.value || 'rank';
+    const resultStatus = document.getElementById('report-status-filter')?.value || activeReportStatus || 'published';
 
     if (!className || !examId) {
         if (typeof showAppAlert === 'function') {
@@ -10507,18 +10672,18 @@ document.getElementById('report-pdf-modal-confirm-btn')?.addEventListener('click
         return;
     }
 
-    cachedReportData = compileReportData({ examId, className, reportYear, reportOrder });
+    cachedReportData = compileReportData({ examId, className, reportYear, reportOrder, resultStatus });
     const data = cachedReportData;
 
     if (!data || !data.classReports || !data.classReports.length) {
         if (typeof showAppAlert === 'function') {
             showAppAlert({
                 title: 'No Results Found',
-                message: `No published results found for ${className === 'ALL' ? 'All Classes' : className} in the selected exam. Check Marks Entry or Draft Review to publish marks first.`,
+                message: `No matching results found for ${className === 'ALL' ? 'All Classes' : className} in the selected exam.`,
                 type: 'warning'
             });
         } else {
-            alert(`No published results found for ${className === 'ALL' ? 'All Classes' : className} in the selected exam.`);
+            alert(`No matching results found for ${className === 'ALL' ? 'All Classes' : className} in the selected exam.`);
         }
         return;
     }
@@ -10539,9 +10704,17 @@ document.getElementById('report-pdf-modal-confirm-btn')?.addEventListener('click
 document.getElementById('report-download-pdf-btn')?.addEventListener('click', () => openReportPdfOptionsModal());
 document.getElementById('report-download-excel-btn')?.addEventListener('click', () => exportReportExcel());
 
-// Model Dropdown Event
+// Model & Result Status Dropdown Events
 document.getElementById('report-model-select')?.addEventListener('change', (e) => {
     activeReportModel = e.target.value || 'consolidated';
+    updateReportPreview();
+});
+
+document.getElementById('report-status-filter')?.addEventListener('change', (e) => {
+    activeReportStatus = e.target.value || 'published';
+    const chosenYear = document.getElementById('report-academic-year')?.value || currentAcademicYear;
+    populateReportClasses(chosenYear);
+    renderExamSelectOptions(document.getElementById('report-exam-select'), document.getElementById('report-class-select')?.value || '', chosenYear, '-- Choose Exam --', activeReportStatus);
     updateReportPreview();
 });
 
@@ -10550,9 +10723,9 @@ document.getElementById('report-model-select')?.addEventListener('change', (e) =
         if (id === 'report-academic-year') {
             const chosenYear = document.getElementById('report-academic-year')?.value || currentAcademicYear;
             populateReportClasses(chosenYear);
-            renderExamSelectOptions(document.getElementById('report-exam-select'), document.getElementById('report-class-select')?.value || '', chosenYear, '-- Choose Exam --', true);
+            renderExamSelectOptions(document.getElementById('report-exam-select'), document.getElementById('report-class-select')?.value || '', chosenYear, '-- Choose Exam --', activeReportStatus);
         } else if (id === 'report-class-select') {
-            renderExamSelectOptions(document.getElementById('report-exam-select'), document.getElementById('report-class-select')?.value || '', document.getElementById('report-academic-year')?.value || currentAcademicYear, '-- Choose Exam --', true);
+            renderExamSelectOptions(document.getElementById('report-exam-select'), document.getElementById('report-class-select')?.value || '', document.getElementById('report-academic-year')?.value || currentAcademicYear, '-- Choose Exam --', activeReportStatus);
         }
         updateReportPreview();
     });
@@ -10688,8 +10861,10 @@ const openResultEditModal = (resultId = '') => {
     const modal = document.getElementById('result-edit-modal');
     const fields = document.getElementById('result-edit-fields');
     document.getElementById('result-edit-error')?.classList.add('hidden');
+    ensureStudentsLoaded();
     const summary = document.getElementById('result-edit-summary');
-    if (summary) summary.textContent = `${getStudentNameById(row.studentId)} • ${getExamNameById(row.examId, row)} • ${row.classLabel || ''}`;
+    const editStudentName = students.find((entry) => entry.id === row.studentId)?.name || row.studentName || 'Unknown';
+    if (summary) summary.textContent = `${editStudentName} • ${getExamNameById(row.examId, row)} • ${row.classLabel || ''}`;
     if (fields) {
         const subjectFieldsHtml = subjects.map((subject) => {
             const existing = row.marks?.[subject.id] ?? row.marks?.[subject.name] ?? '';
@@ -10885,9 +11060,9 @@ document.getElementById('result-edit-fields')?.addEventListener('input', (event)
 document.getElementById('published-results-table')?.addEventListener('click', async (event) => handleResultRowAction(event, true));
 document.getElementById('draft-results-table')?.addEventListener('click', async (event) => handleResultRowAction(event, false));
 document.getElementById('published-class-filter')?.addEventListener('change', () => {
-    const classValue = document.getElementById('published-class-filter')?.value || 'ALL';
+    const classValue = document.getElementById('published-class-filter')?.value || '';
     const examSelect = document.getElementById('published-exam-filter');
-    renderExamSelectOptions(examSelect, classValue, currentAcademicYear, '');
+    renderExamSelectOptions(examSelect, classValue || 'ALL', currentAcademicYear, '');
     renderPublishedDraftTables();
 });
 document.getElementById('draft-class-filter')?.addEventListener('change', () => {
