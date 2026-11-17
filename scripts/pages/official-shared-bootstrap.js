@@ -8568,7 +8568,8 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         if (!snap.exists()) return;
         const ctrl = snap.data();
         const role = window.AppSession?.getRole?.() || '';
-        if (ctrl.isLocked && role !== 'admin') {
+        if (ctrl.isLocked && role !== 'admin' && !isRevokingOfficialSession) {
+          isRevokingOfficialSession = true;
           window.AppSession?.setFlash?.(ctrl.lockMessage || 'Official session locked by institution administrator.');
           window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
         }
@@ -8651,7 +8652,8 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
 
     onAuthStateChanged(auth, (user) => {
       if (!user) {
-        if (authReady) {
+        if (authReady && !isRevokingOfficialSession) {
+          isRevokingOfficialSession = true;
           localStorage.removeItem(OFFICIAL_SESSION_KEY);
           window.AppSession?.clearAll?.();
           window.location.replace('index.html');
@@ -8661,10 +8663,120 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       authReady = true;
     });
 
-    document.querySelectorAll('#official-logout-btn, .official-logout-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        localStorage.removeItem(OFFICIAL_SESSION_KEY);
-        window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+    const executeOfficialLogout = async () => {
+      isRevokingOfficialSession = true;
+      localStorage.removeItem(OFFICIAL_SESSION_KEY);
+      if (window.AppSession && typeof window.AppSession.signOut === 'function') {
+        await window.AppSession.signOut(auth, { redirectUrl: 'index.html?public=1' });
+      } else {
+        try {
+          if (auth && typeof auth.signOut === 'function') await auth.signOut();
+        } catch (_) {}
+        window.location.href = 'index.html?public=1';
+      }
+    };
+
+    const ensureOfficialLogoutConfirmModal = () => {
+      let modal = document.getElementById('official-logout-confirm-modal');
+      if (modal) return modal;
+      modal = document.createElement('div');
+      modal.id = 'official-logout-confirm-modal';
+      modal.className = 'fixed inset-0 z-[10050] hidden items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 no-print';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-hidden', 'true');
+      modal.setAttribute('aria-labelledby', 'official-logout-confirm-title');
+      modal.innerHTML = `
+        <div class="w-full max-w-sm rounded-2xl bg-white border border-slate-200 shadow-2xl p-5 sm:p-6 text-center">
+          <div class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 mx-auto flex items-center justify-center text-xl mb-3.5">
+            <i class="fas fa-sign-out-alt"></i>
+          </div>
+          <h3 id="official-logout-confirm-title" class="text-base sm:text-lg font-extrabold text-slate-900">Confirm Logout</h3>
+          <p class="text-xs sm:text-sm font-medium text-slate-600 mt-1.5 leading-relaxed">
+            Are you sure you want to log out of the Official Portal? You will be redirected to the Public Home page.
+          </p>
+          <div class="mt-5 flex items-center justify-end gap-2.5">
+            <button type="button" id="official-logout-cancel-btn" class="flex-1 py-2.5 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm transition cursor-pointer">
+              Cancel
+            </button>
+            <button type="button" id="official-logout-confirm-btn" class="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer border-none">
+              <i class="fas fa-sign-out-alt"></i>
+              <span>Yes, Logout</span>
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      return modal;
+    };
+
+    const requestOfficialLogout = () => {
+      setMobileMenuState(false);
+      const modal = ensureOfficialLogoutConfirmModal();
+      const cancelBtn = document.getElementById('official-logout-cancel-btn');
+      const confirmBtn = document.getElementById('official-logout-confirm-btn');
+      if (!modal || !cancelBtn || !confirmBtn) {
+        executeOfficialLogout();
+        return;
+      }
+
+      const hadOverflowHidden = document.body.classList.contains('overflow-hidden');
+      const hadScrollLock = document.body.classList.contains('modal-scroll-lock');
+      let isSigningOut = false;
+
+      confirmBtn.disabled = false;
+      cancelBtn.disabled = false;
+      confirmBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i><span>Yes, Logout</span>';
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('modal-scroll-lock');
+
+      const closeModal = () => {
+        if (isSigningOut) return;
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        modal.setAttribute('aria-hidden', 'true');
+        if (!hadScrollLock) document.body.classList.remove('modal-scroll-lock');
+        if (!hadOverflowHidden) document.body.classList.remove('overflow-hidden');
+        cancelBtn.removeEventListener('click', closeModal);
+        confirmBtn.removeEventListener('click', handleConfirm);
+        modal.removeEventListener('click', handleBackdrop);
+        document.removeEventListener('keydown', handleKeyDown);
+      };
+
+      const handleBackdrop = (e) => {
+        if (e.target === modal) closeModal();
+      };
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') closeModal();
+      };
+
+      const handleConfirm = async () => {
+        if (isSigningOut) return;
+        isSigningOut = true;
+        cancelBtn.disabled = true;
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Signing out...</span>';
+        await executeOfficialLogout();
+      };
+
+      cancelBtn.addEventListener('click', closeModal);
+      confirmBtn.addEventListener('click', handleConfirm);
+      modal.addEventListener('click', handleBackdrop);
+      document.addEventListener('keydown', handleKeyDown);
+      cancelBtn.focus?.();
+    };
+
+    document.querySelectorAll('#official-nav-logout-btn, #official-logout-btn, .official-logout-btn').forEach((btn) => {
+      if (btn.dataset.logoutBound === 'true') return;
+      btn.dataset.logoutBound = 'true';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        requestOfficialLogout();
       });
     });
 
