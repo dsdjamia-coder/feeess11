@@ -2,7 +2,7 @@ import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/1
 import { doc, onSnapshot, collection, getDocs, writeBatch, setDoc, query, where, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '../../config/app-config.js';
-import { BASE_PATH, applyInstitutionBranding, enableSmartSelectWindowing, escapeHtml, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { BASE_PATH, applyInstitutionBranding, enableSmartSelectWindowing, escapeHtml, isPastAcademicYearLabel, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 
 // --- Global Variables ---
@@ -31,6 +31,7 @@ const getInitialAcademicYear = () => {
 };
 let currentAcademicYear = getInitialAcademicYear();
 let availableAcademicYears = [];
+let allConfiguredAcademicYears = [];
 let hasLoadedResultAcademicYears = false;
 
 const cleanAcademicYearLabel = (str = '') => {
@@ -374,6 +375,7 @@ const resultMatchesExam = (row = {}, value = '') => {
 export const showAppConfirm = ({
     title = 'Confirm Action',
     message = 'Are you sure you want to proceed?',
+    htmlMessage = '',
     confirmText = 'Confirm',
     cancelText = 'Cancel',
     type = 'danger'
@@ -394,14 +396,20 @@ export const showAppConfirm = ({
         }
 
         if (titleEl) titleEl.textContent = title;
-        if (msgEl) msgEl.textContent = message;
+        if (msgEl) {
+            if (htmlMessage) {
+                msgEl.innerHTML = htmlMessage;
+            } else {
+                msgEl.textContent = message;
+            }
+        }
         if (actionLabel) actionLabel.textContent = confirmText;
         if (cancelBtn) cancelBtn.textContent = cancelText;
 
         if (iconContainer && iconEl && actionBtn) {
             if (type === 'danger') {
                 iconContainer.className = 'w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl mb-4 bg-red-100 text-red-600';
-                iconEl.className = 'fas fa-trash-alt';
+                iconEl.className = 'fas fa-triangle-exclamation';
                 actionBtn.className = 'w-1/2 sm:w-auto px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer';
             } else if (type === 'warning') {
                 iconContainer.className = 'w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl mb-4 bg-amber-100 text-amber-600';
@@ -418,23 +426,33 @@ export const showAppConfirm = ({
         modal.style.display = 'flex';
         document.body.classList.add('modal-scroll-lock');
 
+        const keyHandler = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                cleanUp(false);
+            }
+        };
+
         const cleanUp = (result) => {
             modal.classList.add('hidden');
             modal.style.display = 'none';
             document.body.classList.remove('modal-scroll-lock');
             if (actionBtn) actionBtn.onclick = null;
             if (cancelBtn) cancelBtn.onclick = null;
+            document.removeEventListener('keydown', keyHandler);
             resolve(result);
         };
 
         if (actionBtn) actionBtn.onclick = () => cleanUp(true);
         if (cancelBtn) cancelBtn.onclick = () => cleanUp(false);
+        document.addEventListener('keydown', keyHandler);
     });
 };
 
 export const showAppAlert = ({
     title = 'Notice',
     message = '',
+    htmlMessage = '',
     type = 'info'
 } = {}) => {
     return new Promise((resolve) => {
@@ -452,7 +470,13 @@ export const showAppAlert = ({
         }
 
         if (titleEl) titleEl.textContent = title;
-        if (msgEl) msgEl.textContent = message;
+        if (msgEl) {
+            if (htmlMessage) {
+                msgEl.innerHTML = htmlMessage;
+            } else {
+                msgEl.textContent = message;
+            }
+        }
 
         if (iconContainer && iconEl && okBtn) {
             if (type === 'success') {
@@ -1341,6 +1365,7 @@ function initializeDataListeners() {
             });
         }
         const rawYears = Array.isArray(payload.years) ? payload.years.filter(Boolean) : (payload.currentYear ? [payload.currentYear] : []);
+        allConfiguredAcademicYears = rawYears;
         availableAcademicYears = rawYears.filter((y) => {
             if (typeof y === 'object' && y !== null) {
                 return String(y.status || '').toLowerCase() !== 'archived';
@@ -1566,6 +1591,235 @@ const renderBlockedClasses = () => {
 
 let directPromotionMode = false;
 
+const normalizePromotionYearEntry = (entry) => {
+    if (!entry) return '';
+    if (typeof entry === 'string') return cleanAcademicYearLabel(entry);
+    if (typeof entry === 'object') return cleanAcademicYearLabel(entry.value || entry.year || entry.label || entry.id || '');
+    return cleanAcademicYearLabel(String(entry));
+};
+
+const isTargetYearCreatedInAdmin = (yearLabel = '') => {
+    const cleanTarget = cleanAcademicYearLabel(yearLabel).toLowerCase();
+    if (!cleanTarget) return false;
+    return (allConfiguredAcademicYears || []).some((entry) => normalizePromotionYearEntry(entry).toLowerCase() === cleanTarget);
+};
+
+const getPromotionOverrideScopeKey = (yearLabel = currentAcademicYear, classLabel = '') => {
+    const yKey = String(cleanAcademicYearLabel(yearLabel) || 'default').replace(/[^\w-]/g, '_');
+    const cKey = String(classLabel || '').trim().replace(/[./~*[\]\s]+/g, '_');
+    return `${yKey}__${cKey}`;
+};
+
+const getSavedClassPromotionOverrides = (classLabel = '', yearLabel = currentAcademicYear) => {
+    const map = resultCenterSettings?.promotionManualOverrides || {};
+    const scopeKey = getPromotionOverrideScopeKey(yearLabel, classLabel);
+    const entry = map[scopeKey];
+    return (entry && typeof entry === 'object') ? { ...entry } : {};
+};
+
+const buildAnnualPassInfoMap = () => {
+    const cleanCur = cleanAcademicYearLabel(currentAcademicYear);
+    const annualRows = examResultsCache.filter((row) => {
+        if (row.published !== true || !detectAnnualResultRow(row)) return false;
+        if (!cleanCur || !row.academicYear) return true;
+        return cleanAcademicYearLabel(row.academicYear) === cleanCur;
+    });
+    const studentAnnualMap = new Map();
+    annualRows.forEach((row) => {
+        if (!row || !row.studentId) return;
+        const passed = isPassFromMarks(row);
+        const obtained = Number(row.totals?.obtained ?? 0);
+        const maximum = Number(row.totals?.maximum ?? 0);
+        const percentage = maximum > 0 ? Math.round((obtained / maximum) * 1000) / 10 : null;
+        const prev = studentAnnualMap.get(row.studentId);
+        if (!prev || (passed && !prev.passed)) {
+            studentAnnualMap.set(row.studentId, {
+                passed,
+                hasResult: true,
+                obtained,
+                maximum,
+                percentage,
+                rowId: row.id
+            });
+        }
+    });
+    return studentAnnualMap;
+};
+
+const getPromotableStudentsForClass = (cls = '') => {
+    const cleanCls = String(cls || '').trim();
+    if (!cleanCls) return [];
+    const cleanCur = cleanAcademicYearLabel(currentAcademicYear);
+    return (students || [])
+        .filter((student) => {
+            if (!student) return false;
+            const status = String(student.status || '').toLowerCase();
+            if (status === 'alumni' || status === 'inactive' || status === 'graduated' || status === 'discontinued' || student.isAlumni) return false;
+            if (cleanCur && student.academicYear && cleanAcademicYearLabel(student.academicYear) !== cleanCur) return false;
+            return String(student.class || '').trim() === cleanCls;
+        })
+        .sort((a, b) => {
+            const admA = String(a.adm || a.admissionNo || '');
+            const admB = String(b.adm || b.admissionNo || '');
+            const admCmp = admA.localeCompare(admB, undefined, { numeric: true, sensitivity: 'base' });
+            if (admCmp !== 0) return admCmp;
+            return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+        });
+};
+
+const resolveStudentPromotionState = (student, annualPassMap, overrideMap = {}) => {
+    const annualInfo = annualPassMap.get(student.id) || { passed: false, hasResult: false, obtained: 0, maximum: 0, percentage: null, rowId: '' };
+    const defaultDecision = directPromotionMode
+        ? 'promote'
+        : ((annualInfo.hasResult && annualInfo.passed) ? 'promote' : 'retain');
+    const overrideVal = overrideMap?.[student.id];
+    const effectiveDecision = (overrideVal === 'promote' || overrideVal === 'retain') ? overrideVal : defaultDecision;
+    return {
+        student,
+        annualInfo,
+        defaultDecision,
+        effectiveDecision,
+        isOverridden: effectiveDecision !== defaultDecision
+    };
+};
+
+const updatePromotionTargetYearBanner = () => {
+    const banner = document.getElementById('promotion-target-year-status-banner');
+    const targetYear = document.getElementById('promotion-target-year')?.value || '';
+    if (!banner) return;
+
+    if (!targetYear) {
+        banner.classList.add('hidden');
+        banner.innerHTML = '';
+        return;
+    }
+
+    const isCreated = isTargetYearCreatedInAdmin(targetYear);
+    const isPast = isPastAcademicYearLabel(targetYear, currentAcademicYear);
+
+    if (!isCreated) {
+        banner.className = 'mb-2.5 sm:mb-3 px-3 py-2 rounded-xl border border-red-300 bg-red-50 text-red-800 text-xs font-semibold flex items-center justify-between gap-2 flex-wrap';
+        banner.innerHTML = `
+            <div class="flex items-center gap-2 min-w-0">
+                <i class="fas fa-circle-exclamation text-red-600 shrink-0"></i>
+                <span>Target academic year <strong class="font-extrabold underline">${escapeHtml(targetYear)}</strong> is <strong>Not Created</strong> in Admin Panel yet. Please create it in <strong>Admin &rarr; Academic Years</strong> before running promotion.</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-black uppercase tracking-wider shrink-0">Not Created</span>
+        `;
+        return;
+    }
+
+    if (isPast) {
+        banner.className = 'mb-2.5 sm:mb-3 px-3 py-2 rounded-xl border border-red-300 bg-red-50 text-red-800 text-xs font-semibold flex items-center justify-between gap-2 flex-wrap';
+        banner.innerHTML = `
+            <div class="flex items-center gap-2 min-w-0">
+                <i class="fas fa-triangle-exclamation text-red-600 shrink-0"></i>
+                <span><strong class="text-red-700">Warning:</strong> Selected To Year <strong>${escapeHtml(targetYear)}</strong> is earlier than Current Academic Year <strong>${escapeHtml(currentAcademicYear)}</strong>.</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-black uppercase tracking-wider shrink-0">Past Year</span>
+        `;
+        return;
+    }
+
+    banner.className = 'mb-2.5 sm:mb-3 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50/70 text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2 flex-wrap';
+    banner.innerHTML = `
+        <div class="flex items-center gap-2 min-w-0">
+            <i class="fas fa-circle-check text-emerald-600 shrink-0"></i>
+            <span>Target academic year <strong class="font-extrabold">${escapeHtml(targetYear)}</strong> is configured in Admin Panel and ready for promotion.</span>
+        </div>
+        <span class="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider shrink-0">Ready</span>
+    `;
+};
+
+const validatePromotionTargetYear = async (targetAcademicYear = '') => {
+    if (!targetAcademicYear) {
+        await showAppAlert({
+            title: 'Target Year Required',
+            message: 'Please select a Target Academic Year (To Year) first.',
+            type: 'warning'
+        });
+        return false;
+    }
+
+    if (hasLoadedResultAcademicYears && !isTargetYearCreatedInAdmin(targetAcademicYear)) {
+        await showAppAlert({
+            title: 'Academic Year Not Created',
+            type: 'error',
+            htmlMessage: `
+                <div class="space-y-2.5 text-left">
+                    <p class="text-sm font-extrabold text-red-700 leading-snug">
+                        <i class="fas fa-circle-exclamation mr-1.5"></i>
+                        Academic Year "${escapeHtml(targetAcademicYear)}" has NOT been created by the Administrator yet!
+                    </p>
+                    <p class="text-xs text-slate-700 leading-relaxed">
+                        You can only run promotion after the Administrator creates <strong>${escapeHtml(targetAcademicYear)}</strong> on the <strong>Admin Page &rarr; Academic Years</strong>.
+                    </p>
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-800 font-semibold">
+                        Action Blocked: Go to Admin Page, add "${escapeHtml(targetAcademicYear)}", and then try promoting again.
+                    </div>
+                </div>
+            `
+        });
+        return false;
+    }
+
+    if (currentAcademicYear && isPastAcademicYearLabel(targetAcademicYear, currentAcademicYear)) {
+        const firstConfirm = await showAppConfirm({
+            title: 'Warning: Past Academic Year Selected',
+            confirmText: 'Proceed to Confirm',
+            cancelText: 'Cancel',
+            type: 'danger',
+            htmlMessage: `
+                <div class="space-y-2.5 text-left">
+                    <p class="text-sm font-extrabold text-red-600 leading-snug">
+                        <i class="fas fa-triangle-exclamation mr-1.5"></i>
+                        Warning: You have selected a PAST academic year earlier than the current academic year!
+                    </p>
+                    <div class="bg-red-50 border border-red-300 rounded-lg p-2.5 space-y-1 text-xs">
+                        <div class="text-red-700 font-semibold">Current Academic Year: <strong class="font-black">${escapeHtml(currentAcademicYear)}</strong></div>
+                        <div class="text-red-700 font-semibold">Selected To Year: <strong class="font-black">${escapeHtml(targetAcademicYear)}</strong></div>
+                    </div>
+                    <p class="text-xs text-red-600 font-bold leading-relaxed">
+                        Promoting students backward into a past year before ${escapeHtml(currentAcademicYear)} can cause serious enrollment and history issues.
+                    </p>
+                </div>
+            `
+        });
+        if (!firstConfirm) return false;
+
+        const secondConfirm = await showAppConfirm({
+            title: 'Are You Sure? Past-Year Confirmation',
+            confirmText: 'Yes, Promote Anyway',
+            cancelText: 'Cancel Promotion',
+            type: 'danger',
+            htmlMessage: `
+                <div class="space-y-2.5 text-left">
+                    <p class="text-sm font-extrabold text-red-700">
+                        Are you sure you want to proceed with promoting to a past academic year?
+                    </p>
+                    <div class="bg-red-50 border-2 border-red-400 rounded-xl p-3 space-y-1.5 text-xs">
+                        <div class="flex items-center justify-between gap-2 text-red-800">
+                            <span class="font-semibold">Current Academic Year:</span>
+                            <span class="font-black text-red-700">${escapeHtml(currentAcademicYear)}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2 text-red-800">
+                            <span class="font-semibold">Target Promotion Year:</span>
+                            <span class="font-black text-red-700">${escapeHtml(targetAcademicYear)}</span>
+                        </div>
+                        <p class="pt-1.5 border-t border-red-200 text-red-700 font-bold leading-snug">
+                            <i class="fas fa-circle-exclamation mr-1"></i>
+                            Issue Notice: Targeting "${escapeHtml(targetAcademicYear)}" while the current session is "${escapeHtml(currentAcademicYear)}" is problematic and will shift active student records backward.
+                        </p>
+                    </div>
+                </div>
+            `
+        });
+        if (!secondConfirm) return false;
+    }
+
+    return true;
+};
+
 const renderPromotionCandidatesUI = () => {
     const currentYearBadge = document.getElementById('promotion-current-year-badge');
     if (currentYearBadge) currentYearBadge.textContent = currentAcademicYear || 'N/A';
@@ -1594,21 +1848,14 @@ const renderPromotionCandidatesUI = () => {
 
     const yearSelect = document.getElementById('promotion-target-year');
     if (yearSelect) {
-        const normalizeYear = (entry) => {
-            if (!entry) return '';
-            if (typeof entry === 'string') return entry;
-            if (typeof entry === 'object') return String(entry.value || entry.year || entry.label || '').trim();
-            return String(entry).trim();
-        };
-
         const calculatedNextYear = getNextAcademicYearLabel(currentAcademicYear);
         const yearSet = new Set();
         if (calculatedNextYear) yearSet.add(calculatedNextYear);
 
         (availableAcademicYears || []).forEach((year) => {
             if (typeof year === 'object' && year !== null && String(year.status || '').toLowerCase() === 'archived') return;
-            const y = normalizeYear(year);
-            if (y && y !== currentAcademicYear) {
+            const y = normalizePromotionYearEntry(year);
+            if (y && y !== cleanAcademicYearLabel(currentAcademicYear)) {
                 yearSet.add(y);
             }
         });
@@ -1620,82 +1867,69 @@ const renderPromotionCandidatesUI = () => {
         });
 
         const currentTargetVal = yearSelect.value;
-        const selectedValue = currentTargetVal || calculatedNextYear || (options[0] || '');
+        const selectedValue = (currentTargetVal && options.includes(currentTargetVal))
+            ? currentTargetVal
+            : (calculatedNextYear || options[0] || '');
 
-        yearSelect.innerHTML = `<option value="">Select Next Year</option>${options.map((year) => `<option value="${escapeHtml(year)}" ${selectedValue === year ? 'selected' : ''}>${escapeHtml(year)}</option>`).join('')}`;
+        yearSelect.innerHTML = `<option value="">Select Next Year</option>${options.map((year) => {
+            const isCreated = !hasLoadedResultAcademicYears || isTargetYearCreatedInAdmin(year);
+            const isPast = currentAcademicYear && isPastAcademicYearLabel(year, currentAcademicYear);
+            const suffix = !isCreated ? ' (Not Created)' : (isPast ? ' (Past Year)' : '');
+            return `<option value="${escapeHtml(year)}" ${selectedValue === year ? 'selected' : ''}>${escapeHtml(year)}${suffix}</option>`;
+        }).join('')}`;
         if (selectedValue && yearSelect.value !== selectedValue) {
             yearSelect.value = selectedValue;
         }
         syncSmartSelectDisplay(yearSelect);
+
+        if (!yearSelect.dataset.promoYearBound) {
+            yearSelect.dataset.promoYearBound = 'true';
+            yearSelect.addEventListener('change', () => {
+                updatePromotionTargetYearBanner();
+            });
+        }
     }
+    updatePromotionTargetYearBanner();
 
     const container = document.getElementById('promotion-preview-list');
     if (!container) return;
 
-    const annualRows = examResultsCache.filter((row) => row.published === true && detectAnnualResultRow(row));
     const promotableClasses = classes.filter((cls) => String(cls).trim().toLowerCase() !== 'alumni');
     const progressionMap = resultCenterSettings.classProgressionMap || {};
 
     const targetChoices = [...classes.filter((c) => String(c).trim().toLowerCase() !== 'alumni')];
     if (!targetChoices.includes('Alumni')) targetChoices.push('Alumni');
 
+    const annualPassMap = buildAnnualPassInfoMap();
+
     const summaryMap = new Map(promotableClasses.map((cls) => {
         const defaultNext = progressionMap[cls] !== undefined ? progressionMap[cls] : getNextClassLabel(cls);
-        return [cls, { pass: 0, fail: 0, total: 0, boys: 0, girls: 0, nextClass: defaultNext }];
+        return [cls, { pass: 0, fail: 0, total: 0, boys: 0, girls: 0, overrides: 0, nextClass: defaultNext }];
     }));
 
-    // 1. Gather all active enrolled students in promotable classes for current session
-    const activeEnrolledStudents = students.filter((student) => {
-        if (!student) return false;
-        const status = String(student.status || '').toLowerCase();
-        if (status === 'alumni' || status === 'inactive' || status === 'graduated' || status === 'discontinued' || student.isAlumni) return false;
-        if (currentAcademicYear && student.academicYear && student.academicYear !== currentAcademicYear) return false;
-        const fromClass = String(student.class || '').trim();
-        return Boolean(fromClass && summaryMap.has(fromClass));
-    });
-
-    // 2. Count Total, Boys, and Girls based on master active enrolled student records
-    activeEnrolledStudents.forEach((student) => {
-        const fromClass = String(student.class || '').trim();
-        const item = summaryMap.get(fromClass);
+    promotableClasses.forEach((cls) => {
+        const item = summaryMap.get(cls);
         if (!item) return;
-        item.total += 1;
-        const gender = String(student.gender || '').toLowerCase();
-        if (gender.startsWith('m') || gender.includes('boy')) item.boys += 1;
-        if (gender.startsWith('f') || gender.includes('girl')) item.girls += 1;
-    });
+        const classStudents = getPromotableStudentsForClass(cls);
+        const overrideMap = getSavedClassPromotionOverrides(cls, currentAcademicYear);
 
-    // 3. Determine Pass and Fail counts
-    if (directPromotionMode) {
-        // Direct Promotion Mode: all active students in class are directly eligible
-        summaryMap.forEach((item) => {
-            item.pass = item.total;
-            item.fail = 0;
-        });
-    } else {
-        // Standard Examination Mode: evaluate pass/fail based on published annual exam results
-        const studentAnnualPassMap = new Map();
-        annualRows.forEach((row) => {
-            if (!row || !row.studentId) return;
-            const passed = isPassFromMarks(row);
-            if (!studentAnnualPassMap.has(row.studentId) || passed) {
-                studentAnnualPassMap.set(row.studentId, passed);
-            }
-        });
+        classStudents.forEach((student) => {
+            item.total += 1;
+            const gender = String(student.gender || '').toLowerCase();
+            if (gender.startsWith('m') || gender.includes('boy')) item.boys += 1;
+            else if (gender.startsWith('f') || gender.includes('girl')) item.girls += 1;
 
-        activeEnrolledStudents.forEach((student) => {
-            const fromClass = String(student.class || '').trim();
-            const item = summaryMap.get(fromClass);
-            if (!item) return;
-
-            const hasResult = studentAnnualPassMap.has(student.id);
-            if (hasResult && studentAnnualPassMap.get(student.id) === true) {
+            const decisionInfo = resolveStudentPromotionState(student, annualPassMap, overrideMap);
+            if (decisionInfo.effectiveDecision === 'promote') {
                 item.pass += 1;
             } else {
                 item.fail += 1;
             }
+            if (decisionInfo.isOverridden) {
+                item.overrides += 1;
+            }
         });
-    }
+    });
 
     if (summaryMap.size === 0) {
         container.innerHTML = `<div class="p-6 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">No classes found in the system for promotion review.</div>`;
@@ -1715,19 +1949,26 @@ const renderPromotionCandidatesUI = () => {
                 const isAlumni = String(selectedTarget).trim().toLowerCase() === 'alumni';
 
                 const metricsBlock = directPromotionMode ? `
-                    <div class="grid grid-cols-2 gap-1.5 sm:gap-2 text-center text-xs mb-2.5 sm:mb-3">
+                    <div class="grid grid-cols-3 gap-1.5 sm:gap-2 text-center text-xs mb-2.5 sm:mb-3">
                         <div class="bg-slate-50 p-1.5 sm:p-2 rounded-xl border border-slate-100">
-                            <span class="text-[10px] text-slate-400 block font-semibold uppercase">Active Students</span>
+                            <span class="text-[10px] text-slate-400 block font-semibold uppercase">Active</span>
                             <strong class="text-slate-800 font-extrabold text-sm">${stat.total}</strong>
                         </div>
                         <div class="bg-amber-50 p-1.5 sm:p-2 rounded-xl border border-amber-200">
-                            <span class="text-[10px] text-amber-700 block font-semibold uppercase">Direct Eligible</span>
+                            <span class="text-[10px] text-amber-700 block font-semibold uppercase">Promote</span>
                             <strong class="text-amber-800 font-extrabold text-sm">${stat.pass}</strong>
                         </div>
+                        <div class="bg-rose-50 p-1.5 sm:p-2 rounded-xl border border-rose-100">
+                            <span class="text-[10px] text-rose-600 block font-semibold uppercase">Retain</span>
+                            <strong class="text-rose-700 font-extrabold text-sm">${stat.fail}</strong>
+                        </div>
                     </div>
-                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-2.5 sm:mb-3 px-1">
-                        <span>Boys: <strong class="text-slate-700">${stat.boys}</strong> • Girls: <strong class="text-slate-700">${stat.girls}</strong></span>
-                        <span class="font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[10px]"><i class="fas fa-bolt mr-1"></i>Direct Mode</span>
+                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-2.5 sm:mb-3 px-1 gap-1.5 flex-wrap">
+                        <span>Boys: <strong class="text-slate-700">${stat.boys}</strong> &bull; Girls: <strong class="text-slate-700">${stat.girls}</strong></span>
+                        <div class="flex items-center gap-1">
+                            ${stat.overrides > 0 ? `<span class="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded text-[10px]">${stat.overrides} Override${stat.overrides > 1 ? 's' : ''}</span>` : ''}
+                            <span class="font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[10px]"><i class="fas fa-bolt mr-1"></i>Direct</span>
+                        </div>
                     </div>
                 ` : `
                     <div class="grid grid-cols-3 gap-1.5 sm:gap-2 text-center text-xs mb-2.5 sm:mb-3">
@@ -1744,34 +1985,47 @@ const renderPromotionCandidatesUI = () => {
                             <strong class="text-red-700 font-extrabold text-sm">${stat.fail}</strong>
                         </div>
                     </div>
-                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-2.5 sm:mb-3 px-1">
-                        <span>Boys: <strong class="text-slate-700">${stat.boys}</strong> • Girls: <strong class="text-slate-700">${stat.girls}</strong></span>
-                        <span class="font-bold text-indigo-600">${stat.total ? Math.round((stat.pass / stat.total) * 100) : 0}% Pass Rate</span>
+                    <div class="flex justify-between items-center text-[11px] text-slate-500 mb-2.5 sm:mb-3 px-1 gap-1.5 flex-wrap">
+                        <span>Boys: <strong class="text-slate-700">${stat.boys}</strong> &bull; Girls: <strong class="text-slate-700">${stat.girls}</strong></span>
+                        <div class="flex items-center gap-1.5">
+                            ${stat.overrides > 0 ? `<span class="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded text-[10px]">${stat.overrides} Override${stat.overrides > 1 ? 's' : ''}</span>` : ''}
+                            <span class="font-bold text-indigo-600">${stat.total ? Math.round((stat.pass / stat.total) * 100) : 0}% Pass Rate</span>
+                        </div>
                     </div>
                 `;
 
                 return `
-                <div class="border border-slate-200 rounded-2xl p-3 sm:p-4 bg-white shadow-xs hover:border-indigo-300 transition flex flex-col justify-between" data-class="${escapeHtml(cls)}">
+                <div class="promotion-class-card border border-slate-200 rounded-2xl p-3 sm:p-4 bg-white shadow-xs hover:border-indigo-400 hover:shadow-md transition flex flex-col justify-between cursor-pointer group" data-class="${escapeHtml(cls)}">
                     <div>
-                        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
-                            <span class="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                <span class="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-extrabold">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3 gap-2">
+                            <span class="font-bold text-slate-800 text-sm flex items-center gap-2 min-w-0">
+                                <span class="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-extrabold shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
                                     <i class="fas fa-layer-group"></i>
                                 </span>
-                                ${escapeHtml(cls)}
+                                <span class="truncate">${escapeHtml(cls)}</span>
                             </span>
-                            <span id="badge-target-${escapeHtml(cls)}" class="text-[10px] font-bold ${isAlumni ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-indigo-50 text-indigo-700 border border-indigo-200'} px-2 py-0.5 rounded-full">
-                                ${isAlumni ? '🎓 To Alumni' : `To ${escapeHtml(selectedTarget || 'None')}`}
-                            </span>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <span id="badge-target-${escapeHtml(cls)}" class="text-[10px] font-bold ${isAlumni ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-indigo-50 text-indigo-700 border border-indigo-200'} px-2 py-0.5 rounded-full">
+                                    ${isAlumni ? '🎓 To Alumni' : (selectedTarget ? `To ${escapeHtml(selectedTarget)}` : 'No Promotion')}
+                                </span>
+                                <button type="button" class="open-promo-class-modal-btn w-7 h-7 rounded-lg bg-slate-100 group-hover:bg-indigo-100 text-slate-600 group-hover:text-indigo-700 flex items-center justify-center text-xs transition cursor-pointer" data-class="${escapeHtml(cls)}" title="Manage Boys & Girls">
+                                    <i class="fas fa-up-right-from-square"></i>
+                                </button>
+                            </div>
                         </div>
 
                         ${metricsBlock}
                     </div>
 
-                    <div class="pt-3 border-t border-slate-100 bg-slate-50/70 -mx-4 -mb-4 p-3 rounded-b-2xl">
-                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                            <i class="fas fa-sign-in-alt text-indigo-500 mr-1"></i> Promote Eligible Students To:
-                        </label>
+                    <div class="promotion-card-select-zone pt-3 border-t border-slate-100 bg-slate-50/70 -mx-3 sm:-mx-4 -mb-3 sm:-mb-4 p-3 rounded-b-2xl cursor-default" data-stop-card-click="true">
+                        <div class="flex items-center justify-between mb-1 gap-2">
+                            <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                <i class="fas fa-sign-in-alt text-indigo-500 mr-1"></i> Promote Eligible Students To:
+                            </label>
+                            <button type="button" class="open-promo-class-modal-btn text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer" data-class="${escapeHtml(cls)}">
+                                Manage Students &rarr;
+                            </button>
+                        </div>
                         <select data-smart-select="true" data-smart-floating="true" class="promotion-target-class-select w-full p-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" data-class="${escapeHtml(cls)}">
                             ${options}
                         </select>
@@ -1784,6 +2038,15 @@ const renderPromotionCandidatesUI = () => {
 
     enableSmartSelectWindowing(container, { visibleCount: 0 });
     syncSmartSelectDisplay(container);
+
+    // Stop clicks in the dropdown zone from triggering the class student popup
+    container.querySelectorAll('.promotion-card-select-zone').forEach((zone) => {
+        zone.addEventListener('click', (e) => {
+            if (!e.target.closest('.open-promo-class-modal-btn')) {
+                e.stopPropagation();
+            }
+        });
+    });
 
     // Listen to changes on promotion target class selects
     container.querySelectorAll('.promotion-target-class-select').forEach((sel) => {
@@ -1798,7 +2061,263 @@ const renderPromotionCandidatesUI = () => {
             }
         });
     });
+
+    // Open full-screen student promotion manager when clicking a class card or its manage button
+    container.querySelectorAll('.promotion-class-card').forEach((card) => {
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.promotion-card-select-zone') && !e.target.closest('.open-promo-class-modal-btn')) {
+                return;
+            }
+            const cls = card.dataset.class || '';
+            if (cls) openClassPromotionModal(cls);
+        });
+    });
 };
+
+let promoModalState = {
+    classLabel: '',
+    targetClass: '',
+    draftDecisions: {},
+    search: '',
+    filter: 'all',
+    items: []
+};
+
+const renderClassPromotionStudentRow = (item) => {
+    const { student, annualInfo, defaultDecision, effectiveDecision, isOverridden } = item;
+    const isPromote = effectiveDecision === 'promote';
+    const adm = student.adm || student.admissionNo || '-';
+
+    let examBadgeHtml = '';
+    if (directPromotionMode) {
+        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">Direct Mode</span>`;
+    } else if (!annualInfo.hasResult) {
+        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">No Annual Result</span>`;
+    } else if (annualInfo.passed) {
+        const pctLabel = annualInfo.percentage !== null ? ` (${annualInfo.percentage}%)` : '';
+        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">Exam: PASS${pctLabel}</span>`;
+    } else {
+        const pctLabel = annualInfo.percentage !== null ? ` (${annualInfo.percentage}%)` : '';
+        examBadgeHtml = `<span class="px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold">Exam: FAIL${pctLabel}</span>`;
+    }
+
+    const overrideBadgeHtml = isOverridden
+        ? `<span class="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold"><i class="fas fa-pen mr-0.5"></i>Manual Override</span>`
+        : '';
+
+    return `
+        <div class="p-2.5 rounded-xl border ${isPromote ? 'border-emerald-200/80 bg-emerald-50/20' : 'border-rose-200 bg-rose-50/30'} flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition" data-student-id="${escapeHtml(student.id)}">
+            <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="font-bold text-xs sm:text-sm text-slate-900 truncate">${escapeHtml(student.name || 'Unnamed Student')}</span>
+                    <span class="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Adm: ${escapeHtml(adm)}</span>
+                </div>
+                <div class="flex items-center gap-1.5 flex-wrap mt-1">
+                    ${examBadgeHtml}
+                    ${overrideBadgeHtml}
+                </div>
+            </div>
+            <div class="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0 self-end sm:self-center">
+                <button type="button" class="promo-student-decision-btn px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${isPromote ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-600 hover:text-emerald-700'}" data-student-id="${escapeHtml(student.id)}" data-decision="promote">
+                    <i class="fas fa-arrow-up text-[10px]"></i>
+                    <span>${defaultDecision === 'retain' ? 'Pass & Promote' : 'Promote'}</span>
+                </button>
+                <button type="button" class="promo-student-decision-btn px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${!isPromote ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-600 hover:text-rose-700'}" data-student-id="${escapeHtml(student.id)}" data-decision="retain">
+                    <i class="fas fa-xmark text-[10px]"></i>
+                    <span>Fail / Retain</span>
+                </button>
+            </div>
+        </div>
+    `;
+};
+
+const renderClassPromotionModalBody = () => {
+    const classStudents = getPromotableStudentsForClass(promoModalState.classLabel);
+    const annualPassMap = buildAnnualPassInfoMap();
+
+    const evaluated = classStudents.map((student) => resolveStudentPromotionState(student, annualPassMap, promoModalState.draftDecisions));
+    promoModalState.items = evaluated;
+
+    const isBoy = (s) => {
+        const g = String(s.gender || '').trim().toLowerCase();
+        return g.startsWith('m') || g.includes('boy');
+    };
+    const isGirl = (s) => {
+        const g = String(s.gender || '').trim().toLowerCase();
+        return g.startsWith('f') || g.includes('girl');
+    };
+
+    const allBoys = evaluated.filter((item) => isBoy(item.student));
+    const allGirls = evaluated.filter((item) => isGirl(item.student));
+    const allOther = evaluated.filter((item) => !isBoy(item.student) && !isGirl(item.student));
+
+    const promoteTotal = evaluated.filter((item) => item.effectiveDecision === 'promote').length;
+    const retainTotal = evaluated.length - promoteTotal;
+    const overrideTotal = evaluated.filter((item) => item.isOverridden).length;
+
+    const setStat = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val);
+    };
+    setStat('promo-modal-stat-total', evaluated.length);
+    setStat('promo-modal-stat-boys', allBoys.length);
+    setStat('promo-modal-stat-girls', allGirls.length);
+    setStat('promo-modal-stat-promote', promoteTotal);
+    setStat('promo-modal-stat-retain', retainTotal);
+    setStat('promo-modal-stat-overrides', overrideTotal);
+
+    const boysPromote = allBoys.filter((i) => i.effectiveDecision === 'promote').length;
+    const girlsPromote = allGirls.filter((i) => i.effectiveDecision === 'promote').length;
+    const boysSummary = document.getElementById('promo-modal-boys-summary');
+    if (boysSummary) boysSummary.textContent = `${allBoys.length} Total · ${boysPromote} Promote · ${allBoys.length - boysPromote} Retain`;
+    const girlsSummary = document.getElementById('promo-modal-girls-summary');
+    if (girlsSummary) girlsSummary.textContent = `${allGirls.length} Total · ${girlsPromote} Promote · ${allGirls.length - girlsPromote} Retain`;
+
+    const queryText = String(promoModalState.search || '').trim().toLowerCase();
+    const activeFilter = promoModalState.filter || 'all';
+    const matchesFilters = (item) => {
+        if (activeFilter === 'promote' && item.effectiveDecision !== 'promote') return false;
+        if (activeFilter === 'retain' && item.effectiveDecision !== 'retain') return false;
+        if (activeFilter === 'overridden' && !item.isOverridden) return false;
+        if (queryText) {
+            const name = String(item.student.name || '').toLowerCase();
+            const adm = String(item.student.adm || item.student.admissionNo || '').toLowerCase();
+            if (!name.includes(queryText) && !adm.includes(queryText)) return false;
+        }
+        return true;
+    };
+
+    const filteredBoys = allBoys.filter(matchesFilters);
+    const filteredGirls = allGirls.filter(matchesFilters);
+    const filteredOther = allOther.filter(matchesFilters);
+
+    const boysList = document.getElementById('promo-modal-boys-list');
+    if (boysList) {
+        boysList.innerHTML = filteredBoys.length
+            ? filteredBoys.map(renderClassPromotionStudentRow).join('')
+            : `<div class="p-6 text-center text-xs text-slate-400 italic">${allBoys.length ? 'No boys match the current search/filter.' : 'No active boys found in this class.'}</div>`;
+    }
+
+    const girlsList = document.getElementById('promo-modal-girls-list');
+    if (girlsList) {
+        girlsList.innerHTML = filteredGirls.length
+            ? filteredGirls.map(renderClassPromotionStudentRow).join('')
+            : `<div class="p-6 text-center text-xs text-slate-400 italic">${allGirls.length ? 'No girls match the current search/filter.' : 'No active girls found in this class.'}</div>`;
+    }
+
+    const otherSection = document.getElementById('promo-modal-other-section');
+    const otherList = document.getElementById('promo-modal-other-list');
+    const otherSummary = document.getElementById('promo-modal-other-summary');
+    if (otherSection && otherList) {
+        if (allOther.length > 0) {
+            otherSection.classList.remove('hidden');
+            const otherPromote = allOther.filter((i) => i.effectiveDecision === 'promote').length;
+            if (otherSummary) otherSummary.textContent = `${allOther.length} Total · ${otherPromote} Promote · ${allOther.length - otherPromote} Retain`;
+            otherList.innerHTML = filteredOther.length
+                ? filteredOther.map(renderClassPromotionStudentRow).join('')
+                : `<div class="p-4 text-center text-xs text-slate-400 italic">No students match the current search/filter.</div>`;
+        } else {
+            otherSection.classList.add('hidden');
+            otherList.innerHTML = '';
+        }
+    }
+
+    const targetClassLabel = promoModalState.targetClass || 'No Target Selected';
+    const footerSummary = document.getElementById('promo-modal-footer-summary');
+    if (footerSummary) {
+        footerSummary.innerHTML = `
+            <span class="text-emerald-700 font-bold">${promoteTotal} Promoting &rarr; ${escapeHtml(targetClassLabel)}</span>
+            <span class="mx-2 text-slate-300">|</span>
+            <span class="text-rose-700 font-bold">${retainTotal} Retaining &rarr; ${escapeHtml(promoModalState.classLabel)} (Same Class)</span>
+        `;
+    }
+};
+
+const openClassPromotionModal = (cls = '') => {
+    const modal = document.getElementById('promotion-class-students-modal');
+    if (!modal || !cls) return;
+
+    const cardSelect = Array.from(document.querySelectorAll('.promotion-target-class-select')).find((sel) => sel.dataset.class === cls);
+    const progressionMap = resultCenterSettings.classProgressionMap || {};
+    const currentTargetClass = cardSelect ? cardSelect.value : (progressionMap[cls] !== undefined ? progressionMap[cls] : getNextClassLabel(cls));
+
+    promoModalState = {
+        classLabel: cls,
+        targetClass: currentTargetClass || '',
+        draftDecisions: getSavedClassPromotionOverrides(cls, currentAcademicYear),
+        search: '',
+        filter: 'all',
+        items: []
+    };
+
+    const titleEl = document.getElementById('promo-modal-class-title');
+    if (titleEl) titleEl.textContent = `${cls} — Student Promotion Manager`;
+
+    const targetYear = document.getElementById('promotion-target-year')?.value || 'Not Selected';
+    const yearFlowEl = document.getElementById('promo-modal-year-flow');
+    if (yearFlowEl) yearFlowEl.textContent = `${currentAcademicYear || 'Current'} → ${targetYear}`;
+
+    const modeBadge = document.getElementById('promo-modal-mode-badge');
+    if (modeBadge) {
+        if (directPromotionMode) {
+            modeBadge.textContent = 'Direct Mode';
+            modeBadge.className = 'text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap';
+        } else {
+            modeBadge.textContent = 'Exam-Based Mode';
+            modeBadge.className = 'text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap';
+        }
+    }
+
+    const modalTargetSelect = document.getElementById('promo-modal-target-class-select');
+    if (modalTargetSelect) {
+        const targetChoices = [...classes.filter((c) => String(c).trim().toLowerCase() !== 'alumni')];
+        if (!targetChoices.includes('Alumni')) targetChoices.push('Alumni');
+        modalTargetSelect.innerHTML = [
+            `<option value="Alumni" ${promoModalState.targetClass === 'Alumni' ? 'selected' : ''}>🎓 Alumni</option>`,
+            ...targetChoices.filter((opt) => opt !== 'Alumni').map((opt) => `<option value="${escapeHtml(opt)}" ${promoModalState.targetClass === opt ? 'selected' : ''}>${escapeHtml(opt)}</option>`),
+            `<option value="" ${promoModalState.targetClass === '' ? 'selected' : ''}>-- No Promotion --</option>`
+        ].join('');
+        modalTargetSelect.value = promoModalState.targetClass;
+    }
+
+    const searchInput = document.getElementById('promo-modal-search');
+    if (searchInput) searchInput.value = '';
+    document.querySelectorAll('.promo-modal-filter-btn').forEach((btn) => {
+        const isAll = btn.dataset.filter === 'all';
+        btn.className = `promo-modal-filter-btn px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${isAll ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
+    });
+
+    const warningBar = document.getElementById('promo-modal-year-warning-bar');
+    if (warningBar) {
+        if (!targetYear || targetYear === 'Not Selected') {
+            warningBar.className = 'px-3.5 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-xs font-bold flex items-center gap-2';
+            warningBar.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>No Target Academic Year selected on the Class Promotion page.</span>`;
+        } else if (hasLoadedResultAcademicYears && !isTargetYearCreatedInAdmin(targetYear)) {
+            warningBar.className = 'px-3.5 py-2.5 rounded-xl border border-red-300 bg-red-50 text-red-700 text-xs font-bold flex items-center gap-2';
+            warningBar.innerHTML = `<i class="fas fa-circle-exclamation"></i><span>Target Year "${escapeHtml(targetYear)}" is Not Created in Admin Panel yet. Direct promotion will be blocked until Admin creates it.</span>`;
+        } else if (currentAcademicYear && isPastAcademicYearLabel(targetYear, currentAcademicYear)) {
+            warningBar.className = 'px-3.5 py-2.5 rounded-xl border border-red-300 bg-red-50 text-red-700 text-xs font-bold flex items-center gap-2';
+            warningBar.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>Warning: Target Year "${escapeHtml(targetYear)}" is earlier than Current Academic Year "${escapeHtml(currentAcademicYear)}".</span>`;
+        } else {
+            warningBar.classList.add('hidden');
+            warningBar.innerHTML = '';
+        }
+    }
+
+    renderClassPromotionModalBody();
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.classList.add('modal-scroll-lock');
+};
+
+const closeClassPromotionModal = () => {
+    const modal = document.getElementById('promotion-class-students-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.body.classList.remove('modal-scroll-lock');
+};
+
 const renderPromotionMappingUI = renderPromotionCandidatesUI;
 const buildVisibilityKey = (classLabel = '', examKey = '') => `${classLabel}__${examKey}`;
 const renderResultVisibilitySettings = () => {
@@ -7297,223 +7816,406 @@ document.getElementById('promotion-direct-bypass-toggle')?.addEventListener('cha
     }
 });
 
-document.getElementById('run-auto-promotion-btn')?.addEventListener('click', async () => {
-    if (roleScope !== 'admin') return;
-    const targetAcademicYear = document.getElementById('promotion-target-year')?.value || '';
-    if (!targetAcademicYear) return alert('Select target academic year first.');
+const executePromotionForScope = async ({
+    targetAcademicYear = '',
+    classTargetMap = {},
+    scopeClasses = [],
+    overrideMapByClass = null,
+    sourceLabel = 'Auto Promotion'
+} = {}) => {
+    if (roleScope !== 'admin') return false;
 
-    // Collect class targets from the on-screen card selects
-    const classTargetMap = {};
-    document.querySelectorAll('.promotion-target-class-select').forEach((sel) => {
-        const fromCls = String(sel.dataset.class || '').trim();
-        const toCls = String(sel.value || '').trim();
-        if (fromCls) classTargetMap[fromCls] = toCls;
+    const yearValid = await validatePromotionTargetYear(targetAcademicYear);
+    if (!yearValid) return false;
+
+    const annualPassMap = buildAnnualPassInfoMap();
+    const targetYearDocId = String(targetAcademicYear).trim().replace(/[^\w-]/g, '_');
+    const departureYear = currentAcademicYear || '';
+
+    const toPromote = [];
+    const toRetain = [];
+    const processedClasses = [];
+
+    scopeClasses.forEach((cls) => {
+        const targetCls = String(classTargetMap[cls] ?? getNextClassLabel(cls) ?? '').trim();
+        if (!targetCls) return;
+        processedClasses.push(cls);
+
+        const classStudents = getPromotableStudentsForClass(cls);
+        const classOverrides = (overrideMapByClass && overrideMapByClass[cls])
+            ? overrideMapByClass[cls]
+            : getSavedClassPromotionOverrides(cls, currentAcademicYear);
+
+        classStudents.forEach((student) => {
+            const state = resolveStudentPromotionState(student, annualPassMap, classOverrides);
+            if (state.effectiveDecision === 'promote') {
+                toPromote.push({ ...state, fromClass: cls, toClass: targetCls });
+            } else {
+                toRetain.push({ ...state, fromClass: cls, toClass: cls });
+            }
+        });
     });
 
-    if (directPromotionMode) {
-        // Direct Promotion Mode: Promotes active students without requiring published exam results
-        const promotableStudents = students.filter((student) => {
-            if (student?.status === 'alumni' || student?.status === 'inactive' || student?.isAlumni) return false;
-            if (currentAcademicYear && student.academicYear && student.academicYear !== currentAcademicYear) return false;
-            const fromClass = student.class || '';
-            const nextClass = classTargetMap[fromClass] !== undefined ? classTargetMap[fromClass] : getNextClassLabel(fromClass);
-            return Boolean(nextClass);
-        });
-
-        if (!promotableStudents.length) {
-            return alert('No active students found in eligible classes with a target class selected.');
+    const totalCandidates = toPromote.length + toRetain.length;
+    if (!totalCandidates) {
+        if (!directPromotionMode && annualPassMap.size === 0) {
+            await showAppAlert({
+                title: 'No Annual Results Found',
+                message: 'No published annual exam results or eligible students were found for promotion. Enable Direct Promotion Mode or click any class card to manage students individually.',
+                type: 'warning'
+            });
+        } else {
+            await showAppAlert({
+                title: 'No Eligible Students',
+                message: 'No active students found in selected classes with a valid target class selected.',
+                type: 'warning'
+            });
         }
-
-        const ok = await showAppConfirm({
-            title: 'Run Direct Student Promotion',
-            message: `Direct Promotion Mode Enabled:\n\n• Active candidates found: ${promotableStudents.length}\n• Target Academic Year: ${targetAcademicYear}\n\nAll active students in selected classes will advance directly to their target classes without checking annual exam marks.\n\nProceed with direct promotion?`,
-            confirmText: 'Run Direct Promotion',
-            type: 'warning'
-        });
-        if (!ok) return;
-
-        const updates = [];
-        const promotionDecisions = [];
-        promotableStudents.forEach((student) => {
-            const fromClass = student.class || '';
-            const nextClass = classTargetMap[fromClass] !== undefined ? classTargetMap[fromClass] : getNextClassLabel(fromClass);
-            if (!nextClass) return;
-
-            const isAlumniTarget = String(nextClass).trim().toLowerCase() === 'alumni';
-            const departureYear = currentAcademicYear || student.academicYear || '';
-            const nowIso = new Date().toISOString();
-            const existingAcademicYears = (student.academicYears && typeof student.academicYears === 'object') ? { ...student.academicYears } : {};
-
-            if (departureYear) {
-                existingAcademicYears[departureYear] = {
-                    ...(existingAcademicYears[departureYear] || {}),
-                    class: fromClass,
-                    status: 'Active',
-                    decision: isAlumniTarget ? 'graduated' : 'promoted',
-                    promotedTo: nextClass,
-                    promotedYear: targetAcademicYear,
-                    updatedAt: nowIso
-                };
-            }
-
-            existingAcademicYears[targetAcademicYear] = {
-                class: nextClass,
-                status: isAlumniTarget ? 'Alumni' : 'Active',
-                decision: 'enrolled',
-                fromClass: fromClass,
-                updatedAt: nowIso
-            };
-
-            const studentPayload = isAlumniTarget ? {
-                class: 'Alumni',
-                status: 'alumni',
-                isAlumni: true,
-                passedOutYear: departureYear,
-                graduatedYear: departureYear,
-                finalClass: fromClass,
-                academicYear: targetAcademicYear,
-                promotedFrom: fromClass,
-                promotedAt: nowIso,
-                academicYears: existingAcademicYears
-            } : {
-                class: nextClass,
-                status: 'active',
-                isAlumni: false,
-                academicYear: targetAcademicYear,
-                promotedFrom: fromClass,
-                promotedAt: nowIso,
-                academicYears: existingAcademicYears
-            };
-
-            student.academicYears = existingAcademicYears;
-            student.class = isAlumniTarget ? 'Alumni' : nextClass;
-            student.status = isAlumniTarget ? 'alumni' : 'active';
-            student.academicYear = targetAcademicYear;
-
-            updates.push(updateDoc(doc(db, `${BASE_PATH}/students`, student.id), studentPayload));
-            promotionDecisions.push(setDoc(doc(collection(db, `${BASE_PATH}/promotionDecisions`)), {
-                studentId: student.id,
-                studentName: student.name || '',
-                fromClass: fromClass,
-                toClass: nextClass,
-                basedOn: 'direct_administrative',
-                academicYear: targetAcademicYear,
-                createdAt: new Date().toISOString()
-            }));
-        });
-
-        if (!updates.length) return alert('No students were promoted.');
-        await Promise.all([...updates, ...promotionDecisions]);
-
-        if (Object.keys(classTargetMap).length > 0) {
-            await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), { classProgressionMap: classTargetMap }, { merge: true });
-        }
-
-        alert(`Direct promotion successfully completed for ${updates.length} students to academic year ${targetAcademicYear}.`);
-        renderPromotionCandidatesUI();
-        return;
+        return false;
     }
 
-    // Standard Examination-Based Promotion
-    const annualRows = examResultsCache.filter((row) => row.published === true && detectAnnualResultRow(row));
-    if (!annualRows.length) return alert('No annual published results found for promotion.');
+    if (!directPromotionMode && annualPassMap.size === 0 && toPromote.length === 0) {
+        await showAppAlert({
+            title: 'No Annual Published Results',
+            message: 'No published annual exam results or manual pass overrides were found to promote students. Click a class card to manually promote students or enable Direct Promotion Mode.',
+            type: 'warning'
+        });
+        return false;
+    }
 
     const ok = await showAppConfirm({
-        title: 'Run Automatic Student Promotion',
-        message: `Annual published results found: ${annualRows.length}.\n\nRun automatic promotion into academic year ${targetAcademicYear}? Eligible passed students will advance to their next configured classes.`,
-        confirmText: 'Run Promotion',
-        type: 'info'
+        title: `Confirm ${sourceLabel}`,
+        confirmText: 'Confirm & Execute',
+        type: directPromotionMode ? 'warning' : 'info',
+        htmlMessage: `
+            <div class="space-y-2.5 text-left text-xs">
+                <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-2.5 space-y-1">
+                    <div class="text-slate-700">Current Academic Year: <strong class="text-slate-900">${escapeHtml(departureYear || 'N/A')}</strong></div>
+                    <div class="text-indigo-900">Target Academic Year: <strong class="font-extrabold">${escapeHtml(targetAcademicYear)}</strong></div>
+                    <div class="text-slate-600">Mode: <strong>${directPromotionMode ? 'Direct Promotion Mode' : 'Annual Exam + Manual Overrides'}</strong></div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+                        <div class="text-[10px] uppercase font-bold text-emerald-700">To Promote</div>
+                        <div class="text-base font-extrabold text-emerald-800">${toPromote.length}</div>
+                    </div>
+                    <div class="bg-rose-50 border border-rose-200 rounded-lg p-2">
+                        <div class="text-[10px] uppercase font-bold text-rose-700">Retain (Same Class)</div>
+                        <div class="text-base font-extrabold text-rose-800">${toRetain.length}</div>
+                    </div>
+                </div>
+                <p class="text-[11px] text-slate-600 leading-relaxed">
+                    Promoted students will advance to their selected target classes (or Alumni), and Fail / Retain students will remain in their same current class for <strong>${escapeHtml(targetAcademicYear)}</strong>.
+                </p>
+            </div>
+        `
     });
-    if (!ok) return;
+    if (!ok) return false;
 
     const updates = [];
-    const promotionDecisions = [];
-    const processedStudentIds = new Set();
-    annualRows.forEach((row) => {
-        if (!isPassFromMarks(row)) return;
-        if (!row.studentId || processedStudentIds.has(row.studentId)) return;
-        const student = students.find((entry) => entry.id === row.studentId);
-        if (!student) return;
-        processedStudentIds.add(student.id);
-        const fromClass = student.class || row.classLabel || '';
-        const nextClass = classTargetMap[fromClass] !== undefined ? classTargetMap[fromClass] : getNextClassLabel(fromClass);
-        if (!nextClass) return; // Discontinue / No promotion
+    const nowIso = new Date().toISOString();
+    const allEntries = [...toPromote.map((e) => ({ ...e, action: 'promote' })), ...toRetain.map((e) => ({ ...e, action: 'retain' }))];
 
-        const isAlumniTarget = String(nextClass).trim().toLowerCase() === 'alumni';
-        const departureYear = currentAcademicYear || student.academicYear || '';
-        const nowIso = new Date().toISOString();
+    allEntries.forEach((entry) => {
+        const { student, fromClass, toClass, action, isOverridden } = entry;
+        const isRetain = action === 'retain';
+        const isAlumniTarget = !isRetain && String(toClass).trim().toLowerCase() === 'alumni';
+        const finalClass = isRetain ? fromClass : (isAlumniTarget ? 'Alumni' : toClass);
+        const effDepartureYear = departureYear || student.academicYear || '';
         const existingAcademicYears = (student.academicYears && typeof student.academicYears === 'object') ? { ...student.academicYears } : {};
 
-        if (departureYear) {
-            existingAcademicYears[departureYear] = {
-                ...(existingAcademicYears[departureYear] || {}),
+        if (effDepartureYear) {
+            existingAcademicYears[effDepartureYear] = {
+                ...(existingAcademicYears[effDepartureYear] || {}),
                 class: fromClass,
                 status: 'Active',
-                decision: isAlumniTarget ? 'graduated' : 'promoted',
-                promotedTo: nextClass,
+                decision: isRetain ? 'retained' : (isAlumniTarget ? 'graduated' : 'promoted'),
+                promotedTo: finalClass,
                 promotedYear: targetAcademicYear,
                 updatedAt: nowIso
             };
         }
 
         existingAcademicYears[targetAcademicYear] = {
-            class: nextClass,
+            ...(existingAcademicYears[targetAcademicYear] || {}),
+            class: finalClass,
             status: isAlumniTarget ? 'Alumni' : 'Active',
-            decision: 'enrolled',
+            decision: isRetain ? 'retained' : (isAlumniTarget ? 'graduated' : 'promoted'),
             fromClass: fromClass,
             updatedAt: nowIso
         };
 
         const studentPayload = isAlumniTarget ? {
             class: 'Alumni',
+            studentClass: 'Alumni',
             status: 'alumni',
             isAlumni: true,
-            graduatedYear: departureYear,
+            passedOutYear: effDepartureYear,
+            graduatedYear: effDepartureYear,
             finalClass: fromClass,
             academicYear: targetAcademicYear,
             promotedFrom: fromClass,
             promotedAt: nowIso,
-            academicYears: existingAcademicYears
+            academicYears: existingAcademicYears,
+            updatedAt: nowIso
         } : {
-            class: nextClass,
+            class: finalClass,
+            studentClass: finalClass,
             status: 'active',
             isAlumni: false,
             academicYear: targetAcademicYear,
             promotedFrom: fromClass,
             promotedAt: nowIso,
-            academicYears: existingAcademicYears
+            academicYears: existingAcademicYears,
+            updatedAt: nowIso
         };
 
         student.academicYears = existingAcademicYears;
-        student.class = isAlumniTarget ? 'Alumni' : nextClass;
+        student.class = finalClass;
+        student.studentClass = finalClass;
         student.status = isAlumniTarget ? 'alumni' : 'active';
+        student.isAlumni = isAlumniTarget;
         student.academicYear = targetAcademicYear;
 
         updates.push(updateDoc(doc(db, `${BASE_PATH}/students`, student.id), studentPayload));
-        promotionDecisions.push(setDoc(doc(collection(db, `${BASE_PATH}/promotionDecisions`)), {
+        updates.push(setDoc(
+            doc(db, `${BASE_PATH}/academicYears/${targetYearDocId}/enrollments`, student.id),
+            {
+                studentId: student.id,
+                academicYear: targetAcademicYear,
+                class: finalClass,
+                status: isAlumniTarget ? 'Alumni' : 'Active',
+                adm: student.adm || '',
+                uid: student.uid || '',
+                concessionFee: student.concessionFee ?? null,
+                updatedAt: nowIso
+            },
+            { merge: true }
+        ));
+
+        const decisionDocId = `${String(effDepartureYear || 'session').replace(/[^\w-]/g, '_')}__${student.id}`;
+        updates.push(setDoc(doc(db, `${BASE_PATH}/promotionDecisions`, decisionDocId), {
             studentId: student.id,
+            admissionNo: student.adm || null,
             studentName: student.name || '',
-            fromClass: fromClass,
-            toClass: nextClass,
-            basedOn: 'annual',
-            basedOnResultId: row.id,
+            fromClass,
+            toClass: finalClass,
+            decision: isAlumniTarget ? 'ALUMNI' : (isRetain ? 'RETAINED' : 'PROMOTED'),
+            basedOn: isOverridden ? 'manual_override' : (directPromotionMode ? 'direct_administrative' : 'annual'),
+            basedOnResultId: entry.annualInfo?.rowId || null,
+            sourceAcademicYear: effDepartureYear,
             academicYear: targetAcademicYear,
-            createdAt: new Date().toISOString()
-        }));
+            targetAcademicYear,
+            finalizedAt: nowIso,
+            createdAt: nowIso
+        }, { merge: true }));
     });
-    if (!updates.length) return alert('No eligible PASS students found for promotion with a target class selected.');
-    await Promise.all([...updates, ...promotionDecisions]);
 
-    // Save class progression map to settings for persistent memory
-    if (Object.keys(classTargetMap).length > 0) {
-        await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), { classProgressionMap: classTargetMap }, { merge: true });
-    }
+    await Promise.all(updates);
 
-    alert(`Auto promotion successfully completed for ${updates.length} students to academic year ${targetAcademicYear}.`);
+    // Persist class progression map & clean up consumed manual overrides for processed classes
+    const nextOverrides = { ...(resultCenterSettings.promotionManualOverrides || {}) };
+    processedClasses.forEach((cls) => {
+        delete nextOverrides[getPromotionOverrideScopeKey(currentAcademicYear, cls)];
+    });
+    const mergedProgressionMap = { ...(resultCenterSettings.classProgressionMap || {}), ...classTargetMap };
+    resultCenterSettings.promotionManualOverrides = nextOverrides;
+    resultCenterSettings.classProgressionMap = mergedProgressionMap;
+
+    await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
+        classProgressionMap: mergedProgressionMap,
+        promotionManualOverrides: nextOverrides
+    }, { merge: true });
+
+    await showAppAlert({
+        title: 'Promotion Completed',
+        message: `Completed for academic year ${targetAcademicYear}:\n• Promoted: ${toPromote.length} student(s)\n• Retained (Same Class): ${toRetain.length} student(s)`,
+        type: 'success'
+    });
     renderPromotionCandidatesUI();
+    return true;
+};
+
+document.getElementById('run-auto-promotion-btn')?.addEventListener('click', async () => {
+    if (roleScope !== 'admin') return;
+    const targetAcademicYear = document.getElementById('promotion-target-year')?.value || '';
+    const classTargetMap = {};
+    document.querySelectorAll('.promotion-target-class-select').forEach((sel) => {
+        const fromCls = String(sel.dataset.class || '').trim();
+        const toCls = String(sel.value || '').trim();
+        if (fromCls) classTargetMap[fromCls] = toCls;
+    });
+    const scopeClasses = Object.keys(classTargetMap);
+    await executePromotionForScope({
+        targetAcademicYear,
+        classTargetMap,
+        scopeClasses,
+        sourceLabel: directPromotionMode ? 'Direct Promotion' : 'Automatic Promotion'
+    });
 });
+
 document.getElementById('preview-promotion-btn')?.addEventListener('click', () => {
     renderPromotionCandidatesUI();
+});
+
+// Full-screen Class Promotion Modal Event Bindings
+document.getElementById('promo-modal-close-x')?.addEventListener('click', closeClassPromotionModal);
+document.getElementById('promo-modal-cancel-btn')?.addEventListener('click', closeClassPromotionModal);
+
+document.getElementById('promo-modal-search')?.addEventListener('input', (e) => {
+    promoModalState.search = e.target.value || '';
+    renderClassPromotionModalBody();
+});
+
+document.querySelectorAll('.promo-modal-filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        promoModalState.filter = btn.dataset.filter || 'all';
+        document.querySelectorAll('.promo-modal-filter-btn').forEach((other) => {
+            const active = other === btn;
+            other.className = `promo-modal-filter-btn px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${active ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`;
+        });
+        renderClassPromotionModalBody();
+    });
+});
+
+document.getElementById('promo-modal-target-class-select')?.addEventListener('change', (e) => {
+    const newTarget = e.target.value || '';
+    promoModalState.targetClass = newTarget;
+    const cardSelect = Array.from(document.querySelectorAll('.promotion-target-class-select')).find((sel) => sel.dataset.class === promoModalState.classLabel);
+    if (cardSelect) {
+        cardSelect.value = newTarget;
+        syncSmartSelectDisplay(cardSelect);
+        cardSelect.dispatchEvent(new Event('change'));
+    }
+    renderClassPromotionModalBody();
+});
+
+document.getElementById('promo-modal-body')?.addEventListener('click', (e) => {
+    const decisionBtn = e.target.closest('.promo-student-decision-btn');
+    if (decisionBtn) {
+        const studentId = decisionBtn.dataset.studentId;
+        const decision = decisionBtn.dataset.decision;
+        if (studentId && (decision === 'promote' || decision === 'retain')) {
+            promoModalState.draftDecisions[studentId] = decision;
+            renderClassPromotionModalBody();
+        }
+        return;
+    }
+
+    const genderBulkBtn = e.target.closest('.promo-modal-gender-bulk-btn');
+    if (genderBulkBtn) {
+        const genderGroup = genderBulkBtn.dataset.gender;
+        const action = genderBulkBtn.dataset.action;
+        if (!action) return;
+        const classStudents = getPromotableStudentsForClass(promoModalState.classLabel);
+        classStudents.forEach((student) => {
+            const g = String(student.gender || '').trim().toLowerCase();
+            const matchesBoys = genderGroup === 'boys' && (g.startsWith('m') || g.includes('boy'));
+            const matchesGirls = genderGroup === 'girls' && (g.startsWith('f') || g.includes('girl'));
+            if (matchesBoys || matchesGirls) {
+                promoModalState.draftDecisions[student.id] = action;
+            }
+        });
+        renderClassPromotionModalBody();
+    }
+});
+
+document.getElementById('promo-modal-promote-all-btn')?.addEventListener('click', () => {
+    getPromotableStudentsForClass(promoModalState.classLabel).forEach((s) => {
+        promoModalState.draftDecisions[s.id] = 'promote';
+    });
+    renderClassPromotionModalBody();
+});
+
+document.getElementById('promo-modal-retain-all-btn')?.addEventListener('click', () => {
+    getPromotableStudentsForClass(promoModalState.classLabel).forEach((s) => {
+        promoModalState.draftDecisions[s.id] = 'retain';
+    });
+    renderClassPromotionModalBody();
+});
+
+document.getElementById('promo-modal-reset-defaults-btn')?.addEventListener('click', () => {
+    promoModalState.draftDecisions = {};
+    renderClassPromotionModalBody();
+});
+
+const persistPromoModalOverrides = async () => {
+    const cls = promoModalState.classLabel;
+    if (!cls) return {};
+    const annualPassMap = buildAnnualPassInfoMap();
+    const classStudents = getPromotableStudentsForClass(cls);
+    const cleanedOverrides = {};
+
+    classStudents.forEach((student) => {
+        const state = resolveStudentPromotionState(student, annualPassMap, promoModalState.draftDecisions);
+        if (state.isOverridden) {
+            cleanedOverrides[student.id] = state.effectiveDecision;
+        }
+    });
+
+    const scopeKey = getPromotionOverrideScopeKey(currentAcademicYear, cls);
+    const nextOverridesMap = { ...(resultCenterSettings.promotionManualOverrides || {}) };
+    if (Object.keys(cleanedOverrides).length > 0) {
+        nextOverridesMap[scopeKey] = cleanedOverrides;
+    } else {
+        delete nextOverridesMap[scopeKey];
+    }
+
+    const updatedProgression = {
+        ...(resultCenterSettings.classProgressionMap || {}),
+        [cls]: promoModalState.targetClass
+    };
+
+    resultCenterSettings.promotionManualOverrides = nextOverridesMap;
+    resultCenterSettings.classProgressionMap = updatedProgression;
+
+    await setDoc(doc(db, `${BASE_PATH}/settings`, 'resultCenter'), {
+        promotionManualOverrides: nextOverridesMap,
+        classProgressionMap: updatedProgression
+    }, { merge: true });
+
+    return cleanedOverrides;
+};
+
+document.getElementById('promo-modal-save-btn')?.addEventListener('click', async () => {
+    if (roleScope !== 'admin') return;
+    await withBusyButton('promo-modal-save-btn', '<i class="fas fa-spinner fa-spin"></i> Saving...', async () => {
+        await persistPromoModalOverrides();
+        renderPromotionCandidatesUI();
+        closeClassPromotionModal();
+        notify(`Saved student promotion decisions for ${promoModalState.classLabel}. Run Auto Promotion will use these overrides.`, 'success');
+    });
+});
+
+document.getElementById('promo-modal-promote-now-btn')?.addEventListener('click', async () => {
+    if (roleScope !== 'admin') return;
+    const cls = promoModalState.classLabel;
+    const targetCls = promoModalState.targetClass;
+    if (!cls) return;
+    if (!targetCls) {
+        await showAppAlert({
+            title: 'Target Class Required',
+            message: 'Please select a Target Class (or Alumni) in the header before promoting this class.',
+            type: 'warning'
+        });
+        return;
+    }
+
+    const targetAcademicYear = document.getElementById('promotion-target-year')?.value || '';
+    const cleanedOverrides = await persistPromoModalOverrides();
+
+    await withBusyButton('promo-modal-promote-now-btn', '<i class="fas fa-spinner fa-spin"></i> Promoting...', async () => {
+        const done = await executePromotionForScope({
+            targetAcademicYear,
+            classTargetMap: { [cls]: targetCls },
+            scopeClasses: [cls],
+            overrideMapByClass: { [cls]: cleanedOverrides },
+            sourceLabel: `Class ${cls} Promotion`
+        });
+        if (done) {
+            closeClassPromotionModal();
+        }
+    });
 });
 document.getElementById('copy-prev-year-schema-btn')?.addEventListener('click', async () => {
     if (roleScope !== 'admin') return;
@@ -9421,6 +10123,16 @@ document.addEventListener('click', (e) => {
 // Escape key dismisses modals and clears any scroll lock
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+        const confirmModal = document.getElementById('app-confirm-modal');
+        const alertModal = document.getElementById('app-alert-modal');
+        if (isOverlayVisible(confirmModal) || isOverlayVisible(alertModal)) {
+            return;
+        }
+        const promoClassModal = document.getElementById('promotion-class-students-modal');
+        if (isOverlayVisible(promoClassModal)) {
+            closeClassPromotionModal();
+            return;
+        }
         document.querySelectorAll('.modal-overlay').forEach((modal) => {
             modal.classList.add('hidden');
             modal.classList.remove('flex');
@@ -9440,15 +10152,21 @@ const isOverlayVisible = (el) => {
 };
 
 const syncBodyScrollLockState = () => {
-    const overlays = document.querySelectorAll('.modal-overlay');
-    const hasOpenModal = Array.from(overlays).some((m) => isOverlayVisible(m));
+    const overlays = [
+        ...Array.from(document.querySelectorAll('.modal-overlay')),
+        document.getElementById('promotion-class-students-modal')
+    ].filter(Boolean);
+    const hasOpenModal = overlays.some((m) => isOverlayVisible(m));
     if (!hasOpenModal && document.body.classList.contains('modal-scroll-lock')) {
         document.body.classList.remove('modal-scroll-lock');
     }
 };
 
 const setupModalObserver = () => {
-    const overlays = document.querySelectorAll('.modal-overlay');
+    const overlays = [
+        ...Array.from(document.querySelectorAll('.modal-overlay')),
+        document.getElementById('promotion-class-students-modal')
+    ].filter(Boolean);
     if (!overlays.length) return;
     const observer = new MutationObserver(() => syncBodyScrollLockState());
     overlays.forEach((el) => {
