@@ -5474,7 +5474,7 @@ const studentPwa = registerPortalForPwa('student', {
                 Present: 'bg-emerald-100 text-emerald-800 border-emerald-300',
                 Absent: 'bg-rose-100 text-rose-800 border-rose-300',
                 Leave: 'bg-amber-100 text-amber-900 border-amber-300',
-                Holiday: 'bg-amber-100 text-amber-900 border-amber-300',
+                Holiday: 'bg-slate-100 text-slate-700 border-slate-300',
                 'Off Day': 'bg-slate-100 text-slate-700 border-slate-300'
             };
             if (badgeEl) {
@@ -5702,11 +5702,13 @@ const studentPwa = registerPortalForPwa('student', {
                 grid.addEventListener('click', (e) => {
                     const card = e.target.closest('.stu-att-day-card');
                     if (!card) return;
+                    const detailText = String(card.dataset.detail || '').trim();
+                    if (!detailText) return;
                     openStudentAttDetailModal({
                         dateText: card.dataset.date || '--',
                         dayText: card.dataset.day || '',
                         statusLabel: card.dataset.status || '--',
-                        detailText: card.dataset.detail || '',
+                        detailText,
                         markedBy: card.dataset.markedBy || ''
                     });
                 });
@@ -5763,16 +5765,16 @@ const studentPwa = registerPortalForPwa('student', {
                 if (declaredHoliday || isDocDeclaredHoliday) {
                     const holidayTitle = declaredHoliday?.title || docHolidayReason || 'Institutional Holiday';
                     html += `
-                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-amber-200/80 bg-amber-50/70 hover:border-amber-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Holiday" data-detail="${escapeHtml(holidayTitle)}" data-marked-by="" title="${escapeHtml(holidayTitle)}">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-amber-900 w-full">
+                        <div class="text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-100 flex flex-col justify-between min-h-[54px] sm:min-h-[66px]" title="${escapeHtml(holidayTitle)}">
+                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-slate-700 w-full">
                                 <span>${day}</span>
-                                <span class="text-[8px] sm:text-[9px] uppercase font-bold text-amber-700">${dayName}</span>
+                                <span class="text-[8px] sm:text-[9px] uppercase font-bold text-slate-500">${dayName}</span>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-extrabold text-amber-800 mt-0.5 w-full truncate">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 shrink-0"></span>
+                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-extrabold text-slate-600 mt-0.5 w-full truncate">
+                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-400 shrink-0"></span>
                                 <span class="truncate">${escapeHtml(holidayTitle)}</span>
                             </div>
-                        </button>
+                        </div>
                     `;
                     continue;
                 }
@@ -5780,7 +5782,7 @@ const studentPwa = registerPortalForPwa('student', {
                 // 2. Weekly Off Day (keep "Off Day" label)
                 if ((!dayDoc && isWeeklyOff) || (dayDoc?.isHoliday && (!docHolidayReason || /^weekly\s*off/i.test(docHolidayReason)))) {
                     html += `
-                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-100 hover:border-slate-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Off Day" data-detail="Weekly Off (${escapeHtml(fullDayName)})" data-marked-by="" title="Weekly Off">
+                        <div class="text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-100 flex flex-col justify-between min-h-[54px] sm:min-h-[66px]" title="Weekly Off">
                             <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-slate-700 w-full">
                                 <span>${day}</span>
                                 <span class="text-[8px] sm:text-[9px] uppercase font-bold text-slate-500">${dayName}</span>
@@ -5789,7 +5791,7 @@ const studentPwa = registerPortalForPwa('student', {
                                 <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-400 shrink-0"></span>
                                 <span class="truncate">Off Day</span>
                             </div>
-                        </button>
+                        </div>
                     `;
                     continue;
                 }
@@ -5812,50 +5814,96 @@ const studentPwa = registerPortalForPwa('student', {
                 const rawStatus = typeof rec === 'object' ? rec?.status : rec;
                 const status = rawStatus === 'E' ? 'L' : rawStatus;
                 const remarkText = String((typeof rec === 'object' ? (rec?.remarks || rec?.reason) : '') || '').trim();
+                const hasRemark = Boolean(remarkText);
                 const markedBy = String(dayDoc.markedByName || '').trim();
-                const remarkBadgeHtml = remarkText
-                    ? `<i class="fas fa-comment-dots text-[9px] sm:text-[10px] opacity-80" title="Remark available"></i>`
+                const remarkBadgeHtml = hasRemark
+                    ? `<i class="fas fa-comment-dots text-[9px] sm:text-[10px] opacity-80" title="Note available - tap to view"></i>`
                     : '';
 
                 if (status === 'P') {
-                    html += `
-                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50/70 hover:border-emerald-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Present" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml(remarkText ? 'Present — ' + remarkText : 'Present')}">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-emerald-950 w-full">
-                                <span>${day}</span>
-                                <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-emerald-700">${remarkBadgeHtml}${dayName}</span>
+                    if (hasRemark) {
+                        html += `
+                            <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50/70 hover:border-emerald-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Present" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml('Present — ' + remarkText)}">
+                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-emerald-950 w-full">
+                                    <span>${day}</span>
+                                    <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-emerald-700">${remarkBadgeHtml}${dayName}</span>
+                                </div>
+                                <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-emerald-700 mt-0.5 w-full truncate">
+                                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                                    <span class="truncate">Present</span>
+                                </div>
+                            </button>
+                        `;
+                    } else {
+                        html += `
+                            <div class="text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-emerald-200 bg-emerald-50/70 flex flex-col justify-between min-h-[54px] sm:min-h-[66px]" title="Present">
+                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-emerald-950 w-full">
+                                    <span>${day}</span>
+                                    <span class="text-[8px] sm:text-[9px] uppercase font-bold text-emerald-700">${dayName}</span>
+                                </div>
+                                <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-emerald-700 mt-0.5 w-full truncate">
+                                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                                    <span class="truncate">Present</span>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-emerald-700 mt-0.5 w-full truncate">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                                <span class="truncate">Present</span>
-                            </div>
-                        </button>
-                    `;
+                        `;
+                    }
                 } else if (status === 'A') {
-                    html += `
-                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-rose-200 bg-rose-50/70 hover:border-rose-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Absent" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml(remarkText ? 'Remark: ' + remarkText : 'Absent')}">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-rose-950 w-full">
-                                <span>${day}</span>
-                                <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-rose-700">${remarkBadgeHtml}${dayName}</span>
+                    if (hasRemark) {
+                        html += `
+                            <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-rose-200 bg-rose-50/70 hover:border-rose-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Absent" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml('Remark: ' + remarkText)}">
+                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-rose-950 w-full">
+                                    <span>${day}</span>
+                                    <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-rose-700">${remarkBadgeHtml}${dayName}</span>
+                                </div>
+                                <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-rose-700 mt-0.5 w-full truncate">
+                                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-500 shrink-0"></span>
+                                    <span class="truncate">${escapeHtml(remarkText)}</span>
+                                </div>
+                            </button>
+                        `;
+                    } else {
+                        html += `
+                            <div class="text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-rose-200 bg-rose-50/70 flex flex-col justify-between min-h-[54px] sm:min-h-[66px]" title="Absent">
+                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-rose-950 w-full">
+                                    <span>${day}</span>
+                                    <span class="text-[8px] sm:text-[9px] uppercase font-bold text-rose-700">${dayName}</span>
+                                </div>
+                                <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-rose-700 mt-0.5 w-full truncate">
+                                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-500 shrink-0"></span>
+                                    <span class="truncate">Absent</span>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-rose-700 mt-0.5 w-full truncate">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-500 shrink-0"></span>
-                                <span class="truncate">${escapeHtml(remarkText || 'Absent')}</span>
-                            </div>
-                        </button>
-                    `;
+                        `;
+                    }
                 } else if (status === 'L') {
-                    html += `
-                        <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-amber-200 bg-amber-50/70 hover:border-amber-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Leave" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml(remarkText ? 'Leave Remark: ' + remarkText : 'Excused Leave')}">
-                            <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-amber-950 w-full">
-                                <span>${day}</span>
-                                <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-amber-700">${remarkBadgeHtml}${dayName}</span>
+                    if (hasRemark) {
+                        html += `
+                            <button type="button" class="stu-att-day-card text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-amber-200 bg-amber-50/70 hover:border-amber-300 flex flex-col justify-between min-h-[54px] sm:min-h-[66px] cursor-pointer transition" data-date="${escapeHtml(displayDate)}" data-day="${escapeHtml(fullDayName)}" data-status="Leave" data-detail="${escapeHtml(remarkText)}" data-marked-by="${escapeHtml(markedBy)}" title="${escapeHtml('Leave Remark: ' + remarkText)}">
+                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-amber-950 w-full">
+                                    <span>${day}</span>
+                                    <span class="inline-flex items-center gap-1 text-[8px] sm:text-[9px] uppercase font-bold text-amber-700">${remarkBadgeHtml}${dayName}</span>
+                                </div>
+                                <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-amber-700 mt-0.5 w-full truncate">
+                                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 shrink-0"></span>
+                                    <span class="truncate">${escapeHtml(remarkText)}</span>
+                                </div>
+                            </button>
+                        `;
+                    } else {
+                        html += `
+                            <div class="text-left w-full p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-amber-200 bg-amber-50/70 flex flex-col justify-between min-h-[54px] sm:min-h-[66px]" title="Excused Leave">
+                                <div class="flex items-center justify-between text-[10px] sm:text-[11px] font-black text-amber-950 w-full">
+                                    <span>${day}</span>
+                                    <span class="text-[8px] sm:text-[9px] uppercase font-bold text-amber-700">${dayName}</span>
+                                </div>
+                                <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-amber-700 mt-0.5 w-full truncate">
+                                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 shrink-0"></span>
+                                    <span class="truncate">Leave</span>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-1 text-[9px] sm:text-[10px] font-black text-amber-700 mt-0.5 w-full truncate">
-                                <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 shrink-0"></span>
-                                <span class="truncate">${escapeHtml(remarkText || 'Leave')}</span>
-                            </div>
-                        </button>
-                    `;
+                        `;
+                    }
                 } else {
                     html += `
                         <div class="p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 bg-white flex flex-col justify-between min-h-[54px] sm:min-h-[66px]">

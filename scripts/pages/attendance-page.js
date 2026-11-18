@@ -57,8 +57,12 @@ const getTodayDateString = () => toLocalDateStr(new Date());
 let selectedDailyClass = '';
 let selectedDailyDate = getTodayDateString();
 let currentDailyAttendanceDoc = null;
+let currentDailyStudents = [];
 let dailyAttendanceMap = {}; // studentId -> { status: 'P'|'A'|'L', remarks: '' }
+let dailySearchQuery = '';
 let hasUnsavedChanges = false;
+let activeTabId = 'tab-daily';
+let hasRestoredInitialDailyContext = false;
 
 // Monthly State
 let selectedMonthlyClass = '';
@@ -71,6 +75,106 @@ let selectedAnalyticsClass = '';
 
 // Holiday Edit State
 let editingHolidayIndex = -1;
+
+// --- Draft & UI State Persistence (Survives Mobile OS Tab Discard / App Switching) ---
+const getAttStorageScope = () => String(BASE_PATH || 'default').replace(/[^\w-]/g, '_');
+const getAttUiStateKey = () => `att_portal_ui_state_v1_${getAttStorageScope()}`;
+const getDailyDraftStorageKey = (year, classLabel, dateStr) => {
+    const cleanYear = String(year || currentAcademicYear || '').trim().replace(/[^\w-]/g, '_');
+    const cleanCls = String(classLabel || '').replace(/^class\s*/i, '').trim().toLowerCase().replace(/[^\w-]/g, '_');
+    const cleanDate = String(dateStr || '').trim();
+    if (!cleanYear || !cleanCls || !cleanDate) return '';
+    return `att_daily_draft_v1_${getAttStorageScope()}__${cleanYear}__${cleanCls}__${cleanDate}`;
+};
+
+const saveUiStateSnapshot = () => {
+    try {
+        const yearVal = document.getElementById('daily-academic-year')?.value || currentAcademicYear || '';
+        const payload = {
+            tab: activeTabId || 'tab-daily',
+            year: yearVal,
+            dailyClass: selectedDailyClass || '',
+            dailyDate: selectedDailyDate || '',
+            dailySearch: dailySearchQuery || '',
+            monthlyClass: selectedMonthlyClass || '',
+            monthlyMonth: selectedMonthlyMonth || '',
+            analyticsClass: selectedAnalyticsClass || '',
+            updatedAt: Date.now()
+        };
+        localStorage.setItem(getAttUiStateKey(), JSON.stringify(payload));
+    } catch (_) {}
+};
+
+const loadUiStateSnapshot = () => {
+    try {
+        const raw = localStorage.getItem(getAttUiStateKey());
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        // Expire stale UI navigation state after 24 hours
+        if (parsed.updatedAt && (Date.now() - parsed.updatedAt) > 24 * 60 * 60 * 1000) {
+            return null;
+        }
+        return parsed;
+    } catch (_) {
+        return null;
+    }
+};
+
+const syncRemarksFromDomToMap = () => {
+    document.querySelectorAll('#daily-roster-tbody .student-remarks-input').forEach(input => {
+        const sid = input.dataset?.studentId;
+        if (!sid) return;
+        const val = input.value;
+        if (val || dailyAttendanceMap[sid]) {
+            if (!dailyAttendanceMap[sid]) dailyAttendanceMap[sid] = {};
+            dailyAttendanceMap[sid].remarks = val;
+        }
+    });
+};
+
+const persistDailyDraftSnapshot = () => {
+    try {
+        if (!selectedDailyClass || !selectedDailyDate || !hasUnsavedChanges) return;
+        syncRemarksFromDomToMap();
+        const year = document.getElementById('daily-academic-year')?.value || currentAcademicYear;
+        const key = getDailyDraftStorageKey(year, selectedDailyClass, selectedDailyDate);
+        if (!key) return;
+        localStorage.setItem(key, JSON.stringify({
+            year,
+            classLabel: selectedDailyClass,
+            dateStr: selectedDailyDate,
+            map: dailyAttendanceMap,
+            updatedAt: Date.now()
+        }));
+    } catch (_) {}
+};
+
+const readDailyDraftSnapshot = (year, classLabel, dateStr) => {
+    try {
+        const key = getDailyDraftStorageKey(year, classLabel, dateStr);
+        if (!key) return null;
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || !parsed.map || typeof parsed.map !== 'object') return null;
+        // Expire stale drafts after 48 hours
+        if (parsed.updatedAt && (Date.now() - parsed.updatedAt) > 48 * 60 * 60 * 1000) {
+            localStorage.removeItem(key);
+            return null;
+        }
+        return parsed;
+    } catch (_) {
+        return null;
+    }
+};
+
+const clearDailyDraftSnapshot = (year, classLabel, dateStr) => {
+    try {
+        const key = getDailyDraftStorageKey(year, classLabel, dateStr);
+        if (key) localStorage.removeItem(key);
+    } catch (_) {}
+};
 
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -204,6 +308,7 @@ const closeModal = (modalId) => {
 
 // --- Navigation Tabs ---
 const activateTab = (targetTabId) => {
+    activeTabId = targetTabId || 'tab-daily';
     const drawerLinks = document.querySelectorAll('.drawer-link');
     const bottomLinks = document.querySelectorAll('.bottom-nav-link[data-tab]');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -239,6 +344,8 @@ const activateTab = (targetTabId) => {
     if (!isDesktop()) {
         setSidebarCollapsed(true);
     }
+
+    saveUiStateSnapshot();
 
     // Lazy load tab data
     if (targetTabId === 'tab-monthly') {
@@ -296,10 +403,11 @@ const setupNavigationTabs = () => {
         }
     });
 
-    // Always default to Daily Attendance tab on clean page load
-    activateTab('tab-daily');
+    const savedUi = loadUiStateSnapshot();
+    const validTabIds = ['tab-daily', 'tab-monthly', 'tab-analytics', 'tab-session', 'tab-calendar'];
+    const initialTab = (savedUi?.tab && validTabIds.includes(savedUi.tab)) ? savedUi.tab : 'tab-daily';
+    activateTab(initialTab);
 };
-
 
 // --- Session Schedule Helpers ---
 const getYearRecord = (yearLabel) => {
@@ -347,29 +455,41 @@ const isDateAfterSessionEnd = (dateStr, yearLabel) => {
 
 // --- Initialization & Auth ---
 const initApp = async () => {
-    startLiveClock();
-    initSidebarState();
-    setupNavigationTabs();
-    setupEventListeners();
-
-    const monthInput = document.getElementById('monthly-month-input');
-    if (monthInput && !monthInput.value) {
-        monthInput.value = selectedMonthlyMonth || getTodayDateString().slice(0, 7);
+    const savedUi = loadUiStateSnapshot();
+    if (savedUi?.dailyDate) {
+        selectedDailyDate = savedUi.dailyDate;
+        const dateInput = document.getElementById('daily-date-input');
+        if (dateInput) dateInput.value = selectedDailyDate;
+    }
+    if (savedUi?.monthlyMonth) {
+        selectedMonthlyMonth = savedUi.monthlyMonth;
+    }
+    if (typeof savedUi?.dailySearch === 'string' && savedUi.dailySearch) {
+        dailySearchQuery = savedUi.dailySearch;
+        const searchInput = document.getElementById('daily-search-input');
+        if (searchInput) searchInput.value = dailySearchQuery;
     }
 
-    syncSmartSelectDisplay(document);
-
-    // Check AppSession
+    // Check AppSession early so role permissions apply immediately
     const role = window.AppSession?.getRole?.() || '';
     const userSession = window.AppSession?.getUserSession?.() || {};
+    const staffAccess = window.AppSession?.getStaffAccess?.() || userSession.access || {};
 
-    if (role === 'admin' || userSession.source === 'firebase' || userSession.source === 'legacy-admin') {
+    if (
+        role === 'admin'
+        || userSession.source === 'firebase'
+        || userSession.source === 'legacy-admin'
+        || userSession.actLikeSuperAdmin === true
+        || userSession.canAccessAdmin === true
+        || staffAccess.actLikeSuperAdmin === true
+        || staffAccess.canAccessAdmin === true
+        || staffAccess.admin === true
+    ) {
         isSuperAdmin = true;
-        currentStaffName = 'Super Administrator';
-        currentStaffRole = 'Full Access';
+        currentStaffName = userSession.name || 'Super Administrator';
+        currentStaffRole = role === 'admin' ? 'Full Access' : (userSession.role || 'Admin');
     } else {
         const profile = window.AppSession?.getCurrentSessionProfile?.() || userSession;
-        const staffAccess = window.AppSession?.getStaffAccess?.() || profile.access || {};
         currentStaffName = profile.name || userSession.name || 'Staff Member';
         currentStaffRole = profile.role || profile.type || 'Class Teacher';
         currentUserKey = profile.username || profile.email || profile.id || '';
@@ -382,10 +502,23 @@ const initApp = async () => {
         }
     }
 
+    startLiveClock();
+    initSidebarState();
+    setupNavigationTabs();
+    setupEventListeners();
+    renderSessionScheduleUI();
+
+    const monthInput = document.getElementById('monthly-month-input');
+    if (monthInput && !monthInput.value) {
+        monthInput.value = selectedMonthlyMonth || getTodayDateString().slice(0, 7);
+    }
+
+    syncSmartSelectDisplay(document);
     updateUserHeaderDisplays();
 
     onAuthStateChanged(auth, async (user) => {
         if (!user) {
+            persistDailyDraftSnapshot();
             window.location.replace('index.html');
             return;
         }
@@ -477,14 +610,23 @@ const setupFirestoreListeners = () => {
             if (typeof y === 'object' && y !== null) return String(y.status || '').toLowerCase() !== 'archived';
             return Boolean(y);
         });
-        const shouldForceReset = !hasLoadedAttendanceAcademicYears || (prevCurrent && prevCurrent !== currentAcademicYear);
+        const isFirstLoad = !hasLoadedAttendanceAcademicYears;
+        const shouldForceReset = isFirstLoad || (prevCurrent && prevCurrent !== currentAcademicYear);
         hasLoadedAttendanceAcademicYears = true;
 
         const activeYearBadge = document.getElementById('header-active-year');
         if (activeYearBadge) activeYearBadge.textContent = currentAcademicYear || 'Active Session';
 
         populateAcademicYearDropdowns(shouldForceReset);
-        renderSessionScheduleUI();
+        if (isFirstLoad) {
+            const savedUi = loadUiStateSnapshot();
+            const dailyYearSel = document.getElementById('daily-academic-year');
+            if (savedUi?.year && dailyYearSel && Array.from(dailyYearSel.options).some(o => o.value === savedUi.year)) {
+                dailyYearSel.value = savedUi.year;
+                syncSmartSelectDisplay(dailyYearSel);
+            }
+        }
+        renderSessionScheduleUI({ preserveFocusedInputs: !isFirstLoad });
         refreshAllClasses();
     });
 
@@ -572,7 +714,7 @@ const setupFirestoreListeners = () => {
             };
         }
         renderCalendarSettingsUI();
-        renderSessionScheduleUI();
+        renderSessionScheduleUI({ preserveFocusedInputs: true });
         updateDailyDateDisplay();
 
         const monthlyTab = document.getElementById('tab-monthly');
@@ -594,8 +736,8 @@ const populateAcademicYearDropdowns = (forceCurrent = false) => {
     dropdownIds.forEach(id => {
         const yearSelect = document.getElementById(id);
         if (!yearSelect) return;
-        if (forceCurrent) yearSelect.dataset.userChangedYear = 'false';
-        const currentVal = forceCurrent ? currentAcademicYear : yearSelect.value;
+        if (forceCurrent && !yearSelect.value) yearSelect.dataset.userChangedYear = 'false';
+        const currentVal = yearSelect.value || (forceCurrent ? currentAcademicYear : '');
         populateAcademicYearSelect(yearSelect, availableAcademicYears, currentAcademicYear, {
             selectedValue: currentVal,
             preferCurrentUnlessUserChanged: !forceCurrent
@@ -652,13 +794,21 @@ const formatClassPillText = (clsVal = '') => {
 
 const populateClassDropdowns = () => {
     const allowed = getAllowedClassesForTeacher();
+    const savedUi = !hasRestoredInitialDailyContext ? loadUiStateSnapshot() : null;
 
-    ['daily-class-select', 'monthly-class-select', 'analytics-class-select'].forEach(id => {
+    const fieldMap = {
+        'daily-class-select': savedUi?.dailyClass || '',
+        'monthly-class-select': savedUi?.monthlyClass || '',
+        'analytics-class-select': savedUi?.analyticsClass || ''
+    };
+
+    Object.entries(fieldMap).forEach(([id, restoredVal]) => {
         const select = document.getElementById(id);
         if (!select) return;
 
-        const prev = select.value;
-        const validPrev = prev && allowed.some(c => isClassInDutyScope(prev, [c])) ? prev : '';
+        const prev = select.value || restoredVal;
+        const matchedOption = prev ? allowed.find(c => normalizeClassLabel(c) === normalizeClassLabel(prev)) : '';
+        const validPrev = matchedOption || '';
 
         populateClassSelect(select, allowed, {
             selectedValue: validPrev,
@@ -679,6 +829,13 @@ const populateClassDropdowns = () => {
 
     const rosterClassPill = document.getElementById('roster-class-pill');
     if (rosterClassPill) rosterClassPill.textContent = formatClassPillText(selectedDailyClass);
+
+    if (!hasRestoredInitialDailyContext && allowed.length) {
+        hasRestoredInitialDailyContext = true;
+        if (selectedDailyClass) loadDailyAttendanceRoster();
+        if (activeTabId === 'tab-monthly' && selectedMonthlyClass) loadMonthlyRegister();
+        if (activeTabId === 'tab-analytics' && selectedAnalyticsClass) loadAnalytics();
+    }
 };
 
 // --- Lazy Student & Attendance Data Loaders (Firestore Read Optimizations) ---
@@ -908,9 +1065,9 @@ const loadDailyAttendanceRoster = async () => {
     const year = document.getElementById('daily-academic-year')?.value || currentAcademicYear;
     const rosterClassPill = document.getElementById('roster-class-pill');
     if (rosterClassPill) rosterClassPill.textContent = formatClassPillText(selectedDailyClass);
+    saveUiStateSnapshot();
 
     const tbody = document.getElementById('daily-roster-tbody');
-    const mobileList = document.getElementById('daily-roster-mobile');
     const saveStatusText = document.getElementById('save-status-text');
     const saveIndicator = document.getElementById('save-status-indicator');
 
@@ -919,20 +1076,22 @@ const loadDailyAttendanceRoster = async () => {
             ? 'No classes assigned to your account. Please contact administrator to assign your classes.'
             : 'Please select a class to load students.';
         if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">${noClassMsg}</td></tr>`;
-        if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs">${noClassMsg}</div>`;
         if (saveStatusText) saveStatusText.textContent = 'Ready';
         if (saveIndicator) saveIndicator.className = 'w-2 h-2 rounded-full bg-slate-400';
+        currentDailyStudents = [];
         dailyAttendanceMap = {};
         currentDailyAttendanceDoc = null;
+        hasUnsavedChanges = false;
         updateDailyMetrics(0, 0, 0, 0);
+        applyDailySearchFilter();
         return;
     }
 
     if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold"><i class="fas fa-spinner fa-spin mr-2 text-emerald-600"></i>Loading students...</td></tr>`;
-    if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs"><i class="fas fa-spinner fa-spin mr-2 text-emerald-600"></i>Loading students...</div>`;
 
     try {
         const classStudents = await fetchStudentsForClass(selectedDailyClass, year);
+        currentDailyStudents = classStudents;
         document.getElementById('stat-total-students').textContent = classStudents.length;
 
         const dailyCacheKey = `${year}__${normalizeClassLabel(selectedDailyClass)}__${selectedDailyDate}`;
@@ -945,9 +1104,25 @@ const loadDailyAttendanceRoster = async () => {
             dailyAttendanceCache.set(dailyCacheKey, cachedDoc);
         }
 
-        if (cachedDoc) {
+        const localDraft = readDailyDraftSnapshot(year, selectedDailyClass, selectedDailyDate);
+        const hasValidDraft = Boolean(
+            localDraft
+            && localDraft.map
+            && Object.keys(localDraft.map).length > 0
+            && (!cachedDoc || (localDraft.updatedAt || 0) >= (cachedDoc.updatedAt || 0))
+        );
+
+        if (hasValidDraft) {
+            currentDailyAttendanceDoc = cachedDoc || null;
+            dailyAttendanceMap = JSON.parse(JSON.stringify(localDraft.map));
+            hasUnsavedChanges = true;
+            if (saveStatusText) saveStatusText.textContent = 'Unsaved draft restored';
+            if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse';
+            showToast('Unsaved attendance marks restored automatically.', 'info');
+        } else if (cachedDoc) {
             currentDailyAttendanceDoc = cachedDoc;
             dailyAttendanceMap = JSON.parse(JSON.stringify(cachedDoc.records || {}));
+            hasUnsavedChanges = false;
             const timeStr = cachedDoc.updatedAt
                 ? new Date(cachedDoc.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : 'Earlier';
@@ -957,29 +1132,71 @@ const loadDailyAttendanceRoster = async () => {
         } else {
             currentDailyAttendanceDoc = null;
             dailyAttendanceMap = {};
+            hasUnsavedChanges = false;
             if (saveStatusText) saveStatusText.textContent = `Not yet recorded for ${selectedDailyDate}`;
             if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
         }
 
         renderDailyStudentRows(classStudents);
-        hasUnsavedChanges = false;
     } catch (err) {
         console.warn('Failed to load daily attendance roster:', err);
         if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-rose-600 font-bold">Failed to load students: ${escapeHtml(err.message)}</td></tr>`;
-        if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-rose-600 font-bold text-xs">Failed to load students: ${escapeHtml(err.message)}</div>`;
+    }
+};
+
+const applyDailySearchFilter = () => {
+    const searchInput = document.getElementById('daily-search-input');
+    const clearBtn = document.getElementById('btn-clear-daily-search');
+    const countBadge = document.getElementById('daily-search-count');
+    const tbody = document.getElementById('daily-roster-tbody');
+
+    dailySearchQuery = String(searchInput?.value || '').trim().toLowerCase();
+    if (clearBtn) clearBtn.classList.toggle('hidden', !dailySearchQuery);
+
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr[data-student-id]'));
+    const existingEmptyRow = document.getElementById('daily-search-empty-row');
+    if (existingEmptyRow) existingEmptyRow.remove();
+
+    if (!rows.length) {
+        if (countBadge) countBadge.classList.add('hidden');
+        return;
+    }
+
+    let visibleCount = 0;
+    rows.forEach(row => {
+        const haystack = String(row.dataset.searchText || '');
+        const isMatch = !dailySearchQuery || haystack.includes(dailySearchQuery);
+        row.classList.toggle('hidden', !isMatch);
+        if (isMatch) visibleCount++;
+    });
+
+    if (countBadge) {
+        if (dailySearchQuery) {
+            countBadge.textContent = `${visibleCount}/${rows.length} shown`;
+            countBadge.classList.remove('hidden');
+        } else {
+            countBadge.classList.add('hidden');
+        }
+    }
+
+    if (dailySearchQuery && visibleCount === 0) {
+        const emptyTr = document.createElement('tr');
+        emptyTr.id = 'daily-search-empty-row';
+        emptyTr.innerHTML = `<td colspan="6" class="p-6 text-center text-slate-400 font-bold text-xs">No students matching "${escapeHtml(searchInput?.value.trim() || '')}".</td>`;
+        tbody.appendChild(emptyTr);
     }
 };
 
 const renderDailyStudentRows = (classStudents) => {
     const tbody = document.getElementById('daily-roster-tbody');
-    const mobileList = document.getElementById('daily-roster-mobile');
-    if (!tbody && !mobileList) return;
+    if (!tbody) return;
 
     if (!classStudents.length) {
         const emptyText = `No active students found in Class ${escapeHtml(selectedDailyClass)}.`;
-        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">${emptyText}</td></tr>`;
-        if (mobileList) mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs">${emptyText}</div>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">${emptyText}</td></tr>`;
         updateDailyMetrics(0, 0, 0, 0);
+        applyDailySearchFilter();
         return;
     }
 
@@ -988,7 +1205,6 @@ const renderDailyStudentRows = (classStudents) => {
     let lCount = 0;
 
     const rowsHtml = [];
-    const mobileCardsHtml = [];
 
     classStudents.forEach((student, idx) => {
         const stuCls = student._resolvedYearClass || student.class || '';
@@ -1005,72 +1221,41 @@ const renderDailyStudentRows = (classStudents) => {
         const roll = student.rollNo || student.roll || (idx + 1);
         const adm = student.adm || student.admNo || '-';
         const genderLabel = isFemaleGender(student.gender) ? 'Girl' : 'Boy';
+        const searchText = `${student.name || ''} ${adm} ${roll} ${genderLabel}`.toLowerCase();
 
         rowsHtml.push(`
-            <tr class="hover:bg-slate-50/80 transition-colors" data-student-id="${escapeHtml(student.id)}" data-student-class="${escapeHtml(stuCls)}">
-                <td class="py-2.5 sm:py-3 px-3 text-center font-bold text-slate-400 tabular-nums">${idx + 1}</td>
-                <td class="py-2.5 sm:py-3 px-3 text-center font-mono font-bold text-slate-700 tabular-nums">${escapeHtml(String(roll))}</td>
-                <td class="py-2.5 sm:py-3 px-3 font-mono text-slate-500 font-semibold tabular-nums">${escapeHtml(adm)}</td>
-                <td class="py-2.5 sm:py-3 px-4">
-                    <div class="flex items-center gap-2.5">
-                        <div class="w-8 h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
+            <tr class="hover:bg-slate-50/80 transition-colors" data-student-id="${escapeHtml(student.id)}" data-student-class="${escapeHtml(stuCls)}" data-search-text="${escapeHtml(searchText)}">
+                <td class="py-2 sm:py-3 px-2 sm:px-3 text-center font-bold text-slate-400 tabular-nums">${idx + 1}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 text-center font-mono font-bold text-slate-700 tabular-nums">${escapeHtml(String(roll))}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 font-mono text-slate-500 font-semibold tabular-nums">${escapeHtml(adm)}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-4">
+                    <div class="flex items-center gap-2 sm:gap-2.5">
+                        <div class="hidden sm:flex w-8 h-8 rounded-full overflow-hidden bg-slate-100 border border-slate-200 shrink-0 items-center justify-center">
                             ${photo ? `<img src="${photo}" class="w-full h-full object-cover">` : `<i class="fas fa-user text-slate-400 text-xs"></i>`}
                         </div>
                         <div class="min-w-0">
-                            <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(student.name || '--')}</div>
-                            <div class="text-[11px] text-slate-400 font-semibold">${genderLabel}</div>
+                            <div class="font-extrabold text-slate-900 text-xs sm:text-sm truncate max-w-[140px] sm:max-w-none">${escapeHtml(student.name || '--')}</div>
+                            <div class="text-[10px] sm:text-[11px] text-slate-400 font-semibold">${genderLabel}</div>
                         </div>
                     </div>
                 </td>
-                <td class="py-2.5 sm:py-3 px-4 text-center">
-                    <div class="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200" data-toggle-group="${escapeHtml(student.id)}">
+                <td class="py-2 sm:py-3 px-1.5 sm:px-4 text-center">
+                    <div class="inline-flex items-center gap-1 bg-slate-100 p-0.5 sm:p-1 rounded-lg sm:rounded-xl border border-slate-200" data-toggle-group="${escapeHtml(student.id)}">
                         <button type="button" class="att-toggle-btn ${status === 'P' ? 'active-p' : ''}" data-status="P" title="Present (P): Attended class">P</button>
                         <button type="button" class="att-toggle-btn ${status === 'A' ? 'active-a' : ''}" data-status="A" title="Absent (A): Absent without prior notice">A</button>
                         <button type="button" class="att-toggle-btn ${status === 'L' ? 'active-l' : ''}" data-status="L" title="Leave (L): Informed leave in advance">L</button>
                     </div>
                 </td>
-                <td class="py-2.5 sm:py-3 px-4">
-                    <input type="text" data-student-id="${escapeHtml(student.id)}" class="student-remarks-input w-full p-1.5 px-2.5 text-xs rounded-lg border border-slate-200 focus:border-emerald-500 outline-none bg-white transition" placeholder="Remark..." value="${escapeHtml(remarks)}">
+                <td class="py-2 sm:py-3 px-2 sm:px-4">
+                    <input type="text" data-student-id="${escapeHtml(student.id)}" class="student-remarks-input w-full p-1.5 px-2 text-xs rounded-lg border border-slate-200 focus:border-emerald-500 outline-none bg-white transition" placeholder="Remark..." value="${escapeHtml(remarks)}">
                 </td>
             </tr>
         `);
-
-        mobileCardsHtml.push(`
-            <div class="p-3 space-y-2.5 bg-white" data-student-id="${escapeHtml(student.id)}" data-student-class="${escapeHtml(stuCls)}">
-                <div class="flex items-center justify-between gap-2.5">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                        <div class="w-9 h-9 rounded-full overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
-                            ${photo ? `<img src="${photo}" class="w-full h-full object-cover">` : `<i class="fas fa-user text-slate-400 text-xs"></i>`}
-                        </div>
-                        <div class="min-w-0">
-                            <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(student.name || '--')}</div>
-                            <div class="text-[11px] text-slate-500 font-semibold font-mono tabular-nums truncate">
-                                #${idx + 1} · Adm: ${escapeHtml(adm)} · Roll: ${escapeHtml(String(roll))} · ${genderLabel}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-3 gap-2" data-toggle-group="${escapeHtml(student.id)}">
-                    <button type="button" class="att-toggle-btn att-toggle-btn-mobile ${status === 'P' ? 'active-p' : ''}" data-status="P" title="Present">
-                        <span>P</span><span class="text-[11px] font-bold opacity-85">Present</span>
-                    </button>
-                    <button type="button" class="att-toggle-btn att-toggle-btn-mobile ${status === 'A' ? 'active-a' : ''}" data-status="A" title="Absent">
-                        <span>A</span><span class="text-[11px] font-bold opacity-85">Absent</span>
-                    </button>
-                    <button type="button" class="att-toggle-btn att-toggle-btn-mobile ${status === 'L' ? 'active-l' : ''}" data-status="L" title="Leave">
-                        <span>L</span><span class="text-[11px] font-bold opacity-85">Leave</span>
-                    </button>
-                </div>
-                <div>
-                    <input type="text" data-student-id="${escapeHtml(student.id)}" class="student-remarks-input w-full min-h-[40px] px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-emerald-500 outline-none bg-slate-50 focus:bg-white transition" placeholder="Add remark (optional)..." value="${escapeHtml(remarks)}">
-                </div>
-            </div>
-        `);
     });
 
-    if (tbody) tbody.innerHTML = rowsHtml.join('');
-    if (mobileList) mobileList.innerHTML = mobileCardsHtml.join('');
+    tbody.innerHTML = rowsHtml.join('');
     updateDailyMetrics(classStudents.length, pCount, aCount, lCount);
+    applyDailySearchFilter();
 };
 
 const updateDailyMetrics = (total, present, absent, leave) => {
@@ -1109,6 +1294,7 @@ const markUnsavedChanges = () => {
     const saveIndicator = document.getElementById('save-status-indicator');
     if (saveStatusText) saveStatusText.textContent = 'Unsaved changes';
     if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse';
+    persistDailyDraftSnapshot();
 };
 
 const recalculateDailyTotals = () => {
@@ -1160,7 +1346,13 @@ const clearAllStudents = () => {
     document.querySelectorAll('.student-remarks-input').forEach(input => {
         input.value = '';
     });
-    markUnsavedChanges();
+    const year = document.getElementById('daily-academic-year')?.value || currentAcademicYear;
+    clearDailyDraftSnapshot(year, selectedDailyClass, selectedDailyDate);
+    hasUnsavedChanges = true;
+    const saveStatusText = document.getElementById('save-status-text');
+    const saveIndicator = document.getElementById('save-status-indicator');
+    if (saveStatusText) saveStatusText.textContent = 'Unsaved changes';
+    if (saveIndicator) saveIndicator.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse';
     recalculateDailyTotals();
 };
 
@@ -1186,11 +1378,10 @@ const saveDailyAttendance = async () => {
         rows.forEach(row => {
             const studentId = row.dataset.studentId;
             if (!studentId) return;
-            const visibleInput = Array.from(document.querySelectorAll(`.student-remarks-input[data-student-id="${studentId}"]`))
-                .find(el => el.offsetParent !== null) || row.querySelector('.student-remarks-input');
-            if (visibleInput) {
+            const remarkInput = row.querySelector(`.student-remarks-input[data-student-id="${studentId}"]`);
+            if (remarkInput) {
                 if (!dailyAttendanceMap[studentId]) dailyAttendanceMap[studentId] = {};
-                dailyAttendanceMap[studentId].remarks = visibleInput.value.trim();
+                dailyAttendanceMap[studentId].remarks = remarkInput.value.trim();
             }
         });
 
@@ -1229,7 +1420,8 @@ const saveDailyAttendance = async () => {
 
         await setDoc(doc(db, `${BASE_PATH}/attendance`, docId), payload);
 
-        // Refresh daily cache and invalidate monthly/analytics caches for this class
+        // Clear local unsaved draft and refresh attendance caches
+        clearDailyDraftSnapshot(year, selectedDailyClass, selectedDailyDate);
         invalidateClassAttendanceCache(year, selectedDailyClass, selectedDailyDate);
         dailyAttendanceCache.set(`${year}__${normalizeClassLabel(selectedDailyClass)}__${selectedDailyDate}`, payload);
 
@@ -1381,23 +1573,40 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
             return;
         }
 
-        // Prior session cumulative stats (reuses cached full-year docs per class)
-        const sessionStartDate = getSessionStartDate(year) || `${yearNum}-01-01`;
+        // Prior session & current month calendar working days (aligned with Student Portal)
+        const sessionStartDate = getSessionStartDate(year);
+        const sessionEndDate = getSessionEndDate(year);
+        const todayStr = getTodayDateString();
+        const effectiveTodayCap = (sessionEndDate && sessionEndDate < todayStr) ? sessionEndDate : todayStr;
         const curMonthStartDate = `${monthVal}-01`;
+        const prevMonthLastDt = new Date(yearNum, monthNum - 1, 0, 12, 0, 0);
+        const dayBeforeCurMonth = toLocalDateStr(prevMonthLastDt);
+        const effectivePrevEndCap = (effectiveTodayCap && effectiveTodayCap < dayBeforeCurMonth)
+            ? effectiveTodayCap
+            : dayBeforeCurMonth;
+
         const prevStatsByStudent = {};
         relevantStudents.forEach(s => {
             prevStatsByStudent[s.id] = { work: 0, pres: 0, abs: 0, leave: 0 };
         });
         let prevWorkingDays = 0;
 
-        if (sessionStartDate < curMonthStartDate) {
+        if (sessionStartDate && effectivePrevEndCap >= sessionStartDate) {
+            prevWorkingDays = calculateWorkingDaysInRange(sessionStartDate, effectivePrevEndCap, selectedMonthlyClass).workingDays;
+        }
+
+        const effectiveStartForPrevDocs = sessionStartDate || `${yearNum}-01-01`;
+        if (effectiveStartForPrevDocs < curMonthStartDate) {
             try {
                 const yearDocs = await fetchYearClassAttendanceDocs(year, selectedMonthlyClass, { force });
                 const prevDocs = yearDocs.filter(d => {
                     const dt = String(d.date || '');
-                    return dt >= sessionStartDate && dt < curMonthStartDate;
+                    return dt >= effectiveStartForPrevDocs
+                        && dt < curMonthStartDate
+                        && (!effectivePrevEndCap || dt <= effectivePrevEndCap);
                 });
 
+                let recordedPrevWorkingDocs = 0;
                 prevDocs.forEach(pDoc => {
                     const pDate = pDoc.date || '';
                     const pCls = pDoc.classLabel || selectedMonthlyClass;
@@ -1407,27 +1616,30 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
                     const isWorking = !pDoc.isHoliday && !isHoliday && !isPre && !isPost;
 
                     if (isWorking) {
-                        prevWorkingDays++;
+                        recordedPrevWorkingDocs++;
+                        const records = pDoc.records || {};
+                        Object.entries(records).forEach(([sid, rec]) => {
+                            if (!prevStatsByStudent[sid]) return;
+                            const rawStatus = rec?.status;
+                            const st = rawStatus === 'E' ? 'L' : rawStatus;
+                            if (st === 'P') prevStatsByStudent[sid].pres++;
+                            else if (st === 'A') prevStatsByStudent[sid].abs++;
+                            else if (st === 'L') prevStatsByStudent[sid].leave++;
+                        });
                     }
-
-                    const records = pDoc.records || {};
-                    Object.entries(records).forEach(([sid, rec]) => {
-                        if (!prevStatsByStudent[sid]) return;
-                        const rawStatus = rec?.status;
-                        const st = rawStatus === 'E' ? 'L' : rawStatus;
-                        if (st === 'P') prevStatsByStudent[sid].pres++;
-                        else if (st === 'A') prevStatsByStudent[sid].abs++;
-                        else if (st === 'L') prevStatsByStudent[sid].leave++;
-                    });
                 });
 
-                relevantStudents.forEach(s => {
-                    prevStatsByStudent[s.id].work = prevWorkingDays;
-                });
+                if (!sessionStartDate && prevWorkingDays === 0) {
+                    prevWorkingDays = recordedPrevWorkingDocs;
+                }
             } catch (prevErr) {
                 console.warn('Could not query prior session attendance records:', prevErr);
             }
         }
+
+        relevantStudents.forEach(s => {
+            prevStatsByStudent[s.id].work = prevWorkingDays;
+        });
 
         const boys = relevantStudents.filter(s => !isFemaleGender(s.gender)).sort(compareByAdmNoAsc);
         const girls = relevantStudents.filter(s => isFemaleGender(s.gender)).sort(compareByAdmNoAsc);
@@ -1445,6 +1657,12 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
                 markedWorkingDaysCount++;
             }
         }
+
+        const curRangeStart = (sessionStartDate && sessionStartDate > startDateStr) ? sessionStartDate : startDateStr;
+        const curRangeEnd = (effectiveTodayCap && effectiveTodayCap < endDateStr) ? effectiveTodayCap : endDateStr;
+        const curMonthCalendarWorkingDays = (curRangeStart && curRangeEnd && curRangeStart <= curRangeEnd)
+            ? calculateWorkingDaysInRange(curRangeStart, curRangeEnd, selectedMonthlyClass).workingDays
+            : 0;
 
         const buildStudentComputed = (student) => {
             let presentCount = 0;
@@ -1482,7 +1700,9 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
                 }
             }
 
-            const curWork = markedWorkingDaysCount > 0 ? markedWorkingDaysCount : (presentCount + absentCount + leaveCount);
+            const curWork = sessionStartDate
+                ? curMonthCalendarWorkingDays
+                : (markedWorkingDaysCount > 0 ? markedWorkingDaysCount : (presentCount + absentCount + leaveCount));
             const prevStats = prevStatsByStudent[student.id] || { work: 0, pres: 0, abs: 0, leave: 0 };
             const prevWork = prevStats.work || 0;
             const prevPres = prevStats.pres || 0;
@@ -1490,7 +1710,7 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
             const totalWork = prevWork + curWork;
             const totalPres = prevPres + presentCount;
             const totalLeave = prevLeave + leaveCount;
-            const totalPercentage = totalWork > 0 ? Math.round((totalPres / totalWork) * 100) : 0;
+            const totalPercentage = totalWork > 0 ? Math.min(100, Math.round((totalPres / totalWork) * 100)) : 0;
 
             return {
                 student,
@@ -2561,7 +2781,7 @@ const deleteHoliday = async (idx) => {
 };
 
 // --- Session Schedule UI & Logic ---
-const renderSessionScheduleUI = () => {
+const renderSessionScheduleUI = ({ preserveFocusedInputs = false } = {}) => {
     const yearSelect = document.getElementById('session-academic-year');
     const selectedYear = yearSelect?.value || currentAcademicYear;
 
@@ -2587,15 +2807,37 @@ const renderSessionScheduleUI = () => {
     const configuredDisplay = document.getElementById('session-configured-start-display');
     const configuredEndDisplay = document.getElementById('session-configured-end-display');
 
-    if (startInput) {
+    const activeEl = document.activeElement;
+    if (startInput && (!preserveFocusedInputs || activeEl !== startInput)) {
         startInput.value = schedule.startDate || getSessionStartDate(selectedYear) || '';
     }
-    if (endInput) {
+    if (endInput && (!preserveFocusedInputs || activeEl !== endInput)) {
         endInput.value = schedule.endDate || '';
     }
-    if (notesInput) {
+    if (notesInput && (!preserveFocusedInputs || activeEl !== notesInput)) {
         notesInput.value = schedule.notes || '';
     }
+
+    // Enforce Admin-Only editing on Session Schedule
+    const readonlyBanner = document.getElementById('session-readonly-banner');
+    if (readonlyBanner) readonlyBanner.classList.toggle('hidden', isSuperAdmin);
+
+    [startInput, endInput, notesInput].forEach(el => {
+        if (!el) return;
+        el.disabled = !isSuperAdmin;
+        el.readOnly = !isSuperAdmin;
+        el.classList.toggle('bg-slate-100', !isSuperAdmin);
+        el.classList.toggle('text-slate-500', !isSuperAdmin);
+        el.classList.toggle('cursor-not-allowed', !isSuperAdmin);
+    });
+
+    ['btn-session-set-today', 'btn-session-clear-end', 'btn-save-session-schedule'].forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.classList.toggle('hidden', !isSuperAdmin);
+            btn.disabled = !isSuperAdmin;
+        }
+    });
 
     if (configuredDisplay) {
         if (schedule.startDate) {
@@ -2637,6 +2879,11 @@ const renderSessionScheduleUI = () => {
 };
 
 const saveSessionSchedule = async () => {
+    if (!isSuperAdmin) {
+        showToast('Only administrators can configure or update Session Schedule.', 'error');
+        return;
+    }
+
     const yearSelect = document.getElementById('session-academic-year');
     const selectedYear = yearSelect?.value || currentAcademicYear;
     const startInput = document.getElementById('session-start-date-input');
@@ -2721,13 +2968,18 @@ const setupEventListeners = () => {
         selectedDailyClass = document.getElementById('daily-class-select')?.value || '';
         const rosterClassPill = document.getElementById('roster-class-pill');
         if (rosterClassPill) rosterClassPill.textContent = formatClassPillText(selectedDailyClass);
+        saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
 
-    document.getElementById('daily-academic-year')?.addEventListener('change', loadDailyAttendanceRoster);
+    document.getElementById('daily-academic-year')?.addEventListener('change', () => {
+        saveUiStateSnapshot();
+        loadDailyAttendanceRoster();
+    });
 
     document.getElementById('daily-date-input')?.addEventListener('change', () => {
         selectedDailyDate = document.getElementById('daily-date-input')?.value || getTodayDateString();
+        saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
 
@@ -2738,6 +2990,7 @@ const setupEventListeners = () => {
         selectedDailyDate = toLocalDateStr(cur);
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
+        saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
 
@@ -2748,6 +3001,7 @@ const setupEventListeners = () => {
         selectedDailyDate = toLocalDateStr(cur);
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
+        saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
 
@@ -2755,7 +3009,23 @@ const setupEventListeners = () => {
         selectedDailyDate = getTodayDateString();
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
+        saveUiStateSnapshot();
         loadDailyAttendanceRoster();
+    });
+
+    // Inline Search Filter (Save Attendance Line)
+    document.getElementById('daily-search-input')?.addEventListener('input', () => {
+        applyDailySearchFilter();
+        saveUiStateSnapshot();
+    });
+    document.getElementById('btn-clear-daily-search')?.addEventListener('click', () => {
+        const searchInput = document.getElementById('daily-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+        }
+        applyDailySearchFilter();
+        saveUiStateSnapshot();
     });
 
     // Daily Batch Actions
@@ -2764,7 +3034,7 @@ const setupEventListeners = () => {
     document.getElementById('btn-mark-all-l')?.addEventListener('click', () => markAllStudents('L'));
     document.getElementById('btn-clear-all')?.addEventListener('click', clearAllStudents);
 
-    // Individual Toggle Delegation (Desktop Table + Mobile Cards)
+    // Individual Toggle Delegation (Unified Table)
     document.getElementById('daily-roster-tbody')?.addEventListener('click', (e) => {
         const btn = e.target.closest('.att-toggle-btn');
         if (!btn) return;
@@ -2776,46 +3046,49 @@ const setupEventListeners = () => {
         }
     });
 
-    document.getElementById('daily-roster-mobile')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.att-toggle-btn');
-        if (!btn) return;
-        const card = btn.closest('[data-student-id]');
-        const studentId = card?.dataset.studentId;
-        const status = btn.dataset.status;
-        if (studentId && status) {
-            setStudentStatus(studentId, status);
-        }
-    });
-
-    const handleRemarkInputSync = (inputEl) => {
-        const sid = inputEl?.dataset?.studentId;
-        if (!sid) return;
-        if (!dailyAttendanceMap[sid]) dailyAttendanceMap[sid] = {};
-        dailyAttendanceMap[sid].remarks = inputEl.value;
-        document.querySelectorAll(`.student-remarks-input[data-student-id="${sid}"]`).forEach(sibling => {
-            if (sibling !== inputEl) sibling.value = inputEl.value;
-        });
-        markUnsavedChanges();
-    };
-
     document.getElementById('daily-roster-tbody')?.addEventListener('input', (e) => {
         if (e.target.classList.contains('student-remarks-input')) {
-            handleRemarkInputSync(e.target);
-        }
-    });
-
-    document.getElementById('daily-roster-mobile')?.addEventListener('input', (e) => {
-        if (e.target.classList.contains('student-remarks-input')) {
-            handleRemarkInputSync(e.target);
+            const sid = e.target.dataset?.studentId;
+            if (!sid) return;
+            if (!dailyAttendanceMap[sid]) dailyAttendanceMap[sid] = {};
+            dailyAttendanceMap[sid].remarks = e.target.value;
+            markUnsavedChanges();
         }
     });
 
     document.getElementById('btn-save-daily')?.addEventListener('click', saveDailyAttendance);
 
+    // Mobile App-Switch / Background Save Protection
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            persistDailyDraftSnapshot();
+            saveUiStateSnapshot();
+        }
+    });
+    window.addEventListener('pagehide', () => {
+        persistDailyDraftSnapshot();
+        saveUiStateSnapshot();
+    });
+    window.addEventListener('beforeunload', (e) => {
+        if (hasUnsavedChanges) {
+            persistDailyDraftSnapshot();
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+
     // 3. Monthly Listeners
     document.getElementById('btn-load-monthly')?.addEventListener('click', () => loadMonthlyRegister({ force: true }));
-    document.getElementById('monthly-class-select')?.addEventListener('change', () => loadMonthlyRegister());
-    document.getElementById('monthly-month-input')?.addEventListener('change', () => loadMonthlyRegister());
+    document.getElementById('monthly-class-select')?.addEventListener('change', () => {
+        selectedMonthlyClass = document.getElementById('monthly-class-select')?.value || '';
+        saveUiStateSnapshot();
+        loadMonthlyRegister();
+    });
+    document.getElementById('monthly-month-input')?.addEventListener('change', () => {
+        selectedMonthlyMonth = document.getElementById('monthly-month-input')?.value || selectedMonthlyMonth;
+        saveUiStateSnapshot();
+        loadMonthlyRegister();
+    });
     document.getElementById('btn-export-excel')?.addEventListener('click', exportMonthlyRegisterToExcel);
 
     document.getElementById('btn-export-monthly-pdf')?.addEventListener('click', () => {
@@ -2841,7 +3114,11 @@ const setupEventListeners = () => {
     // 4. Analytics Listeners
     document.getElementById('btn-refresh-analytics')?.addEventListener('click', () => loadAnalytics({ force: true }));
     document.getElementById('analytics-academic-year')?.addEventListener('change', () => loadAnalytics());
-    document.getElementById('analytics-class-select')?.addEventListener('change', () => loadAnalytics());
+    document.getElementById('analytics-class-select')?.addEventListener('change', () => {
+        selectedAnalyticsClass = document.getElementById('analytics-class-select')?.value || '';
+        saveUiStateSnapshot();
+        loadAnalytics();
+    });
     document.getElementById('analytics-comparator-select')?.addEventListener('change', () => loadAnalytics());
     document.getElementById('analytics-percentage-input')?.addEventListener('change', () => loadAnalytics());
 
@@ -2903,12 +3180,14 @@ const setupEventListeners = () => {
     document.getElementById('holidays-mobile-list')?.addEventListener('click', handleHolidayActionClick);
 
     // 6. Session Schedule Listeners
-    document.getElementById('session-academic-year')?.addEventListener('change', renderSessionScheduleUI);
+    document.getElementById('session-academic-year')?.addEventListener('change', () => renderSessionScheduleUI({ preserveFocusedInputs: false }));
     document.getElementById('btn-session-set-today')?.addEventListener('click', () => {
+        if (!isSuperAdmin) return;
         const input = document.getElementById('session-start-date-input');
         if (input) input.value = getTodayDateString();
     });
     document.getElementById('btn-session-clear-end')?.addEventListener('click', () => {
+        if (!isSuperAdmin) return;
         const input = document.getElementById('session-end-date-input');
         if (input) input.value = '';
     });

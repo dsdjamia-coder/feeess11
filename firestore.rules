@@ -329,7 +329,15 @@ service cloud.firestore {
             && resource != null
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['feeItems'])
             && request.resource.data.feeItems is list)
-        || (canManageAttendance(institutionId) && (docId == 'attendanceConfig' || docId == 'timetableStructure'))
+        || (canManageAttendance(institutionId) && docId == 'timetableStructure')
+        || (
+          canManageAttendance(institutionId)
+          && docId == 'attendanceConfig'
+          && (
+            (resource == null && !('sessionSchedules' in request.resource.data))
+            || (resource != null && !('sessionSchedules' in request.resource.data.diff(resource.data).affectedKeys()))
+          )
+        )
         || (canManageAcademicPlan(institutionId) && (docId == 'yearPlanConfig' || docId == 'academicPlanningConfig'))
         || (canManageActivity(institutionId) && (docId == 'activityConfig' || docId == 'taskDefinitions'))
         || (canManageEvaluation(institutionId) && docId.matches('evaluationConfig_.*'));
