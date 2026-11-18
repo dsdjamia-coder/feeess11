@@ -1,5 +1,5 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { doc, onSnapshot, collection, getDoc, getDocs, setDoc, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, onSnapshot, collection, getDoc, getDocFromServer, getDocs, setDoc, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
 import {
     ADMIN_AUTH_DOC_ID,
@@ -2022,12 +2022,30 @@ let isRootGatewayMode = false;
                     : authedEmail.split('@')[0];
                 const usedFirebaseEmailAuth = Boolean(userCred?.user && !userCred.user.isAnonymous);
 
+                if (usedFirebaseEmailAuth && userCred?.user) {
+                    try {
+                        await userCred.user.getIdToken();
+                    } catch (_) {}
+                }
+
                 const checkCompanyOwnerAccess = async () => {
                     let companyError = null;
                     let companyExists = false;
+                    let fromCache = false;
                     try {
-                        const companySnap = await getDoc(doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID));
-                        if (companySnap.exists()) {
+                        const companyRef = doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID);
+                        let companySnap = null;
+                        try {
+                            companySnap = await getDocFromServer(companyRef);
+                        } catch (serverErr) {
+                            if (serverErr?.code === 'unavailable' || String(serverErr?.message || '').toLowerCase().includes('offline')) {
+                                companySnap = await getDoc(companyRef);
+                            } else {
+                                throw serverErr;
+                            }
+                        }
+                        fromCache = Boolean(companySnap?.metadata?.fromCache);
+                        if (companySnap?.exists()) {
                             companyExists = true;
                             const data = companySnap.data() || {};
                             const primaryEmail = String(data.email || '').trim().toLowerCase();
@@ -2038,7 +2056,8 @@ let isRootGatewayMode = false;
                                 return {
                                     isOwner: true,
                                     exists: true,
-                                    companyName: String(data.companyName || 'Platform Company').trim(),
+                                    fromCache,
+                                    companyName: String(data.companyName || 'Institution Manage').trim(),
                                     ownerName: String(arrayMatch?.name || data.name || data.ownerName || 'Company Owner').trim(),
                                     error: null
                                 };
@@ -2046,8 +2065,9 @@ let isRootGatewayMode = false;
                         }
                     } catch (err) {
                         companyError = err;
+                        console.error('Company config check error:', err);
                     }
-                    return { isOwner: false, exists: companyExists, companyName: '', ownerName: '', error: companyError };
+                    return { isOwner: false, exists: companyExists, fromCache, companyName: '', ownerName: '', error: companyError };
                 };
 
                 // 0. If on Root Platform Gateway (/), authenticate against company/config
@@ -2066,10 +2086,13 @@ let isRootGatewayMode = false;
                         try { await signOut(auth); } catch (_) {}
                     }
                     const proj = firebaseConfig?.projectId || 'unknown';
+                    const dbName = firebaseConfig?.firestoreDatabaseId || '(default)';
                     if (companyRes.error?.code === 'permission-denied') {
-                        showLoginMessage(`Auth succeeded (${authedEmail}), but Firestore blocked reading "company/config" (permission-denied on ${proj}). Ensure company/config has ownersIndex["${authedEmail}"]: true and publish updated firestore.rules.`);
+                        showLoginMessage(`Auth succeeded (${authedEmail}), but Firestore blocked reading "company/config" (permission-denied on ${proj}). Ensure company/config has email/ownersIndex for "${authedEmail}" and publish updated firestore.rules.`);
+                    } else if (companyRes.error) {
+                        showLoginMessage(`Auth succeeded (${authedEmail}), but reading "company/config" failed (${companyRes.error.code || 'error'}): ${companyRes.error.message || 'Firestore request failed.'} [${proj} / ${dbName}]`);
                     } else if (!companyRes.exists) {
-                        showLoginMessage(`Auth succeeded (${authedEmail}), but "company/config" does not exist in Firestore (${proj}). Create document company/config first.`);
+                        showLoginMessage(`Auth succeeded (${authedEmail}), but "company/config" does not exist in Firestore project "${proj}" (database: ${dbName}${companyRes.fromCache ? ', offline cache' : ''}). Verify the active project in Firebase Console is "${proj}".`);
                     } else {
                         showLoginMessage(`Auth succeeded (${authedEmail}), but this email is not listed in "company/config" (${proj}).`);
                     }

@@ -8,6 +8,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyCn-4GNsQQaPN5moJivg2Cj9W0TJkiteRE",
   authDomain: "test-noorulislam.firebaseapp.com",
   projectId: "test-noorulislam",
+  firestoreDatabaseId: "default",
   storageBucket: "test-noorulislam.firebasestorage.app",
   messagingSenderId: "192594386980",
   appId: "1:192594386980:web:bbd6a0e7c17674ae1538b1",

@@ -3,6 +3,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   orderBy,
   query,
@@ -737,8 +738,21 @@ const verifyCompanyOwnerSession = async (user) => {
   if (!user || user.isAnonymous || !user.email) return false;
   const email = String(user.email).trim().toLowerCase();
   try {
-    const configSnap = await getDoc(doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID));
-    if (!configSnap.exists()) return false;
+    try {
+      await user.getIdToken();
+    } catch (_) {}
+    const configRef = doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID);
+    let configSnap = null;
+    try {
+      configSnap = await getDocFromServer(configRef);
+    } catch (serverErr) {
+      if (serverErr?.code === 'unavailable' || String(serverErr?.message || '').toLowerCase().includes('offline')) {
+        configSnap = await getDoc(configRef);
+      } else {
+        throw serverErr;
+      }
+    }
+    if (!configSnap?.exists()) return false;
     const data = configSnap.data() || {};
     const ownersList = Array.isArray(data.owners) ? data.owners : [];
     const isOwner = String(data.email || '').trim().toLowerCase() === email
