@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com;">
   <meta name="referrer" content="no-referrer">
-  <title>Company Master Portal - Institution Tracer</title>
+  <title>Institution Manage - Company Portal</title>
 
   <script src="/scripts/shared/session-guard.js"></script>
   <script src="/scripts/shared/page-guards.js"></script>
@@ -44,7 +44,7 @@
           <i class="fas fa-building-shield text-lg"></i>
         </div>
         <div class="min-w-0">
-          <h1 id="company-brand-title" class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Company Master Portal</h1>
+          <h1 id="company-brand-title" class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Institution Manage</h1>
           <p id="company-owner-email" class="text-[11px] font-semibold text-slate-500 truncate">--</p>
         </div>
       </div>
@@ -150,12 +150,12 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-name">Institution Name <span class="text-rose-500">*</span></label>
-              <input type="text" id="inst-name" required maxlength="120" placeholder="e.g. Noorul Islam Madrasa" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+              <input type="text" id="inst-name" required maxlength="120" placeholder="e.g. Demo Public Academy" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-slug">Portal URL Slug <span class="text-rose-500">*</span></label>
-              <input type="text" id="inst-slug" required maxlength="64" placeholder="e.g. noorulislam" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-mono font-bold lowercase">
-              <div id="inst-slug-preview" class="text-[11px] font-semibold text-indigo-600 mt-1 truncate">URL: /noorulislam</div>
+              <input type="text" id="inst-slug" required maxlength="64" placeholder="e.g. demo-academy" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-mono font-bold lowercase">
+              <div id="inst-slug-preview" class="text-[11px] font-semibold text-indigo-600 mt-1 truncate">URL: /demo-academy</div>
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-place">Place / City</label>

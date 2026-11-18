@@ -83,7 +83,7 @@ Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ �
 ```
 
 ### 4. `sw.js` (PWA Service Worker Cache Refresh)
-- ബ്രൗസറിലും ഇൻസ്റ്റാൾ ചെയ്ത PWA ആപ്പിലും പഴയ Firebase കോൺഫിഗ് ക്യാഷ് ചെയ്ത് കുടുങ്ങാതിരിക്കാൻ `sw.js`-ന്റെ ഒന്നാമത്തെ വരിയിലെ `CACHE_NAME` നമ്പർ വർദ്ധിപ്പിക്കുക (ഉദാ: `institution-tracer-v3-05-01` -> `institution-tracer-v3-05-02`).
+- ബ്രൗസറിലും ഇൻസ്റ്റാൾ ചെയ്ത PWA ആപ്പിലും പഴയ Firebase കോൺഫിഗ് ക്യാഷ് ചെയ്ത് കുടുങ്ങാതിരിക്കാൻ `sw.js`-ന്റെ ഒന്നാമത്തെ വരിയിലെ `CACHE_NAME` നമ്പർ വർദ്ധിപ്പിക്കുക (ഉദാ: `institution-manage-v3-05-02` -> `institution-manage-v3-05-03`).
 
 ### 5. `config/app-config.js` *(Optional - സാധാരണ മാറ്റേണ്ടതില്ല)*
 - ഡിഫോൾട്ട് പാത `institutions/school/...` തന്നെയാണെങ്കിൽ `INSTITUTION_ID = 'school'` മാറ്റേണ്ടതില്ല. മറ്റൊരു സ്ഥാപന നാമത്തിൽ വേറിട്ട പാത വേണമെങ്കിൽ മാത്രം മാറ്റുക.
@@ -110,7 +110,7 @@ Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ �
 ### ഘട്ടം A: Firebase Authentication-ൽ Company Owner User നിർമ്മിക്കുക
 1. Firebase Console -> **Build -> Authentication -> Users** തുറക്കുക.
 2. **Add user** ക്ലിക്ക് ചെയ്യുക.
-3. നിങ്ങളുടെ Company Owner Email-ഉം (ഉദാ: `nimdevathiyal4883@gmail.com` — **ചെറിയക്ഷരത്തിൽ / lowercase**) ശക്തമായ ഒരു Password-ഉം നൽകി Save ചെയ്യുക.
+3. നിങ്ങളുടെ Company Owner Email-ഉം (ഉദാ: `owner@institutionmanage.com` — **ചെറിയക്ഷരത്തിൽ / lowercase**) ശക്തമായ ഒരു Password-ഉം നൽകി Save ചെയ്യുക.
 
 ### ഘട്ടം B: Firestore-ൽ `company/config` ഡോക്യുമെന്റ് നിർമ്മിക്കുക
 1. Firebase Console -> **Build -> Firestore Database -> Data** തുറക്കുക.
@@ -125,13 +125,13 @@ Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ �
 ```text
 ✅ ശരിയായ ഘടന (Document Root-ൽ 4 ഫീൽഡുകൾ):        ❌ തെറ്റായ ഘടന (ഇങ്ങനെ ചെയ്താൽ Login ആകില്ല!):
 company/config                                         company/config
-├── companyName (string) : "Noorul Islam Platform"     └── email (map)  <-- email ഒരു map ആയി!
-├── email (string) : "nimdevathiyal4883@gmail.com"         ├── owners (map)      <-- Root-ൽ അല്ല!
+├── companyName (string) : "Institution Manage"        └── email (map)  <-- email ഒരു map ആയി!
+├── email (string) : "owner@institutionmanage.com"         ├── owners (map)      <-- Root-ൽ അല്ല!
 ├── ownersIndex (map)                                      └── ownersIndex (map) <-- Root-ൽ അല്ല!
-│   └── nimdevathiyal4883@gmail.com (boolean) : true
+│   └── owner@institutionmanage.com (boolean) : true
 └── owners (array)
     └── 0 (map)
-        ├── email (string)     : "nimdevathiyal4883@gmail.com"
+        ├── email (string)     : "owner@institutionmanage.com"
         ├── name (string)      : "Company Owner"
         ├── role (string)      : "company_owner"
         └── isActive (boolean) : true
@@ -140,15 +140,15 @@ company/config                                         company/config
 #### JSON രൂപത്തിലുള്ള റഫറൻസ്:
 ```json
 {
-  "companyName": "Noorul Islam Platform",
-  "email": "nimdevathiyal4883@gmail.com",
+  "companyName": "Institution Manage",
+  "email": "owner@institutionmanage.com",
   "ownersIndex": {
-    "nimdevathiyal4883@gmail.com": true
+    "owner@institutionmanage.com": true
   },
   "owners": [
     {
       "name": "Company Owner",
-      "email": "nimdevathiyal4883@gmail.com",
+      "email": "owner@institutionmanage.com",
       "role": "company_owner",
       "isActive": true
     }
@@ -158,7 +158,7 @@ company/config                                         company/config
 
 ### ഘട്ടം C: ആദ്യ ലോഗിൻ & സ്ഥാപനം നിർമ്മിക്കൽ
 1. ആപ്ലിക്കേഷന്റെ Root Home Page (`https://domain.com/`) തുറന്ന് **Login** ക്ലിക്ക് ചെയ്യുക.
-2. Step 1-ൽ Company Owner Email (ഉദാ: `nimdevathiyal4883@gmail.com`) നൽകുക.
+2. Step 1-ൽ Company Owner Email (ഉദാ: `owner@institutionmanage.com`) നൽകുക.
 3. Step 2-ൽ Password അടിച്ച് Sign In ചെയ്യുമ്പോൾ നേരെ **Company Master Portal (`/company`)**-ലേക്ക് പ്രവേശിക്കും.
 4. അവിടെ നിന്ന് **Add Institution** വഴി പുതിയ സ്ഥാപനവും (`slug`, `plan`, `allowedPages`) അതിന്റെ Super Admin അക്കൗണ്ടും ഒറ്റ ക്ലിക്കിൽ നിർമ്മിക്കാം (`https://domain.com/<slug>`).
 

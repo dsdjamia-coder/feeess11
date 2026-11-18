@@ -749,12 +749,12 @@ const verifyCompanyOwnerSession = async (user) => {
     verifiedCompanyOwnerEmail = email;
     const brandTitle = document.getElementById('company-brand-title');
     const ownerEmailEl = document.getElementById('company-owner-email');
-    if (brandTitle) brandTitle.textContent = data.companyName || 'Company Master Portal';
+    if (brandTitle) brandTitle.textContent = data.companyName || 'Institution Manage';
     if (ownerEmailEl) ownerEmailEl.textContent = `${email} • Project: ${firebaseConfig.projectId}`;
     window.AppSession?.startCompany?.({
       name: ownersList.find((o) => String(o?.email || '').toLowerCase() === email)?.name || 'Company Owner',
       email,
-      companyName: data.companyName || 'Company Master Portal'
+      companyName: data.companyName || 'Institution Manage'
     });
     return true;
   } catch (err) {

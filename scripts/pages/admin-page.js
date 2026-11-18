@@ -222,7 +222,7 @@ const ensureFeeItemsForAcademicYears = async (yearsList = academicYears) => {
         });
 
         if (isUpdated) {
-            await setDoc(confRef, { feeItems: existingItems, appName: d.appName || 'Institution Tracer', defaultFee: d.defaultFee || 200 }, { merge: true });
+            await setDoc(confRef, { feeItems: existingItems, appName: d.appName || 'Institution Manage', defaultFee: d.defaultFee || 200 }, { merge: true });
         }
     } catch (e) {
         console.warn('Failed to ensure academic year fee items:', e);
@@ -18770,7 +18770,7 @@ onAuthStateChanged(auth, async (user) => {
             });
 
             if (isUpdated) {
-                setDoc(configRef, { feeItems: existingItems, appName: d.appName || 'Institution Tracer', defaultFee: d.defaultFee || 200 }, { merge: true });
+                setDoc(configRef, { feeItems: existingItems, appName: d.appName || 'Institution Manage', defaultFee: d.defaultFee || 200 }, { merge: true });
             }
 
             document.getElementById('app-name-header').textContent = d.appName || 'Admin Dashboard';

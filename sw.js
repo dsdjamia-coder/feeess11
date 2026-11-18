@@ -1,5 +1,5 @@
-const CACHE_NAME = 'institution-tracer-v3-05-02';
-const IMAGE_CACHE_NAME = 'institution-tracer-images-v2';
+const CACHE_NAME = 'institution-manage-v3-05-03';
+const IMAGE_CACHE_NAME = 'institution-manage-images-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

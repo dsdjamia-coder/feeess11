@@ -808,11 +808,11 @@ let isRootGatewayMode = false;
             const footerInstEl = document.getElementById('footer-inst-name');
             const gatewayPrefix = document.getElementById('gateway-origin-prefix');
 
-            if (headerTitle) headerTitle.textContent = 'Institution Tracer Platform';
-            if (heroTitle) heroTitle.textContent = 'Institution Tracer Platform';
+            if (headerTitle) headerTitle.textContent = 'Institution Manage';
+            if (heroTitle) heroTitle.textContent = 'Institution Manage';
             if (heroSubtitle) heroSubtitle.textContent = 'Multi-Institution Management & Portal Gateway';
-            if (loginInstEl) loginInstEl.textContent = 'Platform Gateway';
-            if (footerInstEl) footerInstEl.textContent = 'Institution Tracer Platform';
+            if (loginInstEl) loginInstEl.textContent = 'Institution Manage Gateway';
+            if (footerInstEl) footerInstEl.textContent = 'Institution Manage';
             if (gatewayPrefix) gatewayPrefix.textContent = `${window.location.origin}/`;
 
             const slugInput = document.getElementById('gateway-slug-input');
@@ -834,7 +834,7 @@ let isRootGatewayMode = false;
                 const rawSlug = String(slugInput?.value || '').trim().toLowerCase();
                 showGatewayErr('');
                 if (!rawSlug) {
-                    showGatewayErr('Please enter an institution code (e.g. noorulislam).');
+                    showGatewayErr('Please enter an institution code (e.g. demo-academy).');
                     slugInput?.focus();
                     return;
                 }
