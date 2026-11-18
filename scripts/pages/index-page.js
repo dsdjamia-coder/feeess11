@@ -908,6 +908,26 @@ let isRootGatewayMode = false;
                 });
             });
 
+            const demoTabButtons = Array.from(document.querySelectorAll('[data-demo-tab]'));
+            const demoPanels = Array.from(document.querySelectorAll('[data-demo-panel]'));
+            demoTabButtons.forEach((btn) => {
+                if (btn.dataset.boundDemoTab) return;
+                btn.dataset.boundDemoTab = 'true';
+                btn.addEventListener('click', () => {
+                    const selectedTab = btn.getAttribute('data-demo-tab') || 'fee-receipt';
+                    demoTabButtons.forEach((b) => {
+                        const isActive = (b.getAttribute('data-demo-tab') || 'fee-receipt') === selectedTab;
+                        b.className = isActive
+                            ? 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg bg-blue-600 text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5'
+                            : 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5';
+                    });
+                    demoPanels.forEach((panel) => {
+                        const panelKey = panel.getAttribute('data-demo-panel') || '';
+                        panel.classList.toggle('hidden', panelKey !== selectedTab);
+                    });
+                });
+            });
+
             renderVersionInfo();
             loaded.config = true;
             loaded.content = true;
