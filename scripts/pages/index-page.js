@@ -297,7 +297,7 @@ let isRootGatewayMode = false;
             if (isOpeningLoginFlow) return;
             isOpeningLoginFlow = true;
             try {
-                if (window.AppSession?.hasCompanySession?.()) {
+                if (isRootGatewayMode && window.AppSession?.hasCompanySession?.()) {
                     window.location.href = '/company';
                     return;
                 }
@@ -309,7 +309,7 @@ let isRootGatewayMode = false;
 
                 const params = new URLSearchParams(window.location.search);
                 const forceAdd = params.get('addStudent') === '1' || params.get('login') === 'new';
-                if (forceAdd) {
+                if (forceAdd || isRootGatewayMode) {
                     openStudentLoginModal();
                     return;
                 }
@@ -796,10 +796,14 @@ let isRootGatewayMode = false;
 
         function activateRootGatewayMode() {
             isRootGatewayMode = true;
-            document.getElementById('root-gateway-container')?.classList.remove('hidden');
+            if (document.body) {
+                document.body.style.backgroundColor = '#ffffff';
+            }
+            document.querySelector('body > header')?.classList.add('hidden');
+            document.getElementById('hero-section')?.classList.add('hidden');
             document.getElementById('about-container')?.classList.add('hidden');
-            document.querySelector('.stats-grid')?.classList.add('hidden');
-            document.querySelector('.secondary-actions')?.classList.add('hidden');
+            document.querySelector('body > footer.footer')?.classList.add('hidden');
+            document.getElementById('root-gateway-container')?.classList.remove('hidden');
 
             const headerTitle = document.getElementById('header-title');
             const heroTitle = document.getElementById('hero-main-title');
@@ -810,8 +814,8 @@ let isRootGatewayMode = false;
 
             if (headerTitle) headerTitle.textContent = 'Institution Manage';
             if (heroTitle) heroTitle.textContent = 'Institution Manage';
-            if (heroSubtitle) heroSubtitle.textContent = 'Multi-Institution Management & Portal Gateway';
-            if (loginInstEl) loginInstEl.textContent = 'Institution Manage Gateway';
+            if (heroSubtitle) heroSubtitle.textContent = 'Academic & Financial Management Platform';
+            if (loginInstEl) loginInstEl.textContent = 'Institution Manage';
             if (footerInstEl) footerInstEl.textContent = 'Institution Manage';
             if (gatewayPrefix) gatewayPrefix.textContent = `${window.location.origin}/`;
 
@@ -853,7 +857,7 @@ let isRootGatewayMode = false;
                         showGatewayErr(`Institution "${rawSlug}" was not found. Please check the code with your administrator.`);
                         if (slugBtn) {
                             slugBtn.disabled = false;
-                            slugBtn.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i><span>Open Portal</span>';
+                            slugBtn.innerHTML = '<span>Open Portal</span><i class="fas fa-arrow-up-right-from-square text-xs"></i>';
                         }
                         return;
                     }
@@ -873,6 +877,36 @@ let isRootGatewayMode = false;
                     }
                 });
             }
+
+            const bottomFocusSlugBtn = document.getElementById('btn-bottom-focus-slug');
+            if (bottomFocusSlugBtn && !bottomFocusSlugBtn.dataset.boundFocus) {
+                bottomFocusSlugBtn.dataset.boundFocus = 'true';
+                bottomFocusSlugBtn.addEventListener('click', () => {
+                    document.getElementById('portal-launcher-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    setTimeout(() => slugInput?.focus(), 250);
+                });
+            }
+
+            const filterButtons = Array.from(document.querySelectorAll('[data-module-filter]'));
+            const moduleCards = Array.from(document.querySelectorAll('#gateway-modules-grid [data-module-category]'));
+            filterButtons.forEach((btn) => {
+                if (btn.dataset.boundFilter) return;
+                btn.dataset.boundFilter = 'true';
+                btn.addEventListener('click', () => {
+                    const selected = btn.getAttribute('data-module-filter') || 'all';
+                    filterButtons.forEach((b) => {
+                        const isActive = (b.getAttribute('data-module-filter') || 'all') === selected;
+                        b.className = isActive
+                            ? 'px-3.5 py-2 text-xs font-bold rounded-lg bg-white text-slate-900 shadow-2xs transition-colors cursor-pointer whitespace-nowrap shrink-0'
+                            : 'px-3.5 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap shrink-0';
+                    });
+                    moduleCards.forEach((card) => {
+                        const cat = card.getAttribute('data-module-category') || '';
+                        const visible = selected === 'all' || cat === selected;
+                        card.classList.toggle('hidden', !visible);
+                    });
+                });
+            });
 
             renderVersionInfo();
             loaded.config = true;
@@ -1620,12 +1654,12 @@ let isRootGatewayMode = false;
                         matched = {
                             type: 'company_or_admin',
                             data: null,
-                            displayName: cleanEmail.split('@')[0] || 'Company Owner',
-                            meta: 'Company Owner Account Verification',
+                            displayName: cleanEmail.split('@')[0] || 'Account',
+                            meta: 'Account Verification',
                             loginEmail: cleanEmail
                         };
                     } else {
-                        showLoginMessage('Enter your Company Owner email address, or enter an institution code above to open an institution portal.');
+                        showLoginMessage('Enter your registered email address to sign in, or enter an institution code on the page to open an institution portal.');
                         userInput?.focus();
                         return;
                     }
