@@ -23,6 +23,7 @@ import {
     escapeHtml,
     hardenExternalLinks,
     normalizePhone,
+    openPremiumPlansModal,
     registerServiceWorker,
     renderVersionInfo,
     sanitizePhone,
@@ -144,11 +145,6 @@ let isRootGatewayMode = false;
                 window.location.href = getPageUrl('official.html');
                 return;
             }
-            if (!isRootGatewayMode && (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false)) {
-                showToast("Student Portal is currently disabled by institution administration.", "error");
-                showLoginMessage("Student Portal is currently disabled by institution administration.");
-                return;
-            }
             document.getElementById('login-modal').style.display = 'flex'; 
             setMobileMenuState(false);
             resetUniversalLoginForm();
@@ -251,6 +247,21 @@ let isRootGatewayMode = false;
 
             try {
                 if (account.role === 'student' || (!account.role && account.studentId)) {
+                    if (!isRootGatewayMode && window.AppSession?.isCompanyPageAllowed?.('student') === false) {
+                        restoreCardUi();
+                        openPremiumPlansModal({
+                            contextType: 'module',
+                            moduleKey: 'student',
+                            moduleName: 'Student Portal',
+                            institutionName: globalInstitutionConfig?.appName || ''
+                        });
+                        return false;
+                    }
+                    if (!isRootGatewayMode && (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false)) {
+                        restoreCardUi();
+                        showToast('Student Portal is currently disabled by institution administration.', 'error');
+                        return false;
+                    }
                     const targetStudentId = String(account.studentId || account.id || '').trim();
                     if (!targetStudentId) {
                         restoreCardUi();
@@ -1882,6 +1893,22 @@ let isRootGatewayMode = false;
                 }
 
                 if (matched) {
+                    if (!isRootGatewayMode && matched.type === 'student') {
+                        if (window.AppSession?.isCompanyPageAllowed?.('student') === false) {
+                            showLoginMessage('Student Portal is a Premium module (Premium - Upgrade).');
+                            openPremiumPlansModal({
+                                contextType: 'module',
+                                moduleKey: 'student',
+                                moduleName: 'Student Portal',
+                                institutionName: globalInstitutionConfig?.appName || ''
+                            });
+                            return;
+                        }
+                        if (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false) {
+                            showLoginMessage('Student Portal is currently disabled by institution administration.');
+                            return;
+                        }
+                    }
                     verifiedUser = matched;
                     const nameEl = document.getElementById('verified-user-name');
                     const metaEl = document.getElementById('verified-user-meta');

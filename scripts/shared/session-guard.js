@@ -1132,7 +1132,7 @@
             pruneExpiredStates();
             if (!isCompanyPageAllowed('student')) {
                 this.logoutStudent();
-                redirectHome('Student Portal is not included in this institution plan.');
+                redirectHome('Premium - Upgrade: Student Portal is not included in your plan.');
                 return;
             }
             if (this.isModuleEnabled('student') === false) {
@@ -1150,7 +1150,7 @@
         guardStaffOrAdminPage() {
             pruneExpiredStates();
             if (!isCompanyPageAllowed('official')) {
-                redirectHome('Official Hub is not included in this institution plan.');
+                redirectHome('Premium - Upgrade: Official Hub is not included in your plan.');
                 return;
             }
             if (hasAdminSession()) {
@@ -1183,7 +1183,7 @@
 
             if (!isCompanyPageAllowed(requiredPage)) {
                 const modName = MODULE_NAMES[requiredPage] || 'Requested';
-                setFlash(`Plan Restricted: The ${modName} page is not enabled for this institution by the platform company.`);
+                setFlash(`Premium - Upgrade: ${modName} is not included in your plan.`);
                 window.location.href = buildPageUrl(isCompanyPageAllowed('official') ? 'official.html' : 'index.html?public=1');
                 return;
             }
@@ -1270,7 +1270,7 @@
         guardAdminPage() {
             pruneExpiredStates();
             if (!isCompanyPageAllowed('admin')) {
-                setFlash('Plan Restricted: Admin Dashboard is disabled for this institution by the platform company.');
+                setFlash('Premium - Upgrade: Admin Dashboard is not included in your plan.');
                 window.location.href = buildPageUrl(isCompanyPageAllowed('official') ? 'official.html' : 'index.html?public=1');
                 return;
             }

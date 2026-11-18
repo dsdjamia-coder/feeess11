@@ -69,6 +69,7 @@ export const STAFF_ACCESS_COLLECTION = `${BASE_PATH}/staffAccess`;
 export const INTERNAL_AUTH_DOMAIN = `${INSTITUTION_ID}.internal`;
 export const COMPANY_COLLECTION = 'company';
 export const COMPANY_CONFIG_DOC_ID = 'config';
+export const COMPANY_PUBLIC_CATALOG_DOC_ID = 'publicCatalog';
 export const INSTITUTIONS_COLLECTION = 'institutions';
 export const GLOBAL_USERS_COLLECTION = 'globalUsers';
 export const RESERVED_INSTITUTION_SLUGS = RESERVED_PATH_SEGMENTS;

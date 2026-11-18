@@ -3,7 +3,7 @@ import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.
 import { doc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, setDoc, getDoc, orderBy, limit, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, GLOBAL_USERS_COLLECTION, INSTITUTION_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION, buildInternalStaffEmail, extractInternalUsername, isInternalStaffEmail, normalizeGlobalUserKey } from '../../config/app-config.js';
-import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, openPremiumPlansModal, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { areInstitutionalStatsEqual, normalizeInstitutionalStats } from '../shared/student-stats-service.js';
@@ -3423,6 +3423,95 @@ const updateWorkflowModuleBadgeUI = (moduleKey, isEnabled) => {
     }
 };
 
+const WORKFLOW_MODULE_LABELS = {
+    collection: 'Fee Collection & Receipts',
+    student: 'Student Portal & Self-Service',
+    attendance: 'Attendance Management',
+    academicPlan: 'Academic & Syllabus Planner',
+    result: 'Exam Results & Marksheets',
+    worksheet: 'Worksheet Hub & Registers',
+    studentActivity: 'Co-Curricular & Student Activity',
+    classroomEvaluation: 'Classroom Evaluation & Assessment'
+};
+
+const STAFF_PERM_COMPANY_MAP = [
+    { suffix: 'can-collect', moduleKey: 'collection', label: 'Fee Collection' },
+    { suffix: 'can-worksheet', moduleKey: 'worksheet', label: 'Class Worksheet' },
+    { suffix: 'can-manage-results', moduleKey: 'result', label: 'Result System' },
+    { suffix: 'can-attendance', moduleKey: 'attendance', label: 'Attendance Register' },
+    { suffix: 'can-academic-plan', moduleKey: 'academicPlan', label: 'Academic Planning' },
+    { suffix: 'can-activity', moduleKey: 'studentActivity', label: 'Activity & Rewards' },
+    { suffix: 'can-evaluation', moduleKey: 'classroomEvaluation', label: 'Classroom Evaluation' }
+];
+
+const openAdminPremiumUpgradeModal = (moduleKey = '', moduleName = '') => {
+    const instName = document.getElementById('admin-institution-name')?.textContent?.trim() || '';
+    openPremiumPlansModal({
+        contextType: 'module',
+        moduleKey,
+        moduleName: moduleName || WORKFLOW_MODULE_LABELS[moduleKey] || '',
+        institutionName: instName
+    });
+};
+
+const syncCompanyLockedAdminControls = () => {
+    const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
+
+    // 1. Dashboard Quick Action: Configure Fees (Collection)
+    const collQuickBtn = document.getElementById('admin-quick-action-collection');
+    const collQuickBadge = document.getElementById('admin-quick-action-collection-badge');
+    const isCollectionLocked = companyAllowed.collection === false;
+    if (collQuickBtn) {
+        collQuickBtn.classList.toggle('border-amber-200', isCollectionLocked);
+        collQuickBtn.classList.toggle('bg-amber-50/35', isCollectionLocked);
+        collQuickBtn.dataset.companyLocked = isCollectionLocked ? 'true' : 'false';
+    }
+    if (collQuickBadge) {
+        collQuickBadge.classList.toggle('hidden', !isCollectionLocked);
+    }
+
+    // 2. Add Staff & Edit Staff permission checkboxes
+    ['st', 'e-st'].forEach((prefix) => {
+        STAFF_PERM_COMPANY_MAP.forEach(({ suffix, moduleKey, label }) => {
+            const cb = document.getElementById(`${prefix}-${suffix}`);
+            const row = cb?.closest('label');
+            if (!cb || !row) return;
+            const locked = companyAllowed[moduleKey] === false;
+            cb.disabled = locked;
+            row.dataset.companyLockedModule = locked ? moduleKey : '';
+            row.dataset.companyLockedLabel = locked ? label : '';
+            row.classList.toggle('bg-amber-50/40', locked);
+            row.classList.toggle('border-amber-200', locked);
+            row.classList.toggle('bg-white', !locked);
+            row.classList.toggle('border-gray-200', !locked);
+
+            const infoCol = row.querySelector('div');
+            let badgeEl = row.querySelector('.company-perm-premium-badge');
+            if (locked) {
+                if (!badgeEl && infoCol) {
+                    badgeEl = document.createElement('span');
+                    badgeEl.className = 'company-perm-premium-badge inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300';
+                    badgeEl.innerHTML = '<i class="fas fa-crown text-[8px]"></i><span>Premium - Upgrade</span>';
+                    infoCol.appendChild(badgeEl);
+                }
+            } else if (badgeEl) {
+                badgeEl.remove();
+            }
+
+            if (!row.dataset.premiumClickBound) {
+                row.dataset.premiumClickBound = '1';
+                row.addEventListener('click', (ev) => {
+                    const lockedKey = row.dataset.companyLockedModule;
+                    if (!lockedKey) return;
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    openAdminPremiumUpgradeModal(lockedKey, row.dataset.companyLockedLabel || '');
+                });
+            }
+        });
+    });
+};
+
 const renderWorkflowModules = async () => {
     let currentConfig = getEnabledModulesConfig();
     try {
@@ -3440,23 +3529,40 @@ const renderWorkflowModules = async () => {
 
     const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
     Object.keys(DEFAULT_ENABLED_MODULES).forEach((key) => {
+        const card = document.querySelector(`[data-module-card="${key}"]`);
         const toggle = document.getElementById(`module-toggle-${key}`);
         const allowedByCompany = companyAllowed[key] !== false;
         const isEnabled = allowedByCompany && (currentConfig[key] !== false);
         if (toggle) {
             toggle.checked = isEnabled;
             toggle.disabled = !allowedByCompany;
-            toggle.title = allowedByCompany ? '' : 'Disabled by Platform Company subscription';
+            toggle.title = allowedByCompany ? '' : 'Premium feature - Upgrade your plan to unlock';
         }
         updateWorkflowModuleBadgeUI(key, isEnabled);
+        if (card) {
+            card.dataset.companyLocked = allowedByCompany ? 'false' : 'true';
+            card.classList.toggle('border-amber-200', !allowedByCompany);
+            card.classList.toggle('bg-amber-50/25', !allowedByCompany);
+            card.classList.toggle('cursor-pointer', !allowedByCompany);
+            if (!card.dataset.premiumBound) {
+                card.dataset.premiumBound = '1';
+                card.addEventListener('click', (ev) => {
+                    if (card.dataset.companyLocked !== 'true') return;
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    openAdminPremiumUpgradeModal(key, WORKFLOW_MODULE_LABELS[key] || '');
+                });
+            }
+        }
         if (!allowedByCompany) {
             const badge = document.getElementById(`module-badge-${key}`);
             if (badge) {
-                badge.textContent = 'Company Locked';
-                badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200';
+                badge.innerHTML = '<i class="fas fa-crown text-[9px]"></i><span>Premium - Upgrade</span>';
+                badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 cursor-pointer whitespace-nowrap';
             }
         }
     });
+    syncCompanyLockedAdminControls();
 };
 
 const saveWorkflowModules = async () => {
@@ -3590,6 +3696,10 @@ const initStudentPortalSortable = () => {
 };
 
 const openStudentPortalConfigModal = async () => {
+    if (window.AppSession?.isCompanyPageAllowed?.('student') === false) {
+        openAdminPremiumUpgradeModal('student', WORKFLOW_MODULE_LABELS.student);
+        return;
+    }
     const modal = document.getElementById('modal-student-portal-config');
     if (!modal) return;
 
@@ -18321,6 +18431,13 @@ document.querySelectorAll('.workflow-module-toggle').forEach((toggle) => {
         }
     });
 });
+document.getElementById('admin-quick-action-collection')?.addEventListener('click', () => {
+    if (window.AppSession?.isCompanyPageAllowed?.('collection') === false) {
+        openAdminPremiumUpgradeModal('collection', WORKFLOW_MODULE_LABELS.collection);
+        return;
+    }
+    window.location.href = getPageUrl('collection.html#fee-settings');
+});
 document.getElementById('btn-save-workflow-modules')?.addEventListener('click', saveWorkflowModules);
 document.getElementById('btn-config-student-portal')?.addEventListener('click', openStudentPortalConfigModal);
 document.getElementById('btn-close-student-portal-modal')?.addEventListener('click', closeStudentPortalConfigModal);
@@ -18632,11 +18749,13 @@ onAuthStateChanged(auth, async (user) => {
         institutionId: INSTITUTION_ID,
         liveWatch: true,
         onStatusUpdate: () => {
+            syncCompanyLockedAdminControls();
             if (!document.getElementById('workflow-modules-page')?.classList.contains('hidden')) {
                 renderWorkflowModules();
             }
         }
     });
+    syncCompanyLockedAdminControls();
     if (!tenantCheck?.active) {
         const loader = document.getElementById('auth-loader');
         if (loader) loader.style.display = 'none';

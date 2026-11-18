@@ -165,9 +165,25 @@
         "timestamp": { "type": "number" }
       },
       "required": ["action", "timestamp"]
+    },
+    "CompanyPublicCatalog": {
+      "title": "CompanyPublicCatalog",
+      "description": "Publicly readable subscription plans, promotional offers, and company contact channels managed by the platform owner.",
+      "type": "object",
+      "properties": {
+        "offerBanner": { "type": "object" },
+        "plans": { "type": "array" },
+        "contact": { "type": "object" },
+        "updatedBy": { "type": "string", "maxLength": 160 },
+        "updatedAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
+    "/company/publicCatalog": {
+      "schema": { "$ref": "#/entities/CompanyPublicCatalog" },
+      "description": "Publicly readable subscription plans and support contact channels"
+    },
     "/institutions/{institutionId}/settings/{docId}": {
       "schema": { "$ref": "#/entities/Setting" },
       "description": "Global and module settings for the institution"

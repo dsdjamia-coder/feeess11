@@ -27,6 +27,7 @@ import { auth, db, firebaseConfig } from '../../config/firebase-config.js';
 import {
   COMPANY_COLLECTION,
   COMPANY_CONFIG_DOC_ID,
+  COMPANY_PUBLIC_CATALOG_DOC_ID,
   DEFAULT_COMPANY_ALLOWED_PAGES,
   GLOBAL_USERS_COLLECTION,
   INSTITUTIONS_COLLECTION,
@@ -42,6 +43,12 @@ import {
   openConfirmDialog,
   registerServiceWorker
 } from '../shared/app-common.js';
+import {
+  fetchCompanyPublicCatalog,
+  invalidatePublicCatalogCache,
+  normalizePublicCatalog,
+  openPremiumPlansModal
+} from '../shared/premium-plans-modal.js';
 
 registerServiceWorker();
 
@@ -205,9 +212,39 @@ const PAGE_DEFINITIONS = [
 
 const CORE_PAGE_KEYS = new Set(PAGE_DEFINITIONS.filter((p) => p.core).map((p) => p.key));
 
+const COMPANY_VIEWS = {
+  dashboard: {
+    elId: 'view-dashboard',
+    title: 'Dashboard',
+    subtitle: 'Platform overview, quick actions, and subscription health.'
+  },
+  'add-institution': {
+    elId: 'view-add-institution',
+    title: 'Add Institution',
+    subtitle: 'Provision a new institution workspace, URL slug, and admin credentials.'
+  },
+  institutions: {
+    elId: 'view-institutions',
+    title: 'Institutions',
+    subtitle: 'Search, manage credentials, enable modules, extend, or pause portals.'
+  },
+  plans: {
+    elId: 'view-plans',
+    title: 'Premium Plans & Offers',
+    subtitle: 'Configure promotional offer banner and custom pricing plans with MRP & offer price.'
+  },
+  contact: {
+    elId: 'view-contact',
+    title: 'Contact Details',
+    subtitle: 'Manage WhatsApp, Instagram, phone, email, and support links shown in popups.'
+  }
+};
+
 let allInstitutions = [];
 let pendingPauseTarget = null;
 let verifiedCompanyOwnerEmail = '';
+let activeCompanyView = 'dashboard';
+let catalogState = normalizePublicCatalog({});
 
 const showToast = (message, tone = 'success') => {
   const el = document.getElementById('company-toast');
@@ -289,9 +326,61 @@ const sanitizeSlugInput = (raw = '') => String(raw || '')
   .replace(/^-+|-+$/g, '')
   .slice(0, 64);
 
-const updateSlugPreview = () => {
-  const slugInput = document.getElementById('inst-slug');
-  const preview = document.getElementById('inst-slug-preview');
+const formatPriceNumber = (value = 0) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return '0';
+  const hasFractions = num % 1 !== 0;
+  return num.toLocaleString('en-IN', {
+    minimumFractionDigits: hasFractions ? 2 : 0,
+    maximumFractionDigits: hasFractions ? 2 : 0
+  });
+};
+
+// Fix minor guard in parseSuperAdminLoginInput for non-email usernames
+const validateUsernameStrict = (clean = '') => /^[a-z0-9._-]{3,60}$/.test(clean);
+
+const closeMobileSidebar = () => {
+  const sidebar = document.getElementById('company-sidebar');
+  const backdrop = document.getElementById('company-sidebar-backdrop');
+  sidebar?.classList.add('-translate-x-full');
+  backdrop?.classList.add('hidden');
+};
+
+const openMobileSidebar = () => {
+  const sidebar = document.getElementById('company-sidebar');
+  const backdrop = document.getElementById('company-sidebar-backdrop');
+  sidebar?.classList.remove('-translate-x-full');
+  backdrop?.classList.remove('hidden');
+};
+
+const setActiveCompanyView = (viewKey = 'dashboard') => {
+  const targetKey = COMPANY_VIEWS[viewKey] ? viewKey : 'dashboard';
+  activeCompanyView = targetKey;
+  const meta = COMPANY_VIEWS[targetKey];
+
+  Object.entries(COMPANY_VIEWS).forEach(([key, cfg]) => {
+    const section = document.getElementById(cfg.elId);
+    if (section) section.classList.toggle('hidden', key !== targetKey);
+  });
+
+  document.querySelectorAll('.company-nav-btn[data-company-view]').forEach((btn) => {
+    const isActive = btn.dataset.companyView === targetKey;
+    btn.className = isActive
+      ? 'company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer text-left bg-indigo-50 text-indigo-700 border border-indigo-200'
+      : 'company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-transparent';
+  });
+
+  const titleEl = document.getElementById('company-view-title');
+  const subtitleEl = document.getElementById('company-view-subtitle');
+  if (titleEl) titleEl.textContent = meta.title;
+  if (subtitleEl) subtitleEl.textContent = meta.subtitle;
+
+  closeMobileSidebar();
+};
+
+const updateSlugPreviewFor = (inputId, previewId) => {
+  const slugInput = document.getElementById(inputId);
+  const preview = document.getElementById(previewId);
   if (!slugInput || !preview) return;
   const clean = sanitizeSlugInput(slugInput.value);
   const origin = window.location.origin || '';
@@ -309,14 +398,16 @@ const updateSlugPreview = () => {
   preview.className = 'text-[11px] font-bold text-indigo-600 mt-1 truncate';
 };
 
-const renderAllowedPagesCheckboxes = (selectedMap = DEFAULT_COMPANY_ALLOWED_PAGES) => {
-  const container = document.getElementById('inst-allowed-pages-grid');
+const updateSlugPreview = () => updateSlugPreviewFor('inst-slug', 'inst-slug-preview');
+
+const renderAllowedPagesCheckboxesInto = (containerId, checkboxClass, selectedMap = DEFAULT_COMPANY_ALLOWED_PAGES) => {
+  const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = PAGE_DEFINITIONS.map((item) => {
     const isChecked = selectedMap?.[item.key] !== false;
     return `
       <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50/50 hover:border-indigo-200 cursor-pointer transition">
-        <input type="checkbox" class="mt-0.5 rounded border-slate-300 text-indigo-600 inst-page-checkbox" data-page-key="${escapeHtml(item.key)}" ${isChecked ? 'checked' : ''}>
+        <input type="checkbox" class="mt-0.5 rounded border-slate-300 text-indigo-600 ${checkboxClass}" data-page-key="${escapeHtml(item.key)}" ${isChecked ? 'checked' : ''}>
         <div class="min-w-0">
           <div class="text-xs font-extrabold text-slate-800">${escapeHtml(item.label)}</div>
           <div class="text-[11px] text-slate-500 leading-snug">${escapeHtml(item.desc)}</div>
@@ -326,20 +417,24 @@ const renderAllowedPagesCheckboxes = (selectedMap = DEFAULT_COMPANY_ALLOWED_PAGE
   }).join('');
 };
 
-const readAllowedPagesCheckboxes = () => {
+const renderAllowedPagesCheckboxes = (selectedMap = DEFAULT_COMPANY_ALLOWED_PAGES) => {
+  renderAllowedPagesCheckboxesInto('inst-allowed-pages-grid', 'inst-page-checkbox', selectedMap);
+};
+
+const readAllowedPagesFromCheckboxes = (checkboxClass = 'inst-page-checkbox') => {
   const result = { ...DEFAULT_COMPANY_ALLOWED_PAGES };
-  document.querySelectorAll('.inst-page-checkbox').forEach((cb) => {
+  document.querySelectorAll(`.${checkboxClass}`).forEach((cb) => {
     const key = cb.dataset.pageKey;
     if (key) result[key] = cb.checked;
   });
   return result;
 };
 
-const syncLifetimeInputs = () => {
-  const isLifetime = document.getElementById('inst-is-lifetime')?.checked === true;
-  const durEl = document.getElementById('inst-duration-months');
-  const startEl = document.getElementById('inst-start-date');
-  const expEl = document.getElementById('inst-expiry-date');
+const syncLifetimeInputsFor = (prefix = 'inst') => {
+  const isLifetime = document.getElementById(`${prefix}-is-lifetime`)?.checked === true;
+  const durEl = document.getElementById(`${prefix}-duration-months`);
+  const startEl = document.getElementById(`${prefix}-start-date`);
+  const expEl = document.getElementById(`${prefix}-expiry-date`);
   if (durEl) durEl.disabled = isLifetime;
   if (expEl) {
     expEl.disabled = isLifetime;
@@ -350,8 +445,42 @@ const syncLifetimeInputs = () => {
   }
 };
 
+const syncLifetimeInputs = () => syncLifetimeInputsFor('inst');
+
+const initAddInstitutionPageForm = () => {
+  const form = document.getElementById('add-inst-page-form');
+  if (!form) return;
+  form.reset();
+  const errorBox = document.getElementById('add-inst-form-error');
+  if (errorBox) {
+    errorBox.textContent = '';
+    errorBox.classList.add('hidden');
+  }
+  const pwdEl = document.getElementById('add-inst-admin-password');
+  const eyeEl = document.getElementById('add-inst-pass-eye');
+  if (pwdEl) {
+    pwdEl.type = 'password';
+    pwdEl.required = true;
+  }
+  if (eyeEl) eyeEl.className = 'fas fa-eye text-xs';
+
+  const todayStr = toIsoDateInput();
+  const startEl = document.getElementById('add-inst-start-date');
+  const durEl = document.getElementById('add-inst-duration-months');
+  const expEl = document.getElementById('add-inst-expiry-date');
+  const lifetimeEl = document.getElementById('add-inst-is-lifetime');
+  if (startEl) startEl.value = todayStr;
+  if (durEl) durEl.value = '12';
+  if (expEl) expEl.value = addMonthsToDateStr(todayStr, 12);
+  if (lifetimeEl) lifetimeEl.checked = false;
+
+  renderAllowedPagesCheckboxesInto('add-inst-allowed-pages-grid', 'add-inst-page-checkbox', DEFAULT_COMPANY_ALLOWED_PAGES);
+  syncLifetimeInputsFor('add-inst');
+  updateSlugPreviewFor('add-inst-slug', 'add-inst-slug-preview');
+};
+
 const renderKpis = () => {
-  let total = allInstitutions.length;
+  const total = allInstitutions.length;
   let active = 0;
   let paused = 0;
   let expired = 0;
@@ -368,10 +497,120 @@ const renderKpis = () => {
     } else active += 1;
   });
 
-  document.getElementById('kpi-total').textContent = String(total);
-  document.getElementById('kpi-active').textContent = String(active);
-  document.getElementById('kpi-paused').textContent = String(paused);
-  document.getElementById('kpi-expired').textContent = String(expired);
+  const kpiTotal = document.getElementById('kpi-total');
+  const kpiActive = document.getElementById('kpi-active');
+  const kpiPaused = document.getElementById('kpi-paused');
+  const kpiExpired = document.getElementById('kpi-expired');
+  const sidebarCount = document.getElementById('sidebar-inst-count');
+  if (kpiTotal) kpiTotal.textContent = String(total);
+  if (kpiActive) kpiActive.textContent = String(active);
+  if (kpiPaused) kpiPaused.textContent = String(paused);
+  if (kpiExpired) kpiExpired.textContent = String(expired);
+  if (sidebarCount) sidebarCount.textContent = String(total);
+};
+
+const renderDashboardOverview = () => {
+  const container = document.getElementById('dashboard-institutions-overview');
+  if (!container) return;
+
+  const activePlansCount = (catalogState.plans || []).filter((p) => p.isActive !== false).length;
+  const totalPlansCount = (catalogState.plans || []).length;
+  const plansSummaryEl = document.getElementById('dash-plans-summary');
+  const sidebarPlansCount = document.getElementById('sidebar-plans-count');
+  if (plansSummaryEl) {
+    plansSummaryEl.textContent = totalPlansCount
+      ? `${activePlansCount} visible (${totalPlansCount} total) custom plans`
+      : 'No plans configured yet — click to add';
+  }
+  if (sidebarPlansCount) sidebarPlansCount.textContent = String(totalPlansCount);
+
+  const contact = catalogState.contact || {};
+  const configuredChannels = [
+    contact.whatsapp ? 'WhatsApp' : '',
+    contact.instagram ? 'Instagram' : '',
+    contact.phone ? 'Phone' : '',
+    contact.email ? 'Email' : '',
+    contact.website ? 'Website' : ''
+  ].filter(Boolean);
+  const contactSummaryEl = document.getElementById('dash-contact-summary');
+  if (contactSummaryEl) {
+    contactSummaryEl.textContent = configuredChannels.length
+      ? `Active channels: ${configuredChannels.join(', ')}`
+      : 'Configure WhatsApp, Instagram, Phone & Email';
+  }
+
+  if (!allInstitutions.length) {
+    container.innerHTML = `
+      <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center space-y-2">
+        <p class="text-xs font-bold text-slate-700">No institutions provisioned yet.</p>
+        <button type="button" id="btn-dash-empty-add" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5">
+          <i class="fas fa-plus"></i><span>Provision Institution</span>
+        </button>
+      </div>
+    `;
+    document.getElementById('btn-dash-empty-add')?.addEventListener('click', () => setActiveCompanyView('add-institution'));
+    return;
+  }
+
+  const priorityRank = { expired: 0, expiring: 1, paused: 2, active: 3 };
+  const sorted = [...allInstitutions]
+    .sort((a, b) => {
+      const sa = classifyInstitutionState(a);
+      const sb = classifyInstitutionState(b);
+      const ra = priorityRank[sa.code] ?? 9;
+      const rb = priorityRank[sb.code] ?? 9;
+      if (ra !== rb) return ra - rb;
+      return String(a.name || a.slug).localeCompare(String(b.name || b.slug));
+    })
+    .slice(0, 6);
+
+  container.innerHTML = sorted.map((inst) => {
+    const slug = String(inst.slug || inst.id || '').trim().toLowerCase();
+    const state = classifyInstitutionState(inst);
+    const badgeClass = state.code === 'paused'
+      ? 'bg-amber-100 text-amber-800 border-amber-200'
+      : state.code === 'expired'
+        ? 'bg-rose-100 text-rose-800 border-rose-200'
+        : state.code === 'expiring'
+          ? 'bg-orange-100 text-orange-800 border-orange-200'
+          : 'bg-emerald-100 text-emerald-800 border-emerald-200';
+    const pages = { ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) };
+    const enabledCount = PAGE_DEFINITIONS.filter((p) => pages[p.key] !== false).length;
+
+    return `
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-white transition">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-extrabold text-slate-900 truncate">${escapeHtml(inst.name || slug)}</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${badgeClass}">${escapeHtml(state.label)}</span>
+          </div>
+          <div class="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <span class="font-mono text-indigo-600 font-bold">/${escapeHtml(slug)}</span>
+            <span>${escapeHtml(inst.planName || 'Standard')}</span>
+            <span>${enabledCount}/${PAGE_DEFINITIONS.length} pages</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button type="button" class="btn-dash-edit-inst px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer" data-slug="${escapeHtml(slug)}">
+            Edit
+          </button>
+          ${state.code === 'paused'
+            ? `<button type="button" class="btn-dash-resume-inst px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer" data-slug="${escapeHtml(slug)}">Resume</button>`
+            : `<a href="/${escapeHtml(slug)}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold">Open</a>`}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.btn-dash-edit-inst').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const inst = allInstitutions.find((i) => (i.slug || i.id) === btn.dataset.slug);
+      if (inst) openInstitutionModal('edit', inst);
+    });
+  });
+  container.querySelectorAll('.btn-dash-resume-inst').forEach((btn) => {
+    btn.addEventListener('click', () => handleResumeInstitution(btn.dataset.slug));
+  });
 };
 
 const renderInstitutionsGrid = () => {
@@ -408,7 +647,7 @@ const renderInstitutionsGrid = () => {
         </button>
       </div>
     `;
-    document.getElementById('btn-empty-add-inst')?.addEventListener('click', () => openInstitutionModal('create'));
+    document.getElementById('btn-empty-add-inst')?.addEventListener('click', () => setActiveCompanyView('add-institution'));
     return;
   }
 
@@ -457,7 +696,6 @@ const renderInstitutionsGrid = () => {
             </span>
           </div>
 
-          <!-- Super Admin Credentials Bar -->
           <div class="rounded-xl bg-slate-50 border border-slate-200/90 p-3 space-y-2">
             <div class="flex items-center justify-between gap-2">
               <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
@@ -637,7 +875,6 @@ const loadInstitutions = async () => {
     }
   }
 
-  // Load Super Admin credentials (adminAuth) for each institution and backfill globalUsers
   await Promise.all(
     allInstitutions.map(async (inst) => {
       const slug = String(inst.slug || inst.id || '').trim().toLowerCase();
@@ -676,6 +913,7 @@ const loadInstitutions = async () => {
   );
 
   renderKpis();
+  renderDashboardOverview();
   renderInstitutionsGrid();
 };
 
@@ -794,8 +1032,8 @@ const closeInstitutionModal = () => {
   modal?.classList.remove('flex');
 };
 
-const showFormError = (msg) => {
-  const box = document.getElementById('inst-form-error');
+const showErrorInBox = (boxId, msg) => {
+  const box = document.getElementById(boxId);
   if (!box) return;
   box.textContent = msg;
   box.classList.remove('hidden');
@@ -819,7 +1057,6 @@ const provisionOrUpdateAdminAuthUser = async ({
   let resolvedVaultEmail = existingAuthVaultEmail || targetEmail;
 
   try {
-    // 1. Try creating the targetEmail directly in Firebase Auth
     try {
       await createUserWithEmailAndPassword(secondaryAuth, targetEmail, targetPassword);
       resolvedVaultEmail = targetEmail;
@@ -831,7 +1068,6 @@ const provisionOrUpdateAdminAuthUser = async ({
       }
     }
 
-    // 2. If targetEmail already exists in Firebase Auth, try signing in to update its password
     const candidatePasswords = Array.from(new Set([previousPassword, targetPassword].filter(Boolean)));
     let updatedDirect = false;
     for (const candidatePass of candidatePasswords) {
@@ -853,8 +1089,6 @@ const provisionOrUpdateAdminAuthUser = async ({
       return { authVaultEmail: resolvedVaultEmail };
     }
 
-    // 3. If previous password in Firebase Auth differed or wasn't stored yet, provision a deterministic vault identity
-    // so the new password set by the Company Owner works immediately with full Firebase Auth + Firestore Rules access
     const passDigest = await hashCredentialValue(`${slug}:${targetEmail}:${targetPassword}`);
     const vaultAliasEmail = `vault_${passDigest.slice(0, 12)}@${slug}.internal`;
     try {
@@ -874,56 +1108,83 @@ const provisionOrUpdateAdminAuthUser = async ({
   }
 };
 
-const handleInstitutionSubmit = async (e) => {
-  e.preventDefault();
-  const mode = document.getElementById('inst-form-mode').value;
-  const name = String(document.getElementById('inst-name').value || '').trim();
-  const slug = sanitizeSlugInput(document.getElementById('inst-slug').value);
-  const place = String(document.getElementById('inst-place').value || '').trim();
-  const phone = String(document.getElementById('inst-phone').value || '').trim();
-  const adminName = String(document.getElementById('inst-admin-name').value || '').trim() || 'Master Admin';
-  const rawAdminLogin = String(document.getElementById('inst-admin-email').value || '').trim();
-  const adminPassword = String(document.getElementById('inst-admin-password').value || '').trim();
-  const linkExistingAuth = document.getElementById('inst-link-existing-auth')?.checked === true;
-  const planName = String(document.getElementById('inst-plan-name').value || 'Standard').trim();
-  const isLifetime = document.getElementById('inst-is-lifetime')?.checked === true;
-  const durationMonths = Number(document.getElementById('inst-duration-months').value || 0);
-  const startDate = String(document.getElementById('inst-start-date').value || toIsoDateInput()).trim();
-  const expiryDate = isLifetime ? '' : String(document.getElementById('inst-expiry-date').value || '').trim();
-  const allowedPages = readAllowedPagesCheckboxes();
-
-  const errorBox = document.getElementById('inst-form-error');
+const saveInstitutionData = async ({
+  mode = 'create',
+  name,
+  slug,
+  place,
+  phone,
+  adminName,
+  rawAdminLogin,
+  adminPassword,
+  linkExistingAuth,
+  planName,
+  isLifetime,
+  durationMonths,
+  startDate,
+  expiryDate,
+  status = 'active',
+  pauseReason = '',
+  allowedPages,
+  errorBoxId,
+  submitBtnId
+}) => {
+  const errorBox = document.getElementById(errorBoxId);
   if (errorBox) errorBox.classList.add('hidden');
 
-  if (!name) return showFormError('Institution Name is required.');
-  if (!slug) return showFormError('Valid Portal URL Slug is required (letters, numbers, hyphen).');
-  if (RESERVED_INSTITUTION_SLUGS.has(slug)) return showFormError(`"${slug}" is reserved by the system. Please choose another slug.`);
+  if (!name) {
+    showErrorInBox(errorBoxId, 'Institution Name is required.');
+    return false;
+  }
+  if (!slug) {
+    showErrorInBox(errorBoxId, 'Valid Portal URL Slug is required (letters, numbers, hyphen).');
+    return false;
+  }
+  if (RESERVED_INSTITUTION_SLUGS.has(slug)) {
+    showErrorInBox(errorBoxId, `"${slug}" is reserved by the system. Please choose another slug.`);
+    return false;
+  }
 
   const parsedLogin = parseSuperAdminLoginInput(rawAdminLogin, slug);
+  if (parsedLogin.error) {
+    showErrorInBox(errorBoxId, parsedLogin.error);
+    return false;
+  }
   if (!parsedLogin.valid) {
-    return showFormError(parsedLogin.error);
+    showErrorInBox(errorBoxId, 'Please enter a valid Super Admin Username or Email.');
+    return false;
+  }
+  if (!rawAdminLogin.includes('@') && !validateUsernameStrict(rawAdminLogin.trim().toLowerCase())) {
+    showErrorInBox(errorBoxId, 'Super Admin Username must be 3-60 characters using only letters, numbers, dots, hyphens, or underscores (no spaces).');
+    return false;
   }
   const { email: adminEmail, username: adminUsername, loginDisplay: adminLoginDisplay } = parsedLogin;
 
-  if (!isLifetime && !expiryDate) return showFormError('Please select an Expiry Date or enable Lifetime Access.');
+  if (!isLifetime && !expiryDate) {
+    showErrorInBox(errorBoxId, 'Please select an Expiry Date or enable Lifetime Access.');
+    return false;
+  }
 
   const existingInst = allInstitutions.find((i) => (i.slug || i.id) === slug) || null;
   if (mode === 'create' && !linkExistingAuth && (!adminPassword || adminPassword.length < 6)) {
-    return showFormError('Super Admin Password must be at least 6 characters.');
+    showErrorInBox(errorBoxId, 'Super Admin Password must be at least 6 characters.');
+    return false;
   }
   if (mode === 'edit' && adminPassword && adminPassword.length < 6) {
-    return showFormError('Super Admin Password must be at least 6 characters.');
+    showErrorInBox(errorBoxId, 'Super Admin Password must be at least 6 characters.');
+    return false;
   }
 
-  const saveBtn = document.getElementById('btn-save-inst');
-  const originalHtml = saveBtn.innerHTML;
-  saveBtn.disabled = true;
-  saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+  const saveBtn = document.getElementById(submitBtnId);
+  const originalHtml = saveBtn ? saveBtn.innerHTML : '';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+  }
 
   try {
     const expiryTimestamp = isLifetime ? null : toExpiryTimestamp(expiryDate);
 
-    // 1. Verify global username/email uniqueness across all institutions & staff
     await assertGlobalLoginAvailable({
       email: adminEmail,
       username: adminUsername,
@@ -993,12 +1254,12 @@ const handleInstitutionSubmit = async (e) => {
             isActive: true
           }
         ],
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
 
       batch.set(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'config'), {
         appName: name,
-        appSubtitle: 'Excellence in Education',
         place,
         contactPhone: phone,
         contactEmail: adminEmail,
@@ -1009,7 +1270,7 @@ const handleInstitutionSubmit = async (e) => {
           username: adminUsername
         },
         updatedAt: serverTimestamp()
-      });
+      }, { merge: true });
 
       await batch.commit();
 
@@ -1024,16 +1285,13 @@ const handleInstitutionSubmit = async (e) => {
         passwordHash
       });
 
-      showToast(`Created /${slug} successfully!`);
+      showToast(`Created /${slug} (${adminLoginDisplay}) successfully!`);
     } else {
-      const status = document.getElementById('inst-status-select').value === 'paused' ? 'paused' : 'active';
-      const pauseReason = status === 'paused' ? String(document.getElementById('inst-pause-reason').value || '').trim() : '';
-
       let authVaultEmail = existingInst?.authVaultEmail || adminEmail;
-      const emailChanged = existingInst?.adminEmail && existingInst.adminEmail !== adminEmail;
       const passwordChanged = Boolean(adminPassword && adminPassword !== (existingInst?.adminPassword || ''));
+      const loginChanged = adminEmail !== (existingInst?.adminEmail || '');
 
-      if (emailChanged || passwordChanged || (effectivePassword && !existingInst?.authVaultEmail)) {
+      if (effectivePassword && (passwordChanged || loginChanged || !existingInst?.authVaultEmail)) {
         const authRes = await provisionOrUpdateAdminAuthUser({
           slug,
           targetEmail: adminEmail,
@@ -1124,14 +1382,87 @@ const handleInstitutionSubmit = async (e) => {
       showToast(`Updated /${slug} successfully!`);
     }
 
-    closeInstitutionModal();
     await loadInstitutions();
+    return true;
   } catch (err) {
     console.error('Save institution error:', err);
-    showFormError(err.message || 'Failed to save institution.');
+    showErrorInBox(errorBoxId, err.message || 'Failed to save institution.');
+    return false;
   } finally {
-    saveBtn.disabled = false;
-    saveBtn.innerHTML = originalHtml;
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = originalHtml;
+    }
+  }
+};
+
+const handleInstitutionSubmit = async (e) => {
+  e.preventDefault();
+  const mode = document.getElementById('inst-form-mode').value;
+  const status = mode === 'edit'
+    ? String(document.getElementById('inst-status-select').value || 'active').toLowerCase()
+    : 'active';
+  const pauseReason = mode === 'edit' && status === 'paused'
+    ? String(document.getElementById('inst-pause-reason').value || '').trim()
+    : '';
+
+  const ok = await saveInstitutionData({
+    mode,
+    name: String(document.getElementById('inst-name').value || '').trim(),
+    slug: sanitizeSlugInput(document.getElementById('inst-slug').value),
+    place: String(document.getElementById('inst-place').value || '').trim(),
+    phone: String(document.getElementById('inst-phone').value || '').trim(),
+    adminName: String(document.getElementById('inst-admin-name').value || '').trim() || 'Master Admin',
+    rawAdminLogin: String(document.getElementById('inst-admin-email').value || '').trim(),
+    adminPassword: String(document.getElementById('inst-admin-password').value || '').trim(),
+    linkExistingAuth: document.getElementById('inst-link-existing-auth')?.checked === true,
+    planName: String(document.getElementById('inst-plan-name').value || 'Standard').trim(),
+    isLifetime: document.getElementById('inst-is-lifetime')?.checked === true,
+    durationMonths: Number(document.getElementById('inst-duration-months').value || 0),
+    startDate: String(document.getElementById('inst-start-date').value || toIsoDateInput()).trim(),
+    expiryDate: document.getElementById('inst-is-lifetime')?.checked === true
+      ? ''
+      : String(document.getElementById('inst-expiry-date').value || '').trim(),
+    status,
+    pauseReason,
+    allowedPages: readAllowedPagesFromCheckboxes('inst-page-checkbox'),
+    errorBoxId: 'inst-form-error',
+    submitBtnId: 'btn-save-inst'
+  });
+
+  if (ok) {
+    closeInstitutionModal();
+  }
+};
+
+const handleAddInstPageSubmit = async (e) => {
+  e.preventDefault();
+  const isLifetime = document.getElementById('add-inst-is-lifetime')?.checked === true;
+  const ok = await saveInstitutionData({
+    mode: 'create',
+    name: String(document.getElementById('add-inst-name').value || '').trim(),
+    slug: sanitizeSlugInput(document.getElementById('add-inst-slug').value),
+    place: String(document.getElementById('add-inst-place').value || '').trim(),
+    phone: String(document.getElementById('add-inst-phone').value || '').trim(),
+    adminName: String(document.getElementById('add-inst-admin-name').value || '').trim() || 'Master Admin',
+    rawAdminLogin: String(document.getElementById('add-inst-admin-email').value || '').trim(),
+    adminPassword: String(document.getElementById('add-inst-admin-password').value || '').trim(),
+    linkExistingAuth: document.getElementById('add-inst-link-existing-auth')?.checked === true,
+    planName: String(document.getElementById('add-inst-plan-name').value || 'Standard').trim(),
+    isLifetime,
+    durationMonths: Number(document.getElementById('add-inst-duration-months').value || 0),
+    startDate: String(document.getElementById('add-inst-start-date').value || toIsoDateInput()).trim(),
+    expiryDate: isLifetime ? '' : String(document.getElementById('add-inst-expiry-date').value || '').trim(),
+    status: 'active',
+    pauseReason: '',
+    allowedPages: readAllowedPagesFromCheckboxes('add-inst-page-checkbox'),
+    errorBoxId: 'add-inst-form-error',
+    submitBtnId: 'btn-submit-add-inst-page'
+  });
+
+  if (ok) {
+    initAddInstitutionPageForm();
+    setActiveCompanyView('institutions');
   }
 };
 
@@ -1221,6 +1552,399 @@ const handleResumeInstitution = async (slug) => {
   }
 };
 
+// --- PREMIUM PLANS & CONTACT CATALOG MANAGEMENT ---
+
+const readOfferBannerFromInputs = () => ({
+  enabled: document.getElementById('catalog-offer-enabled')?.checked === true,
+  badgeText: String(document.getElementById('catalog-offer-badge')?.value || '').trim(),
+  headline: String(document.getElementById('catalog-offer-headline')?.value || '').trim(),
+  description: String(document.getElementById('catalog-offer-desc')?.value || '').trim()
+});
+
+const readContactFromInputs = () => ({
+  brandName: String(document.getElementById('contact-brand-name')?.value || '').trim(),
+  phone: String(document.getElementById('contact-phone')?.value || '').trim(),
+  whatsapp: String(document.getElementById('contact-whatsapp')?.value || '').trim(),
+  instagram: String(document.getElementById('contact-instagram')?.value || '').trim(),
+  email: String(document.getElementById('contact-email')?.value || '').trim(),
+  website: String(document.getElementById('contact-website')?.value || '').trim(),
+  supportNote: String(document.getElementById('contact-support-note')?.value || '').trim(),
+  whatsappMessage: String(document.getElementById('contact-whatsapp-msg')?.value || '').trim()
+});
+
+const collectCatalogDraft = () => normalizePublicCatalog({
+  offerBanner: readOfferBannerFromInputs(),
+  plans: catalogState.plans || [],
+  contact: readContactFromInputs()
+});
+
+const populateCatalogInputs = (catalog) => {
+  const { offerBanner, contact } = catalog;
+  const offerEnabled = document.getElementById('catalog-offer-enabled');
+  const offerBadge = document.getElementById('catalog-offer-badge');
+  const offerHeadline = document.getElementById('catalog-offer-headline');
+  const offerDesc = document.getElementById('catalog-offer-desc');
+
+  if (offerEnabled) offerEnabled.checked = Boolean(offerBanner?.enabled);
+  if (offerBadge) offerBadge.value = offerBanner?.badgeText || '';
+  if (offerHeadline) offerHeadline.value = offerBanner?.headline || '';
+  if (offerDesc) offerDesc.value = offerBanner?.description || '';
+
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+  setVal('contact-brand-name', contact?.brandName || '');
+  setVal('contact-phone', contact?.phone || '');
+  setVal('contact-whatsapp', contact?.whatsapp || '');
+  setVal('contact-instagram', contact?.instagram || '');
+  setVal('contact-email', contact?.email || '');
+  setVal('contact-website', contact?.website || '');
+  setVal('contact-support-note', contact?.supportNote || '');
+  setVal('contact-whatsapp-msg', contact?.whatsappMessage || '');
+};
+
+const persistPublicCatalog = async (nextCatalog, toastMsg = 'Saved plans and contact catalog!') => {
+  const normalized = normalizePublicCatalog(nextCatalog);
+  const payload = {
+    offerBanner: normalized.offerBanner,
+    plans: normalized.plans.map((p, idx) => ({
+      ...p,
+      displayOrder: idx + 1
+    })),
+    contact: normalized.contact,
+    updatedAt: serverTimestamp(),
+    updatedBy: verifiedCompanyOwnerEmail || 'company'
+  };
+  await setDoc(doc(db, COMPANY_COLLECTION, COMPANY_PUBLIC_CATALOG_DOC_ID), payload, { merge: true });
+  catalogState = normalizePublicCatalog(payload);
+  invalidatePublicCatalogCache();
+  renderPlansGrid();
+  renderDashboardOverview();
+  showToast(toastMsg);
+};
+
+const renderPlansGrid = () => {
+  const grid = document.getElementById('company-plans-grid');
+  if (!grid) return;
+
+  const plans = catalogState.plans || [];
+  const sidebarPlansCount = document.getElementById('sidebar-plans-count');
+  if (sidebarPlansCount) sidebarPlansCount.textContent = String(plans.length);
+
+  if (!plans.length) {
+    grid.innerHTML = `
+      <div class="col-span-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center space-y-3">
+        <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center text-xl">
+          <i class="fas fa-crown"></i>
+        </div>
+        <h4 class="text-sm font-extrabold text-slate-900">No Custom Plans Added Yet</h4>
+        <p class="text-xs text-slate-500 max-w-md mx-auto">Add multiple subscription tiers with MRP, Offer Price, billing cycle, and features. Institutions will see them when clicking "Premium - Upgrade" or "View Premium Plans".</p>
+        <button type="button" id="btn-empty-add-plan" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold cursor-pointer inline-flex items-center gap-2">
+          <i class="fas fa-plus"></i><span>Create First Custom Plan</span>
+        </button>
+      </div>
+    `;
+    document.getElementById('btn-empty-add-plan')?.addEventListener('click', () => openPlanEditorModal());
+    return;
+  }
+
+  const labelByKey = Object.fromEntries(PAGE_DEFINITIONS.map((p) => [p.key, p.label]));
+
+  grid.innerHTML = plans.map((plan, idx) => {
+    const hasDiscount = plan.mrpPrice > 0 && plan.mrpPrice > plan.offerPrice;
+    const computedPct = hasDiscount
+      ? Math.round(((plan.mrpPrice - plan.offerPrice) / plan.mrpPrice) * 100)
+      : 0;
+    const badgeLabel = plan.discountBadge || (computedPct > 0 ? `Save ${computedPct}%` : '');
+    const isHidden = plan.isActive === false;
+    const modulesText = (plan.includedModules || []).map((k) => labelByKey[k] || k).join(' · ');
+
+    return `
+      <article class="rounded-2xl border ${plan.isPopular ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-white'} ${isHidden ? 'opacity-70' : ''} p-5 flex flex-col justify-between gap-4">
+        <div class="space-y-3">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <h4 class="text-base font-extrabold text-slate-900 truncate">${escapeHtml(plan.name)}</h4>
+                ${plan.isPopular ? `<span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold"><i class="fas fa-crown mr-1 text-[9px] text-amber-600"></i>Popular</span>` : ''}
+                ${isHidden ? `<span class="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-bold">Hidden</span>` : ''}
+              </div>
+              ${plan.tagline ? `<p class="text-xs text-slate-500 mt-0.5">${escapeHtml(plan.tagline)}</p>` : ''}
+            </div>
+            <span class="text-[11px] font-extrabold text-slate-400 tabular-nums">#${idx + 1}</span>
+          </div>
+
+          <div class="pb-3 border-b border-slate-100">
+            <div class="flex flex-wrap items-baseline gap-2 tabular-nums">
+              <span class="text-2xl font-extrabold text-slate-900">${escapeHtml(plan.currency)}${escapeHtml(formatPriceNumber(plan.offerPrice))}</span>
+              ${hasDiscount ? `<span class="text-sm font-bold text-slate-400 line-through">${escapeHtml(plan.currency)}${escapeHtml(formatPriceNumber(plan.mrpPrice))}</span>` : ''}
+              ${badgeLabel ? `<span class="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold">${escapeHtml(badgeLabel)}</span>` : ''}
+            </div>
+            <div class="text-xs font-semibold text-slate-500 mt-0.5">${escapeHtml(plan.billingCycle)}</div>
+          </div>
+
+          ${plan.features.length ? `
+            <ul class="space-y-1.5 text-xs text-slate-700">
+              ${plan.features.slice(0, 6).map((f) => `<li class="flex items-start gap-2"><i class="fas fa-check text-emerald-600 mt-0.5 text-[10px]"></i><span>${escapeHtml(f)}</span></li>`).join('')}
+              ${plan.features.length > 6 ? `<li class="text-[11px] font-bold text-slate-400">+ ${plan.features.length - 6} more features</li>` : ''}
+            </ul>
+          ` : '<p class="text-xs text-slate-400 italic">No bullet features listed.</p>'}
+
+          ${modulesText ? `
+            <div class="text-[11px] text-slate-500 pt-1">
+              <span class="font-bold text-slate-700">Modules:</span> ${escapeHtml(modulesText)}
+            </div>
+          ` : ''}
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5">
+          <div class="flex items-center gap-1">
+            <button type="button" class="btn-plan-move w-7 h-7 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer disabled:opacity-40" data-plan-id="${escapeHtml(plan.id)}" data-dir="-1" ${idx === 0 ? 'disabled' : ''} title="Move Up">
+              <i class="fas fa-arrow-up text-[10px]"></i>
+            </button>
+            <button type="button" class="btn-plan-move w-7 h-7 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer disabled:opacity-40" data-plan-id="${escapeHtml(plan.id)}" data-dir="1" ${idx === plans.length - 1 ? 'disabled' : ''} title="Move Down">
+              <i class="fas fa-arrow-down text-[10px]"></i>
+            </button>
+            <button type="button" class="btn-plan-toggle-vis px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer" data-plan-id="${escapeHtml(plan.id)}">
+              ${isHidden ? 'Show' : 'Hide'}
+            </button>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button type="button" class="btn-plan-duplicate px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer" data-plan-id="${escapeHtml(plan.id)}">
+              Copy
+            </button>
+            <button type="button" class="btn-plan-edit px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer" data-plan-id="${escapeHtml(plan.id)}">
+              Edit
+            </button>
+            <button type="button" class="btn-plan-delete px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold cursor-pointer" data-plan-id="${escapeHtml(plan.id)}">
+              Delete
+            </button>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.btn-plan-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = (catalogState.plans || []).find((p) => p.id === btn.dataset.planId);
+      if (target) openPlanEditorModal(target);
+    });
+  });
+
+  grid.querySelectorAll('.btn-plan-duplicate').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const target = (catalogState.plans || []).find((p) => p.id === btn.dataset.planId);
+      if (!target) return;
+      const copyPlan = {
+        ...target,
+        id: `plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: `${target.name} (Copy)`,
+        isPopular: false,
+        displayOrder: (catalogState.plans || []).length + 1
+      };
+      const nextCatalog = collectCatalogDraft();
+      nextCatalog.plans = [...nextCatalog.plans, copyPlan];
+      try {
+        await persistPublicCatalog(nextCatalog, `Duplicated plan "${target.name}"!`);
+      } catch (err) {
+        showToast(`Failed to duplicate plan: ${err.message}`, 'error');
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-plan-toggle-vis').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const nextCatalog = collectCatalogDraft();
+      nextCatalog.plans = nextCatalog.plans.map((p) => (
+        p.id === btn.dataset.planId ? { ...p, isActive: p.isActive === false } : p
+      ));
+      try {
+        await persistPublicCatalog(nextCatalog, 'Updated plan visibility!');
+      } catch (err) {
+        showToast(`Failed to update plan visibility: ${err.message}`, 'error');
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-plan-move').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const dir = Number(btn.dataset.dir || 0);
+      const nextCatalog = collectCatalogDraft();
+      const idx = nextCatalog.plans.findIndex((p) => p.id === btn.dataset.planId);
+      const swapIdx = idx + dir;
+      if (idx < 0 || swapIdx < 0 || swapIdx >= nextCatalog.plans.length) return;
+      const arr = [...nextCatalog.plans];
+      [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+      nextCatalog.plans = arr.map((p, i) => ({ ...p, displayOrder: i + 1 }));
+      try {
+        await persistPublicCatalog(nextCatalog, 'Updated plan order!');
+      } catch (err) {
+        showToast(`Failed to reorder plan: ${err.message}`, 'error');
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-plan-delete').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const target = (catalogState.plans || []).find((p) => p.id === btn.dataset.planId);
+      if (!target) return;
+      const ok = await openConfirmDialog({
+        title: 'Delete Subscription Plan',
+        message: `Remove "${target.name}" from the public plans catalog?`,
+        okLabel: 'Delete Plan'
+      });
+      if (!ok) return;
+      const nextCatalog = collectCatalogDraft();
+      nextCatalog.plans = nextCatalog.plans.filter((p) => p.id !== target.id);
+      try {
+        await persistPublicCatalog(nextCatalog, `Deleted plan "${target.name}"`);
+      } catch (err) {
+        showToast(`Failed to delete plan: ${err.message}`, 'error');
+      }
+    });
+  });
+};
+
+const renderPlanModulesGrid = (selectedKeys = []) => {
+  const grid = document.getElementById('plan-modules-grid');
+  if (!grid) return;
+  const selectedSet = new Set(Array.isArray(selectedKeys) ? selectedKeys : []);
+  grid.innerHTML = PAGE_DEFINITIONS.map((m) => `
+    <label class="flex items-center gap-2 p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50/40 cursor-pointer text-xs font-bold text-slate-700">
+      <input type="checkbox" class="plan-module-checkbox rounded border-slate-300 text-indigo-600" value="${escapeHtml(m.key)}" ${selectedSet.has(m.key) ? 'checked' : ''}>
+      <span class="truncate">${escapeHtml(m.label)}</span>
+    </label>
+  `).join('');
+};
+
+const openPlanEditorModal = (plan = null) => {
+  const modal = document.getElementById('plan-editor-modal');
+  const form = document.getElementById('plan-editor-form');
+  const errBox = document.getElementById('plan-form-error');
+  if (!modal || !form) return;
+
+  form.reset();
+  if (errBox) {
+    errBox.textContent = '';
+    errBox.classList.add('hidden');
+  }
+
+  const isEdit = Boolean(plan && plan.id);
+  document.getElementById('plan-modal-title').textContent = isEdit ? `Edit Plan: ${plan.name}` : 'Add Custom Plan';
+  document.getElementById('plan-edit-id').value = isEdit ? plan.id : '';
+  document.getElementById('plan-name').value = plan?.name || '';
+  document.getElementById('plan-tagline').value = plan?.tagline || '';
+  document.getElementById('plan-currency').value = plan?.currency || '₹';
+  document.getElementById('plan-mrp').value = plan?.mrpPrice > 0 ? String(plan.mrpPrice) : '';
+  document.getElementById('plan-offer-price').value = plan?.offerPrice !== undefined ? String(plan.offerPrice) : '';
+  document.getElementById('plan-billing-cycle').value = plan?.billingCycle || 'Per Year';
+  document.getElementById('plan-discount-badge').value = plan?.discountBadge || '';
+  document.getElementById('plan-is-popular').checked = Boolean(plan?.isPopular);
+  document.getElementById('plan-is-active').checked = plan ? plan.isActive !== false : true;
+  document.getElementById('plan-features').value = Array.isArray(plan?.features) ? plan.features.join('\n') : '';
+
+  renderPlanModulesGrid(plan?.includedModules || []);
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+};
+
+const closePlanEditorModal = () => {
+  const modal = document.getElementById('plan-editor-modal');
+  modal?.classList.add('hidden');
+  modal?.classList.remove('flex');
+};
+
+const handlePlanEditorSubmit = async (e) => {
+  e.preventDefault();
+  const editId = String(document.getElementById('plan-edit-id')?.value || '').trim();
+  const name = String(document.getElementById('plan-name')?.value || '').trim();
+  const tagline = String(document.getElementById('plan-tagline')?.value || '').trim();
+  const currency = String(document.getElementById('plan-currency')?.value || '₹').trim() || '₹';
+  const mrpRaw = document.getElementById('plan-mrp')?.value;
+  const offerRaw = document.getElementById('plan-offer-price')?.value;
+  const billingCycle = String(document.getElementById('plan-billing-cycle')?.value || 'Per Year').trim() || 'Per Year';
+  const discountBadge = String(document.getElementById('plan-discount-badge')?.value || '').trim();
+  const isPopular = document.getElementById('plan-is-popular')?.checked === true;
+  const isActive = document.getElementById('plan-is-active')?.checked === true;
+  const features = String(document.getElementById('plan-features')?.value || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const includedModules = Array.from(document.querySelectorAll('.plan-module-checkbox:checked')).map((cb) => cb.value);
+
+  const mrpPrice = mrpRaw === '' || mrpRaw === null ? 0 : Number(mrpRaw);
+  const offerPrice = Number(offerRaw);
+
+  if (!name) return showErrorInBox('plan-form-error', 'Plan Name is required.');
+  if (!Number.isFinite(offerPrice) || offerPrice < 0) {
+    return showErrorInBox('plan-form-error', 'Please enter a valid Offer Price.');
+  }
+  if (!Number.isFinite(mrpPrice) || mrpPrice < 0) {
+    return showErrorInBox('plan-form-error', 'Please enter a valid MRP Price (or leave empty).');
+  }
+  if (mrpPrice > 0 && mrpPrice < offerPrice) {
+    return showErrorInBox('plan-form-error', 'MRP Price should be greater than or equal to Offer Price.');
+  }
+
+  const nextCatalog = collectCatalogDraft();
+  const existingIdx = editId ? nextCatalog.plans.findIndex((p) => p.id === editId) : -1;
+  const planObj = {
+    id: editId || `plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name,
+    tagline,
+    currency,
+    mrpPrice,
+    offerPrice,
+    billingCycle,
+    discountBadge,
+    features,
+    includedModules,
+    isPopular,
+    isActive,
+    displayOrder: existingIdx >= 0 ? existingIdx + 1 : nextCatalog.plans.length + 1
+  };
+
+  if (existingIdx >= 0) {
+    nextCatalog.plans[existingIdx] = planObj;
+  } else {
+    nextCatalog.plans.push(planObj);
+  }
+
+  const saveBtn = document.getElementById('btn-save-plan-modal');
+  const origHtml = saveBtn ? saveBtn.innerHTML : '';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+  }
+
+  try {
+    await persistPublicCatalog(nextCatalog, existingIdx >= 0 ? `Updated plan "${name}"!` : `Added plan "${name}"!`);
+    closePlanEditorModal();
+  } catch (err) {
+    console.error('Save plan error:', err);
+    showErrorInBox('plan-form-error', err.message || 'Failed to save plan.');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = origHtml;
+    }
+  }
+};
+
+const loadPublicCatalog = async () => {
+  try {
+    catalogState = await fetchCompanyPublicCatalog({ db, forceRefresh: true });
+  } catch (err) {
+    console.warn('Could not load company public catalog:', err);
+    catalogState = normalizePublicCatalog({});
+  }
+  populateCatalogInputs(catalogState);
+  renderPlansGrid();
+  renderDashboardOverview();
+};
+
 const verifyCompanyOwnerSession = async (user) => {
   if (!user || user.isAnonymous || !user.email) return false;
   const email = String(user.email).trim().toLowerCase();
@@ -1265,21 +1989,98 @@ const verifyCompanyOwnerSession = async (user) => {
 };
 
 const bindEvents = () => {
+  // Sidebar navigation & mobile drawer
+  document.getElementById('btn-open-company-sidebar')?.addEventListener('click', openMobileSidebar);
+  document.getElementById('btn-close-company-sidebar')?.addEventListener('click', closeMobileSidebar);
+  document.getElementById('company-sidebar-backdrop')?.addEventListener('click', closeMobileSidebar);
+
+  document.querySelectorAll('.company-nav-btn[data-company-view]').forEach((btn) => {
+    btn.addEventListener('click', () => setActiveCompanyView(btn.dataset.companyView));
+  });
+  document.querySelectorAll('[data-jump-view]').forEach((btn) => {
+    btn.addEventListener('click', () => setActiveCompanyView(btn.dataset.jumpView));
+  });
+
+  document.getElementById('btn-header-add-inst')?.addEventListener('click', () => setActiveCompanyView('add-institution'));
+  document.getElementById('btn-open-add-inst')?.addEventListener('click', () => setActiveCompanyView('add-institution'));
+
+  const openCatalogPreview = () => {
+    openPremiumPlansModal({
+      contextType: 'preview',
+      catalogOverride: collectCatalogDraft()
+    });
+  };
+  document.getElementById('btn-header-preview-plans')?.addEventListener('click', openCatalogPreview);
+  document.getElementById('btn-preview-catalog-modal')?.addEventListener('click', openCatalogPreview);
+  document.getElementById('btn-preview-contact-modal')?.addEventListener('click', openCatalogPreview);
+
   document.getElementById('btn-company-signout')?.addEventListener('click', () => {
     window.AppSession?.signOut?.(auth, { redirectUrl: '/?public=1' });
   });
+
+  // Institutions view filters
   document.getElementById('btn-refresh-institutions')?.addEventListener('click', loadInstitutions);
   document.getElementById('inst-search-input')?.addEventListener('input', renderInstitutionsGrid);
   document.getElementById('inst-status-filter')?.addEventListener('change', renderInstitutionsGrid);
-  document.getElementById('btn-open-add-inst')?.addEventListener('click', () => openInstitutionModal('create'));
+
+  // Add Institution page view form
+  document.getElementById('btn-reset-add-inst-page')?.addEventListener('click', initAddInstitutionPageForm);
+  document.getElementById('add-inst-page-form')?.addEventListener('submit', handleAddInstPageSubmit);
+  document.getElementById('add-inst-slug')?.addEventListener('input', () => updateSlugPreviewFor('add-inst-slug', 'add-inst-slug-preview'));
+
+  document.getElementById('btn-toggle-add-inst-pass')?.addEventListener('click', () => {
+    const pwdEl = document.getElementById('add-inst-admin-password');
+    const eyeEl = document.getElementById('add-inst-pass-eye');
+    if (!pwdEl) return;
+    const isPassword = pwdEl.type === 'password';
+    pwdEl.type = isPassword ? 'text' : 'password';
+    if (eyeEl) eyeEl.className = isPassword ? 'fas fa-eye-slash text-xs' : 'fas fa-eye text-xs';
+  });
+  document.getElementById('btn-copy-add-inst-pass')?.addEventListener('click', async () => {
+    const val = String(document.getElementById('add-inst-admin-password')?.value || '');
+    if (!val) {
+      showToast('No password entered to copy.', 'info');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(val);
+      showToast('Copied Super Admin Password');
+    } catch (_) {
+      showToast(`Password: ${val}`, 'info');
+    }
+  });
+  document.getElementById('add-inst-duration-months')?.addEventListener('change', () => {
+    const months = Number(document.getElementById('add-inst-duration-months').value || 0);
+    const startVal = document.getElementById('add-inst-start-date').value || toIsoDateInput();
+    if (months > 0 && !document.getElementById('add-inst-is-lifetime').checked) {
+      document.getElementById('add-inst-expiry-date').value = addMonthsToDateStr(startVal, months);
+    }
+  });
+  document.getElementById('add-inst-start-date')?.addEventListener('change', () => {
+    const months = Number(document.getElementById('add-inst-duration-months').value || 0);
+    if (months > 0 && !document.getElementById('add-inst-is-lifetime').checked) {
+      document.getElementById('add-inst-expiry-date').value = addMonthsToDateStr(document.getElementById('add-inst-start-date').value, months);
+    }
+  });
+  document.getElementById('add-inst-is-lifetime')?.addEventListener('change', () => syncLifetimeInputsFor('add-inst'));
+  document.getElementById('add-inst-link-existing-auth')?.addEventListener('change', (e) => {
+    const pwd = document.getElementById('add-inst-admin-password');
+    if (pwd) pwd.required = !e.target.checked;
+  });
+  document.getElementById('btn-add-pages-select-all')?.addEventListener('click', () => {
+    document.querySelectorAll('.add-inst-page-checkbox').forEach((cb) => { cb.checked = true; });
+  });
+  document.getElementById('btn-add-pages-core-only')?.addEventListener('click', () => {
+    document.querySelectorAll('.add-inst-page-checkbox').forEach((cb) => {
+      cb.checked = CORE_PAGE_KEYS.has(cb.dataset.pageKey);
+    });
+  });
+
+  // Institution Edit / Create Modal
   document.getElementById('btn-close-inst-modal')?.addEventListener('click', closeInstitutionModal);
   document.getElementById('btn-cancel-inst-modal')?.addEventListener('click', closeInstitutionModal);
   document.getElementById('inst-form')?.addEventListener('submit', handleInstitutionSubmit);
-
-  // Portal URL Slug is entered independently of Institution Name (supports multiple institutions with the same name)
-  document.getElementById('inst-slug')?.addEventListener('input', () => {
-    updateSlugPreview();
-  });
+  document.getElementById('inst-slug')?.addEventListener('input', updateSlugPreview);
 
   document.getElementById('btn-toggle-inst-admin-pass')?.addEventListener('click', () => {
     const pwdEl = document.getElementById('inst-admin-password');
@@ -1354,11 +2155,59 @@ const bindEvents = () => {
     }
   });
 
+  // Pause modal
   document.getElementById('btn-cancel-pause-modal')?.addEventListener('click', closePauseModal);
   document.getElementById('btn-confirm-pause-modal')?.addEventListener('click', handleConfirmPause);
+
+  // Plans & Offers + Contact Details
+  document.getElementById('btn-open-add-plan')?.addEventListener('click', () => openPlanEditorModal());
+  document.getElementById('btn-close-plan-modal')?.addEventListener('click', closePlanEditorModal);
+  document.getElementById('btn-cancel-plan-modal')?.addEventListener('click', closePlanEditorModal);
+  document.getElementById('plan-editor-form')?.addEventListener('submit', handlePlanEditorSubmit);
+
+  document.getElementById('btn-save-plans-catalog')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-plans-catalog');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+    }
+    try {
+      await persistPublicCatalog(collectCatalogDraft(), 'Saved Premium Plans & Offer Banner!');
+    } catch (err) {
+      showToast(`Failed to save plans & offer: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+      }
+    }
+  });
+
+  document.getElementById('company-contact-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-contact-details');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+    }
+    try {
+      await persistPublicCatalog(collectCatalogDraft(), 'Saved Company Contact Details!');
+    } catch (err) {
+      showToast(`Failed to save contact details: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+      }
+    }
+  });
 };
 
 bindEvents();
+initAddInstitutionPageForm();
+setActiveCompanyView('dashboard');
 
 let authInitialized = false;
 onAuthStateChanged(auth, async (user) => {
@@ -1373,6 +2222,6 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
   document.getElementById('company-loader')?.classList.add('hidden');
-  document.getElementById('company-main')?.classList.remove('hidden');
-  await loadInstitutions();
+  document.getElementById('company-shell')?.classList.remove('hidden');
+  await Promise.all([loadInstitutions(), loadPublicCatalog()]);
 });

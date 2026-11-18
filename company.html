@@ -22,6 +22,7 @@
   <style>
     * { font-family: 'Plus Jakarta Sans', sans-serif; }
     body { background: #f8fafc; color: #0f172a; }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
@@ -36,97 +37,591 @@
     </div>
   </div>
 
-  <!-- Header -->
-  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
-      <div class="flex items-center gap-3 min-w-0">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-          <i class="fas fa-building-shield text-lg"></i>
+  <!-- Toast Banner -->
+  <div id="company-toast" class="hidden fixed bottom-5 right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5"></div>
+
+  <div id="company-shell" class="hidden min-h-screen flex flex-col lg:flex-row">
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="company-sidebar-backdrop" class="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs hidden lg:hidden"></div>
+
+    <!-- Side Menu Bar -->
+    <aside id="company-sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transform -translate-x-full lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen transition-transform duration-200 shrink-0">
+      <div class="h-16 px-4 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-slate-900 text-white flex items-center justify-center shadow-xs shrink-0">
+            <i class="fas fa-building-shield text-sm"></i>
+          </div>
+          <div class="min-w-0">
+            <h1 id="company-brand-title" class="text-sm font-extrabold text-slate-900 truncate">Institution Manage</h1>
+            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">Company Console</p>
+          </div>
         </div>
-        <div class="min-w-0">
-          <h1 id="company-brand-title" class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Institution Manage</h1>
-          <p id="company-owner-email" class="text-[11px] font-semibold text-slate-500 truncate">--</p>
+        <button type="button" id="btn-close-company-sidebar" class="lg:hidden w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 flex items-center justify-center cursor-pointer" aria-label="Close Menu">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <nav class="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Company Navigation">
+        <div class="px-3 pt-1 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Workspace</div>
+        <button type="button" data-company-view="dashboard" class="company-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <i class="fas fa-chart-pie w-4 text-center shrink-0"></i>
+          <span class="truncate">Dashboard</span>
+        </button>
+        <button type="button" data-company-view="add-institution" class="company-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <i class="fas fa-plus-circle w-4 text-center shrink-0"></i>
+          <span class="truncate">Add Institution</span>
+        </button>
+        <button type="button" data-company-view="institutions" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-school w-4 text-center shrink-0"></i>
+            <span class="truncate">Institutions</span>
+          </span>
+          <span id="sidebar-inst-count" class="text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
+        </button>
+
+        <div class="px-3 pt-4 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Subscriptions &amp; Growth</div>
+        <button type="button" data-company-view="plans" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-crown w-4 text-center shrink-0 text-amber-500"></i>
+            <span class="truncate">Premium Plans &amp; Offers</span>
+          </span>
+          <span id="sidebar-plans-count" class="text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
+        </button>
+        <button type="button" data-company-view="contact" class="company-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <i class="fas fa-headset w-4 text-center shrink-0"></i>
+          <span class="truncate">Contact Details</span>
+        </button>
+      </nav>
+
+      <div class="p-3 border-t border-slate-200 bg-slate-50/70 space-y-2 shrink-0">
+        <div class="px-2 py-1">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Signed in as</div>
+          <div id="company-owner-email" class="text-[11px] font-semibold text-slate-700 truncate mt-0.5">--</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <a href="/?public=1" class="px-2.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+            <i class="fas fa-globe text-indigo-500"></i>
+            <span>Home</span>
+          </a>
+          <button type="button" id="btn-company-signout" class="px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-extrabold transition cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+            <i class="fas fa-right-from-bracket"></i>
+            <span>Sign Out</span>
+          </button>
         </div>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <a href="/?public=1" class="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition inline-flex items-center gap-1.5">
-          <i class="fas fa-globe text-indigo-500"></i>
-          <span class="hidden sm:inline">Platform Home</span>
-        </a>
-        <button type="button" id="btn-company-signout" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition cursor-pointer inline-flex items-center gap-1.5">
-          <i class="fas fa-right-from-bracket"></i>
-          <span>Sign Out</span>
+    </aside>
+
+    <!-- Main Workspace Column -->
+    <div class="flex-1 min-w-0 flex flex-col">
+      <!-- Top Bar -->
+      <header class="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+          <button type="button" id="btn-open-company-sidebar" class="lg:hidden w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center cursor-pointer shrink-0" aria-label="Open Navigation Menu">
+            <i class="fas fa-bars"></i>
+          </button>
+          <div class="min-w-0">
+            <h2 id="company-view-title" class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Dashboard</h2>
+            <p id="company-view-subtitle" class="text-[11px] font-medium text-slate-500 truncate hidden sm:block">Platform overview, quick actions, and subscription health.</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button type="button" id="btn-header-preview-plans" class="px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-extrabold transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+            <i class="fas fa-crown text-amber-600"></i>
+            <span class="hidden sm:inline">Preview Plans Modal</span>
+          </button>
+          <button type="button" id="btn-header-add-inst" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+            <i class="fas fa-plus"></i>
+            <span>Add Institution</span>
+          </button>
+        </div>
+      </header>
+
+      <main id="company-main" class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- VIEW 1: DASHBOARD -->
+        <section id="view-dashboard" class="company-view space-y-6">
+          <!-- KPI Cards -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div class="bg-white border border-slate-200 rounded-2xl p-4">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Total Institutions</span>
+                <span class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm"><i class="fas fa-school"></i></span>
+              </div>
+              <div id="kpi-total" class="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums">0</div>
+            </div>
+            <div class="bg-white border border-emerald-200 rounded-2xl p-4">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">Active Portals</span>
+                <span class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm"><i class="fas fa-circle-check"></i></span>
+              </div>
+              <div id="kpi-active" class="text-2xl sm:text-3xl font-extrabold text-emerald-700 tabular-nums">0</div>
+            </div>
+            <div class="bg-white border border-amber-200 rounded-2xl p-4">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-700">Paused</span>
+                <span class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm"><i class="fas fa-pause-circle"></i></span>
+              </div>
+              <div id="kpi-paused" class="text-2xl sm:text-3xl font-extrabold text-amber-700 tabular-nums">0</div>
+            </div>
+            <div class="bg-white border border-rose-200 rounded-2xl p-4">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[11px] font-extrabold uppercase tracking-wider text-rose-700">Expired / Due</span>
+                <span class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-sm"><i class="fas fa-hourglass-end"></i></span>
+              </div>
+              <div id="kpi-expired" class="text-2xl sm:text-3xl font-extrabold text-rose-700 tabular-nums">0</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <!-- Quick Workspace Shortcuts -->
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-extrabold text-slate-900">Quick Actions</h3>
+                <span class="text-[11px] font-semibold text-slate-400">Management</span>
+              </div>
+              <div class="grid grid-cols-1 gap-2.5">
+                <button type="button" data-jump-view="add-institution" class="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 text-left transition cursor-pointer">
+                  <span class="flex items-center gap-3 min-w-0">
+                    <span class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><i class="fas fa-plus"></i></span>
+                    <span class="min-w-0">
+                      <span class="block text-xs font-extrabold text-slate-900">Provision New Institution</span>
+                      <span class="block text-[11px] text-slate-500 truncate">Set slug, admin credentials &amp; allowed pages</span>
+                    </span>
+                  </span>
+                  <i class="fas fa-chevron-right text-xs text-slate-400"></i>
+                </button>
+                <button type="button" data-jump-view="institutions" class="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-left transition cursor-pointer">
+                  <span class="flex items-center gap-3 min-w-0">
+                    <span class="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0"><i class="fas fa-school"></i></span>
+                    <span class="min-w-0">
+                      <span class="block text-xs font-extrabold text-slate-900">Manage All Institutions</span>
+                      <span class="block text-[11px] text-slate-500 truncate">Pause, resume, extend &amp; configure modules</span>
+                    </span>
+                  </span>
+                  <i class="fas fa-chevron-right text-xs text-slate-400"></i>
+                </button>
+                <button type="button" data-jump-view="plans" class="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-amber-200 bg-amber-50/30 hover:border-amber-400 text-left transition cursor-pointer">
+                  <span class="flex items-center gap-3 min-w-0">
+                    <span class="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><i class="fas fa-crown"></i></span>
+                    <span class="min-w-0">
+                      <span class="block text-xs font-extrabold text-slate-900">Configure Premium Plans &amp; Offers</span>
+                      <span id="dash-plans-summary" class="block text-[11px] text-amber-800 truncate">0 active plans published</span>
+                    </span>
+                  </span>
+                  <i class="fas fa-chevron-right text-xs text-amber-600"></i>
+                </button>
+                <button type="button" data-jump-view="contact" class="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 text-left transition cursor-pointer">
+                  <span class="flex items-center gap-3 min-w-0">
+                    <span class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><i class="fas fa-headset"></i></span>
+                    <span class="min-w-0">
+                      <span class="block text-xs font-extrabold text-slate-900">Update Support &amp; Contact Channels</span>
+                      <span id="dash-contact-summary" class="block text-[11px] text-slate-500 truncate">Configure WhatsApp, Instagram, Phone &amp; Email</span>
+                    </span>
+                  </span>
+                  <i class="fas fa-chevron-right text-xs text-slate-400"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Institution Watchlist -->
+            <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <h3 class="text-sm font-extrabold text-slate-900">Institution Status Overview</h3>
+                  <p class="text-[11px] text-slate-500">Expiring, paused, and recently managed portals.</p>
+                </div>
+                <button type="button" data-jump-view="institutions" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer whitespace-nowrap">
+                  View All
+                </button>
+              </div>
+              <div id="dashboard-institutions-overview" class="space-y-2.5"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 2: ADD INSTITUTION -->
+        <section id="view-add-institution" class="company-view hidden">
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-extrabold text-slate-900">Provision New Institution</h3>
+                <p class="text-xs text-slate-500">Configure portal URL slug, Super Admin credentials, subscription validity, and allowed pages.</p>
+              </div>
+              <button type="button" id="btn-reset-add-inst-page" class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">
+                Reset Form
+              </button>
+            </div>
+
+            <form id="add-inst-page-form" class="p-5 sm:p-6 space-y-6 text-xs sm:text-sm">
+              <!-- 1. Identity -->
+              <div class="space-y-3">
+                <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">1. Institution Identity &amp; Clean URL</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-name">Institution Name <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-name" required maxlength="120" placeholder="e.g. Demo Public Academy" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-slug">Portal URL Slug <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-slug" required maxlength="64" placeholder="e.g. demo-academy" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-mono font-bold lowercase">
+                    <div id="add-inst-slug-preview" class="text-[11px] font-semibold text-indigo-600 mt-1 truncate">URL: /demo-academy</div>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-place">Place / City</label>
+                    <input type="text" id="add-inst-place" maxlength="100" placeholder="e.g. Malappuram" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-medium">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-phone">Contact Phone</label>
+                    <input type="text" id="add-inst-phone" maxlength="25" placeholder="e.g. +91 9876543210" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-medium">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Super Admin -->
+              <div class="space-y-3 pt-5 border-t border-slate-200">
+                <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">2. Institution Super Admin Credentials</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-admin-name">Super Admin Name <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-admin-name" required maxlength="80" placeholder="e.g. Principal / Master Admin" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-admin-email">Super Admin Username or Email <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-admin-email" required maxlength="120" placeholder="e.g. admin@institution.com or unique_username" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold lowercase">
+                    <div class="text-[11px] font-medium text-slate-500 mt-1">Must be globally unique across all institutions and staff.</div>
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <label class="block text-xs font-bold text-slate-700" for="add-inst-admin-password">Super Admin Password <span class="text-rose-500">*</span></label>
+                    <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer">
+                      <input type="checkbox" id="add-inst-link-existing-auth" class="rounded border-slate-300 text-indigo-600">
+                      <span>Account already exists in Firebase Auth</span>
+                    </label>
+                  </div>
+                  <div class="relative max-w-md">
+                    <input type="password" id="add-inst-admin-password" minlength="6" maxlength="64" required placeholder="Minimum 6 characters" class="w-full pl-3.5 pr-20 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+                    <div class="absolute inset-y-0 right-1.5 flex items-center gap-1">
+                      <button type="button" id="btn-toggle-add-inst-pass" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer" title="Show / Hide Password">
+                        <i id="add-inst-pass-eye" class="fas fa-eye text-xs"></i>
+                      </button>
+                      <button type="button" id="btn-copy-add-inst-pass" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-indigo-600 flex items-center justify-center cursor-pointer" title="Copy Password">
+                        <i class="fas fa-copy text-xs"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. Subscription -->
+              <div class="space-y-3 pt-5 border-t border-slate-200">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">3. Subscription Plan &amp; Validity</div>
+                  <label class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-800 cursor-pointer">
+                    <input type="checkbox" id="add-inst-is-lifetime" class="rounded border-indigo-300 text-indigo-600">
+                    <span>Lifetime / Unlimited Access</span>
+                  </label>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-plan-name">Plan Tier</label>
+                    <select id="add-inst-plan-name" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                      <option value="Trial">Trial</option>
+                      <option value="Standard" selected>Standard</option>
+                      <option value="Premium">Premium</option>
+                      <option value="Enterprise">Enterprise</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-duration-months">Duration</label>
+                    <select id="add-inst-duration-months" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                      <option value="1">1 Month</option>
+                      <option value="3">3 Months</option>
+                      <option value="6">6 Months</option>
+                      <option value="12" selected>12 Months (1 Year)</option>
+                      <option value="24">24 Months (2 Years)</option>
+                      <option value="0">Custom Date</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-start-date">Start Date</label>
+                    <input type="date" id="add-inst-start-date" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-expiry-date">Expiry Date</label>
+                    <input type="date" id="add-inst-expiry-date" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. Allowed Pages -->
+              <div class="space-y-3 pt-5 border-t border-slate-200">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages &amp; Modules</div>
+                  <div class="flex items-center gap-2">
+                    <button type="button" id="btn-add-pages-select-all" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Enable All</button>
+                    <button type="button" id="btn-add-pages-core-only" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Core Only</button>
+                  </div>
+                </div>
+                <div id="add-inst-allowed-pages-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5"></div>
+              </div>
+
+              <div id="add-inst-form-error" class="hidden rounded-xl bg-rose-50 border border-rose-200 text-rose-700 px-3.5 py-2.5 text-xs font-bold"></div>
+
+              <div class="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button type="button" data-jump-view="institutions" class="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">View Institutions</button>
+                <button type="submit" id="btn-submit-add-inst-page" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
+                  <i class="fas fa-save"></i>
+                  <span>Create Institution</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- VIEW 3: INSTITUTIONS LIST -->
+        <section id="view-institutions" class="company-view hidden space-y-5">
+          <!-- Toolbar -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+              <div class="relative flex-1 max-w-md">
+                <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                <input type="text" id="inst-search-input" placeholder="Search by name, slug, place, or admin email..." class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-medium outline-none">
+              </div>
+              <select id="inst-status-filter" data-native-select="true" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-bold text-slate-700 outline-none">
+                <option value="all">All Statuses</option>
+                <option value="active">Active Only</option>
+                <option value="paused">Paused Only</option>
+                <option value="expired">Expired Only</option>
+                <option value="expiring">Expiring Within 15 Days</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" id="btn-refresh-institutions" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-bold cursor-pointer inline-flex items-center gap-1.5">
+                <i class="fas fa-rotate"></i>
+                <span>Refresh</span>
+              </button>
+              <button type="button" id="btn-open-add-inst" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
+                <i class="fas fa-plus"></i>
+                <span>Add Institution</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Institutions Grid -->
+          <div id="institutions-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+        </section>
+
+        <!-- VIEW 4: PREMIUM PLANS & OFFERS -->
+        <section id="view-plans" class="company-view hidden space-y-6">
+          <!-- Actions & Offer Banner Card -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 class="text-base font-extrabold text-slate-900">Promotional Offer Banner</h3>
+                <p class="text-xs text-slate-500">Shown at the top of the Premium Upgrade popup modal when enabled.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="btn-preview-catalog-modal" class="px-3.5 py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5">
+                  <i class="fas fa-eye"></i>
+                  <span>Live Preview</span>
+                </button>
+                <button type="button" id="btn-save-plans-catalog" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-1.5">
+                  <i class="fas fa-save"></i>
+                  <span>Save Plans &amp; Offer</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 items-start">
+              <div class="sm:col-span-2 lg:col-span-4">
+                <label class="inline-flex items-center gap-2.5 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input type="checkbox" id="catalog-offer-enabled" class="w-4 h-4 rounded border-slate-300 text-amber-600">
+                  <span>Enable Promotional Offer Banner in Upgrade Popup</span>
+                </label>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1" for="catalog-offer-badge">Offer Tag / Badge</label>
+                <input type="text" id="catalog-offer-badge" maxlength="40" placeholder="e.g. Limited Offer" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 text-xs font-semibold outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1" for="catalog-offer-headline">Offer Headline</label>
+                <input type="text" id="catalog-offer-headline" maxlength="100" placeholder="e.g. Save up to 35% on Annual Plans" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 text-xs font-semibold outline-none">
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-bold text-slate-700 mb-1" for="catalog-offer-desc">Offer Description</label>
+                <input type="text" id="catalog-offer-desc" maxlength="200" placeholder="e.g. Unlock Fee Collection, Results, Attendance &amp; Student Portal with free setup." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 text-xs font-medium outline-none">
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Plans Header & Grid -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-extrabold text-slate-900">Custom Subscription Plans</h3>
+                <p class="text-xs text-slate-500">Add multiple plans with MRP, Offer Price, billing cycle, and custom features.</p>
+              </div>
+              <button type="button" id="btn-open-add-plan" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold cursor-pointer inline-flex items-center gap-2 whitespace-nowrap self-start sm:self-auto">
+                <i class="fas fa-plus"></i>
+                <span>Add Custom Plan</span>
+              </button>
+            </div>
+
+            <div id="company-plans-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+          </div>
+        </section>
+
+        <!-- VIEW 5: CONTACT DETAILS -->
+        <section id="view-contact" class="company-view hidden">
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden max-w-4xl">
+            <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base font-extrabold text-slate-900">Company Contact &amp; Upgrade Channels</h3>
+                <p class="text-xs text-slate-500">Configured channels appear directly inside the Premium Plans popup and Paused/Expired support modal.</p>
+              </div>
+              <button type="button" id="btn-preview-contact-modal" class="px-3.5 py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5">
+                <i class="fas fa-eye"></i>
+                <span>Preview Popup</span>
+              </button>
+            </div>
+
+            <form id="company-contact-form" class="p-5 sm:p-6 space-y-5 text-xs sm:text-sm">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-brand-name">Support / Company Name</label>
+                  <input type="text" id="contact-brand-name" maxlength="80" placeholder="e.g. Institution Manage Support" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-phone">Phone Call Number</label>
+                  <input type="text" id="contact-phone" maxlength="30" placeholder="e.g. +91 9876543210" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-whatsapp">WhatsApp Number (with country code)</label>
+                  <input type="text" id="contact-whatsapp" maxlength="30" placeholder="e.g. +919876543210" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                  <p class="text-[11px] text-slate-500 mt-1">Opens direct WhatsApp chat when institutions click Enquire or WhatsApp.</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-instagram">Instagram Username or URL</label>
+                  <input type="text" id="contact-instagram" maxlength="160" placeholder="e.g. @yourhandle or https://instagram.com/..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-email">Support Email Address</label>
+                  <input type="email" id="contact-email" maxlength="120" placeholder="e.g. sales@yourcompany.com" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-website">Website / Enquiry Link (Optional)</label>
+                  <input type="text" id="contact-website" maxlength="200" placeholder="e.g. https://yourcompany.com" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-support-note">Support Note (shown in popup footer)</label>
+                  <input type="text" id="contact-support-note" maxlength="200" placeholder="e.g. Instant activation available via WhatsApp, Instagram, or Call." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="contact-whatsapp-msg">Default WhatsApp Enquiry Template (Optional)</label>
+                  <input type="text" id="contact-whatsapp-msg" maxlength="240" placeholder="e.g. Hello, we want to upgrade {module} for {institution}." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+                  <p class="text-[11px] text-slate-500 mt-1">Optional placeholders: <code>{institution}</code> and <code>{module}</code>.</p>
+                </div>
+              </div>
+
+              <div class="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
+                <button type="submit" id="btn-save-contact-details" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
+                  <i class="fas fa-save"></i>
+                  <span>Save Contact Details</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Plan Editor Modal -->
+  <div id="plan-editor-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center p-3 sm:p-5">
+    <div class="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div>
+          <h3 id="plan-modal-title" class="text-base sm:text-lg font-extrabold text-slate-900">Add Custom Plan</h3>
+          <p class="text-xs text-slate-500">Define MRP, Offer Price, billing cycle, included modules, and features.</p>
+        </div>
+        <button type="button" id="btn-close-plan-modal" class="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <form id="plan-editor-form" class="p-5 overflow-y-auto space-y-4 text-xs sm:text-sm">
+        <input type="hidden" id="plan-edit-id" value="">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-name">Plan Name <span class="text-rose-500">*</span></label>
+            <input type="text" id="plan-name" required maxlength="60" placeholder="e.g. Growth Suite" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-tagline">Tagline / Audience</label>
+            <input type="text" id="plan-tagline" maxlength="100" placeholder="e.g. Best for growing institutions" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-currency">Currency</label>
+            <input type="text" id="plan-currency" maxlength="6" value="₹" placeholder="₹" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-bold outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-mrp">MRP Price</label>
+            <input type="number" id="plan-mrp" min="0" step="any" placeholder="e.g. 9999" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-bold tabular-nums outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-offer-price">Offer Price <span class="text-rose-500">*</span></label>
+            <input type="number" id="plan-offer-price" required min="0" step="any" placeholder="e.g. 5999" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-bold tabular-nums outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-billing-cycle">Billing Cycle</label>
+            <input type="text" id="plan-billing-cycle" maxlength="40" value="Per Year" placeholder="Per Year" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-discount-badge">Custom Offer Badge (Optional)</label>
+            <input type="text" id="plan-discount-badge" maxlength="32" placeholder="Leave blank for auto % off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+          </div>
+          <div class="flex flex-wrap items-center gap-4 pb-2">
+            <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+              <input type="checkbox" id="plan-is-popular" class="w-4 h-4 rounded border-slate-300 text-amber-600">
+              <span>Highlight as Popular</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+              <input type="checkbox" id="plan-is-active" checked class="w-4 h-4 rounded border-slate-300 text-emerald-600">
+              <span>Visible to Institutions</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-features">Plan Features (One per line)</label>
+          <textarea id="plan-features" rows="4" maxlength="1200" placeholder="Unlimited student records&#10;Automated fee receipts &amp; dues ledger&#10;Exam result publishing &amp; report cards&#10;Priority WhatsApp support" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 text-xs font-medium outline-none leading-relaxed"></textarea>
+        </div>
+
+        <div class="space-y-2">
+          <div class="text-xs font-bold text-slate-700">Included Modules (Displayed on plan card)</div>
+          <div id="plan-modules-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+        </div>
+
+        <div id="plan-form-error" class="hidden rounded-xl bg-rose-50 border border-rose-200 text-rose-700 px-3.5 py-2.5 text-xs font-bold"></div>
+      </form>
+
+      <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
+        <button type="button" id="btn-cancel-plan-modal" class="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">Cancel</button>
+        <button type="submit" form="plan-editor-form" id="btn-save-plan-modal" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
+          <i class="fas fa-check"></i>
+          <span>Save Plan</span>
         </button>
       </div>
     </div>
-  </header>
-
-  <main id="company-main" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 hidden">
-    <!-- Toast Banner -->
-    <div id="company-toast" class="hidden fixed bottom-5 right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5"></div>
-
-    <!-- KPI Cards -->
-    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Total Institutions</span>
-          <span class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm"><i class="fas fa-school"></i></span>
-        </div>
-        <div id="kpi-total" class="text-2xl sm:text-3xl font-extrabold text-slate-900">0</div>
-      </div>
-      <div class="bg-white border border-emerald-200 rounded-2xl p-4 shadow-2xs">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">Active Portals</span>
-          <span class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm"><i class="fas fa-circle-check"></i></span>
-        </div>
-        <div id="kpi-active" class="text-2xl sm:text-3xl font-extrabold text-emerald-700">0</div>
-      </div>
-      <div class="bg-white border border-amber-200 rounded-2xl p-4 shadow-2xs">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-700">Paused</span>
-          <span class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm"><i class="fas fa-pause-circle"></i></span>
-        </div>
-        <div id="kpi-paused" class="text-2xl sm:text-3xl font-extrabold text-amber-700">0</div>
-      </div>
-      <div class="bg-white border border-rose-200 rounded-2xl p-4 shadow-2xs">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-[11px] font-extrabold uppercase tracking-wider text-rose-700">Expired / Due</span>
-          <span class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-sm"><i class="fas fa-hourglass-end"></i></span>
-        </div>
-        <div id="kpi-expired" class="text-2xl sm:text-3xl font-extrabold text-rose-700">0</div>
-      </div>
-    </section>
-
-    <!-- Toolbar -->
-    <section class="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
-        <div class="relative flex-1 max-w-md">
-          <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-          <input type="text" id="inst-search-input" placeholder="Search by name, slug, place, or admin email..." class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-medium outline-none">
-        </div>
-        <select id="inst-status-filter" data-native-select="true" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-bold text-slate-700 outline-none">
-          <option value="all">All Statuses</option>
-          <option value="active">Active Only</option>
-          <option value="paused">Paused Only</option>
-          <option value="expired">Expired Only</option>
-          <option value="expiring">Expiring Within 15 Days</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2">
-        <button type="button" id="btn-refresh-institutions" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-bold cursor-pointer inline-flex items-center gap-1.5">
-          <i class="fas fa-rotate"></i>
-          <span>Refresh</span>
-        </button>
-        <button type="button" id="btn-open-add-inst" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer inline-flex items-center gap-2">
-          <i class="fas fa-plus"></i>
-          <span>Add Institution</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- Institutions List -->
-    <section id="institutions-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></section>
-  </main>
+  </div>
 
   <!-- Add / Edit Institution Modal -->
   <div id="inst-form-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center p-3 sm:p-5">
@@ -146,7 +641,7 @@
 
         <!-- Basic Info -->
         <div class="space-y-3">
-          <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">1. Institution Identity & Clean URL</div>
+          <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">1. Institution Identity &amp; Clean URL</div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-name">Institution Name <span class="text-rose-500">*</span></label>
@@ -215,7 +710,7 @@
         <!-- Subscription & Expiry -->
         <div class="space-y-3 pt-4 border-t border-slate-200">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">3. Subscription Plan & Validity</div>
+            <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">3. Subscription Plan &amp; Validity</div>
             <label class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-800 cursor-pointer">
               <input type="checkbox" id="inst-is-lifetime" class="rounded border-indigo-300 text-indigo-600">
               <span>Lifetime / Unlimited Access</span>
@@ -269,7 +764,7 @@
         <!-- Allowed Pages Selector -->
         <div class="space-y-3 pt-4 border-t border-slate-200">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages & Modules</div>
+            <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages &amp; Modules</div>
             <div class="flex items-center gap-2">
               <button type="button" id="btn-pages-select-all" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Enable All</button>
               <button type="button" id="btn-pages-core-only" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Core Only</button>
@@ -283,7 +778,7 @@
 
       <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
         <button type="button" id="btn-cancel-inst-modal" class="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">Cancel</button>
-        <button type="submit" form="inst-form" id="btn-save-inst" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm cursor-pointer inline-flex items-center gap-2">
+        <button type="submit" form="inst-form" id="btn-save-inst" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
           <i class="fas fa-save"></i>
           <span>Save Institution</span>
         </button>

@@ -344,9 +344,24 @@ service cloud.firestore {
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string || request.resource.data.updatedAt is number);
     }
 
+    function isValidPublicCatalogPayload() {
+      return hasOnlyKeys(request.resource.data, ['offerBanner', 'plans', 'contact', 'updatedAt', 'updatedBy'])
+        && (!('offerBanner' in request.resource.data) || request.resource.data.offerBanner is map)
+        && (!('contact' in request.resource.data) || request.resource.data.contact is map)
+        && (!('plans' in request.resource.data) || (request.resource.data.plans is list && request.resource.data.plans.size() <= 25))
+        && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 160));
+    }
+
     // --- COMPANY MASTER PORTAL, GLOBAL USER REGISTRY & INSTITUTION REGISTRY ---
+    match /company/publicCatalog {
+      allow get: if true;
+      allow list: if isCompanyOwner();
+      allow create, update: if isCompanyOwner() && isValidPublicCatalogPayload();
+      allow delete: if isCompanyOwner();
+    }
+
     match /company/{docId} {
-      allow read, write: if isCompanyOwner();
+      allow read, write: if isCompanyOwner() && docId != 'publicCatalog';
     }
 
     match /globalUsers/{loginKey} {
