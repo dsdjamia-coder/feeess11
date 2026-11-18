@@ -2,11 +2,13 @@ import { signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCrede
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { doc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, setDoc, getDoc, orderBy, limit, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
-import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '../../config/app-config.js';
-import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { ADMIN_AUTH_DOC_ID, INSTITUTION_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION, buildInternalStaffEmail, extractInternalUsername, isInternalStaffEmail } from '../../config/app-config.js';
+import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { areInstitutionalStatsEqual, normalizeInstitutionalStats } from '../shared/student-stats-service.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
 registerServiceWorker();
 hardenExternalLinks();
@@ -46,7 +48,7 @@ let staffAdminRecord = null;
 
 const confirmPublicExit = (message = 'Navigating to the public page will log out this session. Do you want to continue?') => confirm(message);
 window.logoutAdmin = (options = {}) => {
-    const { skipConfirm = false, redirectUrl = 'index.html?public=1' } = options;
+    const { skipConfirm = false, redirectUrl = getPageUrl('index.html?public=1') } = options;
     if (!skipConfirm && !confirmPublicExit()) return;
     window.AppSession?.signOut?.(auth, { redirectUrl });
 };
@@ -250,7 +252,7 @@ const syncStaffAccessRecord = async (staffRecord = {}) => {
     const derivedUsername = String(
         staffRecord.username
         || staffRecord.loginId
-        || (email.endsWith('@school.internal') ? email.split('@')[0] : '')
+        || (isInternalStaffEmail(email) ? extractInternalUsername(email) : '')
     ).trim().toLowerCase();
     const payload = {
         email,
@@ -299,7 +301,7 @@ const rebuildStaffAccessIndex = async (staffRecords = []) => {
         const derivedUsername = String(
             staffRecord.username
             || staffRecord.loginId
-            || (email.endsWith('@school.internal') ? email.split('@')[0] : '')
+            || (isInternalStaffEmail(email) ? extractInternalUsername(email) : '')
         ).trim().toLowerCase();
         if (derivedUsername) activeKeys.add(derivedUsername);
     });
@@ -313,7 +315,7 @@ const rebuildStaffAccessIndex = async (staffRecords = []) => {
         const derivedUsername = String(
             staffRecord.username
             || staffRecord.loginId
-            || (email.endsWith('@school.internal') ? email.split('@')[0] : '')
+            || (isInternalStaffEmail(email) ? extractInternalUsername(email) : '')
         ).trim().toLowerCase();
         operations.push((batch) => batch.set(getStaffAccessRef(email), {
             email,
@@ -3316,13 +3318,24 @@ const renderWorkflowModules = async () => {
         console.warn('Could not fetch remote module settings, using local:', err);
     }
 
+    const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
     Object.keys(DEFAULT_ENABLED_MODULES).forEach((key) => {
         const toggle = document.getElementById(`module-toggle-${key}`);
-        const isEnabled = currentConfig[key] !== false;
+        const allowedByCompany = companyAllowed[key] !== false;
+        const isEnabled = allowedByCompany && (currentConfig[key] !== false);
         if (toggle) {
             toggle.checked = isEnabled;
+            toggle.disabled = !allowedByCompany;
+            toggle.title = allowedByCompany ? '' : 'Disabled by Platform Company subscription';
         }
         updateWorkflowModuleBadgeUI(key, isEnabled);
+        if (!allowedByCompany) {
+            const badge = document.getElementById(`module-badge-${key}`);
+            if (badge) {
+                badge.textContent = 'Company Locked';
+                badge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200';
+            }
+        }
     });
 };
 
@@ -3337,10 +3350,11 @@ const saveWorkflowModules = async () => {
     }
 
     try {
+        const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
         const enabledModules = {};
         Object.keys(DEFAULT_ENABLED_MODULES).forEach((key) => {
             const toggle = document.getElementById(`module-toggle-${key}`);
-            enabledModules[key] = toggle ? Boolean(toggle.checked) : true;
+            enabledModules[key] = companyAllowed[key] === false ? false : (toggle ? Boolean(toggle.checked) : true);
         });
 
         // 1. Persist directly to Firestore config document (with merge: true so no other settings are touched)
@@ -4132,7 +4146,7 @@ const syncDrawerForResultManagement = (targetId = '') => {
         const labelEl = resultExitBtn.querySelector('span');
         if (labelEl) labelEl.textContent = isResultPage ? 'Exit Result Management' : 'Admin Logout';
         resultExitBtn.onclick = isResultPage ? () => {
-            if (isResultOperatorSession && openedFromCollection) window.location.href = 'collection.html';
+            if (isResultOperatorSession && openedFromCollection) window.location.href = getPageUrl('collection.html');
             else activateAdminPage('dashboard', { pushHistory: true });
         } : () => window.logoutAdmin();
     }
@@ -5040,7 +5054,7 @@ const extractAndValidateStaffForm = (prefix = 'st') => {
     const normalizedEmailVal = normalizeEmail(values.email || '');
     const derivedUsernameVal = String(
         existingStaffForValidation?.username
-        || (normalizedEmailVal.endsWith('@school.internal') ? normalizedEmailVal.split('@')[0] : '')
+        || (isInternalStaffEmail(normalizedEmailVal) ? extractInternalUsername(normalizedEmailVal) : '')
     ).trim().toLowerCase();
 
     return {
@@ -5711,14 +5725,14 @@ window.resetStaffCredentials = (id) => {
     const normalizedSavedEmail = normalizeEmail(staffRecord.email || '');
     if (emailInput) {
         const rawSaved = staffRecord.username || staffRecord.email || '';
-        emailInput.value = rawSaved.endsWith('@school.internal') ? rawSaved.replace('@school.internal', '') : rawSaved;
+        emailInput.value = isInternalStaffEmail(rawSaved) ? extractInternalUsername(rawSaved) : rawSaved;
     }
     if (passInput) {
         passInput.value = '';
         passInput.type = 'password';
     }
     if (resetBtn) {
-        const hasRealEmail = Boolean(normalizedSavedEmail && normalizedSavedEmail.includes('@') && !normalizedSavedEmail.endsWith('@school.internal'));
+        const hasRealEmail = Boolean(normalizedSavedEmail && normalizedSavedEmail.includes('@') && !isInternalStaffEmail(normalizedSavedEmail));
         resetBtn.classList.toggle('hidden', !hasRealEmail);
         resetBtn.classList.toggle('inline-flex', hasRealEmail);
         resetBtn.dataset.email = hasRealEmail ? normalizedSavedEmail : '';
@@ -5760,7 +5774,7 @@ document.getElementById('staff-cred-send-reset-btn')?.addEventListener('click', 
     if (!requirePermission('staff.manage')) return;
     const resetBtn = document.getElementById('staff-cred-send-reset-btn');
     const email = normalizeEmail(resetBtn?.dataset?.email || '');
-    if (!email || email.endsWith('@school.internal')) {
+    if (!email || isInternalStaffEmail(email)) {
         alert('Password reset emails can only be sent to valid external email addresses.');
         return;
     }
@@ -5814,7 +5828,7 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
             return;
         }
         username = rawInput.toLowerCase();
-        normalizedEmail = `${username}@school.internal`;
+        normalizedEmail = buildInternalStaffEmail(username, INSTITUTION_ID);
     }
 
     if (rawPassword.length < 6) {
@@ -18398,12 +18412,28 @@ populateAcademicYearPresetSelector();
 // --- AUTH & FIREBASE INIT ---
 onAuthStateChanged(auth, async (user) => {
     if (!user) {
-        window.location.replace('index.html');
+        window.location.replace(getPageUrl('index.html'));
         return;
     }
     const requestedTab = (window.location.hash || '#dashboard').replace('#', '') || 'dashboard';
     if (requestedTab === 'results') {
-        window.location.replace('result.html?from=admin');
+        window.location.replace(`${getPageUrl('result.html')}?from=admin`);
+        return;
+    }
+    const tenantCheck = await ensureTenantStatusAndAccess({
+        db,
+        requiredPage: 'admin',
+        institutionId: INSTITUTION_ID,
+        liveWatch: true,
+        onStatusUpdate: () => {
+            if (!document.getElementById('workflow-modules-page')?.classList.contains('hidden')) {
+                renderWorkflowModules();
+            }
+        }
+    });
+    if (!tenantCheck?.active) {
+        const loader = document.getElementById('auth-loader');
+        if (loader) loader.style.display = 'none';
         return;
     }
     window.AppSession?.touchSession();
@@ -18501,7 +18531,7 @@ onAuthStateChanged(auth, async (user) => {
                 alert("Unauthorized access! You do not have permission to view this page.");
                 await window.AppSession?.clearAll({ purgeClientData: true });
                 await signOut(auth);
-                window.location.href = 'index.html';
+                window.location.href = getPageUrl('index.html');
                 return;
             } else {
                 const staffSnap = await getDocs(query(collection(db, `${BASE_PATH}/staff`), where('email', '==', currentAdminEmail)));
@@ -18510,7 +18540,7 @@ onAuthStateChanged(auth, async (user) => {
                     alert("Result page access denied. Ask admin to enable your staff/collection access.");
                     await window.AppSession?.clearAll({ purgeClientData: true });
                     await signOut(auth);
-                    window.location.href = 'index.html';
+                    window.location.href = getPageUrl('index.html');
                     return;
                 }
                 isResultOperatorSession = true;
@@ -18562,7 +18592,7 @@ onAuthStateChanged(auth, async (user) => {
                     accountId: 'admin_master',
                     message: 'Your admin access was removed or disabled. Please sign in again.',
                     authInstance: auth,
-                    redirectUrl: 'index.html'
+                    redirectUrl: getPageUrl('index.html')
                 });
                 return;
             }
@@ -18572,7 +18602,7 @@ onAuthStateChanged(auth, async (user) => {
                 if (!hasRedirectedNonSuperAdmin) {
                     hasRedirectedNonSuperAdmin = true;
                     alert('Admin panel access is restricted. Redirecting to Collection panel.');
-                    window.location.href = 'collection.html';
+                    window.location.href = getPageUrl('collection.html');
                 }
                 return;
             }
@@ -18592,7 +18622,7 @@ onAuthStateChanged(auth, async (user) => {
                         accountId: staffAdminRecord.id,
                         message: 'Your staff admin access was removed or disabled. Please sign in again.',
                         authInstance: auth,
-                        redirectUrl: 'index.html'
+                        redirectUrl: getPageUrl('index.html')
                     });
                     return;
                 }
@@ -18886,6 +18916,6 @@ onAuthStateChanged(auth, async (user) => {
     } catch (error) {
         console.error("Auth Error:", error);
         alert("Security verification error occurred.");
-        window.location.href = 'index.html';
+        window.location.href = getPageUrl('index.html');
     }
 });

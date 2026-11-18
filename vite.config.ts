@@ -60,6 +60,7 @@ const cleanUrlsPlugin = (): Plugin => {
         return;
       }
       const knownPages = [
+        'company',
         'admin',
         'attendance',
         'academic-plan',
@@ -71,9 +72,42 @@ const cleanUrlsPlugin = (): Plugin => {
         'student',
         'worksheet'
       ];
+      const reservedNonTenants = new Set([
+        'index',
+        'company',
+        'admin',
+        'attendance',
+        'academic-plan',
+        'activity',
+        'evaluation',
+        'collection',
+        'official',
+        'result',
+        'student',
+        'worksheet',
+        'assets',
+        'scripts',
+        'styles',
+        'config',
+        'public',
+        'api',
+        '@vite',
+        '@react-refresh',
+        'node_modules'
+      ]);
       const trimmed = pathname.replace(/^\/+|\/+$/g, '');
-      if (knownPages.includes(trimmed)) {
-        req.url = `/${trimmed}.html${query}`;
+      const segments = trimmed.split('/').filter(Boolean);
+      if (segments.length === 1) {
+        if (knownPages.includes(segments[0])) {
+          req.url = `/${segments[0]}.html${query}`;
+        } else if (!segments[0].includes('.') && !reservedNonTenants.has(segments[0].toLowerCase()) && !segments[0].startsWith('@')) {
+          req.url = `/index.html${query}`;
+        }
+      } else if (segments.length === 2 && !reservedNonTenants.has(segments[0].toLowerCase()) && !segments[0].includes('.')) {
+        const subPage = segments[1].replace(/\.html$/i, '');
+        if (subPage === 'index' || knownPages.includes(subPage)) {
+          req.url = `/${subPage}.html${query}`;
+        }
       }
     }
     next();
@@ -107,6 +141,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        company: resolve(__dirname, 'company.html'),
         admin: resolve(__dirname, 'admin.html'),
         collection: resolve(__dirname, 'collection.html'),
         official: resolve(__dirname, 'official.html'),

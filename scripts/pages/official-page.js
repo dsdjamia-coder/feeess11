@@ -1,8 +1,10 @@
 import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 import { db, auth } from '../../config/firebase-config.js';
-import { BASE_PATH, applyCachedInstitutionLogo, escapeHtml, rememberInstitutionLogo, sanitizeUrl } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyCachedInstitutionLogo, buildInternalStaffEmail, escapeHtml, rememberInstitutionLogo, sanitizeUrl } from '../shared/app-common.js';
 import { appLog } from '../shared/logger.js';
 import { showToast } from '../shared/toaster.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 import { collection, doc, getDoc, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 
@@ -1004,7 +1006,7 @@ const tryLogin = async () => {
     } catch (_error) {}
   } else if (!uname.includes('@')) {
     try {
-      authCred = await signInWithEmailAndPassword(auth, `${uname}@school.internal`, password);
+      authCred = await signInWithEmailAndPassword(auth, buildInternalStaffEmail(uname, INSTITUTION_ID), password);
     } catch (_error) {}
   }
 
@@ -1101,7 +1103,7 @@ onAuthStateChanged(auth, (user) => {
   if (!user) {
     if (authReady) {
       localStorage.removeItem(OFFICIAL_SESSION_KEY);
-      window.location.replace('index.html');
+      window.location.replace(getPageUrl('index.html'));
     }
     return;
   }
@@ -1119,7 +1121,7 @@ document.getElementById('official-toggle-password').addEventListener('click', ()
 });
 document.getElementById('official-logout-btn').addEventListener('click', () => {
   localStorage.removeItem(OFFICIAL_SESSION_KEY);
-  window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+  window.AppSession?.signOut?.(auth, { redirectUrl: getPageUrl('index.html?public=1') });
 });
 
 const restoreOfficialSession = async () => {
@@ -1131,7 +1133,7 @@ const restoreOfficialSession = async () => {
     const firebaseUser = await waitForFirebaseAuthUser();
     if (!firebaseUser) {
       localStorage.removeItem(OFFICIAL_SESSION_KEY);
-      window.location.replace('index.html');
+      window.location.replace(getPageUrl('index.html'));
       return;
     }
     userSession = parsed;

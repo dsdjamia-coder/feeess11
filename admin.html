@@ -19,11 +19,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
-    <script src="scripts/shared/session-guard.js"></script>
-    <script src="scripts/shared/page-guards.js"></script>
+    <script src="/scripts/shared/session-guard.js"></script>
+    <script src="/scripts/shared/page-guards.js"></script>
     
     <!-- Link Global CSS -->
-    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="/styles/main.css">
 </head>
 <body class="antialiased text-gray-800">
 
@@ -1288,7 +1288,7 @@
                         <div id="continuity-student-preview" class="hidden p-3 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-200/80 pb-2">
                                 <div class="flex items-center gap-2.5 min-w-0">
-                                    <img id="continuity-preview-photo" src="assets/images/placeholder.svg" alt="Student Photo" class="w-10 h-10 rounded-full object-cover border border-slate-200 bg-white shrink-0">
+                                    <img id="continuity-preview-photo" src="/assets/images/placeholder.svg" alt="Student Photo" class="w-10 h-10 rounded-full object-cover border border-slate-200 bg-white shrink-0">
                                     <div class="min-w-0">
                                         <div id="continuity-preview-name" class="text-xs sm:text-sm font-extrabold text-slate-900 leading-tight truncate">Student Name</div>
                                         <div class="text-[11px] text-slate-600 font-mono mt-0.5 space-x-1.5 truncate">
@@ -4331,7 +4331,7 @@
             <!-- Student Summary -->
             <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div class="flex items-center gap-3">
-                    <img id="quick-settle-student-photo" src="assets/images/placeholder.svg" alt="Photo" class="w-11 h-11 rounded-full object-cover border border-slate-200 bg-white shrink-0">
+                    <img id="quick-settle-student-photo" src="/assets/images/placeholder.svg" alt="Photo" class="w-11 h-11 rounded-full object-cover border border-slate-200 bg-white shrink-0">
                     <div class="min-w-0">
                         <div id="quick-settle-student-name" class="font-extrabold text-sm text-slate-900 truncate">Student Name</div>
                         <div class="text-xs text-slate-600 font-mono mt-0.5 space-x-1.5">
@@ -4425,7 +4425,7 @@
 
             <!-- Student Summary -->
             <div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3">
-                <img id="readmit-student-photo" src="assets/images/placeholder.svg" alt="Photo" class="w-11 h-11 rounded-full object-cover border border-slate-200 bg-white shrink-0">
+                <img id="readmit-student-photo" src="/assets/images/placeholder.svg" alt="Photo" class="w-11 h-11 rounded-full object-cover border border-slate-200 bg-white shrink-0">
                 <div class="min-w-0 flex-1">
                     <div id="readmit-student-name" class="font-extrabold text-sm text-slate-900 truncate">Student Name</div>
                     <div class="text-xs text-slate-600 font-mono mt-0.5 space-x-1.5">
@@ -4514,7 +4514,7 @@
 
             <!-- Student Snapshot -->
             <div class="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3">
-                <img id="history-student-photo" src="assets/images/placeholder.svg" alt="Photo" class="w-12 h-12 rounded-full object-cover border border-slate-200 bg-white shrink-0">
+                <img id="history-student-photo" src="/assets/images/placeholder.svg" alt="Photo" class="w-12 h-12 rounded-full object-cover border border-slate-200 bg-white shrink-0">
                 <div class="min-w-0 flex-1">
                     <div id="history-student-name" class="font-extrabold text-sm text-slate-900 truncate">Student Name</div>
                     <div class="text-xs text-slate-600 font-mono mt-0.5 space-x-1.5">
@@ -5156,8 +5156,8 @@
         </div>
     </div>
 
-    <script src="scripts/shared/hub-navigation.js"></script>
-    <script type="module" src="scripts/pages/admin-page.js"></script>
+    <script src="/scripts/shared/hub-navigation.js"></script>
+    <script type="module" src="/scripts/pages/admin-page.js"></script>
     <script>
         // Global safety failsafe to ensure auth-loader is never stuck on refresh
         setTimeout(() => {

@@ -2,8 +2,10 @@ import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/1
 import { doc, onSnapshot, collection, getDocs, setDoc, query, where, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID } from '../../config/app-config.js';
-import { BASE_PATH, applyInstitutionBranding, enableSmartSelectWindowing, escapeHtml, populateAcademicYearSelect, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, compareClassLabelsNatural, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, populateAcademicYearSelect, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, compareClassLabelsNatural, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
 enableSmartSelectWindowing(document, { visibleCount: 6 });
 
@@ -516,16 +518,25 @@ const initApp = async () => {
     syncSmartSelectDisplay(document);
     updateUserHeaderDisplays();
 
+    let listenersStarted = false;
     onAuthStateChanged(auth, async (user) => {
         if (!user) {
             persistDailyDraftSnapshot();
-            window.location.replace('index.html');
+            window.location.replace(getPageUrl('index.html'));
             return;
         }
+        const tenantCheck = await ensureTenantStatusAndAccess({
+            db,
+            requiredPage: 'attendance',
+            institutionId: INSTITUTION_ID,
+            liveWatch: true
+        });
+        if (!tenantCheck?.active) return;
+        if (!listenersStarted) {
+            listenersStarted = true;
+            setupFirestoreListeners();
+        }
     });
-
-    // Firestore Listeners
-    setupFirestoreListeners();
 };
 
 const updateUserHeaderDisplays = () => {
@@ -561,7 +572,7 @@ const setupFirestoreListeners = () => {
             } catch (_) {}
             if (conf.enabledModules.attendance === false) {
                 sessionStorage.setItem('app_session_flash', 'Module Disabled: The Attendance Register module is currently disabled by institution administration.');
-                window.location.href = 'official.html';
+                window.location.href = getPageUrl('official.html');
                 return;
             }
         }
@@ -581,7 +592,7 @@ const setupFirestoreListeners = () => {
         if (ctrl.isLocked && role !== 'admin') {
             sessionStorage.setItem('app_session_flash', ctrl.lockMessage || 'Official session is currently locked by institution administrator.');
             window.AppSession?.clearAll?.();
-            window.location.href = 'index.html';
+            window.location.href = getPageUrl('index.html');
         }
     });
 
@@ -655,7 +666,7 @@ const setupFirestoreListeners = () => {
                         accountId: matchedStaff?.id || staffIdKey || '',
                         message: 'Your staff account is no longer active or has been removed by the administrator.',
                         authInstance: auth,
-                        redirectUrl: 'index.html'
+                        redirectUrl: getPageUrl('index.html')
                     });
                     return;
                 }
@@ -2943,7 +2954,7 @@ const setupEventListeners = () => {
     });
 
     document.getElementById('mobile-logout-btn')?.addEventListener('click', () => {
-        window.AppSession?.clearAll?.({ redirectUrl: 'index.html' });
+        window.AppSession?.clearAll?.({ redirectUrl: getPageUrl('index.html') });
     });
 
     window.addEventListener('resize', () => {
@@ -3196,7 +3207,7 @@ const setupEventListeners = () => {
 
     // 7. Sign Out
     const handleLogout = () => {
-        window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+        window.AppSession?.signOut?.(auth, { redirectUrl: getPageUrl('index.html?public=1') });
     };
     document.getElementById('sidebar-logout-btn')?.addEventListener('click', handleLogout);
     document.getElementById('mobile-more-logout-btn')?.addEventListener('click', handleLogout);

@@ -18,7 +18,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="scripts/shared/session-guard.js"></script>
+    <script src="/scripts/shared/session-guard.js"></script>
     <script>
         (function() {
             try {
@@ -27,10 +27,12 @@
                 const isAddStudent = params.get('addStudent') === '1';
                 const isForceNewLogin = params.get('login') === 'new';
                 if (!isExplicitPublic && !isAddStudent && !isForceNewLogin && window.AppSession) {
-                    if (window.AppSession.hasStudentSession?.()) {
-                        window.location.replace('student.html');
+                    if (window.AppSession.hasCompanySession?.()) {
+                        window.location.replace('/company');
+                    } else if (window.AppSession.hasStudentSession?.()) {
+                        window.location.replace(window.AppSession.buildPageUrl?.('student.html') || '/student.html');
                     } else if (window.AppSession.hasStaffSession?.() || window.AppSession.hasAdminSession?.()) {
-                        window.location.replace('official.html');
+                        window.location.replace(window.AppSession.buildPageUrl?.('official.html') || '/official.html');
                     }
                 }
             } catch (_err) {}
@@ -38,7 +40,7 @@
     </script>
     
     <!-- Global CSS Link -->
-    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="/styles/main.css">
     
 </head>
 <body style="background-color: #ffffff;">
@@ -115,6 +117,34 @@
             <div class="stat-card stat-teal"><div><div class="stat-title">FEMALE</div><div class="stat-count" id="stat-female">-</div></div><div class="stat-icon"><i class="fa-solid fa-person-dress"></i></div></div>
         </section>
     </section>
+
+    <div class="container hidden" id="root-gateway-container">
+        <div class="max-w-3xl mx-auto my-6 bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-lg text-center">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-extrabold uppercase tracking-wider mb-3 border border-indigo-100">
+                <i class="fas fa-building-columns"></i>
+                <span>Multi-Institution Platform Gateway</span>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">Open Your Institution Portal</h2>
+            <p class="text-sm text-slate-600 max-w-xl mx-auto mb-6">Enter your institution portal code (slug) below to open its dedicated website, or sign in with your Company Owner account to manage institutions, subscriptions, and modules.</p>
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 max-w-lg mx-auto mb-4">
+                <div class="flex items-center flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100">
+                    <span class="text-xs font-bold text-slate-400 mr-1 select-none" id="gateway-origin-prefix">/</span>
+                    <input type="text" id="gateway-slug-input" maxlength="64" placeholder="institution-code (e.g. noorulislam)" class="w-full bg-transparent border-0 outline-none text-sm font-bold text-slate-800" autocomplete="off">
+                </div>
+                <button type="button" id="btn-gateway-open-slug" class="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-extrabold shadow-md transition cursor-pointer flex items-center justify-center gap-2 shrink-0">
+                    <i class="fas fa-arrow-up-right-from-square"></i>
+                    <span>Open Portal</span>
+                </button>
+            </div>
+            <div id="gateway-slug-msg" class="text-xs font-bold text-rose-600 hidden mb-3"></div>
+            <div class="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-center gap-3">
+                <button type="button" onclick="window.openLogin()" class="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-extrabold transition cursor-pointer inline-flex items-center gap-2">
+                    <i class="fas fa-shield-halved text-indigo-300"></i>
+                    <span>Company Owner Login</span>
+                </button>
+            </div>
+        </div>
+    </div>
 
     <div class="container" id="about-container">
         <div class="section-header"><h3>About Us</h3><div></div></div>
@@ -322,6 +352,6 @@
         <div class="modal-box gallery-modal-box"><img id="zoom-img" src="" alt="Gallery image preview"></div>
         <button type="button" id="gallery-next-btn" class="gallery-modal-nav gallery-modal-next" aria-label="Next gallery image"><i class="fas fa-chevron-right"></i></button>
     </div>
-    <script type="module" src="scripts/pages/index-page.js"></script>
+    <script type="module" src="/scripts/pages/index-page.js"></script>
 </body>
 </html>

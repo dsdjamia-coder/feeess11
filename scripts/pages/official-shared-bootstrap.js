@@ -1,11 +1,13 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
     import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { db, auth } from '../../config/firebase-config.js';
-    import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
-    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, escapeHtml, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+    import { ADMIN_AUTH_DOC_ID, INSTITUTION_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
+    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, ensureTenantStatusAndAccess, escapeHtml, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
     import { InteractiveCropper } from '../shared/image-cropper.js';
     import { registerPortalForPwa } from '../shared/pwa-install.js';
     import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
+
+    const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
     // Clean URL Guard: Strip any lingering hash fragment to ensure clean base .html on every refresh
     if (typeof window !== 'undefined' && window.location && window.location.hash) {
@@ -1216,7 +1218,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             accountId: targetId ? `dir_${targetId}` : '',
             message: 'Your portal access is no longer active or has been removed by the administrator.',
             authInstance: auth,
-            redirectUrl: 'index.html'
+            redirectUrl: getPageUrl('index.html')
           });
           return;
         }
@@ -1230,7 +1232,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             accountId: userSession?.id || matchedStaff?.id || '',
             message: 'Your staff account is no longer active or has been removed by the administrator.',
             authInstance: auth,
-            redirectUrl: 'index.html'
+            redirectUrl: getPageUrl('index.html')
           });
           return;
         }
@@ -1289,11 +1291,11 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         tab = isWorksheetPage ? 'summary' : 'dashboard';
       }
       if (!isWorksheetPage && tab !== 'dashboard') {
-        window.location.href = `worksheet.html#${tab}`;
+        window.location.href = `${getPageUrl('worksheet.html')}#${tab}`;
         return;
       }
       if (isWorksheetPage && tab === 'dashboard') {
-        window.location.href = 'official.html';
+        window.location.href = getPageUrl('official.html');
         return;
       }
 
@@ -1770,7 +1772,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         }
       ];
 
+      const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
       const modules = allPossibleModules
+        .filter((m) => companyAllowed[m.id] !== false)
         .filter((m) => m.id === 'admin' || enabledModules[m.id] !== false)
         .filter((m) => isMasterAdmin || m.hasAccess);
 
@@ -1895,7 +1899,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       document.querySelectorAll('[data-navigate-url]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const url = btn.dataset.navigateUrl;
-          if (url) window.location.href = url;
+          if (url) window.location.href = getPageUrl(url);
         });
       });
       document.querySelectorAll('[data-locked-reason]').forEach((btn) => {
@@ -1923,7 +1927,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       });
       document.getElementById('hub-quick-logout')?.addEventListener('click', () => {
         localStorage.removeItem(OFFICIAL_SESSION_KEY);
-        window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+        window.AppSession?.signOut?.(auth, { redirectUrl: getPageUrl('index.html?public=1') });
       });
     };
 
@@ -8535,7 +8539,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
               accountId: 'admin_master',
               message: 'Your administrator access was removed or disabled. Please sign in again.',
               authInstance: auth,
-              redirectUrl: 'index.html'
+              redirectUrl: getPageUrl('index.html')
             });
           }
         }, () => {});
@@ -8571,7 +8575,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         if (ctrl.isLocked && role !== 'admin' && !isRevokingOfficialSession) {
           isRevokingOfficialSession = true;
           window.AppSession?.setFlash?.(ctrl.lockMessage || 'Official session locked by institution administrator.');
-          window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+          window.AppSession?.signOut?.(auth, { redirectUrl: getPageUrl('index.html?public=1') });
         }
       }, () => {});
 
@@ -8585,7 +8589,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           } catch (_) {}
           if (isWorksheetPage && conf.enabledModules.worksheet === false) {
             sessionStorage.setItem('app_session_flash', 'Module Disabled: The Class Worksheet module is currently disabled by institution administration.');
-            window.location.href = 'official.html';
+            window.location.href = getPageUrl('official.html');
             return;
           }
         }
@@ -8656,7 +8660,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           isRevokingOfficialSession = true;
           localStorage.removeItem(OFFICIAL_SESSION_KEY);
           window.AppSession?.clearAll?.();
-          window.location.replace('index.html');
+          window.location.replace(getPageUrl('index.html'));
         }
         return;
       }
@@ -8667,12 +8671,12 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       isRevokingOfficialSession = true;
       localStorage.removeItem(OFFICIAL_SESSION_KEY);
       if (window.AppSession && typeof window.AppSession.signOut === 'function') {
-        await window.AppSession.signOut(auth, { redirectUrl: 'index.html?public=1' });
+        await window.AppSession.signOut(auth, { redirectUrl: getPageUrl('index.html?public=1') });
       } else {
         try {
           if (auth && typeof auth.signOut === 'function') await auth.signOut();
         } catch (_) {}
-        window.location.href = 'index.html?public=1';
+        window.location.href = getPageUrl('index.html?public=1');
       }
     };
 
@@ -8821,7 +8825,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
 
       if (!hasValidSession) {
         // Direct link access without valid session from index.html must return to index.html
-        window.location.replace('index.html');
+        window.location.replace(getPageUrl('index.html'));
         return;
       }
 
@@ -8836,16 +8840,30 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         localStorage.removeItem(OFFICIAL_SESSION_KEY);
         window.AppSession?.setFlash?.('Please enter your password to restore secure access.');
         await window.AppSession?.clearAll?.();
-        window.location.replace('index.html');
+        window.location.replace(getPageUrl('index.html'));
         return;
       }
 
       try {
+        const tenantCheck = await ensureTenantStatusAndAccess({
+          db,
+          requiredPage: isWorksheetPage ? 'worksheet' : 'official',
+          institutionId: INSTITUTION_ID,
+          liveWatch: true,
+          onStatusUpdate: (res) => {
+            if (!isWorksheetPage && res?.active) renderDashboard();
+          }
+        });
+        if (!tenantCheck?.active) {
+          showApp();
+          return;
+        }
+
         await loadData();
         if (isWorksheetPage) {
           const perms = evaluateModulePermissions();
           if (!perms.worksheet) {
-            window.location.replace('official.html');
+            window.location.replace(getPageUrl('official.html'));
             return;
           }
         }

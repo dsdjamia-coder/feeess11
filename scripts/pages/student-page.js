@@ -1,9 +1,11 @@
 import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, getDoc, getDocFromCache, collection, query, where, getDocs, onSnapshot, setDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
-import { BASE_PATH, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, isUpcomingAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, isUpcomingAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
 import { registerPortalForPwa } from '../shared/pwa-install.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
 async function fetchDocWithRetry(docRef, maxRetries = 3, initialDelayMs = 1200) {
     let lastError = null;
@@ -198,14 +200,14 @@ const studentPwa = registerPortalForPwa('student', {
         async function logoutStudent({ skipConfirm = false } = {}) {
             if(!skipConfirm && !confirmLogout()) return;
             window.AppSession?.logoutStudent(window.AppSession?.getStudentId?.(), { removeAccount: false });
-            window.location.href = 'index.html?public=1';
+            window.location.href = getPageUrl('index.html?public=1');
         }
         window.logoutStudent = logoutStudent;
         document.getElementById('student-logout-btn')?.addEventListener('click', () => logoutStudent());
-        document.getElementById('student-public-btn')?.addEventListener('click', () => { window.location.href = 'index.html?public=1'; });
+        document.getElementById('student-public-btn')?.addEventListener('click', () => { window.location.href = getPageUrl('index.html?public=1'); });
         document.querySelectorAll('.student-bottom-nav-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
-                if (btn.dataset.action === 'public') { window.location.href = 'index.html?public=1'; return; }
+                if (btn.dataset.action === 'public') { window.location.href = getPageUrl('index.html?public=1'); return; }
                 if (btn.dataset.target) activateStudentTab(btn.dataset.target);
             });
         });
@@ -431,7 +433,7 @@ const studentPwa = registerPortalForPwa('student', {
                 if (!confirm('Are you sure you want to log out of this account?')) return;
                 const activeId = window.AppSession?.getStudentId?.() || '';
                 window.AppSession?.logoutStudent(removeBtn.dataset.id, { removeAccount: true });
-                if (activeId === removeBtn.dataset.id) window.location.href = 'index.html?public=1';
+                if (activeId === removeBtn.dataset.id) window.location.href = getPageUrl('index.html?public=1');
                 else renderAccountSwitcher();
             }
         });
@@ -448,11 +450,11 @@ const studentPwa = registerPortalForPwa('student', {
                 localStorage.removeItem('app_student_accounts');
                 localStorage.removeItem('app_remembered_accounts');
             } catch (_) {}
-            window.location.href = 'index.html?public=1';
+            window.location.href = getPageUrl('index.html?public=1');
         });
         document.getElementById('account-switcher-add-btn')?.addEventListener('click', () => {
             closeAccountSwitcher();
-            window.location.href = 'index.html?addStudent=1';
+            window.location.href = getPageUrl('index.html?addStudent=1');
         });
 
         // ----------------------------------------------------
@@ -630,7 +632,7 @@ const studentPwa = registerPortalForPwa('student', {
                 icon: logoSrc,
                 badge: logoSrc,
                 tag: `stu-notif-${item.id}`,
-                url: './student.html',
+                url: getPageUrl('student.html'),
                 target: item.target || 'home-page',
                 notifId: item.id
             };
@@ -1151,7 +1153,7 @@ const studentPwa = registerPortalForPwa('student', {
                         ${imageBlock}
                         ${textBlock}
                         <div class="pt-2 flex justify-end">
-                            <a href="index.html#notices" class="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
+                            <a href="${escapeHtml(getPageUrl('index.html#notices'))}" class="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
                                 <i class="fas fa-external-link-alt"></i> View All Public Notices
                             </a>
                         </div>
@@ -1161,7 +1163,7 @@ const studentPwa = registerPortalForPwa('student', {
                 return;
             }
 
-            if (targetStr && targetStr.includes('.html')) window.location.href = targetStr;
+            if (targetStr && targetStr.includes('.html')) window.location.href = getPageUrl(targetStr);
             else if (targetStr) activateStudentTab(targetStr);
         };
 
@@ -5145,7 +5147,7 @@ const studentPwa = registerPortalForPwa('student', {
             { key: 'syllabus', id: 'syllabus-page', navId: 'student-nav-syllabus', label: 'Syllabus', icon: 'fas fa-book-open', moduleKey: 'academicPlan' },
             { key: 'results', id: 'results-page', navId: 'student-nav-results', label: 'Results', icon: 'fas fa-square-poll-vertical', moduleKey: 'resultCenter' },
             { key: 'activities', id: 'activities-page', navId: 'student-nav-activities', label: 'Activities', icon: 'fas fa-award', moduleKey: 'activityTracker' },
-            { key: 'publicHome', id: 'public-home-nav', navId: 'student-nav-publichome', label: 'Public Page', icon: 'fas fa-globe', moduleKey: null, isExternal: true, url: 'index.html?public=1' }
+            { key: 'publicHome', id: 'public-home-nav', navId: 'student-nav-publichome', label: 'Public Page', icon: 'fas fa-globe', moduleKey: null, isExternal: true, url: getPageUrl('index.html?public=1') }
         ];
 
         let cachedStudentPortalConfig = {
@@ -7236,6 +7238,18 @@ const studentPwa = registerPortalForPwa('student', {
 
         async function loadDashboardData() {
             try {
+                const tenantCheck = await ensureTenantStatusAndAccess({
+                    db,
+                    requiredPage: 'student',
+                    institutionId: INSTITUTION_ID,
+                    liveWatch: true
+                });
+                if (!tenantCheck?.active) {
+                    const loader = document.getElementById('loading-screen');
+                    if (loader) loader.style.display = 'none';
+                    return;
+                }
+
                 // Notif Listeners
                 onSnapshot(doc(db, `${BASE_PATH}/settings`, 'content'), snap => {
                     rawNotices = snap.exists() && Array.isArray(snap.data().notices) ? snap.data().notices : [];
@@ -7271,7 +7285,7 @@ const studentPwa = registerPortalForPwa('student', {
                         if (conf.enabledModules.student === false) {
                             window.AppSession?.logoutStudent?.();
                             sessionStorage.setItem('app_session_flash', 'Student Portal is currently disabled by institution administration.');
-                            window.location.replace('index.html');
+                            window.location.replace(getPageUrl('index.html'));
                             return;
                         }
                     }
@@ -7413,7 +7427,7 @@ const studentPwa = registerPortalForPwa('student', {
                         accountId: studentId,
                         message: 'Your student profile was removed by the administrator.',
                         authInstance: auth,
-                        redirectUrl: 'index.html'
+                        redirectUrl: getPageUrl('index.html')
                     });
                     return;
                 }
@@ -7426,7 +7440,7 @@ const studentPwa = registerPortalForPwa('student', {
                         accountId: studentId,
                         message: 'Your student account is currently inactive. Please contact the administration.',
                         authInstance: auth,
-                        redirectUrl: 'index.html'
+                        redirectUrl: getPageUrl('index.html')
                     });
                     return;
                 }
@@ -7654,7 +7668,7 @@ const studentPwa = registerPortalForPwa('student', {
                                 accountId: studentId,
                                 message: 'Your student profile was removed by the administrator.',
                                 authInstance: auth,
-                                redirectUrl: 'index.html'
+                                redirectUrl: getPageUrl('index.html')
                             });
                         }
                         return;
@@ -7666,7 +7680,7 @@ const studentPwa = registerPortalForPwa('student', {
                             accountId: studentId,
                             message: 'Your student account has been deactivated by the administrator.',
                             authInstance: auth,
-                            redirectUrl: 'index.html'
+                            redirectUrl: getPageUrl('index.html')
                         });
                         return;
                     }

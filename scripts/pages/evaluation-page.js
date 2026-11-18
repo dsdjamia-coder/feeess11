@@ -1,8 +1,10 @@
 import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, onSnapshot, collection, getDocs, setDoc, deleteDoc, query, where, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
-import { BASE_PATH, applyInstitutionBranding, escapeHtml, formatDateDisplay, populateAcademicYearSelect, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, formatStudentOptionLabel, compareClassLabelsNatural } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, ensureTenantStatusAndAccess, escapeHtml, formatDateDisplay, populateAcademicYearSelect, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, formatStudentOptionLabel, compareClassLabelsNatural } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
 // --- State Variables ---
 let isSuperAdmin = false;
@@ -1703,7 +1705,7 @@ const initEventBindings = () => {
 
     // Logout Handling (Sidebar Desktop & More Mobile Sheet)
     const handleLogout = async () => {
-        await window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+        await window.AppSession?.signOut?.(auth, { redirectUrl: getPageUrl('index.html?public=1') });
     };
     document.getElementById('sidebar-logout-btn')?.addEventListener('click', handleLogout);
     document.getElementById('mobile-more-logout-btn')?.addEventListener('click', handleLogout);
@@ -2073,6 +2075,14 @@ const initEventBindings = () => {
 
 // --- Initialization Lifecycle ---
 const initEvaluationModule = async () => {
+    const tenantCheck = await ensureTenantStatusAndAccess({
+        db,
+        requiredPage: 'classroomEvaluation',
+        institutionId: INSTITUTION_ID,
+        liveWatch: true
+    });
+    if (!tenantCheck?.active) return;
+
     initSidebarState();
     updateLiveClock();
     setInterval(updateLiveClock, 1000);
@@ -2103,7 +2113,7 @@ const initEvaluationModule = async () => {
             const isEvaluationEnabled = conf.enabledModules.classroomEvaluation !== false && conf.enabledModules.evaluation !== false;
             if (!isEvaluationEnabled) {
                 sessionStorage.setItem('app_session_flash', 'Module Disabled: The Classroom Evaluation module is currently disabled by institution administration.');
-                window.location.href = 'official.html';
+                window.location.href = getPageUrl('official.html');
                 return;
             }
         }
@@ -2151,7 +2161,7 @@ const initEvaluationModule = async () => {
                 accountId: matched?.id || staffId || '',
                 message: 'Your staff account is no longer active or has been removed by the administrator.',
                 authInstance: auth,
-                redirectUrl: 'index.html'
+                redirectUrl: getPageUrl('index.html')
             });
             return;
         }
@@ -2172,7 +2182,7 @@ const initEvaluationModule = async () => {
         const role = window.AppSession?.getRole?.() || '';
         if (ctrl.isLocked && role !== 'admin') {
             window.AppSession?.setFlash?.(ctrl.lockMessage || 'Official session is currently locked by institution administrator.');
-            window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+            window.AppSession?.signOut?.(auth, { redirectUrl: getPageUrl('index.html?public=1') });
         }
     });
 };

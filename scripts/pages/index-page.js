@@ -1,8 +1,33 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, onSnapshot, collection, getDoc, getDocs, setDoc, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { db, auth } from '../../config/firebase-config.js';
-import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
-import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, normalizePhone, registerServiceWorker, renderVersionInfo, sanitizePhone, sanitizeUrl } from '../shared/app-common.js';
+import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
+import {
+    ADMIN_AUTH_DOC_ID,
+    COMPANY_COLLECTION,
+    COMPANY_CONFIG_DOC_ID,
+    INSTITUTION_ID,
+    RESERVED_INSTITUTION_SLUGS,
+    SINGLE_ADMIN_MODE,
+    buildInternalStaffEmail,
+    extractInternalUsername,
+    isInternalStaffEmail,
+    isRootGatewayLocation
+} from '../../config/app-config.js';
+import {
+    BASE_PATH,
+    applyInstitutionBranding,
+    ensureTenantStatusAndAccess,
+    escapeHtml,
+    hardenExternalLinks,
+    normalizePhone,
+    registerServiceWorker,
+    renderVersionInfo,
+    sanitizePhone,
+    sanitizeUrl
+} from '../shared/app-common.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
+let isRootGatewayMode = false;
 
         hardenExternalLinks();
 
@@ -108,11 +133,15 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             document.getElementById('saved-student-modal').style.display = 'flex';
         };
         const openStudentLoginModal = () => {
-            if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
-                window.location.href = 'official.html';
+            if (window.AppSession?.hasCompanySession?.()) {
+                window.location.href = '/company';
                 return;
             }
-            if (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false) {
+            if (!isRootGatewayMode && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
+                window.location.href = getPageUrl('official.html');
+                return;
+            }
+            if (!isRootGatewayMode && (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false)) {
                 showToast("Student Portal is currently disabled by institution administration.", "error");
                 showLoginMessage("Student Portal is currently disabled by institution administration.");
                 return;
@@ -252,7 +281,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
                     if (window.AppSession?.hasStudentSession?.() && String(window.AppSession?.getStudentId?.() || '') === targetStudentId) {
                         window.AppSession?.startStudent?.(targetStudentId, account);
-                        window.location.href = 'student.html';
+                        window.location.href = getPageUrl('student.html');
                         return true;
                     }
                     return window.AppSession?.switchAccount?.(account.id || targetStudentId);
@@ -268,9 +297,13 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             if (isOpeningLoginFlow) return;
             isOpeningLoginFlow = true;
             try {
+                if (window.AppSession?.hasCompanySession?.()) {
+                    window.location.href = '/company';
+                    return;
+                }
                 // Official accounts (Admin / Staff) strictly enforce single-session access
-                if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
-                    window.location.href = 'official.html';
+                if (!isRootGatewayMode && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
+                    window.location.href = getPageUrl('official.html');
                     return;
                 }
 
@@ -454,7 +487,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     await activateRememberedAccount(targetAccount, card);
                 } else {
                     const stSwitched = window.AppSession?.switchStudent?.(accountId);
-                    if (stSwitched) window.location.href = 'student.html';
+                    if (stSwitched) window.location.href = getPageUrl('student.html');
                 }
             }
         });
@@ -761,8 +794,125 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             }
         }
 
+        function activateRootGatewayMode() {
+            isRootGatewayMode = true;
+            document.getElementById('root-gateway-container')?.classList.remove('hidden');
+            document.getElementById('about-container')?.classList.add('hidden');
+            document.querySelector('.stats-grid')?.classList.add('hidden');
+            document.querySelector('.secondary-actions')?.classList.add('hidden');
+
+            const headerTitle = document.getElementById('header-title');
+            const heroTitle = document.getElementById('hero-main-title');
+            const heroSubtitle = document.getElementById('hero-subtitle');
+            const loginInstEl = document.getElementById('login-institution-name');
+            const footerInstEl = document.getElementById('footer-inst-name');
+            const gatewayPrefix = document.getElementById('gateway-origin-prefix');
+
+            if (headerTitle) headerTitle.textContent = 'Institution Tracer Platform';
+            if (heroTitle) heroTitle.textContent = 'Institution Tracer Platform';
+            if (heroSubtitle) heroSubtitle.textContent = 'Multi-Institution Management & Portal Gateway';
+            if (loginInstEl) loginInstEl.textContent = 'Platform Gateway';
+            if (footerInstEl) footerInstEl.textContent = 'Institution Tracer Platform';
+            if (gatewayPrefix) gatewayPrefix.textContent = `${window.location.origin}/`;
+
+            const slugInput = document.getElementById('gateway-slug-input');
+            const slugBtn = document.getElementById('btn-gateway-open-slug');
+            const slugMsg = document.getElementById('gateway-slug-msg');
+
+            const showGatewayErr = (msg = '') => {
+                if (!slugMsg) return;
+                if (!msg) {
+                    slugMsg.textContent = '';
+                    slugMsg.classList.add('hidden');
+                    return;
+                }
+                slugMsg.textContent = msg;
+                slugMsg.classList.remove('hidden');
+            };
+
+            const handleOpenSlug = async () => {
+                const rawSlug = String(slugInput?.value || '').trim().toLowerCase();
+                showGatewayErr('');
+                if (!rawSlug) {
+                    showGatewayErr('Please enter an institution code (e.g. noorulislam).');
+                    slugInput?.focus();
+                    return;
+                }
+                if (!/^[a-z0-9][a-z0-9-_]{0,63}$/.test(rawSlug) || RESERVED_INSTITUTION_SLUGS.has(rawSlug)) {
+                    showGatewayErr('Invalid or reserved institution code. Use letters, numbers, hyphens, or underscores.');
+                    slugInput?.focus();
+                    return;
+                }
+                if (slugBtn) {
+                    slugBtn.disabled = true;
+                    slugBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Opening...</span>';
+                }
+                try {
+                    const instSnap = await getDoc(doc(db, 'institutions', rawSlug));
+                    if (!instSnap.exists()) {
+                        showGatewayErr(`Institution "${rawSlug}" was not found. Please check the code with your administrator.`);
+                        if (slugBtn) {
+                            slugBtn.disabled = false;
+                            slugBtn.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i><span>Open Portal</span>';
+                        }
+                        return;
+                    }
+                    window.location.href = `/${encodeURIComponent(rawSlug)}`;
+                } catch (_err) {
+                    window.location.href = `/${encodeURIComponent(rawSlug)}`;
+                }
+            };
+
+            if (slugBtn && !slugBtn.dataset.boundGateway) {
+                slugBtn.dataset.boundGateway = 'true';
+                slugBtn.addEventListener('click', handleOpenSlug);
+                slugInput?.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleOpenSlug();
+                    }
+                });
+            }
+
+            renderVersionInfo();
+            loaded.config = true;
+            loaded.content = true;
+            loaded.staff = true;
+            loaded.students = true;
+            forceHideSplash();
+        }
+
         async function init() {
             populateClassDropdown();
+
+            const tenantCheck = await ensureTenantStatusAndAccess({
+                db,
+                institutionId: INSTITUTION_ID,
+                allowMissingRoot: true,
+                liveWatch: true,
+                onStatusUpdate: (statusRes) => {
+                    if (statusRes?.exists && statusRes?.institution?.name) {
+                        const loginInstEl = document.getElementById('login-institution-name');
+                        if (loginInstEl && !globalInstitutionConfig?.appName) {
+                            loginInstEl.textContent = statusRes.institution.name;
+                        }
+                    }
+                }
+            });
+
+            isRootGatewayMode = Boolean(tenantCheck?.isRootGateway);
+            if (!tenantCheck?.active) {
+                loaded.config = true;
+                loaded.content = true;
+                loaded.staff = true;
+                loaded.students = true;
+                forceHideSplash();
+                return;
+            }
+            if (isRootGatewayMode) {
+                activateRootGatewayMode();
+                return;
+            }
 
             // 1. Institution Config snapshot (Public)
             onSnapshot(doc(db, `${BASE_PATH}/settings`, 'config'), snap => {
@@ -1454,7 +1604,9 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             showLoginMessage('');
 
             try {
-                await ensureVerificationRegistriesLoaded();
+                if (!isRootGatewayMode) {
+                    await ensureVerificationRegistriesLoaded();
+                }
 
                 const cleanLower = rawInput.toLowerCase();
                 const cleanAdm = normalizeAdmKey(rawInput);
@@ -1463,8 +1615,24 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
                 let matched = null;
 
+                if (isRootGatewayMode) {
+                    if (cleanEmail.includes('@') && !isInternalStaffEmail(cleanEmail)) {
+                        matched = {
+                            type: 'company_or_admin',
+                            data: null,
+                            displayName: cleanEmail.split('@')[0] || 'Company Owner',
+                            meta: 'Company Owner Account Verification',
+                            loginEmail: cleanEmail
+                        };
+                    } else {
+                        showLoginMessage('Enter your Company Owner email address, or enter an institution code above to open an institution portal.');
+                        userInput?.focus();
+                        return;
+                    }
+                }
+
                 // 1. Strict Student Auth Lookup (exact Admission Number only)
-                if (cleanAdm) {
+                if (!matched && cleanAdm) {
                     try {
                         let lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
                         if (lookupSnap.exists()) {
@@ -1527,7 +1695,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         const baseLoginId = (staffMember.username || staffMember.userName || staffMember.loginId || staffMember.email || cleanAdm).toLowerCase().trim();
                         const loginEmail = staffMember.email && staffMember.email.includes('@')
                             ? staffMember.email.toLowerCase().trim()
-                            : `${baseLoginId}@school.internal`;
+                            : buildInternalStaffEmail(baseLoginId, INSTITUTION_ID);
 
                         matched = {
                             type: 'staff',
@@ -1578,10 +1746,10 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             data: adminProfile,
                             displayName: matchedAdmin.name || 'Institution Administrator',
                             meta: 'Administrator',
-                            loginEmail: matchedAdmin.email || (cleanEmail.includes('@') ? cleanEmail : `${matchedAdmin.username}@school.internal`)
+                            loginEmail: matchedAdmin.email || (cleanEmail.includes('@') ? cleanEmail : buildInternalStaffEmail(matchedAdmin.username, INSTITUTION_ID))
                         };
-                    } else if (cleanEmail.includes('@') && !cleanEmail.endsWith('@school.internal')) {
-                        // Allow first-time Super Admin verification on fresh Firebase projects before adminProfile exists in settings/config
+                    } else if (cleanEmail.includes('@') && !isInternalStaffEmail(cleanEmail)) {
+                        // Allow Super Admin / Company Owner verification even before adminProfile exists in settings/config
                         matched = {
                             type: 'admin_candidate',
                             data: null,
@@ -1593,7 +1761,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                 }
 
                 // 4. Strict Directory Login Verification
-                if (!matched || matched.type === 'admin_candidate') {
+                if (!isRootGatewayMode && (!matched || matched.type === 'admin_candidate')) {
                     const dirMatch = (Array.isArray(directoryEntries) ? directoryEntries : []).find((e) => {
                         if (!e?.categoryId) return false;
                         const authConf = normalizeCategoryAuthItem(categoryAuthConfig?.categories?.[e.categoryId] || {});
@@ -1643,7 +1811,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         }
                         if (passHint) passHint.textContent = 'Enter the mobile phone number registered with the school.';
                     } else {
-                        if (avatarIcon) avatarIcon.className = (matched.type === 'admin' || matched.type === 'admin_candidate') ? 'fas fa-user-shield' : 'fas fa-user-tie';
+                        if (avatarIcon) avatarIcon.className = (matched.type === 'admin' || matched.type === 'admin_candidate' || matched.type === 'company_or_admin') ? 'fas fa-user-shield' : 'fas fa-user-tie';
                         if (passLeadingIcon) passLeadingIcon.className = 'fas fa-lock login-input-leading';
                         if (passLabel) passLabel.textContent = 'Password';
                         if (passInput) {
@@ -1722,7 +1890,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             syncStudentGroupMembersToSession(st.studentId, { clearDismissed: true }),
                             new Promise((resolve) => setTimeout(resolve, 1500))
                         ]);
-                        window.location.href = 'student.html';
+                        window.location.href = getPageUrl('student.html');
                         return;
                     } else {
                         showLoginMessage('Incorrect registered mobile number. Please check and try again.');
@@ -1734,7 +1902,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     return;
                 }
 
-                if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                if (!isRootGatewayMode && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
                     showLoginMessage('An official account is already logged in. Please log out first.');
                     if (btn) {
                         btn.disabled = false;
@@ -1743,7 +1911,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     return;
                 }
 
-                // If Admin or Staff
+                // If Company Owner, Admin, or Staff
                 await window.AppSession?.clearAll();
                 const loginEmail = verifiedUser.loginEmail || (verifiedUser.data?.email || '').toLowerCase();
                 const userLogin = loginEmail || verifiedUser.displayName.toLowerCase();
@@ -1751,67 +1919,96 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
 
                 let isAuthenticated = false;
                 let userCred = null;
+                let lastAuthError = null;
 
-                // 1. Firebase Auth login attempt (Admin & Staff)
+                const formatFirebaseAuthFailure = (errObj, targetEmail) => {
+                    const code = String(errObj?.code || '').trim();
+                    const proj = firebaseConfig?.projectId || 'unknown';
+                    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+                        return `Invalid email or password (${code}). Check password in Firebase Auth (${proj}).`;
+                    }
+                    if (code === 'auth/user-not-found') {
+                        return `Firebase Auth account not found for "${targetEmail}" in project "${proj}".`;
+                    }
+                    if (code === 'auth/too-many-requests') {
+                        return `Too many failed attempts (${code}). Wait a moment or reset the password.`;
+                    }
+                    if (code === 'auth/operation-not-allowed') {
+                        return `Email/Password sign-in is disabled in Firebase Console (${proj}).`;
+                    }
+                    if (code === 'auth/network-request-failed') {
+                        return 'Network request failed while contacting Firebase Authentication.';
+                    }
+                    return code
+                        ? `Authentication failed (${code}): ${errObj?.message || 'Please check credentials.'} [${proj}]`
+                        : 'Incorrect email or password. Please verify your credentials.';
+                };
+
+                // 1. Firebase Auth login attempt (Company Owner, Admin & Staff)
                 if (verifiedUser.type !== 'directory' && loginEmail) {
                     try {
                         userCred = await signInWithEmailAndPassword(auth, loginEmail, enteredPassword);
                         if (userCred?.user) isAuthenticated = true;
-                    } catch (_authError) {
+                    } catch (authError) {
+                        lastAuthError = authError;
                         if (!loginEmail.includes('@')) {
                             try {
-                                userCred = await signInWithEmailAndPassword(auth, `${loginEmail}@school.internal`, enteredPassword);
+                                userCred = await signInWithEmailAndPassword(auth, buildInternalStaffEmail(loginEmail, INSTITUTION_ID), enteredPassword);
                                 if (userCred?.user) isAuthenticated = true;
-                            } catch (_) {}
+                            } catch (retryErr) {
+                                lastAuthError = retryErr;
+                            }
                         }
                     }
                 }
 
                 // 2. Directory login fallback (for Category Users)
                 if (!isAuthenticated) {
-                    const directoryLogin = await resolveDirectoryLogin(userLogin, enteredPassword);
-                    if (directoryLogin?.entry) {
-                        if (!auth.currentUser) {
-                            try { await signInAnonymously(auth); } catch (_) {}
+                    if (!isRootGatewayMode) {
+                        const directoryLogin = await resolveDirectoryLogin(userLogin, enteredPassword);
+                        if (directoryLogin?.entry) {
+                            if (!auth.currentUser) {
+                                try { await signInAnonymously(auth); } catch (_) {}
+                            }
+                            const access = directoryLogin.access || {};
+                            const entry = directoryLogin.entry;
+                            const rawName = String(entry?.values?.name || entry?.values?.Name || entry?.authMeta?.usernameRaw || userLogin || 'User');
+                            const dirRoleTitle = String(entry?.values?.role || entry?.role || 'Category User');
+                            const dirAccess = {
+                                ...access,
+                                worksheet: true,
+                                userKey: userLogin,
+                                loginId: userLogin,
+                                entryId: entry.id,
+                                categoryId: entry.categoryId || '',
+                                name: rawName,
+                                role: dirRoleTitle,
+                                type: 'Category User',
+                                source: 'directory',
+                                requiresEmailAuth: false
+                            };
+                            window.AppSession?.startStaff(rawName, userLogin, dirAccess);
+                            const activeProject = window.AppSession?.getActiveProjectId?.() || '';
+                            localStorage.setItem('official_portal_session_v1', JSON.stringify({
+                                ...(activeProject ? { projectId: activeProject } : {}),
+                                id: entry.id,
+                                name: rawName,
+                                username: userLogin,
+                                email: '',
+                                role: dirRoleTitle,
+                                type: 'Category User',
+                                categoryId: entry.categoryId || '',
+                                canCollect: dirAccess.collection === true,
+                                canAccessWorksheet: true,
+                                source: 'directory',
+                                access: dirAccess
+                            }));
+                            window.location.href = getPageUrl('official.html');
+                            return;
                         }
-                        const access = directoryLogin.access || {};
-                        const entry = directoryLogin.entry;
-                        const rawName = String(entry?.values?.name || entry?.values?.Name || entry?.authMeta?.usernameRaw || userLogin || 'User');
-                        const dirRoleTitle = String(entry?.values?.role || entry?.role || 'Category User');
-                        const dirAccess = {
-                            ...access,
-                            worksheet: true,
-                            userKey: userLogin,
-                            loginId: userLogin,
-                            entryId: entry.id,
-                            categoryId: entry.categoryId || '',
-                            name: rawName,
-                            role: dirRoleTitle,
-                            type: 'Category User',
-                            source: 'directory',
-                            requiresEmailAuth: false
-                        };
-                        window.AppSession?.startStaff(rawName, userLogin, dirAccess);
-                        const activeProject = window.AppSession?.getActiveProjectId?.() || '';
-                        localStorage.setItem('official_portal_session_v1', JSON.stringify({
-                            ...(activeProject ? { projectId: activeProject } : {}),
-                            id: entry.id,
-                            name: rawName,
-                            username: userLogin,
-                            email: '',
-                            role: dirRoleTitle,
-                            type: 'Category User',
-                            categoryId: entry.categoryId || '',
-                            canCollect: dirAccess.collection === true,
-                            canAccessWorksheet: true,
-                            source: 'directory',
-                            access: dirAccess
-                        }));
-                        window.location.href = 'official.html';
-                        return;
                     }
 
-                    showLoginMessage('Incorrect password. Please verify your credentials.');
+                    showLoginMessage(formatFirebaseAuthFailure(lastAuthError, loginEmail || userLogin));
                     if (btn) {
                         btn.disabled = false;
                         btn.innerHTML = SIGN_IN_BTN_HTML;
@@ -1819,21 +2016,80 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                     return;
                 }
 
-                if (!auth.currentUser) {
-                    try { await signInAnonymously(auth); } catch (_) {}
-                }
-
                 const authedEmail = (userCred?.user?.email || loginEmail).toLowerCase();
-                const authedUsername = authedEmail.includes('@school.internal') ? authedEmail.replace('@school.internal', '') : authedEmail.split('@')[0];
+                const authedUsername = isInternalStaffEmail(authedEmail)
+                    ? extractInternalUsername(authedEmail)
+                    : authedEmail.split('@')[0];
                 const usedFirebaseEmailAuth = Boolean(userCred?.user && !userCred.user.isAnonymous);
 
-                // 1. Check if Admin via settings/adminAuth
+                const checkCompanyOwnerAccess = async () => {
+                    let companyError = null;
+                    let companyExists = false;
+                    try {
+                        const companySnap = await getDoc(doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID));
+                        if (companySnap.exists()) {
+                            companyExists = true;
+                            const data = companySnap.data() || {};
+                            const primaryEmail = String(data.email || '').trim().toLowerCase();
+                            const indexMatch = data?.ownersIndex?.[authedEmail] === true;
+                            const ownersList = Array.isArray(data.owners) ? data.owners : [];
+                            const arrayMatch = ownersList.find((o) => String(o?.email || '').trim().toLowerCase() === authedEmail && o?.isActive !== false);
+                            if (primaryEmail === authedEmail || indexMatch || Boolean(arrayMatch)) {
+                                return {
+                                    isOwner: true,
+                                    exists: true,
+                                    companyName: String(data.companyName || 'Platform Company').trim(),
+                                    ownerName: String(arrayMatch?.name || data.name || data.ownerName || 'Company Owner').trim(),
+                                    error: null
+                                };
+                            }
+                        }
+                    } catch (err) {
+                        companyError = err;
+                    }
+                    return { isOwner: false, exists: companyExists, companyName: '', ownerName: '', error: companyError };
+                };
+
+                // 0. If on Root Platform Gateway (/), authenticate against company/config
+                if (isRootGatewayMode) {
+                    const companyRes = await checkCompanyOwnerAccess();
+                    if (companyRes.isOwner && usedFirebaseEmailAuth) {
+                        window.AppSession?.startCompany?.({
+                            name: companyRes.ownerName,
+                            email: authedEmail,
+                            companyName: companyRes.companyName
+                        });
+                        window.location.href = '/company';
+                        return;
+                    }
+                    if (usedFirebaseEmailAuth) {
+                        try { await signOut(auth); } catch (_) {}
+                    }
+                    const proj = firebaseConfig?.projectId || 'unknown';
+                    if (companyRes.error?.code === 'permission-denied') {
+                        showLoginMessage(`Auth succeeded (${authedEmail}), but Firestore blocked reading "company/config" (permission-denied on ${proj}). Ensure company/config has ownersIndex["${authedEmail}"]: true and publish updated firestore.rules.`);
+                    } else if (!companyRes.exists) {
+                        showLoginMessage(`Auth succeeded (${authedEmail}), but "company/config" does not exist in Firestore (${proj}). Create document company/config first.`);
+                    } else {
+                        showLoginMessage(`Auth succeeded (${authedEmail}), but this email is not listed in "company/config" (${proj}).`);
+                    }
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = SIGN_IN_BTN_HTML;
+                    }
+                    return;
+                }
+
+                // 1. Check if Admin via institutions/{slug}/settings/adminAuth
                 let isAdmin = false;
                 let adminAuthData = null;
+                let adminCheckError = null;
+                let adminAuthExists = false;
                 try {
                     const adminRef = doc(db, `${BASE_PATH}/settings`, ADMIN_AUTH_DOC_ID);
                     const adminSnap = await getDoc(adminRef);
                     if (adminSnap.exists()) {
+                        adminAuthExists = true;
                         adminAuthData = adminSnap.data();
                         const adminEmail = (adminAuthData.email || '').toLowerCase();
                         const adminAccounts = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminAuthData.admins) ? adminAuthData.admins : []);
@@ -1846,6 +2102,7 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         }
                     }
                 } catch (e) {
+                    adminCheckError = e;
                     console.warn('Admin check notice:', e);
                 }
 
@@ -1865,11 +2122,12 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         } catch (_) {}
                     }
                     window.AppSession?.startAdmin({ name: adminName, email: authedEmail });
-                    window.location.href = 'official.html';
+                    window.location.href = getPageUrl('official.html');
                     return;
                 }
 
                 // 2. Check Staff Access
+                let staffCheckError = null;
                 try {
                     let staffAccessDoc = await getDoc(doc(db, `${BASE_PATH}/staffAccess`, authedEmail));
                     if (!staffAccessDoc.exists() && authedUsername) {
@@ -1933,10 +2191,11 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                             access: staffAccess
                         };
                         localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
-                        window.location.href = 'official.html';
+                        window.location.href = getPageUrl('official.html');
                         return;
                     }
                 } catch (e) {
+                    staffCheckError = e;
                     console.warn('Staff access notice:', e);
                 }
 
@@ -1997,21 +2256,43 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
                         access: staffAccess
                     };
                     localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
-                    window.location.href = 'official.html';
+                    window.location.href = getPageUrl('official.html');
                     return;
+                }
+
+                // 3. Fallback: If a Company Owner logs in from an institution login modal, allow routing to Company Console
+                if (usedFirebaseEmailAuth) {
+                    const companyFallback = await checkCompanyOwnerAccess();
+                    if (companyFallback.isOwner) {
+                        window.AppSession?.startCompany?.({
+                            name: companyFallback.ownerName,
+                            email: authedEmail,
+                            companyName: companyFallback.companyName
+                        });
+                        window.location.href = '/company';
+                        return;
+                    }
                 }
 
                 if (usedFirebaseEmailAuth) {
                     try { await signOut(auth); } catch (_) {}
                 }
-                showLoginMessage('Incorrect credentials or account not active.');
+
+                const proj = firebaseConfig?.projectId || 'unknown';
+                let failureMsg = `Account "${authedEmail}" has no active Admin or Staff authorization in "${BASE_PATH}" (Project: ${proj}).`;
+                if (adminCheckError?.code === 'permission-denied' || staffCheckError?.code === 'permission-denied') {
+                    failureMsg = `Auth succeeded (${authedEmail}), but Firestore denied reading "${BASE_PATH}/settings/adminAuth" (${adminCheckError?.code || staffCheckError?.code}). Publish updated firestore.rules in project "${proj}".`;
+                } else if (!adminAuthExists) {
+                    failureMsg = `Auth succeeded (${authedEmail}), but "${BASE_PATH}/settings/adminAuth" was not found in project "${proj}". Provision this institution from Company Console or check email match.`;
+                }
+                showLoginMessage(failureMsg);
                 if (btn) {
                     btn.disabled = false;
                     btn.innerHTML = SIGN_IN_BTN_HTML;
                 }
             } catch (err) {
                 console.error('Universal login error:', err);
-                showLoginMessage('Login failed: ' + (err.message || 'Invalid credentials.'));
+                showLoginMessage(`Login failed (${err.code || 'error'}): ${err.message || 'Invalid credentials.'} [Project: ${firebaseConfig?.projectId || 'unknown'}]`);
                 if (btn) {
                     btn.disabled = false;
                     btn.innerHTML = SIGN_IN_BTN_HTML;
@@ -2047,8 +2328,10 @@ import { BASE_PATH, applyInstitutionBranding, escapeHtml, hardenExternalLinks, n
             showLoginMessage(sessionNotice);
         }
         if (new URLSearchParams(window.location.search).get('addStudent') === '1') {
-            if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
-                window.location.href = 'official.html';
+            if (window.AppSession?.hasCompanySession?.()) {
+                window.location.href = '/company';
+            } else if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                window.location.href = getPageUrl('official.html');
             } else {
                 history.replaceState(null, '', window.location.pathname);
                 openStudentLoginModal();

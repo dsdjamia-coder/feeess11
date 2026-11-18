@@ -20,8 +20,8 @@
 - [ ] **Step 5:** **Authorized domains**-ൽ `localhost`, live Vercel/Custom domain എന്നിവ ചേർക്കുക.
 - [ ] **Step 6:** കോഡ്ബേസിലെ `config/firebase-config.js`, `firebase-applet-config.json`, `.firebaserc`, `sw.js` എന്നിവ അപ്‌ഡേറ്റ് ചെയ്യുക.
 - [ ] **Step 7:** `firestore.rules`, `storage.rules` എന്നിവ Firebase Console-ൽ പേസ്റ്റ് ചെയ്ത് **Publish** ചെയ്യുക.
-- [ ] **Step 8:** **Authentication -> Users**-ൽ Super Admin ഇമെയിൽ + പാസ്‌വേഡ് Add ചെയ്യുക.
-- [ ] **Step 9:** Firestore-ൽ `institutions/school/settings/adminAuth` ഡോക്യുമെന്റ് നിർമ്മിക്കുക (`email`, `adminsIndex`, `admins`).
+- [ ] **Step 8:** **Authentication -> Users**-ൽ Company Owner ഇമെയിൽ + പാസ്‌വേഡ് Add ചെയ്യുക.
+- [ ] **Step 9:** Firestore-ൽ `company/config` ഡോക്യുമെന്റ് നിർമ്മിക്കുക (`email`, `companyName`, `ownersIndex`, `owners`). തുടർന്ന് `/` വഴി ലോഗിൻ ചെയ്ത് `/company` പേജിൽ നിന്ന് സ്ഥാപനങ്ങൾ Add ചെയ്യുക (`institutions/{slug}/settings/adminAuth` ഓട്ടോമാറ്റിക്കായി സൃഷ്ടിക്കപ്പെടും).
 - [ ] **Step 10:** (പഴയ ഡാറ്റ വേണമെങ്കിൽ) Admin Panel-ൽ Backup Restore ചെയ്യുക + Staff Management-ൽ ഓരോ Staff-ന്റെയും Credentials വീണ്ടും Save ചെയ്യുക.
 - [ ] **Step 11:** `npm run lint`, `npm run build` റൺ ചെയ്ത് GitHub / Vercel വഴി Publish ചെയ്യുക.
 
@@ -105,78 +105,62 @@ Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ �
 
 ---
 
-## Phase 4: ആദ്യ Super Admin Bootstrap ചെയ്യേണ്ട വിധം
+## Phase 4: ആദ്യ Company Owner Bootstrap ചെയ്യേണ്ട വിധം
 
-### ഘട്ടം A: Firebase Authentication-ൽ User നിർമ്മിക്കുക
+### ഘട്ടം A: Firebase Authentication-ൽ Company Owner User നിർമ്മിക്കുക
 1. Firebase Console -> **Build -> Authentication -> Users** തുറക്കുക.
 2. **Add user** ക്ലിക്ക് ചെയ്യുക.
-3. നിങ്ങളുടെ Admin Email-ഉം (ഉദാ: `nimdevathiyal4883@gmail.com` — **ചെറിയക്ഷരത്തിൽ / lowercase**) ശക്തമായ ഒരു Password-ഉം നൽകി Save ചെയ്യുക.
+3. നിങ്ങളുടെ Company Owner Email-ഉം (ഉദാ: `nimdevathiyal4883@gmail.com` — **ചെറിയക്ഷരത്തിൽ / lowercase**) ശക്തമായ ഒരു Password-ഉം നൽകി Save ചെയ്യുക.
 
-### ഘട്ടം B: Firestore-ൽ `settings/adminAuth` ഡോക്യുമെന്റ് നിർമ്മിക്കുക
+### ഘട്ടം B: Firestore-ൽ `company/config` ഡോക്യുമെന്റ് നിർമ്മിക്കുക
 1. Firebase Console -> **Build -> Firestore Database -> Data** തുറക്കുക.
 2. കൃത്യമായ ഈ പാതയിൽ ഡോക്യുമെന്റ് നിർമ്മിക്കുക:
-   - Collection: `institutions`
-   - Document ID: `school` *(അല്ലെങ്കിൽ നിങ്ങളുടെ `INSTITUTION_ID`)*
-   - Subcollection: `settings`
-   - Document ID: `adminAuth`
-   - പൂർണ്ണമായ പാത: **`institutions/school/settings/adminAuth`**
-3. ഡോക്യുമെന്റിന്റെ **ഏറ്റവും മുകളിൽ (Root level-ൽ)** കാണുന്ന **`+ Add field`** ക്ലിക്ക് ചെയ്ത് താഴെ പറയുന്ന പട്ടിക പ്രകാരം കൃത്യമായ **Type (`string`, `map`, `array`, `boolean`)** തിരഞ്ഞെടുത്ത് ഫീൽഡുകൾ ചേർക്കുക:
-
-| എവിടെ ചേർക്കണം (Level) | Field Name | Field Type | Field Value | ശ്രദ്ധിക്കേണ്ട കാര്യം |
-| :--- | :--- | :--- | :--- | :--- |
-| **Document Root** (`adminAuth`) | `email` | **`string`** | `"nimdevathiyal4883@gmail.com"` | **ഇത് `map` ആക്കരുത്!** നേരിട്ട് `string` ആയി നൽകണം. |
-| **Document Root** (`adminAuth`) | `adminsIndex` | **`map`** | *(അകത്ത് 1 ഫീൽഡ് ചേർക്കുക)* | `+ Add field` ടോപ്പ്-ലെവലിൽ നിന്നാണ് തുടങ്ങേണ്ടത്. |
-| └─ `adminsIndex`-ന് ഉള്ളിൽ | `nimdevathiyal4883@gmail.com` | **`boolean`** | **`true`** | ചെറിയക്ഷരത്തിൽ (lowercase) നൽകുക. |
-| **Document Root** (`adminAuth`) | `admins` | **`array`** | *(അകത്ത് `0` എന്ന Item ചേർക്കുക)* | `map` അല്ല, **`array`** തിരഞ്ഞെടുക്കുക. |
-| └─ `admins`-ന് ഉള്ളിൽ (Item `0`) | *(Item `0`)* | **`map`** | *(അകത്ത് 4 ഫീൽഡുകൾ)* | Array-യിലെ `+` ക്ലിക്ക് ചെയ്ത് Type = `map` നൽകുക. |
-| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `email` | **`string`** | `"nimdevathiyal4883@gmail.com"` | Admin email (lowercase). |
-| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `name` | **`string`** | `"Master Admin"` | Admin പേര്. |
-| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `role` | **`string`** | `"super_admin"` | കൃത്യമായി `"super_admin"` എന്ന് നൽകുക. |
-| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `isActive` | **`boolean`** | **`true`** | `string` അല്ല, **`boolean`** ആയി `true` നൽകുക. |
+   - Collection: `company`
+   - Document ID: `config`
+   - പൂർണ്ണമായ പാത: **`company/config`** *(ഓരോ സ്ഥാപനത്തിന്റെയും `institutions/{slug}/settings/adminAuth` ഫയലുകൾ പിന്നീട് `/company` പേജിൽ നിന്ന് സ്ഥാപനം Add ചെയ്യുമ്പോൾ ആപ്പ് സ്വയമേവ സൃഷ്ടിക്കും)*.
+3. ഡോക്യുമെന്റിൽ താഴെ കാണുന്ന ഘടനയിൽ ഫീൽഡുകൾ ചേർക്കുക:
 
 #### Firebase Console Panel View-ൽ ശരിയായ ഘടനയും സാധാരണ വരുന്ന തെറ്റും:
 
 ```text
-✅ ശരിയായ ഘടന (Document Root-ൽ 3 ഫീൽഡുകൾ):        ❌ തെറ്റായ ഘടന (ഇങ്ങനെ ചെയ്താൽ Login ആകില്ല!):
-adminAuth                                              adminAuth
-├── email (string) : "nimdevathiyal4883@gmail.com"     └── email (map)  <-- email ഒരു map ആയി!
-├── adminsIndex (map)                                      ├── admins (map)      <-- Root-ൽ അല്ല!
-│   └── nimdevathiyal4883@gmail.com (boolean) : true       └── adminsIndex (map) <-- Root-ൽ അല്ല!
-└── admins (array)
+✅ ശരിയായ ഘടന (Document Root-ൽ 4 ഫീൽഡുകൾ):        ❌ തെറ്റായ ഘടന (ഇങ്ങനെ ചെയ്താൽ Login ആകില്ല!):
+company/config                                         company/config
+├── companyName (string) : "Noorul Islam Platform"     └── email (map)  <-- email ഒരു map ആയി!
+├── email (string) : "nimdevathiyal4883@gmail.com"         ├── owners (map)      <-- Root-ൽ അല്ല!
+├── ownersIndex (map)                                      └── ownersIndex (map) <-- Root-ൽ അല്ല!
+│   └── nimdevathiyal4883@gmail.com (boolean) : true
+└── owners (array)
     └── 0 (map)
         ├── email (string)     : "nimdevathiyal4883@gmail.com"
-        ├── name (string)      : "Master Admin"
-        ├── role (string)      : "super_admin"
+        ├── name (string)      : "Company Owner"
+        ├── role (string)      : "company_owner"
         └── isActive (boolean) : true
 ```
 
-JSON രൂപത്തിലുള്ള റഫറൻസ്:
+#### JSON രൂപത്തിലുള്ള റഫറൻസ്:
 ```json
 {
+  "companyName": "Noorul Islam Platform",
   "email": "nimdevathiyal4883@gmail.com",
-  "adminsIndex": {
+  "ownersIndex": {
     "nimdevathiyal4883@gmail.com": true
   },
-  "admins": [
+  "owners": [
     {
-      "name": "Master Admin",
+      "name": "Company Owner",
       "email": "nimdevathiyal4883@gmail.com",
-      "role": "super_admin",
+      "role": "company_owner",
       "isActive": true
     }
   ]
 }
 ```
 
-> **പ്രധാന മുന്നറിയിപ്പ് (Common Mistake):**
-> 1. `email` എന്ന ഫീൽഡ് **`map`** ആക്കി അതിനുള്ളിൽ `admins`-ഉം `adminsIndex`-ഉം നൽകിയാൽ, `firestore.rules` Root-ൽ `email` (string), `adminsIndex` (map) എന്നിവ തിരയുമ്പോൾ കണ്ടെത്താനാകാതെ **`PERMISSION_DENIED`** നൽകും. ഫലമായി Username verify ആയാലും Password അടിക്കുമ്പോൾ **`Incorrect credentials or account not active.`** എന്ന് കാണിക്കും.
-> 2. `email` (`string`) മാത്രം നൽകുകയും `adminsIndex`, `admins` എന്നിവ ഒഴിവാക്കുകയും ചെയ്താൽ, case-insensitive ചെക്കിംഗിലും Admin Panel -> Security Settings-ലെ Multi-admin ലിസ്റ്റിലും പ്രശ്നങ്ങൾ വരാം. അതിനാൽ മുകളിൽ കാണിച്ച 3 Root ഫീൽഡുകളും കൃത്യമായ ടൈപ്പിൽ നൽകുക.
-
-### ഘട്ടം C: ആദ്യ ലോഗിൻ (First Login Verification)
-1. ആപ്ലിക്കേഷന്റെ Home Page (`index.html`) തുറന്ന് **Login** ക്ലിക്ക് ചെയ്യുക.
-2. Step 1-ൽ Admin Email (ഉദാ: `nimdevathiyal4883@gmail.com`) നൽകുക *(പുതിയ DB ആയതിനാൽ `settings/config` ഇല്ലെങ്കിലും email verification വഴി Step 2-ലേക്ക് പോകാൻ ആപ്പ് സപ്പോർട്ട് ചെയ്യുന്നുണ്ട്)*.
-3. Step 2-ൽ Authentication -> Users-ൽ നൽകിയ Password അടിച്ച് Sign In ചെയ്യുക.
-4. ലോഗിൻ വിജയിക്കുമ്പോൾ `institutions/school/settings/config` ഡോക്യുമെന്റിലെ `adminProfile` ആപ്പ് സ്വയമേവ Bootstrap ചെയ്യുന്നതാണ്.
+### ഘട്ടം C: ആദ്യ ലോഗിൻ & സ്ഥാപനം നിർമ്മിക്കൽ
+1. ആപ്ലിക്കേഷന്റെ Root Home Page (`https://domain.com/`) തുറന്ന് **Login** ക്ലിക്ക് ചെയ്യുക.
+2. Step 1-ൽ Company Owner Email (ഉദാ: `nimdevathiyal4883@gmail.com`) നൽകുക.
+3. Step 2-ൽ Password അടിച്ച് Sign In ചെയ്യുമ്പോൾ നേരെ **Company Master Portal (`/company`)**-ലേക്ക് പ്രവേശിക്കും.
+4. അവിടെ നിന്ന് **Add Institution** വഴി പുതിയ സ്ഥാപനവും (`slug`, `plan`, `allowedPages`) അതിന്റെ Super Admin അക്കൗണ്ടും ഒറ്റ ക്ലിക്കിൽ നിർമ്മിക്കാം (`https://domain.com/<slug>`).
 
 ---
 

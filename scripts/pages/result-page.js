@@ -2,9 +2,11 @@ import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/1
 import { doc, onSnapshot, collection, getDocs, writeBatch, setDoc, query, where, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '../../config/app-config.js';
-import { BASE_PATH, applyInstitutionBranding, enableSmartSelectWindowing, escapeHtml, isPastAcademicYearLabel, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, isPastAcademicYearLabel, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 import { showToast } from '../shared/toaster.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
 // --- Global Variables ---
 let isCurrentAdmin = false;
@@ -959,7 +961,18 @@ const bootstrapSessionAccess = () => {
 // --- Authentication & Guard (Username Based) in Background ---
 onAuthStateChanged(auth, async (user) => {
     if (!user) {
-        window.location.replace('index.html');
+        window.location.replace(getPageUrl('index.html'));
+        return;
+    }
+
+    const tenantCheck = await ensureTenantStatusAndAccess({
+        db,
+        requiredPage: 'result',
+        institutionId: INSTITUTION_ID,
+        liveWatch: true
+    });
+    if (!tenantCheck?.active) {
+        dismissLoadingScreen();
         return;
     }
 
@@ -999,7 +1012,7 @@ onAuthStateChanged(auth, async (user) => {
                         accountId: access.staffDoc?.id || staffAccess?.staffId || '',
                         message: 'Your staff account is no longer active or has been removed by the administrator.',
                         authInstance: auth,
-                        redirectUrl: 'index.html'
+                        redirectUrl: getPageUrl('index.html')
                     });
                     return;
                 }
@@ -1017,7 +1030,7 @@ onAuthStateChanged(auth, async (user) => {
 
 // --- User Logout Handling ---
 const handleLogout = () => {
-    window.AppSession?.signOut?.(auth, { redirectUrl: 'index.html?public=1' });
+    window.AppSession?.signOut?.(auth, { redirectUrl: getPageUrl('index.html?public=1') });
 };
 
 document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
@@ -1460,7 +1473,7 @@ function initializeDataListeners() {
             } catch (_) {}
             if (conf.enabledModules.result === false) {
                 sessionStorage.setItem('app_session_flash', 'Module Disabled: The Result System module is currently disabled by institution administration.');
-                window.location.href = 'official.html';
+                window.location.href = getPageUrl('official.html');
                 return;
             }
         }
@@ -1480,7 +1493,7 @@ function initializeDataListeners() {
         if (ctrl.isLocked && role !== 'admin') {
             sessionStorage.setItem('app_session_flash', ctrl.lockMessage || 'Official session is currently locked by institution administrator.');
             window.AppSession?.clearAll?.();
-            window.location.href = 'index.html';
+            window.location.href = getPageUrl('index.html');
         }
     });
 

@@ -3,6 +3,7 @@
   if (!guardKey || !window.AppSession) return;
 
   const guardMap = {
+    company: () => window.AppSession.guardCompanyPage?.(),
     admin: () => window.AppSession.guardAdminPage?.(),
     collection: () => window.AppSession.guardStaffPageAccess?.('collection'),
     result: () => window.AppSession.guardStaffPageAccess?.('result'),

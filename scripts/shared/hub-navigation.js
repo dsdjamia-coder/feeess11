@@ -19,7 +19,7 @@
       if (mobileToggle && mobileToggle.parentNode && mobileToggle.parentNode.contains(mobileToggle) && !document.getElementById('topbar-hub-link')) {
         const hubBtn = document.createElement('a');
         hubBtn.id = 'topbar-hub-link';
-        hubBtn.href = 'official.html';
+        hubBtn.href = window.AppSession?.buildPageUrl?.('official.html') || 'official.html';
         hubBtn.className = 'hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 transition-all mr-2';
         hubBtn.title = 'Back to Official Hub';
         hubBtn.innerHTML = '<i class="fas fa-th-large text-blue-600"></i><span>Official Hub</span>';

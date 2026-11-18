@@ -1,8 +1,56 @@
 (function () {
-    // Clean URL Guard: Strip any lingering hash fragment on load/refresh so the page starts cleanly at base .html
-    if (typeof window !== 'undefined' && window.location && window.location.hash) {
+    const RESERVED_TENANT_SEGMENTS = new Set([
+        'index',
+        'company',
+        'admin',
+        'attendance',
+        'academic-plan',
+        'activity',
+        'evaluation',
+        'collection',
+        'official',
+        'result',
+        'student',
+        'worksheet',
+        'platform',
+        'official-dashboard',
+        'student-fee-system',
+        'studentmanagement',
+        'assets',
+        'scripts',
+        'styles',
+        'config',
+        'public'
+    ]);
+
+    const sanitizeInstitutionSlug = (val = '') => {
+        const clean = String(val || '').trim().toLowerCase();
+        if (!clean || RESERVED_TENANT_SEGMENTS.has(clean)) return '';
+        return /^[a-z0-9][a-z0-9-_]{0,63}$/.test(clean) ? clean : '';
+    };
+
+    const resolveCurrentInstitutionId = () => {
         try {
-            history.replaceState(null, '', window.location.pathname + window.location.search);
+            const segments = String(window.location.pathname || '').split('/').filter(Boolean);
+            if (segments.length > 0 && !segments[0].includes('.')) {
+                const fromPath = sanitizeInstitutionSlug(segments[0]);
+                if (fromPath) return fromPath;
+            }
+            const params = new URLSearchParams(window.location.search || '');
+            const fromQuery = sanitizeInstitutionSlug(params.get('inst') || params.get('institution') || '');
+            if (fromQuery) return fromQuery;
+        } catch (_) {}
+        return 'school';
+    };
+
+    const CURRENT_INSTITUTION_ID = resolveCurrentInstitutionId();
+
+    // Clean URL Guard: Strip any lingering hash fragment on initial load
+    if (typeof window !== 'undefined' && window.location) {
+        try {
+            if (window.location.hash) {
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
         } catch (_) {}
     }
 
@@ -11,17 +59,21 @@
     const ROLE_SESSION_POLICY = {
         student: { maxAgeMs: 0, idleMs: 0 },
         staff: { maxAgeMs: 0, idleMs: 0 },
-        admin: { maxAgeMs: 0, idleMs: 0 }
+        admin: { maxAgeMs: 0, idleMs: 0 },
+        company: { maxAgeMs: 0, idleMs: 0 }
     };
     const STAFF_STATE_KEY = 'app_session_staff_state';
     const ADMIN_STATE_KEY = 'app_session_admin_state';
     const STUDENT_STATE_KEY = 'app_session_student_state';
+    const COMPANY_STATE_KEY = 'app_session_company_state';
+    const COMPANY_ALLOWED_PAGES_KEY = 'app_company_allowed_pages';
     const STUDENT_ACCOUNTS_KEY = 'app_student_accounts';
     const REMEMBERED_ACCOUNTS_KEY = 'app_remembered_accounts';
     const DISMISSED_GROUP_STUDENTS_KEY = 'app_dismissed_group_students';
     const CURRENT_ROLE_KEY = 'app_session_current_role';
     const FLASH_KEY = 'app_session_flash';
     const ACTIVE_PROJECT_KEY = 'app_active_firebase_project_id';
+    const ACTIVE_INSTITUTION_KEY = 'app_active_institution_id';
     const OFFICIAL_SESSION_KEY = 'official_portal_session_v1';
 
     const now = () => Date.now();
@@ -36,6 +88,48 @@
     };
     const writeJson = (key, value) => localStorage.setItem(key, JSON.stringify(value));
     const removeKey = (key) => localStorage.removeItem(key);
+
+    const getInstitutionId = () => CURRENT_INSTITUTION_ID;
+
+    const buildPageUrl = (target = 'index.html', overrideInstitutionId = null) => {
+        const raw = String(target || 'index.html').trim();
+        if (!raw || /^https?:\/\//i.test(raw) || raw.startsWith('mailto:') || raw.startsWith('tel:') || raw.startsWith('#')) return raw;
+        const cleaned = raw.replace(/^\/+/, '').replace(/^\.?\//, '');
+        if (!cleaned) {
+            const targetInst = overrideInstitutionId !== null
+                ? (sanitizeInstitutionSlug(overrideInstitutionId) || 'school')
+                : CURRENT_INSTITUTION_ID;
+            return targetInst === 'school' ? '/' : `/${targetInst}`;
+        }
+        const match = cleaned.match(/^([^?#]+)(.*)$/);
+        const pagePart = match ? match[1] : cleaned;
+        const suffixPart = match ? (match[2] || '') : '';
+        if (/^company(?:\.html)?$/i.test(pagePart)) {
+            return `/company${suffixPart}`;
+        }
+        const targetInst = overrideInstitutionId !== null
+            ? (sanitizeInstitutionSlug(overrideInstitutionId) || 'school')
+            : CURRENT_INSTITUTION_ID;
+        if (targetInst === 'school') {
+            return `/${cleaned}`;
+        }
+        if (pagePart.toLowerCase().startsWith(`${targetInst}/`)) {
+            return `/${pagePart}${suffixPart}`;
+        }
+        const normalizedPage = pagePart.replace(/\.html$/i, '');
+        if (!normalizedPage || normalizedPage.toLowerCase() === 'index') {
+            return `/${targetInst}${suffixPart}`;
+        }
+        return `/${targetInst}/${normalizedPage}${suffixPart}`;
+    };
+
+    try {
+        const prevInst = String(localStorage.getItem(ACTIVE_INSTITUTION_KEY) || '').trim().toLowerCase();
+        if (prevInst && prevInst !== CURRENT_INSTITUTION_ID) {
+            ['app_enabled_modules', 'app_current_academic_year', 'current_academic_year', 'cached_institution_logo', COMPANY_ALLOWED_PAGES_KEY].forEach(removeKey);
+        }
+        localStorage.setItem(ACTIVE_INSTITUTION_KEY, CURRENT_INSTITUTION_ID);
+    } catch (_) {}
 
     const getActiveProjectId = () => {
         try {
@@ -53,11 +147,13 @@
         } catch (_) {}
     };
 
-    const matchesProjectScope = (record = null) => {
+    const matchesProjectScope = (record = null, { ignoreInstitution = false } = {}) => {
         if (!record || typeof record !== 'object') return false;
         const activeProject = getActiveProjectId();
-        if (!activeProject) return true;
-        return record.projectId === activeProject;
+        if (activeProject && record.projectId !== activeProject) return false;
+        if (ignoreInstitution) return true;
+        const recordInst = String(record.institutionId || 'school').trim().toLowerCase();
+        return recordInst === CURRENT_INSTITUTION_ID;
     };
 
     const setCurrentRole = (role = '') => {
@@ -69,13 +165,21 @@
             localStorage.removeItem(CURRENT_ROLE_KEY);
         }
     };
+
+    const getCompanyState = () => {
+        const state = readJson(COMPANY_STATE_KEY);
+        return matchesProjectScope(state, { ignoreInstitution: true }) ? state : null;
+    };
+
     const getRole = () => {
         const storedRole = sessionStorage.getItem(CURRENT_ROLE_KEY) || localStorage.getItem(CURRENT_ROLE_KEY);
         if (storedRole) {
+            if (storedRole === 'company' && isCompanyStateFresh(getCompanyState())) return 'company';
             if (storedRole === 'student' && getStudentState()?.studentId) return 'student';
             if (storedRole === 'staff' && isStateFresh(getStaffState(), 'staff')) return 'staff';
             if (storedRole === 'admin' && isStateFresh(getAdminState(), 'admin')) return 'admin';
         }
+        if (isCompanyStateFresh(getCompanyState())) return 'company';
         if (getStudentState()?.studentId) return 'student';
         if (isStateFresh(getStaffState(), 'staff')) return 'staff';
         if (isStateFresh(getAdminState(), 'admin')) return 'admin';
@@ -88,6 +192,7 @@
         return {
             startedAt: timestamp,
             lastActiveAt: timestamp,
+            institutionId: CURRENT_INSTITUTION_ID,
             ...(projectId ? { projectId } : {}),
             ...extra
         };
@@ -102,6 +207,11 @@
         if (!state || !state.lastActiveAt || !state.startedAt) return false;
         if (!matchesProjectScope(state)) return false;
         return true;
+    };
+
+    const isCompanyStateFresh = (state) => {
+        if (!state || !state.lastActiveAt || !state.startedAt) return false;
+        return matchesProjectScope(state, { ignoreInstitution: true });
     };
 
     const getStaffState = () => {
@@ -120,16 +230,24 @@
         const accounts = readJson(STUDENT_ACCOUNTS_KEY);
         if (!Array.isArray(accounts)) return [];
         const activeProject = getActiveProjectId();
-        if (!activeProject) return accounts;
-        return accounts.filter((a) => a && a.projectId === activeProject);
+        return accounts.filter((a) => {
+            if (!a) return false;
+            if (activeProject && a.projectId !== activeProject) return false;
+            return String(a.institutionId || 'school').trim().toLowerCase() === CURRENT_INSTITUTION_ID;
+        });
     };
     const saveStudentAccounts = (accounts = []) => {
         const activeProject = getActiveProjectId();
+        const allStored = readJson(STUDENT_ACCOUNTS_KEY);
+        const otherTenants = Array.isArray(allStored)
+            ? allStored.filter((a) => a && (!activeProject || a.projectId === activeProject) && String(a.institutionId || 'school').trim().toLowerCase() !== CURRENT_INSTITUTION_ID)
+            : [];
         const stamped = (Array.isArray(accounts) ? accounts : []).map((a) => ({
             ...a,
+            institutionId: CURRENT_INSTITUTION_ID,
             ...(activeProject ? { projectId: activeProject } : {})
         }));
-        writeJson(STUDENT_ACCOUNTS_KEY, stamped);
+        writeJson(STUDENT_ACCOUNTS_KEY, [...stamped, ...otherTenants]);
     };
 
     const isStudentAccountRecord = (account = null) => Boolean(
@@ -141,10 +259,11 @@
         if (!raw) return [];
         const activeProject = getActiveProjectId();
         if (Array.isArray(raw)) {
-            return activeProject ? [] : raw.map((id) => String(id || '').trim()).filter(Boolean);
+            return (activeProject || CURRENT_INSTITUTION_ID !== 'school') ? [] : raw.map((id) => String(id || '').trim()).filter(Boolean);
         }
         if (typeof raw === 'object') {
             if (activeProject && raw.projectId && raw.projectId !== activeProject) return [];
+            if (String(raw.institutionId || 'school').trim().toLowerCase() !== CURRENT_INSTITUTION_ID) return [];
             const ids = Array.isArray(raw.ids) ? raw.ids : [];
             return ids.map((id) => String(id || '').trim()).filter(Boolean);
         }
@@ -159,6 +278,7 @@
             return;
         }
         writeJson(DISMISSED_GROUP_STUDENTS_KEY, {
+            institutionId: CURRENT_INSTITUTION_ID,
             ...(activeProject ? { projectId: activeProject } : {}),
             ids: unique
         });
@@ -206,14 +326,18 @@
             if (accounts.length) writeJson(REMEMBERED_ACCOUNTS_KEY, accounts);
         }
         if (!Array.isArray(accounts)) return [];
-        // Strictly restrict remembered multi-account switching to student accounts only
-        const studentOnly = accounts.filter((a) => isStudentAccountRecord(a));
+        // Strictly restrict remembered multi-account switching to student accounts for the current institution
+        const studentOnly = accounts.filter((a) => isStudentAccountRecord(a) && String(a.institutionId || 'school').trim().toLowerCase() === CURRENT_INSTITUTION_ID);
         if (!activeProject) return studentOnly;
         return studentOnly.filter((a) => a.projectId === activeProject);
     };
 
     const saveRememberedAccounts = (accounts = []) => {
         const activeProject = getActiveProjectId();
+        const rawStored = readJson(REMEMBERED_ACCOUNTS_KEY);
+        const otherTenantAccounts = Array.isArray(rawStored)
+            ? rawStored.filter((a) => isStudentAccountRecord(a) && (!activeProject || a.projectId === activeProject) && String(a.institutionId || 'school').trim().toLowerCase() !== CURRENT_INSTITUTION_ID)
+            : [];
         const studentOnly = (Array.isArray(accounts) ? accounts : [])
             .filter((a) => isStudentAccountRecord(a))
             .map((a) => ({
@@ -221,9 +345,10 @@
                 role: 'student',
                 studentId: a.studentId || a.id,
                 id: a.id || a.studentId,
+                institutionId: CURRENT_INSTITUTION_ID,
                 ...(activeProject ? { projectId: activeProject } : {})
             }));
-        writeJson(REMEMBERED_ACCOUNTS_KEY, studentOnly);
+        writeJson(REMEMBERED_ACCOUNTS_KEY, [...studentOnly, ...otherTenantAccounts]);
         saveStudentAccounts(studentOnly.map((s) => ({
             studentId: s.studentId || s.id,
             name: s.name || '',
@@ -231,6 +356,7 @@
             adm: s.adm || '',
             ...(s.groupId ? { groupId: s.groupId } : {}),
             ...(s.groupName ? { groupName: s.groupName } : {}),
+            institutionId: CURRENT_INSTITUTION_ID,
             ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: s.updatedAt
         })));
@@ -249,6 +375,7 @@
             id: targetId,
             studentId: targetId,
             role: 'student',
+            institutionId: CURRENT_INSTITUTION_ID,
             ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: now()
         };
@@ -266,6 +393,7 @@
     };
 
     const getStateByRole = (role) => {
+        if (role === 'company') return getCompanyState();
         if (role === 'staff') return getStaffState();
         if (role === 'admin') return getAdminState();
         if (role === 'student') return getStudentState();
@@ -287,6 +415,8 @@
             if (savedDismissed) preserve[DISMISSED_GROUP_STUDENTS_KEY] = savedDismissed;
             const savedProject = localStorage.getItem(ACTIVE_PROJECT_KEY);
             if (savedProject) preserve[ACTIVE_PROJECT_KEY] = savedProject;
+            const savedInst = localStorage.getItem(ACTIVE_INSTITUTION_KEY);
+            if (savedInst) preserve[ACTIVE_INSTITUTION_KEY] = savedInst;
             localStorage.clear();
             Object.entries(preserve).forEach(([key, value]) => localStorage.setItem(key, value));
         } catch (error) {
@@ -304,13 +434,13 @@
     };
 
     const clearAll = async (options = {}) => {
-        [STAFF_STATE_KEY, ADMIN_STATE_KEY, STUDENT_STATE_KEY, OFFICIAL_SESSION_KEY].forEach(removeKey);
+        [STAFF_STATE_KEY, ADMIN_STATE_KEY, STUDENT_STATE_KEY, COMPANY_STATE_KEY, OFFICIAL_SESSION_KEY].forEach(removeKey);
         setCurrentRole('');
         if (options.purgeClientData) {
             await clearClientData();
         }
         if (options.redirectUrl) {
-            window.location.href = options.redirectUrl;
+            window.location.href = buildPageUrl(options.redirectUrl);
         }
     };
 
@@ -323,10 +453,11 @@
         const rawStaff = readJson(STAFF_STATE_KEY);
         const rawAdmin = readJson(ADMIN_STATE_KEY);
         const rawStudent = readJson(STUDENT_STATE_KEY);
+        const rawCompany = readJson(COMPANY_STATE_KEY);
 
         const hasStaleOrUntaggedRemembered = Array.isArray(rawRemembered) && rawRemembered.some((a) => !a || a.projectId !== cleanProject);
         const hasStaleOrUntaggedStudents = Array.isArray(rawStudents) && rawStudents.some((a) => !a || a.projectId !== cleanProject);
-        const hasStaleOrUntaggedSession = [rawStaff, rawAdmin, rawStudent].some((s) => s && s.projectId !== cleanProject);
+        const hasStaleOrUntaggedSession = [rawStaff, rawAdmin, rawStudent, rawCompany].some((s) => s && s.projectId !== cleanProject);
 
         const projectChanged = Boolean(previousProject && previousProject !== cleanProject);
         const needsLegacyPurge = !previousProject && (hasStaleOrUntaggedRemembered || hasStaleOrUntaggedStudents || hasStaleOrUntaggedSession);
@@ -336,6 +467,8 @@
                 STAFF_STATE_KEY,
                 ADMIN_STATE_KEY,
                 STUDENT_STATE_KEY,
+                COMPANY_STATE_KEY,
+                COMPANY_ALLOWED_PAGES_KEY,
                 STUDENT_ACCOUNTS_KEY,
                 REMEMBERED_ACCOUNTS_KEY,
                 DISMISSED_GROUP_STUDENTS_KEY,
@@ -354,6 +487,8 @@
     };
 
     const pruneExpiredStates = () => {
+        const companyState = readJson(COMPANY_STATE_KEY);
+        if (companyState && !isCompanyStateFresh(companyState)) removeKey(COMPANY_STATE_KEY);
         const staffState = readJson(STAFF_STATE_KEY);
         if (staffState && !isStateFresh(staffState, 'staff')) removeKey(STAFF_STATE_KEY);
         const adminState = readJson(ADMIN_STATE_KEY);
@@ -366,20 +501,73 @@
         const role = getRole();
         const state = getStateByRole(role);
         if (!state) return;
-        writeJson(role === 'admin' ? ADMIN_STATE_KEY : role === 'staff' ? STAFF_STATE_KEY : STUDENT_STATE_KEY, {
+        const targetKey = role === 'company'
+            ? COMPANY_STATE_KEY
+            : (role === 'admin' ? ADMIN_STATE_KEY : role === 'staff' ? STAFF_STATE_KEY : STUDENT_STATE_KEY);
+        writeJson(targetKey, {
             ...state,
             lastActiveAt: now()
         });
     };
 
+    const hasCompanySession = () => isCompanyStateFresh(getCompanyState());
     const hasStaffSession = () => isStateFresh(getStaffState(), 'staff');
     const hasAdminSession = () => isStateFresh(getAdminState(), 'admin');
     const hasStudentSession = () => Boolean(getStudentState()?.studentId);
 
+    const setCompanyAllowedPages = (allowedPages = null) => {
+        try {
+            if (!allowedPages || typeof allowedPages !== 'object') {
+                removeKey(COMPANY_ALLOWED_PAGES_KEY);
+                return;
+            }
+            writeJson(COMPANY_ALLOWED_PAGES_KEY, {
+                institutionId: CURRENT_INSTITUTION_ID,
+                pages: allowedPages
+            });
+        } catch (_) {}
+    };
+
+    const getCompanyAllowedPages = () => {
+        try {
+            const stored = readJson(COMPANY_ALLOWED_PAGES_KEY);
+            if (!stored || typeof stored !== 'object') return null;
+            if (String(stored.institutionId || 'school').trim().toLowerCase() !== CURRENT_INSTITUTION_ID) return null;
+            return stored.pages && typeof stored.pages === 'object' ? stored.pages : null;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const isCompanyPageAllowed = (pageKey = '') => {
+        const pages = getCompanyAllowedPages();
+        if (!pages) return true;
+        if (pageKey === 'evaluation' && pages.classroomEvaluation === false) return false;
+        if (pageKey === 'classroomEvaluation' && pages.evaluation === false) return false;
+        if (pageKey === 'activity' && pages.studentActivity === false) return false;
+        if (pageKey === 'studentActivity' && pages.activity === false) return false;
+        return pages[pageKey] !== false;
+    };
+
     const redirectHome = (message = '') => {
         setFlash(message);
-        window.location.href = 'index.html';
+        window.location.href = buildPageUrl('index.html');
     };
+
+    // Preserve /<slug>/ routing when static HTML anchors link to sibling pages
+    if (typeof document !== 'undefined') {
+        document.addEventListener('click', (event) => {
+            if (CURRENT_INSTITUTION_ID === 'school') return;
+            const anchor = event.target?.closest?.('a[href]');
+            if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+            const href = String(anchor.getAttribute('href') || '').trim();
+            if (!href || href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith(`/${CURRENT_INSTITUTION_ID}/`)) return;
+            if (/^\.?\/?[a-z0-9-_]+\.html(?:[?#].*)?$/i.test(href)) {
+                event.preventDefault();
+                window.location.href = buildPageUrl(href);
+            }
+        });
+    }
 
     let activityBound = false;
     const bindActivityTracking = () => {
@@ -410,10 +598,13 @@
         SESSION_MAX_AGE_MS: DEFAULT_SESSION_MAX_AGE_MS,
         SESSION_IDLE_MAX_AGE_MS: DEFAULT_SESSION_IDLE_MAX_AGE_MS,
         SESSION_POLICY: ROLE_SESSION_POLICY,
+        getInstitutionId,
+        buildPageUrl,
         getActiveProjectId,
         syncFirebaseProject,
         clearAll,
         async signOut(authInstance, options = {}) {
+            const wasCompany = getRole() === 'company' || hasCompanySession();
             try {
                 if (authInstance && typeof authInstance.signOut === 'function') {
                     await authInstance.signOut();
@@ -426,7 +617,7 @@
             await clearAll({ purgeClientData: true });
             const redirectUrl = options.redirectUrl !== undefined ? options.redirectUrl : 'index.html?public=1';
             if (redirectUrl) {
-                window.location.href = redirectUrl;
+                window.location.href = wasCompany ? `/${String(redirectUrl).replace(/^\/+/, '')}` : buildPageUrl(redirectUrl);
             }
         },
         async revokeCurrentAccount(options = {}) {
@@ -490,7 +681,7 @@
                 console.warn('Sign out on account revocation warning:', err);
             }
             if (redirectUrl) {
-                window.location.replace(redirectUrl);
+                window.location.replace(buildPageUrl(redirectUrl));
             }
         },
         consumeFlash() {
@@ -533,6 +724,7 @@
             return isStateFresh(getStateByRole(role), role);
         },
         isModuleEnabled(moduleKey) {
+            if (!isCompanyPageAllowed(moduleKey)) return false;
             try {
                 const raw = localStorage.getItem('app_enabled_modules');
                 if (!raw) return true;
@@ -541,6 +733,28 @@
             } catch (_e) {
                 return true;
             }
+        },
+        setCompanyAllowedPages,
+        getCompanyAllowedPages,
+        isCompanyPageAllowed,
+        hasCompanySession,
+        getCompanyState,
+        startCompany(companyProfile = {}) {
+            const email = String(companyProfile?.email || '').trim().toLowerCase();
+            const name = companyProfile?.name || 'Company Owner';
+            const companyName = companyProfile?.companyName || 'Platform Master Console';
+            const projectId = getActiveProjectId();
+            const timestamp = now();
+            writeJson(COMPANY_STATE_KEY, {
+                startedAt: timestamp,
+                lastActiveAt: timestamp,
+                ...(projectId ? { projectId } : {}),
+                role: 'company',
+                name,
+                email,
+                companyName
+            });
+            setCurrentRole('company');
         },
         hasStudentSession,
         hasStaffSession,
@@ -785,7 +999,7 @@
                 removeKey(ADMIN_STATE_KEY);
                 removeKey(OFFICIAL_SESSION_KEY);
                 this.startStudent(account.studentId || account.id, account);
-                window.location.href = 'student.html';
+                window.location.href = buildPageUrl('student.html');
                 return true;
             }
 
@@ -812,6 +1026,7 @@
                 this.startStaff(account.name, account.email || account.loginId || '', staffAccess);
 
                 const officialSessionObj = {
+                    institutionId: CURRENT_INSTITUTION_ID,
                     ...(activeProject ? { projectId: activeProject } : {}),
                     id: account.staffId || account.entryId || '',
                     name: account.name || 'Staff Member',
@@ -836,7 +1051,7 @@
                     access: staffAccess
                 };
                 localStorage.setItem(OFFICIAL_SESSION_KEY, JSON.stringify(officialSessionObj));
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return true;
             }
 
@@ -845,6 +1060,7 @@
                 removeKey(STAFF_STATE_KEY);
                 this.startAdmin(account);
                 const officialSessionObj = {
+                    institutionId: CURRENT_INSTITUTION_ID,
                     ...(activeProject ? { projectId: activeProject } : {}),
                     id: 'admin',
                     name: account.name || 'Administrator',
@@ -864,7 +1080,7 @@
                     canAccessEvaluation: true
                 };
                 localStorage.setItem(OFFICIAL_SESSION_KEY, JSON.stringify(officialSessionObj));
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return true;
             }
 
@@ -902,6 +1118,11 @@
         touchSession,
         guardStudentPage() {
             pruneExpiredStates();
+            if (!isCompanyPageAllowed('student')) {
+                this.logoutStudent();
+                redirectHome('Student Portal is not included in this institution plan.');
+                return;
+            }
             if (this.isModuleEnabled('student') === false) {
                 this.logoutStudent();
                 redirectHome('Student Portal is currently disabled by institution administration.');
@@ -916,6 +1137,10 @@
         },
         guardStaffOrAdminPage() {
             pruneExpiredStates();
+            if (!isCompanyPageAllowed('official')) {
+                redirectHome('Official Hub is not included in this institution plan.');
+                return;
+            }
             if (hasAdminSession()) {
                 setCurrentRole('admin');
                 return;
@@ -929,6 +1154,28 @@
         guardStaffPageAccess(requiredPage = 'collection') {
             pruneExpiredStates();
 
+            const MODULE_NAMES = {
+                admin: 'Admin Dashboard',
+                official: 'Official Hub',
+                collection: 'Fee Collection',
+                worksheet: 'Worksheet Hub',
+                student: 'Student Directory',
+                result: 'Exam Results',
+                attendance: 'Attendance Register',
+                academicPlan: 'Academic Planning',
+                studentActivity: 'Activity & Rewards',
+                activity: 'Activity & Rewards',
+                classroomEvaluation: 'Classroom Evaluation',
+                evaluation: 'Classroom Evaluation'
+            };
+
+            if (!isCompanyPageAllowed(requiredPage)) {
+                const modName = MODULE_NAMES[requiredPage] || 'Requested';
+                setFlash(`Plan Restricted: The ${modName} page is not enabled for this institution by the platform company.`);
+                window.location.href = buildPageUrl(isCompanyPageAllowed('official') ? 'official.html' : 'index.html?public=1');
+                return;
+            }
+
             // Institutional module enablement check
             const enabledModules = (function () {
                 try {
@@ -939,22 +1186,10 @@
                 }
             })();
 
-            const MODULE_NAMES = {
-                collection: 'Fee Collection',
-                worksheet: 'Worksheet Hub',
-                student: 'Student Directory',
-                result: 'Exam Results',
-                attendance: 'Attendance Register',
-                academicPlan: 'Academic Planning',
-                studentActivity: 'Activity & Rewards',
-                classroomEvaluation: 'Classroom Evaluation',
-                evaluation: 'Classroom Evaluation'
-            };
-
             if (enabledModules && enabledModules[requiredPage] === false) {
                 const modName = MODULE_NAMES[requiredPage] || 'Requested';
                 setFlash(`Module Disabled: The ${modName} module is currently disabled by institution administration.`);
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
 
@@ -977,17 +1212,17 @@
             }
             if (requiredPage === 'collection' && access && access.collection !== true) {
                 setFlash('Access Restricted: Your account does not have Fee Collection page access.');
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
             if (requiredPage === 'worksheet' && access && access.worksheet !== true) {
                 setFlash('Access Restricted: Your account does not have Class Worksheet page access.');
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
             if (requiredPage === 'student' && access && access.student !== true) {
                 setFlash('Access Restricted: Your account does not have Student page access.');
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
             if (requiredPage === 'result' && access) {
@@ -995,33 +1230,38 @@
                 const collectionFallback = access.collection === true && window.location.search.includes('from=collection');
                 if (!hasResultAccess && !collectionFallback) {
                     setFlash('Access Restricted: Your account does not have Result System page access.');
-                    window.location.href = 'official.html';
+                    window.location.href = buildPageUrl('official.html');
                     return;
                 }
             }
             if (requiredPage === 'attendance' && access && access.attendance !== true) {
                 setFlash('Access Restricted: Your account does not have Attendance Register page access.');
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
             if (requiredPage === 'academicPlan' && access && access.academicPlan !== true) {
                 setFlash('Access Restricted: Your account does not have Academic Planning page access.');
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
             if (requiredPage === 'studentActivity' && access && access.studentActivity !== true && access.activity !== true) {
                 setFlash('Access Restricted: Your account does not have Activity & Rewards page access.');
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
             if ((requiredPage === 'classroomEvaluation' || requiredPage === 'evaluation') && access && access.classroomEvaluation !== true && access.evaluation !== true && access.canAccessEvaluation !== true) {
                 setFlash('Access Restricted: Your account does not have Classroom Evaluation page access.');
-                window.location.href = 'official.html';
+                window.location.href = buildPageUrl('official.html');
                 return;
             }
         },
         guardAdminPage() {
             pruneExpiredStates();
+            if (!isCompanyPageAllowed('admin')) {
+                setFlash('Plan Restricted: Admin Dashboard is disabled for this institution by the platform company.');
+                window.location.href = buildPageUrl(isCompanyPageAllowed('official') ? 'official.html' : 'index.html?public=1');
+                return;
+            }
             const requestedTab = (window.location.hash || '#dashboard').replace('#', '') || 'dashboard';
             const wantsResultsTab = requestedTab === 'results';
             if (hasAdminSession()) {
@@ -1042,6 +1282,15 @@
                 return;
             }
             redirectHome('Please log in to continue.');
+        },
+        guardCompanyPage() {
+            pruneExpiredStates();
+            if (!hasCompanySession()) {
+                setFlash('Please log in with a Company Owner account to access the Platform Console.');
+                window.location.href = '/?public=1';
+                return;
+            }
+            setCurrentRole('company');
         }
     };
 }());

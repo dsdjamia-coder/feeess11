@@ -27,8 +27,49 @@ app.get('/official-dashboard', (req, res) => {
   res.redirect(301, '/official');
 });
 
+app.get('/company', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'company.html'));
+});
+
 // Serve static files from root with clean URLs support
 app.use(express.static(__dirname, { extensions: ['html', 'htm'] }));
+
+const KNOWN_TENANT_PAGES = new Set([
+  'index',
+  'admin',
+  'official',
+  'student',
+  'collection',
+  'result',
+  'attendance',
+  'worksheet',
+  'academic-plan',
+  'activity',
+  'evaluation'
+]);
+
+app.get('/:inst/:page', (req, res, next) => {
+  const inst = String(req.params.inst || '').trim().toLowerCase();
+  const page = String(req.params.page || '').replace(/\.html$/i, '').trim().toLowerCase();
+  if (!inst || KNOWN_TENANT_PAGES.has(inst) || inst === 'company' || inst === 'assets' || inst === 'scripts' || inst === 'styles' || inst === 'config') {
+    next();
+    return;
+  }
+  if (KNOWN_TENANT_PAGES.has(page)) {
+    res.sendFile(path.join(__dirname, `${page}.html`));
+    return;
+  }
+  next();
+});
+
+app.get('/:inst', (req, res, next) => {
+  const inst = String(req.params.inst || '').trim().toLowerCase();
+  if (!inst || inst.includes('.') || KNOWN_TENANT_PAGES.has(inst) || inst === 'company' || inst === 'assets' || inst === 'scripts' || inst === 'styles' || inst === 'config') {
+    next();
+    return;
+  }
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Fallback for home page
 app.get('/', (req, res) => {

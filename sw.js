@@ -1,4 +1,4 @@
-const CACHE_NAME = 'institution-tracer-v3-05-01';
+const CACHE_NAME = 'institution-tracer-v3-05-02';
 const IMAGE_CACHE_NAME = 'institution-tracer-images-v2';
 const ASSETS_TO_CACHE = [
   '/',
@@ -15,6 +15,9 @@ const ASSETS_TO_CACHE = [
 ];
 
 const SENSITIVE_ROUTE_SUFFIXES = [
+  '/company',
+  '/company.html',
+  '/scripts/pages/company-page.js',
   '/admin',
   '/admin.html',
   '/collection',

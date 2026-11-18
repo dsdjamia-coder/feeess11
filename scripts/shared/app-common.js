@@ -1,7 +1,26 @@
+import { doc, getDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 import { APP_VERSION, LAST_UPDATED, RELEASE_STAGE } from '../../config/version.js';
-import { BASE_PATH } from '../../config/app-config.js';
+import {
+    BASE_PATH,
+    INSTITUTION_ID,
+    INSTITUTIONS_COLLECTION,
+    DEFAULT_COMPANY_ALLOWED_PAGES,
+    isRootGatewayLocation,
+    buildInternalStaffEmail,
+    isInternalStaffEmail,
+    extractInternalUsername
+} from '../../config/app-config.js';
 
-export { BASE_PATH };
+export {
+    BASE_PATH,
+    INSTITUTION_ID,
+    INSTITUTIONS_COLLECTION,
+    DEFAULT_COMPANY_ALLOWED_PAGES,
+    isRootGatewayLocation,
+    buildInternalStaffEmail,
+    isInternalStaffEmail,
+    extractInternalUsername
+};
 export const formatCurrency = (value = 0) => {
     const num = Number(value || 0);
     if (!Number.isFinite(num)) return '₹0';
@@ -1669,3 +1688,293 @@ if (typeof document !== 'undefined') {
         initInfoMessageTags();
     }
 }
+
+const normalizeAllowedPages = (rawPages = {}) => {
+    const base = { ...DEFAULT_COMPANY_ALLOWED_PAGES };
+    if (rawPages && typeof rawPages === 'object') {
+        Object.keys(base).forEach((key) => {
+            if (key in rawPages) {
+                base[key] = rawPages[key] !== false;
+            }
+        });
+        if ('activity' in rawPages && !('studentActivity' in rawPages)) {
+            base.studentActivity = rawPages.activity !== false;
+        }
+        if ('evaluation' in rawPages && !('classroomEvaluation' in rawPages)) {
+            base.classroomEvaluation = rawPages.evaluation !== false;
+        }
+    }
+    return base;
+};
+
+export const evaluateInstitutionAccess = (institutionData = null, requiredPage = '') => {
+    if (!institutionData || typeof institutionData !== 'object') {
+        return {
+            allowed: false,
+            reasonCode: 'not_found',
+            title: 'Institution Portal Not Found',
+            message: 'The requested institution workspace does not exist or has not been activated yet.',
+            allowedPages: { ...DEFAULT_COMPANY_ALLOWED_PAGES }
+        };
+    }
+
+    const allowedPages = normalizeAllowedPages(institutionData.allowedPages || {});
+    const status = String(institutionData.status || 'active').trim().toLowerCase();
+
+    if (status === 'paused' || status === 'suspended' || institutionData.isActive === false) {
+        return {
+            allowed: false,
+            reasonCode: 'paused',
+            title: 'Portal Temporarily Paused',
+            message: 'Access to this institution portal has been temporarily paused by the platform administrator.',
+            reason: String(institutionData.pauseReason || '').trim(),
+            institutionName: String(institutionData.name || institutionData.slug || '').trim(),
+            allowedPages
+        };
+    }
+
+    const isLifetime = institutionData.isLifetime === true || String(institutionData.planName || '').toLowerCase() === 'lifetime';
+    if (!isLifetime) {
+        let expiryMs = 0;
+        const ts = institutionData.expiryTimestamp;
+        if (ts && typeof ts.toMillis === 'function') {
+            expiryMs = ts.toMillis();
+        } else if (ts && typeof ts.seconds === 'number') {
+            expiryMs = ts.seconds * 1000;
+        } else if (institutionData.expiryDate) {
+            const parsed = Date.parse(`${String(institutionData.expiryDate).trim()}T23:59:59Z`);
+            if (Number.isFinite(parsed)) expiryMs = parsed;
+        }
+        if (expiryMs > 0 && Date.now() > expiryMs) {
+            return {
+                allowed: false,
+                reasonCode: 'expired',
+                title: 'Subscription Expired',
+                message: 'This institution subscription plan has expired. Please contact the platform provider to renew service.',
+                expiryDate: String(institutionData.expiryDate || '').trim(),
+                institutionName: String(institutionData.name || institutionData.slug || '').trim(),
+                allowedPages
+            };
+        }
+    }
+
+    if (requiredPage) {
+        let normalizedKey = requiredPage;
+        if (requiredPage === 'activity') normalizedKey = 'studentActivity';
+        if (requiredPage === 'evaluation') normalizedKey = 'classroomEvaluation';
+        if (allowedPages[normalizedKey] === false) {
+            return {
+                allowed: false,
+                reasonCode: 'module_disabled',
+                title: 'Module Not Included in Plan',
+                message: 'This module is not enabled for your institution subscription package.',
+                institutionName: String(institutionData.name || institutionData.slug || '').trim(),
+                allowedPages
+            };
+        }
+    }
+
+    return {
+        allowed: true,
+        reasonCode: 'active',
+        institutionName: String(institutionData.name || institutionData.slug || '').trim(),
+        allowedPages
+    };
+};
+
+export const removeTenantLockOverlay = () => {
+    const existing = document.getElementById('tenant-status-lock-overlay');
+    if (existing) existing.remove();
+};
+
+export const showTenantLockOverlay = ({
+    reasonCode = 'paused',
+    title = 'Portal Unavailable',
+    message = 'This institution portal is currently unavailable.',
+    reason = '',
+    expiryDate = '',
+    institutionName = '',
+    allowedPages = DEFAULT_COMPANY_ALLOWED_PAGES
+} = {}) => {
+    if (typeof document === 'undefined') return;
+    const isModuleBlock = reasonCode === 'module_disabled';
+    const isNotFound = reasonCode === 'not_found';
+    const isExpired = reasonCode === 'expired';
+
+    let overlay = document.getElementById('tenant-status-lock-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'tenant-status-lock-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,23,42,0.94);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;';
+        document.body.appendChild(overlay);
+    }
+
+    const iconClass = isNotFound
+        ? 'fa-compass'
+        : isExpired
+            ? 'fa-hourglass-end'
+            : isModuleBlock
+                ? 'fa-lock'
+                : 'fa-pause-circle';
+    const badgeColor = isNotFound
+        ? 'background:#334155;color:#e2e8f0;'
+        : isExpired
+            ? 'background:#7f1d1d;color:#fecaca;'
+            : isModuleBlock
+                ? 'background:#312e81;color:#c7d2fe;'
+                : 'background:#78350f;color:#fde68a;';
+
+    const officialHref = window.AppSession?.buildPageUrl?.('official.html') || '/official.html';
+    const homeHref = window.AppSession?.buildPageUrl?.('index.html?public=1') || '/index.html?public=1';
+    const canGoOfficial = isModuleBlock && allowedPages?.official !== false;
+
+    overlay.innerHTML = `
+        <div style="max-width:460px;width:100%;background:#ffffff;border-radius:24px;padding:32px 26px;text-align:center;box-shadow:0 30px 70px rgba(0,0,0,0.45);border:1px solid #e2e8f0;font-family:'Plus Jakarta Sans',sans-serif;">
+            <div style="width:68px;height:68px;border-radius:20px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;font-size:28px;${badgeColor}">
+                <i class="fas ${escapeHtml(iconClass)}"></i>
+            </div>
+            ${institutionName ? `<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:6px;">${escapeHtml(institutionName)}</div>` : ''}
+            <h2 style="font-size:22px;font-weight:800;color:#0f172a;margin:0 0 10px;">${escapeHtml(title)}</h2>
+            <p style="font-size:14px;line-height:1.6;color:#475569;margin:0 0 18px;">${escapeHtml(message)}</p>
+            ${reason ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:13px;font-weight:600;color:#92400e;">Reason: ${escapeHtml(reason)}</div>` : ''}
+            ${expiryDate ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:13px;font-weight:600;color:#991b1b;">Expired On: ${escapeHtml(formatDateDisplay(expiryDate))}</div>` : ''}
+            <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:20px;">
+                ${canGoOfficial ? `<a href="${escapeHtml(officialHref)}" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#4f46e5;color:#ffffff;font-weight:700;font-size:13px;text-decoration:none;"><i class="fas fa-th-large"></i><span>Back to Official Hub</span></a>` : ''}
+                ${!isNotFound ? `<button type="button" id="tenant-lock-signout-btn" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#0f172a;color:#ffffff;font-weight:700;font-size:13px;border:none;cursor:pointer;"><i class="fas fa-arrow-right-from-bracket"></i><span>${isModuleBlock ? 'Public Home' : 'Sign Out & Return Home'}</span></button>` : ''}
+                <a href="/" style="display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:12px;background:#f1f5f9;color:#334155;font-weight:700;font-size:13px;text-decoration:none;border:1px solid #cbd5e1;"><i class="fas fa-house"></i><span>Platform Home</span></a>
+            </div>
+        </div>
+    `;
+
+    const signoutBtn = document.getElementById('tenant-lock-signout-btn');
+    if (signoutBtn) {
+        signoutBtn.addEventListener('click', () => {
+            if (isModuleBlock) {
+                window.location.href = homeHref;
+            } else {
+                window.AppSession?.signOut?.(window.__firebaseAuth, { redirectUrl: '/' });
+            }
+        });
+    }
+};
+
+let activeTenantUnsubscribe = null;
+
+export const ensureTenantStatusAndAccess = async ({
+    db,
+    requiredPage = '',
+    institutionId = INSTITUTION_ID,
+    allowMissingRoot = false,
+    liveWatch = true,
+    onStatusUpdate = null
+} = {}) => {
+    if (!db) {
+        return {
+            active: true,
+            exists: false,
+            isRootGateway: false,
+            institution: null,
+            allowedPages: { ...DEFAULT_COMPANY_ALLOWED_PAGES }
+        };
+    }
+
+    const cleanSlug = String(institutionId || 'school').trim().toLowerCase() || 'school';
+    const instRef = doc(db, INSTITUTIONS_COLLECTION, cleanSlug);
+
+    const handleSnapshot = (snap) => {
+        if (!snap.exists()) {
+            const canTreatAsRoot = allowMissingRoot && cleanSlug === 'school' && isRootGatewayLocation();
+            if (canTreatAsRoot) {
+                removeTenantLockOverlay();
+                const res = {
+                    active: true,
+                    exists: false,
+                    isRootGateway: true,
+                    institution: null,
+                    allowedPages: { ...DEFAULT_COMPANY_ALLOWED_PAGES }
+                };
+                onStatusUpdate?.(res);
+                return res;
+            }
+            const evalRes = evaluateInstitutionAccess(null, requiredPage);
+            showTenantLockOverlay(evalRes);
+            const res = {
+                active: false,
+                exists: false,
+                isRootGateway: false,
+                institution: null,
+                allowedPages: evalRes.allowedPages,
+                evaluation: evalRes
+            };
+            onStatusUpdate?.(res);
+            return res;
+        }
+
+        const data = { id: snap.id, ...snap.data() };
+        const evalRes = evaluateInstitutionAccess(data, requiredPage);
+        window.AppSession?.setCompanyAllowedPages?.(evalRes.allowedPages);
+
+        if (!evalRes.allowed) {
+            showTenantLockOverlay(evalRes);
+            const res = {
+                active: false,
+                exists: true,
+                isRootGateway: false,
+                institution: data,
+                allowedPages: evalRes.allowedPages,
+                evaluation: evalRes
+            };
+            onStatusUpdate?.(res);
+            return res;
+        }
+
+        removeTenantLockOverlay();
+        const res = {
+            active: true,
+            exists: true,
+            isRootGateway: false,
+            institution: data,
+            allowedPages: evalRes.allowedPages,
+            evaluation: evalRes
+        };
+        onStatusUpdate?.(res);
+        return res;
+    };
+
+    let result = {
+        active: true,
+        exists: false,
+        isRootGateway: false,
+        institution: null,
+        allowedPages: { ...DEFAULT_COMPANY_ALLOWED_PAGES }
+    };
+
+    try {
+        const snap = await getDoc(instRef);
+        result = handleSnapshot(snap);
+    } catch (err) {
+        console.warn('Institution status check warning:', err);
+        if (allowMissingRoot && cleanSlug === 'school' && isRootGatewayLocation()) {
+            return {
+                active: true,
+                exists: false,
+                isRootGateway: true,
+                institution: null,
+                allowedPages: { ...DEFAULT_COMPANY_ALLOWED_PAGES }
+            };
+        }
+    }
+
+    if (liveWatch && typeof onSnapshot === 'function') {
+        try {
+            if (activeTenantUnsubscribe) activeTenantUnsubscribe();
+            activeTenantUnsubscribe = onSnapshot(instRef, (liveSnap) => {
+                handleSnapshot(liveSnap);
+            }, (err) => {
+                console.warn('Tenant status live watcher notice:', err);
+            });
+        } catch (_) {}
+    }
+
+    return result;
+};

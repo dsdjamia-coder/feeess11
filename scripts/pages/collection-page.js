@@ -2,9 +2,11 @@ import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/1
 import { doc, onSnapshot, collection, getDocs, writeBatch, setDoc, query, where, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
-import { BASE_PATH, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, syncSmartSelectDisplay, openConfirmDialog, escapeHtml, fitTextToContainer, formatCurrency, formatMonthLabel, hardenExternalLinks, isPastAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, formatStudentOptionLabel, populateGenderSelect, populateRowLimitSelect, compareClassLabelsNatural } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, syncSmartSelectDisplay, openConfirmDialog, escapeHtml, fitTextToContainer, formatCurrency, formatMonthLabel, hardenExternalLinks, isPastAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, formatStudentOptionLabel, populateGenderSelect, populateRowLimitSelect, compareClassLabelsNatural } from '../shared/app-common.js';
 import { appLog } from '../shared/logger.js';
 import { showToast } from '../shared/toaster.js';
+
+const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 import { initCollectionEntryModule } from './collection/entry-module.js';
 import { initCollectionHistoryModule } from './collection/history-module.js';
 import { initCollectionReportsModule } from './collection/reports-module.js';
@@ -714,7 +716,7 @@ document.getElementById('close-tab-settings-btn')?.addEventListener('click', () 
 document.getElementById('new-fee-entry-btn')?.addEventListener('click', () => { activateTab('home-page'); });
 document.getElementById('back-to-official-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    window.location.href = 'official.html';
+    window.location.href = getPageUrl('official.html');
 });
 
 // ============================================================
@@ -1629,15 +1631,15 @@ document.getElementById('header-user-badge')?.addEventListener('click', openProf
 const handleCollectionLogout = async () => {
     try {
         if (window.AppSession?.signOut) {
-            await window.AppSession.signOut(auth, { redirectUrl: 'index.html?public=1' });
+            await window.AppSession.signOut(auth, { redirectUrl: getPageUrl('index.html?public=1') });
         } else {
             await signOut(auth);
             await window.AppSession?.clearAll({ purgeClientData: true });
-            window.location.href = 'index.html?public=1';
+            window.location.href = getPageUrl('index.html?public=1');
         }
     } catch (err) {
         console.warn('Logout error, forcing redirect:', err);
-        window.location.href = 'index.html?public=1';
+        window.location.href = getPageUrl('index.html?public=1');
     }
 };
 
@@ -9246,7 +9248,17 @@ readTabPrefsFromCloud().then((cloudPrefs) => {
 // --- INIT LISTENER ---
 onAuthStateChanged(auth, async (user) => {
     if (!user) {
-        window.location.href = 'index.html';
+        window.location.href = getPageUrl('index.html');
+        return;
+    }
+    const tenantCheck = await ensureTenantStatusAndAccess({
+        db,
+        requiredPage: 'collection',
+        institutionId: INSTITUTION_ID,
+        liveWatch: true
+    });
+    if (!tenantCheck?.active) {
+        hideLoader();
         return;
     }
     hideLoader();
@@ -9381,13 +9393,13 @@ onAuthStateChanged(auth, async (user) => {
                         accountId: myData.id || '',
                         message: 'Your staff account has been deactivated by the administrator.',
                         authInstance: auth,
-                        redirectUrl: 'index.html'
+                        redirectUrl: getPageUrl('index.html')
                     });
                 }
                 return;
             } else if (myData && myData.canCollect === false) {
                 window.AppSession?.setFlash?.('Access Restricted: Fee Collection permission is disabled for your account.');
-                window.location.href = 'official.html';
+                window.location.href = getPageUrl('official.html');
                 return;
             } else {
                 if (isDirectoryCollector) {
@@ -9398,7 +9410,7 @@ onAuthStateChanged(auth, async (user) => {
                         accountId: staffAccess?.staffId || '',
                         message: 'Your staff account was removed by the administrator.',
                         authInstance: auth,
-                        redirectUrl: 'index.html'
+                        redirectUrl: getPageUrl('index.html')
                     });
                     return;
                 } else {
@@ -9437,7 +9449,7 @@ onAuthStateChanged(auth, async (user) => {
                 accountId: matchedEntry?.id ? `dir_${matchedEntry.id}` : (entryId ? `dir_${entryId}` : ''),
                 message: 'Your collection access is no longer active or has been removed by the administrator.',
                 authInstance: auth,
-                redirectUrl: 'index.html'
+                redirectUrl: getPageUrl('index.html')
             });
         }
     };
@@ -9465,7 +9477,7 @@ onAuthStateChanged(auth, async (user) => {
         if (sessionEntry.isBlocked === true || sessionEntry.forceLogout === true) {
             alert('This collection session is blocked or logged out by admin.');
             window.AppSession?.clearAll({ purgeClientData: true });
-            signOut(auth).finally(() => { window.location.href = 'index.html'; });
+            signOut(auth).finally(() => { window.location.href = getPageUrl('index.html'); });
         }
     });
     startCollectionSessionHeartbeat();
@@ -9479,7 +9491,7 @@ onAuthStateChanged(auth, async (user) => {
         if (forcedAt && startedAt && forcedAt > startedAt) {
             alert(sessionData.message || 'An administrator ended this session. Please sign in again.');
             window.AppSession?.clearAll({ purgeClientData: true });
-            signOut(auth).finally(() => { window.location.href = 'index.html'; });
+            signOut(auth).finally(() => { window.location.href = getPageUrl('index.html'); });
         }
     });
 
@@ -9494,7 +9506,7 @@ onAuthStateChanged(auth, async (user) => {
                 } catch (_) {}
                 if (d.enabledModules.collection === false) {
                     sessionStorage.setItem('app_session_flash', 'Module Disabled: The Fee Collection module is currently disabled by institution administration.');
-                    window.location.href = 'official.html';
+                    window.location.href = getPageUrl('official.html');
                     return;
                 }
             }

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" data-session-guard="company">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com;">
+  <meta name="referrer" content="no-referrer">
+  <title>Company Master Portal - Institution Tracer</title>
+
+  <script src="/scripts/shared/session-guard.js"></script>
+  <script src="/scripts/shared/page-guards.js"></script>
+
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#312e81">
+  <link rel="icon" type="image/png" href="/assets/images/logo.png">
+  <link rel="apple-touch-icon" href="/assets/images/apple-touch-icon.png">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/styles/main.css">
+  <style>
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background: #f8fafc; color: #0f172a; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+
+  <div id="company-loader" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl p-8 max-w-xs w-full text-center shadow-2xl border border-slate-200">
+      <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl">
+        <i class="fas fa-circle-notch fa-spin"></i>
+      </div>
+      <h2 class="text-base font-extrabold text-slate-900">Verifying Company Access</h2>
+      <p class="text-xs text-slate-500 mt-1">Connecting to master platform registry...</p>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
+          <i class="fas fa-building-shield text-lg"></i>
+        </div>
+        <div class="min-w-0">
+          <h1 id="company-brand-title" class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Company Master Portal</h1>
+          <p id="company-owner-email" class="text-[11px] font-semibold text-slate-500 truncate">--</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <a href="/?public=1" class="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition inline-flex items-center gap-1.5">
+          <i class="fas fa-globe text-indigo-500"></i>
+          <span class="hidden sm:inline">Platform Home</span>
+        </a>
+        <button type="button" id="btn-company-signout" class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition cursor-pointer inline-flex items-center gap-1.5">
+          <i class="fas fa-right-from-bracket"></i>
+          <span>Sign Out</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="company-main" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 hidden">
+    <!-- Toast Banner -->
+    <div id="company-toast" class="hidden fixed bottom-5 right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5"></div>
+
+    <!-- KPI Cards -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Total Institutions</span>
+          <span class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm"><i class="fas fa-school"></i></span>
+        </div>
+        <div id="kpi-total" class="text-2xl sm:text-3xl font-extrabold text-slate-900">0</div>
+      </div>
+      <div class="bg-white border border-emerald-200 rounded-2xl p-4 shadow-2xs">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">Active Portals</span>
+          <span class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm"><i class="fas fa-circle-check"></i></span>
+        </div>
+        <div id="kpi-active" class="text-2xl sm:text-3xl font-extrabold text-emerald-700">0</div>
+      </div>
+      <div class="bg-white border border-amber-200 rounded-2xl p-4 shadow-2xs">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-700">Paused</span>
+          <span class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm"><i class="fas fa-pause-circle"></i></span>
+        </div>
+        <div id="kpi-paused" class="text-2xl sm:text-3xl font-extrabold text-amber-700">0</div>
+      </div>
+      <div class="bg-white border border-rose-200 rounded-2xl p-4 shadow-2xs">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-rose-700">Expired / Due</span>
+          <span class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-sm"><i class="fas fa-hourglass-end"></i></span>
+        </div>
+        <div id="kpi-expired" class="text-2xl sm:text-3xl font-extrabold text-rose-700">0</div>
+      </div>
+    </section>
+
+    <!-- Toolbar -->
+    <section class="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+        <div class="relative flex-1 max-w-md">
+          <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+          <input type="text" id="inst-search-input" placeholder="Search by name, slug, place, or admin email..." class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-medium outline-none">
+        </div>
+        <select id="inst-status-filter" data-native-select="true" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-bold text-slate-700 outline-none">
+          <option value="all">All Statuses</option>
+          <option value="active">Active Only</option>
+          <option value="paused">Paused Only</option>
+          <option value="expired">Expired Only</option>
+          <option value="expiring">Expiring Within 15 Days</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="button" id="btn-refresh-institutions" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-bold cursor-pointer inline-flex items-center gap-1.5">
+          <i class="fas fa-rotate"></i>
+          <span>Refresh</span>
+        </button>
+        <button type="button" id="btn-open-add-inst" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer inline-flex items-center gap-2">
+          <i class="fas fa-plus"></i>
+          <span>Add Institution</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Institutions List -->
+    <section id="institutions-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></section>
+  </main>
+
+  <!-- Add / Edit Institution Modal -->
+  <div id="inst-form-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center p-3 sm:p-5">
+    <div class="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div>
+          <h3 id="inst-modal-title" class="text-base sm:text-lg font-extrabold text-slate-900">Add New Institution</h3>
+          <p id="inst-modal-subtitle" class="text-xs text-slate-500">Configure institution portal slug, admin credentials, subscription, and allowed pages.</p>
+        </div>
+        <button type="button" id="btn-close-inst-modal" class="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <form id="inst-form" class="p-5 overflow-y-auto space-y-5 text-xs sm:text-sm">
+        <input type="hidden" id="inst-form-mode" value="create">
+
+        <!-- Basic Info -->
+        <div class="space-y-3">
+          <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">1. Institution Identity & Clean URL</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-name">Institution Name <span class="text-rose-500">*</span></label>
+              <input type="text" id="inst-name" required maxlength="120" placeholder="e.g. Noorul Islam Madrasa" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-slug">Portal URL Slug <span class="text-rose-500">*</span></label>
+              <input type="text" id="inst-slug" required maxlength="64" placeholder="e.g. noorulislam" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-mono font-bold lowercase">
+              <div id="inst-slug-preview" class="text-[11px] font-semibold text-indigo-600 mt-1 truncate">URL: /noorulislam</div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-place">Place / City</label>
+              <input type="text" id="inst-place" maxlength="100" placeholder="e.g. Malappuram" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-medium">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-phone">Contact Phone</label>
+              <input type="text" id="inst-phone" maxlength="25" placeholder="e.g. +91 9876543210" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-medium">
+            </div>
+          </div>
+        </div>
+
+        <!-- Super Admin Account -->
+        <div class="space-y-3 pt-4 border-t border-slate-200">
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">2. Institution Super Admin Credentials</div>
+            <button type="button" id="btn-send-admin-reset" class="hidden px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-extrabold cursor-pointer">
+              <i class="fas fa-key mr-1"></i>Send Password Reset Email
+            </button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-admin-name">Super Admin Name <span class="text-rose-500">*</span></label>
+              <input type="text" id="inst-admin-name" required maxlength="80" placeholder="e.g. Principal / Master Admin" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-admin-email">Super Admin Email <span class="text-rose-500">*</span></label>
+              <input type="email" id="inst-admin-email" required maxlength="120" placeholder="admin@institution.com" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold lowercase">
+            </div>
+          </div>
+          <div id="inst-admin-password-wrap" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="block text-xs font-bold text-slate-700" for="inst-admin-password">Initial Admin Password <span class="text-rose-500">*</span></label>
+              <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer">
+                <input type="checkbox" id="inst-link-existing-auth" class="rounded border-slate-300 text-indigo-600">
+                <span>Account already exists in Firebase Auth</span>
+              </label>
+            </div>
+            <input type="password" id="inst-admin-password" minlength="6" maxlength="64" placeholder="Minimum 6 characters" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+          </div>
+        </div>
+
+        <!-- Subscription & Expiry -->
+        <div class="space-y-3 pt-4 border-t border-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">3. Subscription Plan & Validity</div>
+            <label class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-800 cursor-pointer">
+              <input type="checkbox" id="inst-is-lifetime" class="rounded border-indigo-300 text-indigo-600">
+              <span>Lifetime / Unlimited Access</span>
+            </label>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-plan-name">Plan Tier</label>
+              <select id="inst-plan-name" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                <option value="Trial">Trial</option>
+                <option value="Standard" selected>Standard</option>
+                <option value="Premium">Premium</option>
+                <option value="Enterprise">Enterprise</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-duration-months">Duration</label>
+              <select id="inst-duration-months" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                <option value="1">1 Month</option>
+                <option value="3">3 Months</option>
+                <option value="6">6 Months</option>
+                <option value="12" selected>12 Months (1 Year)</option>
+                <option value="24">24 Months (2 Years)</option>
+                <option value="0">Custom Date</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-start-date">Start Date</label>
+              <input type="date" id="inst-start-date" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-expiry-date">Expiry Date</label>
+              <input type="date" id="inst-expiry-date" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+            </div>
+          </div>
+          <div id="inst-edit-status-wrap" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-status-select">Service Status</label>
+              <select id="inst-status-select" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                <option value="active">Active (Running)</option>
+                <option value="paused">Paused (Blocked)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-pause-reason">Pause Note / Reason</label>
+              <input type="text" id="inst-pause-reason" maxlength="140" placeholder="Optional reason shown on lock screen" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-medium outline-none">
+            </div>
+          </div>
+        </div>
+
+        <!-- Allowed Pages Selector -->
+        <div class="space-y-3 pt-4 border-t border-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages & Modules</div>
+            <div class="flex items-center gap-2">
+              <button type="button" id="btn-pages-select-all" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Enable All</button>
+              <button type="button" id="btn-pages-core-only" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Core Only</button>
+            </div>
+          </div>
+          <div id="inst-allowed-pages-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+        </div>
+
+        <div id="inst-form-error" class="hidden rounded-xl bg-rose-50 border border-rose-200 text-rose-700 px-3.5 py-2.5 text-xs font-bold"></div>
+      </form>
+
+      <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
+        <button type="button" id="btn-cancel-inst-modal" class="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">Cancel</button>
+        <button type="submit" form="inst-form" id="btn-save-inst" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm cursor-pointer inline-flex items-center gap-2">
+          <i class="fas fa-save"></i>
+          <span>Save Institution</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause Institution Modal -->
+  <div id="pause-inst-modal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center text-lg shrink-0">
+          <i class="fas fa-pause-circle"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900">Pause Institution Portal</h3>
+          <p id="pause-inst-target-label" class="text-xs font-semibold text-slate-500">--</p>
+        </div>
+      </div>
+      <p class="text-xs text-slate-600 leading-relaxed">All portals (Admin, Official, Staff, Student, and Public Pages) for this institution will be immediately blocked until you resume service.</p>
+      <div>
+        <label class="block text-xs font-bold text-slate-700 mb-1" for="pause-reason-input">Reason (shown to users on lock screen)</label>
+        <input type="text" id="pause-reason-input" maxlength="160" placeholder="e.g. Subscription renewal pending" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-amber-500 text-xs font-medium outline-none">
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" id="btn-cancel-pause-modal" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer">Cancel</button>
+        <button type="button" id="btn-confirm-pause-modal" class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold cursor-pointer">Pause Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shared Confirm Popup -->
+  <div id="confirm-popup" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[10050] hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 text-center space-y-4">
+      <h3 id="confirm-title" class="text-base font-extrabold text-slate-900">Confirm Action</h3>
+      <div id="confirm-message" class="text-xs text-slate-600"></div>
+      <div class="flex justify-center gap-2.5 pt-2">
+        <button type="button" id="confirm-cancel" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer">Cancel</button>
+        <button type="button" id="confirm-ok" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/scripts/pages/company-page.js"></script>
+</body>
+</html>

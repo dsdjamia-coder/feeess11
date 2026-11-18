@@ -16,6 +16,65 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.email != null;
     }
 
+    function companyConfigRef() {
+      return /databases/$(database)/documents/company/config;
+    }
+
+    function companyConfigData() {
+      return get(companyConfigRef()).data;
+    }
+
+    function isCompanyOwner() {
+      return hasEmailIdentity()
+        && exists(companyConfigRef())
+        && (
+          (
+            'email' in companyConfigData()
+            && companyConfigData().email is string
+            && companyConfigData().email.lower() == request.auth.token.email.lower()
+          )
+          || (
+            'ownersIndex' in companyConfigData()
+            && companyConfigData().ownersIndex is map
+            && (
+              companyConfigData().ownersIndex[request.auth.token.email] == true
+              || companyConfigData().ownersIndex[request.auth.token.email.lower()] == true
+            )
+          )
+        );
+    }
+
+    function institutionMetaRef(institutionId) {
+      return /databases/$(database)/documents/institutions/$(institutionId);
+    }
+
+    function institutionMetaExists(institutionId) {
+      return exists(institutionMetaRef(institutionId));
+    }
+
+    function institutionMetaData(institutionId) {
+      return get(institutionMetaRef(institutionId)).data;
+    }
+
+    function isInstitutionActiveAndUnexpired(institutionId) {
+      return !institutionMetaExists(institutionId)
+        || (
+          (!('status' in institutionMetaData(institutionId)) || institutionMetaData(institutionId).status == 'active')
+          && (!('isActive' in institutionMetaData(institutionId)) || institutionMetaData(institutionId).isActive != false)
+          && (
+            ('isLifetime' in institutionMetaData(institutionId) && institutionMetaData(institutionId).isLifetime == true)
+            || !('expiryTimestamp' in institutionMetaData(institutionId))
+            || institutionMetaData(institutionId).expiryTimestamp == null
+            || (institutionMetaData(institutionId).expiryTimestamp is timestamp && request.time <= institutionMetaData(institutionId).expiryTimestamp)
+            || (institutionMetaData(institutionId).expiryTimestamp is number && request.time.toMillis() <= institutionMetaData(institutionId).expiryTimestamp)
+          )
+        );
+    }
+
+    function canAccessTenant(institutionId) {
+      return isInstitutionActiveAndUnexpired(institutionId) || isCompanyOwner();
+    }
+
     function adminAuthRef(institutionId) {
       return /databases/$(database)/documents/institutions/$(institutionId)/settings/adminAuth;
     }
@@ -28,7 +87,11 @@ service cloud.firestore {
       return hasEmailIdentity()
         && exists(adminAuthRef(institutionId))
         && (
-          adminData(institutionId).email == request.auth.token.email
+          (
+            'email' in adminData(institutionId)
+            && adminData(institutionId).email is string
+            && adminData(institutionId).email.lower() == request.auth.token.email.lower()
+          )
           || (
             'adminsIndex' in adminData(institutionId)
             && adminData(institutionId).adminsIndex is map
@@ -68,7 +131,7 @@ service cloud.firestore {
     }
 
     function isAdmin(institutionId) {
-      return isSuperAdminDoc(institutionId) || isStaffManager(institutionId);
+      return isCompanyOwner() || isSuperAdminDoc(institutionId) || isStaffManager(institutionId);
     }
 
     function isCollector(institutionId) {
@@ -76,7 +139,7 @@ service cloud.firestore {
     }
 
     function isInternalUsernameEmail() {
-      return hasEmailIdentity() && request.auth.token.email.lower().matches('.*@school\\.internal$');
+      return hasEmailIdentity() && request.auth.token.email.lower().matches('.*@[a-z0-9-_]+\\.internal$');
     }
 
     function authEmailUsernamePrefix() {
@@ -281,15 +344,28 @@ service cloud.firestore {
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string || request.resource.data.updatedAt is number);
     }
 
+    // --- COMPANY MASTER PORTAL & INSTITUTION REGISTRY ---
+    match /company/{docId} {
+      allow read, write: if isCompanyOwner();
+    }
+
+    match /institutions/{institutionId} {
+      allow get: if true;
+      allow list, create, update, delete: if isCompanyOwner();
+    }
+
     // --- INSTITUTION RULES ---
 
     // 1. Settings Collection
     match /institutions/{institutionId}/settings/{docId} {
+      // Company Owner can manage institution settings unconditionally (including during setup/pause)
+      allow read, write: if isCompanyOwner();
+
       // Sensitive admin auth doc is STRICTLY Super Admin only (never publicly readable)
-      allow read, write: if docId == 'adminAuth' && isSuperAdminDoc(institutionId);
+      allow read, write: if docId == 'adminAuth' && canAccessTenant(institutionId) && isSuperAdminDoc(institutionId);
 
       // Public settings required by landing page & portal shells (explicit allowlist, excludes adminAuth)
-      allow read: if docId in [
+      allow read: if canAccessTenant(institutionId) && docId in [
         'config',
         'content',
         'categoryAuthConfig',
@@ -301,7 +377,7 @@ service cloud.firestore {
       ];
 
       // Module-specific configuration documents require an active authenticated or student session
-      allow read: if docId != 'adminAuth' && isSignedIn() && (
+      allow read: if docId != 'adminAuth' && isSignedIn() && canAccessTenant(institutionId) && (
         isAdmin(institutionId)
         || isStaff(institutionId)
         || docId in [
@@ -320,7 +396,8 @@ service cloud.firestore {
         || docId.matches('evaluationConfig_.*')
       );
 
-      allow write: if isAdmin(institutionId)
+      allow write: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
         || (docId == 'sessionRegistry' && isSignedIn() && validSessionRegistryWrite())
         || (isResultOperator(institutionId) && docId == 'resultCenter')
         || (isCollector(institutionId) && docId in ['sessionRegistry', 'receiptSequence'])
@@ -340,23 +417,27 @@ service cloud.firestore {
         )
         || (canManageAcademicPlan(institutionId) && (docId == 'yearPlanConfig' || docId == 'academicPlanningConfig'))
         || (canManageActivity(institutionId) && (docId == 'activityConfig' || docId == 'taskDefinitions'))
-        || (canManageEvaluation(institutionId) && docId.matches('evaluationConfig_.*'));
+        || (canManageEvaluation(institutionId) && docId.matches('evaluationConfig_.*'))
+      );
     }
 
     // 2. Staff Profiles (Public profiles; credentials stored strictly in Firebase Auth)
     match /institutions/{institutionId}/staff/{docId} {
-      allow read: if true;
-      allow create, delete: if isAdmin(institutionId);
-      allow update: if isAdmin(institutionId) || isAllowedStaffSelfPhotoUpdate(institutionId, docId);
+      allow read: if canAccessTenant(institutionId);
+      allow create, delete: if canAccessTenant(institutionId) && isAdmin(institutionId);
+      allow update: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isAllowedStaffSelfPhotoUpdate(institutionId, docId));
     }
 
     // 3. Staff Access (Roles & Permissions - scoped to Admin or own signed-in Staff identity)
     match /institutions/{institutionId}/staffAccess/{docId} {
-      allow list: if isAdmin(institutionId);
-      allow get: if isAdmin(institutionId)
-        || (hasEmailIdentity() && (docId == request.auth.token.email || isStaff(institutionId)));
-      allow create, delete: if isAdmin(institutionId);
-      allow update: if isAdmin(institutionId)
+      allow list: if canAccessTenant(institutionId) && isAdmin(institutionId);
+      allow get: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || (hasEmailIdentity() && (docId == request.auth.token.email || isStaff(institutionId)))
+      );
+      allow create, delete: if canAccessTenant(institutionId) && isAdmin(institutionId);
+      allow update: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
         || (
           hasEmailIdentity()
           && docId == request.auth.token.email
@@ -364,37 +445,41 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo', 'updatedAt'])
           && (!('photo' in request.resource.data.diff(resource.data).affectedKeys()) || validOfficialPhotoString(request.resource.data.photo))
           && (!('updatedAt' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string)
-        );
+        )
+      );
     }
 
     // 4. Student Auth Lookup (Exact single-doc lookup for login; list restricted to Staff/Admin)
     match /institutions/{institutionId}/studentAuthLookup/{docId} {
-      allow get: if true;
-      allow list: if isAdmin(institutionId) || isStaff(institutionId);
-      allow write: if isAdmin(institutionId) || isCollector(institutionId);
+      allow get: if canAccessTenant(institutionId);
+      allow list: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isStaff(institutionId));
+      allow write: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
     }
 
     // 5. Students (List restricted to Staff/Admin; single-doc get for Student Portal session)
     match /institutions/{institutionId}/students/{docId} {
-      allow list: if isAdmin(institutionId) || isStaff(institutionId);
-      allow get: if isSignedIn();
-      allow create, delete: if isAdmin(institutionId) || isCollector(institutionId);
-      allow update: if isAdmin(institutionId)
+      allow list: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isStaff(institutionId));
+      allow get: if isSignedIn() && canAccessTenant(institutionId);
+      allow create, delete: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
+      allow update: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
         || isCollector(institutionId)
         || isAllowedStudentPhotoUpdate(institutionId)
-        || isAllowedStudentDetailsUpdate(institutionId);
+        || isAllowedStudentDetailsUpdate(institutionId)
+      );
     }
 
     // 6. Student Groups
     match /institutions/{institutionId}/studentGroups/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin(institutionId) || isCollector(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
     }
 
     // 7. Student Notification State (Authenticated student/staff sessions only)
     match /institutions/{institutionId}/studentNotificationState/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
       allow write: if isSignedIn()
+        && canAccessTenant(institutionId)
         && hasOnlyKeys(request.resource.data, ['lastMarkedAllReadAt', 'readIds'])
         && (!('lastMarkedAllReadAt' in request.resource.data) || request.resource.data.lastMarkedAllReadAt is number)
         && (!('readIds' in request.resource.data) || request.resource.data.readIds is list);
@@ -402,152 +487,165 @@ service cloud.firestore {
 
     // 8. System Notifications (Admin/Staff write only)
     match /institutions/{institutionId}/systemNotifications/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin(institutionId) || isStaff(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isStaff(institutionId));
     }
 
     // 9. Payments (Staff/Admin unrestricted read; Admin/Manager or owner collector write/delete)
     match /institutions/{institutionId}/payments/{docId} {
-      allow get: if isCollector(institutionId) || isAdmin(institutionId) || isSignedIn();
-      allow list: if isCollector(institutionId) || isAdmin(institutionId) || isStaff(institutionId)
-        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
-      allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
-      allow update: if validPaymentWrite() && (
+      allow get: if isSignedIn() && canAccessTenant(institutionId);
+      allow list: if canAccessTenant(institutionId) && (
+        isCollector(institutionId)
+        || isAdmin(institutionId)
+        || isStaff(institutionId)
+        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150)
+      );
+      allow create: if canAccessTenant(institutionId) && validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if canAccessTenant(institutionId) && validPaymentWrite() && (
         isAdmin(institutionId)
         || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
       );
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
+      allow delete: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)))
+      );
     }
 
     // 10. Donations (Staff/Collector read; Admin/Manager or owner collector create/update/delete)
     match /institutions/{institutionId}/donations/{docId} {
-      allow read: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId);
-      allow create: if isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data);
-      allow update: if isAdmin(institutionId)
-        || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data));
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
+      allow read: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId));
+      allow create: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
+      );
+      allow delete: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)))
+      );
     }
 
     // 11. Attendance
     match /institutions/{institutionId}/attendance/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageAttendance(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageAttendance(institutionId);
     }
 
     // 12. Timetables & Classes
     match /institutions/{institutionId}/timetables/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageAcademicPlan(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/classSubjects/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageAcademicPlan(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/yearPlans/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageAcademicPlan(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/syllabusDailyLogs/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageAcademicPlan(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/examTimetables/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageAcademicPlan(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
     }
 
     // 13. Activities, Ibadah, Tasks
     match /institutions/{institutionId}/activities/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageActivity(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/ibadah/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageActivity(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/taskCompletions/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageActivity(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/studentCustomBadges/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageActivity(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/studentBonusPoints/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageActivity(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/rewardSettings/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageActivity(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/prayerSettings/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageActivity(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
     }
 
     // 14. Evaluations & Impositions
     match /institutions/{institutionId}/evaluations/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageEvaluation(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageEvaluation(institutionId);
     }
 
     match /institutions/{institutionId}/impositions/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageEvaluation(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageEvaluation(institutionId);
     }
 
     // 15. Worksheets
     match /institutions/{institutionId}/worksheets/{docId} {
-      allow read: if isSignedIn();
-      allow write: if canManageWorksheet(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && canManageWorksheet(institutionId);
     }
 
     // 16. Public Directory (Public read for landing page; auth metadata isolated to admin)
     match /institutions/{institutionId}/publicDirectory/{docId} {
-      allow read: if true;
-      allow create, delete: if isAdmin(institutionId);
-      allow update: if isAdmin(institutionId) || isAllowedDirectorySelfPhotoUpdate();
+      allow read: if canAccessTenant(institutionId);
+      allow create, delete: if canAccessTenant(institutionId) && isAdmin(institutionId);
+      allow update: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isAllowedDirectorySelfPhotoUpdate());
     }
 
     match /institutions/{institutionId}/directoryAuth/{docId} {
-      allow read, write: if isAdmin(institutionId);
+      allow read, write: if canAccessTenant(institutionId) && isAdmin(institutionId);
     }
 
     match /institutions/{institutionId}/pageAccessOverrides/{docId} {
-      allow read, write: if isAdmin(institutionId);
+      allow read, write: if canAccessTenant(institutionId) && isAdmin(institutionId);
     }
 
     // 17. Results & Promotion
     match /institutions/{institutionId}/resultSchemas/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isResultOperator(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && isResultOperator(institutionId);
     }
 
     match /institutions/{institutionId}/examResults/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isResultOperator(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && isResultOperator(institutionId);
     }
 
     match /institutions/{institutionId}/promotionDecisions/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isResultOperator(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && isResultOperator(institutionId);
     }
 
     match /institutions/{institutionId}/studentPhotoSubmissions/{docId} {
-      allow list: if isAdmin(institutionId) || isCollector(institutionId);
-      allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
-      allow create, update: if isAdmin(institutionId)
+      allow list: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
+      allow get: if isSignedIn() && canAccessTenant(institutionId);
+      allow create, update: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
         || isCollector(institutionId)
         || (
           isSignedIn()
@@ -556,69 +654,84 @@ service cloud.firestore {
           && hasOnlyKeys(request.resource.data, ['photo', 'updatedAt'])
           && validOptionalPhotoString(request.resource.data.photo)
           && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp)
-        );
-      allow delete: if isAdmin(institutionId) || isCollector(institutionId);
+        )
+      );
+      allow delete: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
     }
 
     match /institutions/{institutionId}/collectorPreferences/{docId} {
-      allow read, write: if isAdmin(institutionId) || isCollector(institutionId);
+      allow read, write: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
     }
 
     // 18. Academic Years Subcollections
     match /institutions/{institutionId}/academicYears/{yearId}/classes/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && isAdmin(institutionId);
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/enrollments/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin(institutionId) || isCollector(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/feeItems/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && isAdmin(institutionId);
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/payments/{docId} {
-      allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
-      allow list: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId)
-        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
-      allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
-      allow update: if validPaymentWrite() && (
+      allow get: if isSignedIn() && canAccessTenant(institutionId);
+      allow list: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || isCollector(institutionId)
+        || isStaff(institutionId)
+        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150)
+      );
+      allow create: if canAccessTenant(institutionId) && validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if canAccessTenant(institutionId) && validPaymentWrite() && (
         isAdmin(institutionId)
         || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
       );
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
+      allow delete: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)))
+      );
     }
 
     match /institutions/{institutionId}/years/{yearId}/payments/{docId} {
-      allow get: if isAdmin(institutionId) || isCollector(institutionId) || isSignedIn();
-      allow list: if isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId)
-        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150);
-      allow create: if validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
-      allow update: if validPaymentWrite() && (
+      allow get: if isSignedIn() && canAccessTenant(institutionId);
+      allow list: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || isCollector(institutionId)
+        || isStaff(institutionId)
+        || (isSignedIn() && request.query.limit != null && request.query.limit <= 150)
+      );
+      allow create: if canAccessTenant(institutionId) && validPaymentWrite() && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if canAccessTenant(institutionId) && validPaymentWrite() && (
         isAdmin(institutionId)
         || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
       );
-      allow delete: if isAdmin(institutionId) || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)));
+      allow delete: if canAccessTenant(institutionId) && (
+        isAdmin(institutionId)
+        || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)))
+      );
     }
 
     match /institutions/{institutionId}/academicYears/{yearId}/results/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isResultOperator(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && isResultOperator(institutionId);
     }
 
     // 19. Audit Logs (Append-only by non-anonymous authenticated Staff/Admin, Admin read-only)
     match /institutions/{institutionId}/auditLogs/{docId} {
-      allow read: if isAdmin(institutionId);
-      allow create: if isAuthenticated();
+      allow read: if canAccessTenant(institutionId) && isAdmin(institutionId);
+      allow create: if isAuthenticated() && canAccessTenant(institutionId);
       allow update, delete: if false;
     }
 
     match /institutions/{institutionId}/transferCertificates/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin(institutionId);
+      allow read: if isSignedIn() && canAccessTenant(institutionId);
+      allow write: if canAccessTenant(institutionId) && isAdmin(institutionId);
     }
 
     // Default Deny on all other paths
