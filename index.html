@@ -26,12 +26,15 @@
                 const isExplicitPublic = params.get('public') === '1' || params.get('view') === 'public';
                 const isAddStudent = params.get('addStudent') === '1';
                 const isForceNewLogin = params.get('login') === 'new';
+                const pathSegments = String(window.location.pathname || '').split('/').filter(Boolean);
+                const isRootGatewayPath = (pathSegments.length === 0 || pathSegments[0] === 'index' || pathSegments[0] === 'index.html')
+                    && (!window.AppSession?.getInstitutionId || window.AppSession.getInstitutionId() === 'school');
                 if (!isExplicitPublic && !isAddStudent && !isForceNewLogin && window.AppSession) {
-                    if (window.AppSession.hasCompanySession?.()) {
+                    if (isRootGatewayPath && window.AppSession.hasCompanySession?.()) {
                         window.location.replace('/company');
-                    } else if (window.AppSession.hasStudentSession?.()) {
+                    } else if (!isRootGatewayPath && window.AppSession.hasStudentSession?.()) {
                         window.location.replace(window.AppSession.buildPageUrl?.('student.html') || '/student.html');
-                    } else if (window.AppSession.hasStaffSession?.() || window.AppSession.hasAdminSession?.()) {
+                    } else if (!isRootGatewayPath && (window.AppSession.hasStaffSession?.() || window.AppSession.hasAdminSession?.())) {
                         window.location.replace(window.AppSession.buildPageUrl?.('official.html') || '/official.html');
                     }
                 }

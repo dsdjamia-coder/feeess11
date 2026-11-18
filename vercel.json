@@ -64,24 +64,28 @@
   ],
   "rewrites": [
     {
-      "source": "/company",
-      "destination": "/company.html"
+      "source": "/:inst([^/.]+)/index",
+      "destination": "/"
     },
     {
-      "source": "/:inst((?!api|assets|scripts|styles|config|public|company|index|admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation|official-dashboard|student-fee-system|studentmanagement|manifest\\.json|sw\\.js|favicon\\.ico)[^/.]+)",
-      "destination": "/index.html"
+      "source": "/:inst([^/.]+)/index.html",
+      "destination": "/"
     },
     {
-      "source": "/:inst((?!api|assets|scripts|styles|config|public|company|index|admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation|official-dashboard|student-fee-system|studentmanagement|manifest\\.json|sw\\.js|favicon\\.ico)[^/.]+)/",
-      "destination": "/index.html"
+      "source": "/:inst([^/.]+)/:page(admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation)",
+      "destination": "/:page"
     },
     {
-      "source": "/:inst((?!api|assets|scripts|styles|config|public|company|index|admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation|official-dashboard|student-fee-system|studentmanagement)[^/.]+)/:page(index|admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation)",
-      "destination": "/:page.html"
+      "source": "/:inst([^/.]+)/:page(admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation)\\.html",
+      "destination": "/:page"
     },
     {
-      "source": "/:inst((?!api|assets|scripts|styles|config|public|company|index|admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation|official-dashboard|student-fee-system|studentmanagement)[^/.]+)/:page(index|admin|official|student|collection|result|attendance|worksheet|academic-plan|activity|evaluation)\\.html",
-      "destination": "/:page.html"
+      "source": "/:inst([^/.]+)",
+      "destination": "/"
+    },
+    {
+      "source": "/:inst([^/.]+)/",
+      "destination": "/"
     }
   ],
   "redirects": [
