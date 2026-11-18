@@ -120,8 +120,37 @@ Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ �
    - Subcollection: `settings`
    - Document ID: `adminAuth`
    - പൂർണ്ണമായ പാത: **`institutions/school/settings/adminAuth`**
-3. ഡോക്യുമെന്റിൽ താഴെ പറയുന്ന ഫീൽഡുകൾ ചേർക്കുക:
+3. ഡോക്യുമെന്റിന്റെ **ഏറ്റവും മുകളിൽ (Root level-ൽ)** കാണുന്ന **`+ Add field`** ക്ലിക്ക് ചെയ്ത് താഴെ പറയുന്ന പട്ടിക പ്രകാരം കൃത്യമായ **Type (`string`, `map`, `array`, `boolean`)** തിരഞ്ഞെടുത്ത് ഫീൽഡുകൾ ചേർക്കുക:
 
+| എവിടെ ചേർക്കണം (Level) | Field Name | Field Type | Field Value | ശ്രദ്ധിക്കേണ്ട കാര്യം |
+| :--- | :--- | :--- | :--- | :--- |
+| **Document Root** (`adminAuth`) | `email` | **`string`** | `"nimdevathiyal4883@gmail.com"` | **ഇത് `map` ആക്കരുത്!** നേരിട്ട് `string` ആയി നൽകണം. |
+| **Document Root** (`adminAuth`) | `adminsIndex` | **`map`** | *(അകത്ത് 1 ഫീൽഡ് ചേർക്കുക)* | `+ Add field` ടോപ്പ്-ലെവലിൽ നിന്നാണ് തുടങ്ങേണ്ടത്. |
+| └─ `adminsIndex`-ന് ഉള്ളിൽ | `nimdevathiyal4883@gmail.com` | **`boolean`** | **`true`** | ചെറിയക്ഷരത്തിൽ (lowercase) നൽകുക. |
+| **Document Root** (`adminAuth`) | `admins` | **`array`** | *(അകത്ത് `0` എന്ന Item ചേർക്കുക)* | `map` അല്ല, **`array`** തിരഞ്ഞെടുക്കുക. |
+| └─ `admins`-ന് ഉള്ളിൽ (Item `0`) | *(Item `0`)* | **`map`** | *(അകത്ത് 4 ഫീൽഡുകൾ)* | Array-യിലെ `+` ക്ലിക്ക് ചെയ്ത് Type = `map` നൽകുക. |
+| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `email` | **`string`** | `"nimdevathiyal4883@gmail.com"` | Admin email (lowercase). |
+| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `name` | **`string`** | `"Master Admin"` | Admin പേര്. |
+| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `role` | **`string`** | `"super_admin"` | കൃത്യമായി `"super_admin"` എന്ന് നൽകുക. |
+| &nbsp;&nbsp;&nbsp;└─ Item `0`-ന് ഉള്ളിൽ | `isActive` | **`boolean`** | **`true`** | `string` അല്ല, **`boolean`** ആയി `true` നൽകുക. |
+
+#### Firebase Console Panel View-ൽ ശരിയായ ഘടനയും സാധാരണ വരുന്ന തെറ്റും:
+
+```text
+✅ ശരിയായ ഘടന (Document Root-ൽ 3 ഫീൽഡുകൾ):        ❌ തെറ്റായ ഘടന (ഇങ്ങനെ ചെയ്താൽ Login ആകില്ല!):
+adminAuth                                              adminAuth
+├── email (string) : "nimdevathiyal4883@gmail.com"     └── email (map)  <-- email ഒരു map ആയി!
+├── adminsIndex (map)                                      ├── admins (map)      <-- Root-ൽ അല്ല!
+│   └── nimdevathiyal4883@gmail.com (boolean) : true       └── adminsIndex (map) <-- Root-ൽ അല്ല!
+└── admins (array)
+    └── 0 (map)
+        ├── email (string)     : "nimdevathiyal4883@gmail.com"
+        ├── name (string)      : "Master Admin"
+        ├── role (string)      : "super_admin"
+        └── isActive (boolean) : true
+```
+
+JSON രൂപത്തിലുള്ള റഫറൻസ്:
 ```json
 {
   "email": "nimdevathiyal4883@gmail.com",
@@ -139,10 +168,9 @@ Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ �
 }
 ```
 
-> **ശ്രദ്ധിക്കുക (`email` മാത്രം നൽകിയാൽ എന്ത് സംഭവിക്കും?):**
-> നിങ്ങൾ `email` (string) മാത്രം നൽകുകയും `adminsIndex`, `admins` എന്നിവ ഒഴിവാക്കുകയും ചെയ്താൽ:
-> - ഇമെയിൽ കൃത്യം lowercase ആയി match ആകുന്നിടത്തോളം `firestore.rules`-ലെ `isSuperAdminDoc` അനുവദിക്കും; എന്നാൽ ഇമെയിലിൽ എവിടെയെങ്കിലും Capital letter ഉണ്ടെങ്കിൽ `adminsIndex[email.lower()] == true` ഇല്ലാത്തതിനാൽ rule fail ആകാൻ സാധ്യതയുണ്ട്.
-> - കൂടാതെ Admin Panel -> Security Settings-ലെ Multi-admin / Role list കൃത്യമായി കാണിക്കാൻ `adminsIndex` (map), `admins` (array) എന്നിവ നിർബന്ധമാണ്. അതിനാൽ മുകളിൽ കാണിച്ച 3 ഫീൽഡുകളും ഒരുമിച്ച് നൽകുന്നതാണ് ഏറ്റവും സുരക്ഷിതം.
+> **പ്രധാന മുന്നറിയിപ്പ് (Common Mistake):**
+> 1. `email` എന്ന ഫീൽഡ് **`map`** ആക്കി അതിനുള്ളിൽ `admins`-ഉം `adminsIndex`-ഉം നൽകിയാൽ, `firestore.rules` Root-ൽ `email` (string), `adminsIndex` (map) എന്നിവ തിരയുമ്പോൾ കണ്ടെത്താനാകാതെ **`PERMISSION_DENIED`** നൽകും. ഫലമായി Username verify ആയാലും Password അടിക്കുമ്പോൾ **`Incorrect credentials or account not active.`** എന്ന് കാണിക്കും.
+> 2. `email` (`string`) മാത്രം നൽകുകയും `adminsIndex`, `admins` എന്നിവ ഒഴിവാക്കുകയും ചെയ്താൽ, case-insensitive ചെക്കിംഗിലും Admin Panel -> Security Settings-ലെ Multi-admin ലിസ്റ്റിലും പ്രശ്നങ്ങൾ വരാം. അതിനാൽ മുകളിൽ കാണിച്ച 3 Root ഫീൽഡുകളും കൃത്യമായ ടൈപ്പിൽ നൽകുക.
 
 ### ഘട്ടം C: ആദ്യ ലോഗിൻ (First Login Verification)
 1. ആപ്ലിക്കേഷന്റെ Home Page (`index.html`) തുറന്ന് **Login** ക്ലിക്ക് ചെയ്യുക.
@@ -189,8 +217,8 @@ Firebase CLI (`firebase deploy`) ഉപയോഗിക്കുമ്പോൾ �
 
 | പ്രശ്നം (Symptom) | കാരണം (Root Cause) | പരിഹാരം (Fix) |
 | :--- | :--- | :--- |
-| **`adminAuth`-ൽ ഇമെയിൽ ചേർത്തിട്ടും Login ആകുന്നില്ല / Wrong password** | Firestore-ൽ `adminAuth` ഉണ്ടെങ്കിലും **Authentication -> Users**-ൽ ആ ഇമെയിലിന് അക്കൗണ്ടില്ല, അല്ലെങ്കിൽ **Email/Password** Sign-in method Enable ചെയ്തിട്ടില്ല. | Firebase Console -> Authentication -> Sign-in method-ൽ Email/Password Enable ചെയ്യുക; Users-ൽ ഇമെയിലും പാസ്‌വേഡും Add ചെയ്യുക. |
-| **`Missing or insufficient permissions` (Admin/Staff/Student ലോഗിനിൽ)** | 1) പുതിയ പ്രോജക്റ്റിൽ `firestore.rules` Publish ചെയ്തിട്ടില്ല.<br>2) Student ലോഗിനിന് **Anonymous Auth** Enable ചെയ്തിട്ടില്ല.<br>3) `adminAuth`-ലെ ഇമെയിലും Auth ഇമെയിലും Case വ്യത്യാസമുള്ളതാണ് (`adminsIndex` ഇല്ല). | `firestore.rules` Publish ചെയ്യുക; Anonymous Auth Enable ചെയ്യുക; `adminAuth`-ൽ `adminsIndex` (lowercase key സഹിതം) ചേർക്കുക. |
+| **Username verify ആകുന്നു, പക്ഷേ Password അടിക്കുമ്പോൾ `Incorrect credentials or account not active.` കാണിക്കുന്നു** | 1) Firestore-ൽ `adminAuth`-ലെ `email` ഒരു `string`-ന് പകരം **`map`** ആയി പോവുകയും `adminsIndex`/`admins` അതിനുള്ളിൽ nested ആവുകയും ചെയ്തു.<br>2) അല്ലെങ്കിൽ **Authentication -> Users**-ൽ അക്കൗണ്ടില്ല / Password തെറ്റാണ് / Email/Password enable അല്ല. | `adminAuth`-ൽ `email` (`string`), `adminsIndex` (`map` -> `email: true` `boolean`), `admins` (`array`) എന്നിവ **Document Root-ൽ** കൃത്യമായ ടൈപ്പിൽ നൽകുക; Authentication -> Users-ലെ ഇമെയിലും പാസ്‌വേഡും ഉറപ്പുവരുത്തുക. |
+| **`Missing or insufficient permissions` (Admin/Staff/Student ലോഗിനിൽ)** | 1) പുതിയ പ്രോജക്റ്റിൽ `firestore.rules` Publish ചെയ്തിട്ടില്ല.<br>2) Student ലോഗിനിന് **Anonymous Auth** Enable ചെയ്തിട്ടില്ല.<br>3) `adminAuth`-ലെ `email` string അല്ലെങ്കിൽ `adminsIndex` Root-ൽ ഇല്ല. | `firestore.rules` Publish ചെയ്യുക; Anonymous Auth Enable ചെയ്യുക; `adminAuth`-ൽ Root-ൽ `email` (`string`) + `adminsIndex` (`map`) ശരിയായി നൽകുക. |
 | **`Failed to get document because the client is offline` അല്ലെങ്കിൽ ഡാറ്റ കാണുന്നില്ല** | പുതിയ പ്രോജക്റ്റിൽ `(default)` DB ആണുള്ളത്, പക്ഷേ `firebase-config.js`-ൽ പഴയ Named `firestoreDatabaseId` കിടക്കുന്നു (അല്ലെങ്കിൽ തിരിച്ചും). | `(default)` DB ആണെങ്കിൽ `config/firebase-config.js`-ൽ നിന്ന് `firestoreDatabaseId` ഒഴിവാക്കുക, `firebase-applet-config.json`-ൽ `"(default)"` നൽകുക. |
 | **Backup Restore ചെയ്ത ശേഷം Staff-ന് ലോഗിൻ ചെയ്യാൻ കഴിയുന്നില്ല** | JSON Backup വഴി Firestore രേഖകൾ മാത്രം തിരികെ വന്നു; പുതിയ Firebase Authentication-ൽ Staff യൂസർമാർ സൃഷ്ടിക്കപ്പെട്ടിട്ടില്ല. | Admin Panel -> **Staff Management**-ൽ ഓരോ Staff-ന്റെയും Credentials വീണ്ടും Save ചെയ്യുക. |
 | **പുതിയ പ്രോജക്റ്റിലേക്ക് മാറിയിട്ടും പഴയ പ്രോജക്റ്റിലെ പേര്/സെഷൻ കാണിക്കുന്നു** | ബ്രൗസർ അല്ലെങ്കിൽ PWA Service Worker പഴയ ഫയലുകൾ ക്യാഷ് ചെയ്തിരിക്കുന്നു. | `sw.js`-ൽ `CACHE_NAME` ഉയർത്തുക, ബ്രൗസർ Hard Refresh (`Ctrl+Shift+R`) / Site Data Clear ചെയ്യുക. |
