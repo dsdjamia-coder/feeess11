@@ -5,13 +5,16 @@ import {
     ADMIN_AUTH_DOC_ID,
     COMPANY_COLLECTION,
     COMPANY_CONFIG_DOC_ID,
+    GLOBAL_USERS_COLLECTION,
+    INSTITUTIONS_COLLECTION,
     INSTITUTION_ID,
     RESERVED_INSTITUTION_SLUGS,
     SINGLE_ADMIN_MODE,
     buildInternalStaffEmail,
     extractInternalUsername,
     isInternalStaffEmail,
-    isRootGatewayLocation
+    isRootGatewayLocation,
+    normalizeGlobalUserKey
 } from '../../config/app-config.js';
 import {
     BASE_PATH,
@@ -1669,17 +1672,54 @@ let isRootGatewayMode = false;
 
                 let matched = null;
 
-                if (isRootGatewayMode) {
-                    if (cleanEmail.includes('@') && !isInternalStaffEmail(cleanEmail)) {
+                // 0. Check Global User Registry (globalUsers/{loginKey}) for instant cross-institution resolution
+                const globalLookupKey = normalizeGlobalUserKey(rawInput);
+                if (globalLookupKey) {
+                    try {
+                        let globalSnap = await getDoc(doc(db, GLOBAL_USERS_COLLECTION, globalLookupKey));
+                        if (!globalSnap.exists() && cleanEmail.includes('@')) {
+                            const prefixKey = normalizeGlobalUserKey(cleanEmail.split('@')[0]);
+                            if (prefixKey) {
+                                globalSnap = await getDoc(doc(db, GLOBAL_USERS_COLLECTION, prefixKey));
+                            }
+                        }
+                        if (globalSnap.exists()) {
+                            const gData = globalSnap.data() || {};
+                            const gInst = String(gData.institutionId || '').trim().toLowerCase();
+                            if (gData.isActive !== false && (isRootGatewayMode || !gInst || gInst === INSTITUTION_ID)) {
+                                const isSuper = gData.role === 'super_admin';
+                                const isDir = gData.role === 'directory';
+                                matched = {
+                                    type: isSuper ? 'admin' : (isDir ? 'directory' : 'staff'),
+                                    data: gData,
+                                    displayName: gData.displayName || (cleanEmail.includes('@') ? cleanEmail.split('@')[0] : rawInput),
+                                    meta: gData.institutionName
+                                        ? `${isSuper ? 'Super Admin' : 'Official'} • ${gData.institutionName}`
+                                        : (isSuper ? 'Administrator' : 'Staff Member'),
+                                    loginEmail: String(gData.email || cleanEmail).trim().toLowerCase(),
+                                    authVaultEmail: String(gData.authVaultEmail || '').trim().toLowerCase(),
+                                    targetInstitutionId: gInst || INSTITUTION_ID,
+                                    loginId: String(gData.username || cleanLower).trim().toLowerCase()
+                                };
+                            }
+                        }
+                    } catch (gErr) {
+                        console.warn('Global user lookup notice:', gErr);
+                    }
+                }
+
+                if (!matched && isRootGatewayMode) {
+                    if (cleanLower.length >= 2) {
                         matched = {
                             type: 'company_or_admin',
                             data: null,
-                            displayName: cleanEmail.split('@')[0] || 'Account',
+                            displayName: cleanEmail.includes('@') ? (cleanEmail.split('@')[0] || 'Account') : rawInput,
                             meta: 'Account Verification',
-                            loginEmail: cleanEmail
+                            loginEmail: cleanEmail,
+                            loginId: cleanLower
                         };
                     } else {
-                        showLoginMessage('Enter your registered email address to sign in, or enter an institution code on the page to open an institution portal.');
+                        showLoginMessage('Enter your registered Username or Email address to sign in.');
                         userInput?.focus();
                         return;
                     }
@@ -1999,19 +2039,58 @@ let isRootGatewayMode = false;
                 };
 
                 // 1. Firebase Auth login attempt (Company Owner, Admin & Staff)
+                const targetInstForLogin = String(verifiedUser.targetInstitutionId || INSTITUTION_ID || 'school').trim().toLowerCase();
                 if (verifiedUser.type !== 'directory' && loginEmail) {
-                    try {
-                        userCred = await signInWithEmailAndPassword(auth, loginEmail, enteredPassword);
-                        if (userCred?.user) isAuthenticated = true;
-                    } catch (authError) {
-                        lastAuthError = authError;
-                        if (!loginEmail.includes('@')) {
-                            try {
-                                userCred = await signInWithEmailAndPassword(auth, buildInternalStaffEmail(loginEmail, INSTITUTION_ID), enteredPassword);
-                                if (userCred?.user) isAuthenticated = true;
-                            } catch (retryErr) {
-                                lastAuthError = retryErr;
+                    const candidateAuthEmails = [];
+                    if (loginEmail.includes('@')) {
+                        candidateAuthEmails.push(loginEmail);
+                    } else if (targetInstForLogin) {
+                        candidateAuthEmails.push(buildInternalStaffEmail(loginEmail, targetInstForLogin));
+                    }
+                    if (verifiedUser.authVaultEmail && !candidateAuthEmails.includes(verifiedUser.authVaultEmail)) {
+                        candidateAuthEmails.push(verifiedUser.authVaultEmail);
+                    }
+                    if (!loginEmail.includes('@') && INSTITUTION_ID && INSTITUTION_ID !== targetInstForLogin) {
+                        const fallbackInternal = buildInternalStaffEmail(loginEmail, INSTITUTION_ID);
+                        if (!candidateAuthEmails.includes(fallbackInternal)) {
+                            candidateAuthEmails.push(fallbackInternal);
+                        }
+                    }
+
+                    for (const candidateEmail of candidateAuthEmails) {
+                        try {
+                            userCred = await signInWithEmailAndPassword(auth, candidateEmail, enteredPassword);
+                            if (userCred?.user) {
+                                isAuthenticated = true;
+                                break;
                             }
+                        } catch (authError) {
+                            lastAuthError = authError;
+                        }
+                    }
+
+                    // If signed in with a vault alias hasn't been tried yet, check globalUsers for authVaultEmail
+                    if (!isAuthenticated) {
+                        try {
+                            const gKey = normalizeGlobalUserKey(loginEmail);
+                            if (gKey) {
+                                const gSnap = await getDoc(doc(db, GLOBAL_USERS_COLLECTION, gKey));
+                                if (gSnap.exists()) {
+                                    const gData = gSnap.data() || {};
+                                    const vaultEmail = String(gData.authVaultEmail || gData.email || '').trim().toLowerCase();
+                                    if (vaultEmail && !candidateAuthEmails.includes(vaultEmail)) {
+                                        userCred = await signInWithEmailAndPassword(auth, vaultEmail, enteredPassword);
+                                        if (userCred?.user) {
+                                            isAuthenticated = true;
+                                            if (gData.institutionId && !verifiedUser.targetInstitutionId) {
+                                                verifiedUser.targetInstitutionId = String(gData.institutionId).trim().toLowerCase();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (vaultRetryErr) {
+                            lastAuthError = vaultRetryErr;
                         }
                     }
                 }
@@ -2045,6 +2124,7 @@ let isRootGatewayMode = false;
                             const activeProject = window.AppSession?.getActiveProjectId?.() || '';
                             localStorage.setItem('official_portal_session_v1', JSON.stringify({
                                 ...(activeProject ? { projectId: activeProject } : {}),
+                                institutionId: INSTITUTION_ID,
                                 id: entry.id,
                                 name: rawName,
                                 username: userLogin,
@@ -2071,9 +2151,10 @@ let isRootGatewayMode = false;
                 }
 
                 const authedEmail = (userCred?.user?.email || loginEmail).toLowerCase();
-                const authedUsername = isInternalStaffEmail(authedEmail)
-                    ? extractInternalUsername(authedEmail)
-                    : authedEmail.split('@')[0];
+                const logicalEmail = (loginEmail && loginEmail.includes('@')) ? loginEmail.toLowerCase() : authedEmail;
+                const authedUsername = isInternalStaffEmail(logicalEmail)
+                    ? extractInternalUsername(logicalEmail)
+                    : logicalEmail.split('@')[0];
                 const usedFirebaseEmailAuth = Boolean(userCred?.user && !userCred.user.isAnonymous);
 
                 if (usedFirebaseEmailAuth && userCred?.user) {
@@ -2103,10 +2184,13 @@ let isRootGatewayMode = false;
                             companyExists = true;
                             const data = companySnap.data() || {};
                             const primaryEmail = String(data.email || '').trim().toLowerCase();
-                            const indexMatch = data?.ownersIndex?.[authedEmail] === true;
+                            const indexMatch = data?.ownersIndex?.[authedEmail] === true || data?.ownersIndex?.[logicalEmail] === true;
                             const ownersList = Array.isArray(data.owners) ? data.owners : [];
-                            const arrayMatch = ownersList.find((o) => String(o?.email || '').trim().toLowerCase() === authedEmail && o?.isActive !== false);
-                            if (primaryEmail === authedEmail || indexMatch || Boolean(arrayMatch)) {
+                            const arrayMatch = ownersList.find((o) => {
+                                const oEmail = String(o?.email || '').trim().toLowerCase();
+                                return (oEmail === authedEmail || oEmail === logicalEmail) && o?.isActive !== false;
+                            });
+                            if (primaryEmail === authedEmail || primaryEmail === logicalEmail || indexMatch || Boolean(arrayMatch)) {
                                 return {
                                     isOwner: true,
                                     exists: true,
@@ -2119,43 +2203,97 @@ let isRootGatewayMode = false;
                         }
                     } catch (err) {
                         companyError = err;
-                        console.error('Company config check error:', err);
                     }
                     return { isOwner: false, exists: companyExists, fromCache, companyName: '', ownerName: '', error: companyError };
                 };
 
-                // 0. If on Root Platform Gateway (/), authenticate against company/config
+                let effectiveInstId = isRootGatewayMode
+                    ? String(verifiedUser.targetInstitutionId || '').trim().toLowerCase()
+                    : INSTITUTION_ID;
+
+                // 0. If on Root Platform Gateway (/), check Company Owner first; if not Company Owner, resolve user's institution!
                 if (isRootGatewayMode) {
                     const companyRes = await checkCompanyOwnerAccess();
                     if (companyRes.isOwner && usedFirebaseEmailAuth) {
                         window.AppSession?.startCompany?.({
                             name: companyRes.ownerName,
-                            email: authedEmail,
+                            email: logicalEmail,
                             companyName: companyRes.companyName
                         });
                         window.location.href = '/company';
                         return;
                     }
-                    if (usedFirebaseEmailAuth) {
-                        try { await signOut(auth); } catch (_) {}
+
+                    // Not a Company Owner: resolve which institution this Super Admin or Staff belongs to
+                    if (!effectiveInstId) {
+                        const candidateGlobalKeys = Array.from(new Set([
+                            normalizeGlobalUserKey(logicalEmail),
+                            normalizeGlobalUserKey(authedEmail),
+                            normalizeGlobalUserKey(authedUsername),
+                            normalizeGlobalUserKey(userLogin)
+                        ].filter(Boolean)));
+
+                        for (const gKey of candidateGlobalKeys) {
+                            try {
+                                const gSnap = await getDoc(doc(db, GLOBAL_USERS_COLLECTION, gKey));
+                                if (gSnap.exists() && gSnap.data()?.institutionId) {
+                                    effectiveInstId = String(gSnap.data().institutionId).trim().toLowerCase();
+                                    break;
+                                }
+                            } catch (_) {}
+                        }
                     }
-                    const proj = firebaseConfig?.projectId || 'unknown';
-                    const dbName = firebaseConfig?.firestoreDatabaseId || '(default)';
-                    if (companyRes.error?.code === 'permission-denied') {
-                        showLoginMessage(`Auth succeeded (${authedEmail}), but Firestore blocked reading "company/config" (permission-denied on ${proj}). Ensure company/config has email/ownersIndex for "${authedEmail}" and publish updated firestore.rules.`);
-                    } else if (companyRes.error) {
-                        showLoginMessage(`Auth succeeded (${authedEmail}), but reading "company/config" failed (${companyRes.error.code || 'error'}): ${companyRes.error.message || 'Firestore request failed.'} [${proj} / ${dbName}]`);
-                    } else if (!companyRes.exists) {
-                        showLoginMessage(`Auth succeeded (${authedEmail}), but "company/config" does not exist in Firestore project "${proj}" (database: ${dbName}${companyRes.fromCache ? ', offline cache' : ''}). Verify the active project in Firebase Console is "${proj}".`);
-                    } else {
-                        showLoginMessage(`Auth succeeded (${authedEmail}), but this email is not listed in "company/config" (${proj}).`);
+
+                    // Fallback: scan /institutions collection (allowed for authenticated users) to find matching Super Admin or Staff
+                    if (!effectiveInstId) {
+                        try {
+                            const instListSnap = await getDocs(collection(db, INSTITUTIONS_COLLECTION));
+                            const instDocs = instListSnap.docs.map((d) => ({ slug: d.id, ...d.data() }));
+                            const directAdminMatch = instDocs.find((inst) => {
+                                const iEmail = String(inst.adminEmail || '').trim().toLowerCase();
+                                const iUser = String(inst.adminUsername || inst.adminLoginDisplay || '').trim().toLowerCase();
+                                return iEmail === logicalEmail
+                                    || iEmail === authedEmail
+                                    || (iUser && (iUser === authedUsername || iUser === userLogin));
+                            });
+                            if (directAdminMatch) {
+                                effectiveInstId = String(directAdminMatch.slug).trim().toLowerCase();
+                            } else {
+                                for (const inst of instDocs) {
+                                    const candSlug = String(inst.slug || '').trim().toLowerCase();
+                                    if (!candSlug) continue;
+                                    try {
+                                        const stSnap = await getDoc(doc(db, `institutions/${candSlug}/staffAccess`, logicalEmail));
+                                        if (stSnap.exists() && stSnap.data()?.isActive !== false) {
+                                            effectiveInstId = candSlug;
+                                            break;
+                                        }
+                                    } catch (_) {}
+                                }
+                            }
+                        } catch (scanErr) {
+                            console.warn('Institution resolution scan notice:', scanErr);
+                        }
                     }
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = SIGN_IN_BTN_HTML;
+
+                    if (!effectiveInstId) {
+                        if (usedFirebaseEmailAuth) {
+                            try { await signOut(auth); } catch (_) {}
+                        }
+                        const proj = firebaseConfig?.projectId || 'unknown';
+                        showLoginMessage(`Account "${logicalEmail}" is not linked to any active institution or Company Console in project "${proj}". Please check your username/email or open your institution portal URL.`);
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = SIGN_IN_BTN_HTML;
+                        }
+                        return;
                     }
-                    return;
                 }
+
+                const effectiveBasePath = `institutions/${effectiveInstId}`;
+                const buildTargetUrl = (page = 'official.html') => (
+                    window.AppSession?.buildPageUrl?.(page, effectiveInstId) || `/${effectiveInstId}/${page.replace(/\.html$/i, '')}`
+                );
 
                 // 1. Check if Admin via institutions/{slug}/settings/adminAuth
                 let isAdmin = false;
@@ -2163,17 +2301,24 @@ let isRootGatewayMode = false;
                 let adminCheckError = null;
                 let adminAuthExists = false;
                 try {
-                    const adminRef = doc(db, `${BASE_PATH}/settings`, ADMIN_AUTH_DOC_ID);
+                    const adminRef = doc(db, `${effectiveBasePath}/settings`, ADMIN_AUTH_DOC_ID);
                     const adminSnap = await getDoc(adminRef);
                     if (adminSnap.exists()) {
                         adminAuthExists = true;
                         adminAuthData = adminSnap.data();
                         const adminEmail = (adminAuthData.email || '').toLowerCase();
+                        const vaultEmail = (adminAuthData.authVaultEmail || '').toLowerCase();
                         const adminAccounts = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminAuthData.admins) ? adminAuthData.admins : []);
                         if (
                             adminEmail === authedEmail
+                            || adminEmail === logicalEmail
+                            || (vaultEmail && vaultEmail === authedEmail)
                             || adminAuthData?.adminsIndex?.[authedEmail] === true
-                            || adminAccounts.some((a) => (a.email || '').toLowerCase() === authedEmail && a.isActive !== false)
+                            || adminAuthData?.adminsIndex?.[logicalEmail] === true
+                            || adminAccounts.some((a) => {
+                                const aEmail = (a.email || '').toLowerCase();
+                                return (aEmail === authedEmail || aEmail === logicalEmail) && a.isActive !== false;
+                            })
                         ) {
                             isAdmin = true;
                         }
@@ -2189,31 +2334,57 @@ let isRootGatewayMode = false;
                         : (adminAuthData?.name || 'Institution Administrator');
                     if (!globalInstitutionConfig?.adminProfile?.email) {
                         try {
-                            await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), {
+                            await setDoc(doc(db, `${effectiveBasePath}/settings`, 'config'), {
                                 adminProfile: {
-                                    email: authedEmail,
+                                    email: logicalEmail,
                                     username: authedUsername,
                                     name: adminName
                                 }
                             }, { merge: true });
                         } catch (_) {}
                     }
-                    window.AppSession?.startAdmin({ name: adminName, email: authedEmail });
-                    window.location.href = getPageUrl('official.html');
+                    // Self-heal globalUsers entry for this Super Admin
+                    try {
+                        const gKey = normalizeGlobalUserKey(logicalEmail);
+                        if (gKey) {
+                            await setDoc(doc(db, GLOBAL_USERS_COLLECTION, gKey), {
+                                loginKey: gKey,
+                                email: logicalEmail,
+                                username: authedUsername,
+                                loginDisplay: logicalEmail,
+                                institutionId: effectiveInstId,
+                                role: 'super_admin',
+                                entityId: 'super_admin',
+                                displayName: adminName,
+                                isActive: true,
+                                updatedAt: new Date().toISOString()
+                            }, { merge: true });
+                        }
+                    } catch (_) {}
+
+                    window.AppSession?.startAdmin({
+                        name: adminName,
+                        email: logicalEmail,
+                        institutionId: effectiveInstId
+                    });
+                    window.location.href = buildTargetUrl('official.html');
                     return;
                 }
 
                 // 2. Check Staff Access
                 let staffCheckError = null;
                 try {
-                    let staffAccessDoc = await getDoc(doc(db, `${BASE_PATH}/staffAccess`, authedEmail));
+                    let staffAccessDoc = await getDoc(doc(db, `${effectiveBasePath}/staffAccess`, logicalEmail));
+                    if (!staffAccessDoc.exists() && authedEmail !== logicalEmail) {
+                        staffAccessDoc = await getDoc(doc(db, `${effectiveBasePath}/staffAccess`, authedEmail));
+                    }
                     if (!staffAccessDoc.exists() && authedUsername) {
-                        staffAccessDoc = await getDoc(doc(db, `${BASE_PATH}/staffAccess`, authedUsername));
+                        staffAccessDoc = await getDoc(doc(db, `${effectiveBasePath}/staffAccess`, authedUsername));
                     }
 
                     if (staffAccessDoc.exists() && staffAccessDoc.data()?.isActive !== false) {
                         const activeCollector = staffAccessDoc.data();
-                        const collectorKey = authedEmail;
+                        const collectorKey = logicalEmail;
                         const dutyClasses = Array.isArray(activeCollector.dutyClasses) && activeCollector.dutyClasses.length
                             ? activeCollector.dutyClasses.filter(Boolean)
                             : (Array.isArray(activeCollector.assignedClasses) ? activeCollector.assignedClasses.filter(Boolean) : []);
@@ -2241,15 +2412,21 @@ let isRootGatewayMode = false;
                             loginId: authedUsername || userLogin,
                             requiresEmailAuth: usedFirebaseEmailAuth
                         };
-                        window.AppSession?.startStaff(activeCollector.name || verifiedUser.displayName || '', collectorKey, staffAccess);
+                        window.AppSession?.startStaff(
+                            activeCollector.name || verifiedUser.displayName || '',
+                            collectorKey,
+                            staffAccess,
+                            effectiveInstId
+                        );
 
                         const activeProject = window.AppSession?.getActiveProjectId?.() || '';
                         const officialSessionObj = {
                             ...(activeProject ? { projectId: activeProject } : {}),
+                            institutionId: effectiveInstId,
                             id: activeCollector.staffId || '',
                             name: activeCollector.name || verifiedUser.displayName || '',
                             username: collectorKey,
-                            email: authedEmail,
+                            email: logicalEmail,
                             phone: activeCollector.phone || '',
                             role: activeCollector.role || activeCollector.type || 'Staff',
                             type: activeCollector.type || 'Staff',
@@ -2268,7 +2445,7 @@ let isRootGatewayMode = false;
                             access: staffAccess
                         };
                         localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
-                        window.location.href = getPageUrl('official.html');
+                        window.location.href = buildTargetUrl('official.html');
                         return;
                     }
                 } catch (e) {
@@ -2277,7 +2454,7 @@ let isRootGatewayMode = false;
                 }
 
                 // If authenticated via Firebase Email Auth and matched in staff registry
-                if (verifiedUser.type === 'staff' && verifiedUser.data && usedFirebaseEmailAuth && verifiedUser.data.isActive !== false) {
+                if (verifiedUser.type === 'staff' && verifiedUser.data && usedFirebaseEmailAuth && verifiedUser.data.isActive !== false && !verifiedUser.data.loginKey) {
                     const staffData = verifiedUser.data;
                     const staffDutyClasses = Array.isArray(staffData.dutyClasses) && staffData.dutyClasses.length
                         ? staffData.dutyClasses.filter(Boolean)
@@ -2302,19 +2479,20 @@ let isRootGatewayMode = false;
                         phone: staffData.phone || '',
                         photo: staffData.photo || '',
                         source: 'staff',
-                        userKey: authedEmail,
+                        userKey: logicalEmail,
                         loginId: authedUsername || userLogin,
                         requiresEmailAuth: usedFirebaseEmailAuth
                     };
-                    window.AppSession?.startStaff(staffData.name || '', authedEmail, staffAccess);
+                    window.AppSession?.startStaff(staffData.name || '', logicalEmail, staffAccess, effectiveInstId);
 
                     const activeProject = window.AppSession?.getActiveProjectId?.() || '';
                     const officialSessionObj = {
                         ...(activeProject ? { projectId: activeProject } : {}),
+                        institutionId: effectiveInstId,
                         id: staffData.id || '',
                         name: staffData.name || '',
-                        username: authedUsername || authedEmail,
-                        email: staffData.email || authedEmail,
+                        username: authedUsername || logicalEmail,
+                        email: staffData.email || logicalEmail,
                         phone: staffData.phone || '',
                         role: staffData.role || 'Staff',
                         type: staffData.type || 'Staff',
@@ -2333,7 +2511,7 @@ let isRootGatewayMode = false;
                         access: staffAccess
                     };
                     localStorage.setItem('official_portal_session_v1', JSON.stringify(officialSessionObj));
-                    window.location.href = getPageUrl('official.html');
+                    window.location.href = buildTargetUrl('official.html');
                     return;
                 }
 
@@ -2343,7 +2521,7 @@ let isRootGatewayMode = false;
                     if (companyFallback.isOwner) {
                         window.AppSession?.startCompany?.({
                             name: companyFallback.ownerName,
-                            email: authedEmail,
+                            email: logicalEmail,
                             companyName: companyFallback.companyName
                         });
                         window.location.href = '/company';
@@ -2356,11 +2534,11 @@ let isRootGatewayMode = false;
                 }
 
                 const proj = firebaseConfig?.projectId || 'unknown';
-                let failureMsg = `Account "${authedEmail}" has no active Admin or Staff authorization in "${BASE_PATH}" (Project: ${proj}).`;
+                let failureMsg = `Account "${logicalEmail}" has no active Admin or Staff authorization in "${effectiveBasePath}" (Project: ${proj}).`;
                 if (adminCheckError?.code === 'permission-denied' || staffCheckError?.code === 'permission-denied') {
-                    failureMsg = `Auth succeeded (${authedEmail}), but Firestore denied reading "${BASE_PATH}/settings/adminAuth" (${adminCheckError?.code || staffCheckError?.code}). Publish updated firestore.rules in project "${proj}".`;
+                    failureMsg = `Auth succeeded (${logicalEmail}), but Firestore denied reading "${effectiveBasePath}/settings/adminAuth" (${adminCheckError?.code || staffCheckError?.code}). Publish updated firestore.rules in project "${proj}".`;
                 } else if (!adminAuthExists) {
-                    failureMsg = `Auth succeeded (${authedEmail}), but "${BASE_PATH}/settings/adminAuth" was not found in project "${proj}". Provision this institution from Company Console or check email match.`;
+                    failureMsg = `Auth succeeded (${logicalEmail}), but "${effectiveBasePath}/settings/adminAuth" was not found in project "${proj}". Provision this institution from Company Console or check email match.`;
                 }
                 showLoginMessage(failureMsg);
                 if (btn) {

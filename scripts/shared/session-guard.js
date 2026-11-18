@@ -515,14 +515,17 @@
     const hasAdminSession = () => isStateFresh(getAdminState(), 'admin');
     const hasStudentSession = () => Boolean(getStudentState()?.studentId);
 
-    const setCompanyAllowedPages = (allowedPages = null) => {
+    const setCompanyAllowedPages = (allowedPages = null, overrideInstitutionId = null) => {
         try {
             if (!allowedPages || typeof allowedPages !== 'object') {
                 removeKey(COMPANY_ALLOWED_PAGES_KEY);
                 return;
             }
+            const targetInst = overrideInstitutionId
+                ? (sanitizeInstitutionSlug(overrideInstitutionId) || CURRENT_INSTITUTION_ID)
+                : CURRENT_INSTITUTION_ID;
             writeJson(COMPANY_ALLOWED_PAGES_KEY, {
-                institutionId: CURRENT_INSTITUTION_ID,
+                institutionId: targetInst,
                 pages: allowedPages
             });
         } catch (_) {}
@@ -817,7 +820,11 @@
                 if (getRole() === 'student') setCurrentRole('');
             }
         },
-        startStaff(name = '', email = '', access = null) {
+        startStaff(name = '', email = '', access = null, overrideInstitutionId = null) {
+            const targetInst = overrideInstitutionId
+                ? (sanitizeInstitutionSlug(overrideInstitutionId) || CURRENT_INSTITUTION_ID)
+                : CURRENT_INSTITUTION_ID;
+            try { localStorage.setItem(ACTIVE_INSTITUTION_KEY, targetInst); } catch (_) {}
             const dutyClasses = Array.isArray(access?.dutyClasses) ? access.dutyClasses.filter(Boolean) : [];
             const staffId = access?.staffId || access?.entryId || email || name;
             const source = access?.source === 'directory' ? 'directory' : 'staff';
@@ -833,6 +840,7 @@
                 dutyClasses
             };
             writeJson(STAFF_STATE_KEY, buildState({
+                institutionId: targetInst,
                 name,
                 email,
                 role: 'staff',
@@ -983,7 +991,11 @@
         startAdmin(adminProfile = {}) {
             const email = String(adminProfile?.email || 'admin').trim().toLowerCase();
             const name = adminProfile?.name || 'Administrator';
-            writeJson(ADMIN_STATE_KEY, buildState({ role: 'admin', name, email }));
+            const targetInst = adminProfile?.institutionId
+                ? (sanitizeInstitutionSlug(adminProfile.institutionId) || CURRENT_INSTITUTION_ID)
+                : CURRENT_INSTITUTION_ID;
+            try { localStorage.setItem(ACTIVE_INSTITUTION_KEY, targetInst); } catch (_) {}
+            writeJson(ADMIN_STATE_KEY, buildState({ institutionId: targetInst, role: 'admin', name, email }));
             setCurrentRole('admin');
         },
         getRememberedAccounts() {

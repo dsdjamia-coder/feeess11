@@ -344,14 +344,32 @@ service cloud.firestore {
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string || request.resource.data.updatedAt is number);
     }
 
-    // --- COMPANY MASTER PORTAL & INSTITUTION REGISTRY ---
+    // --- COMPANY MASTER PORTAL, GLOBAL USER REGISTRY & INSTITUTION REGISTRY ---
     match /company/{docId} {
       allow read, write: if isCompanyOwner();
     }
 
+    match /globalUsers/{loginKey} {
+      allow get: if true;
+      allow list: if isCompanyOwner();
+      allow create, update: if isCompanyOwner() || (
+        isAuthenticated()
+        && request.resource.data.institutionId is string
+        && isAdmin(request.resource.data.institutionId)
+        && (resource == null || resource.data.institutionId == request.resource.data.institutionId)
+      );
+      allow delete: if isCompanyOwner() || (
+        isAuthenticated()
+        && resource != null
+        && resource.data.institutionId is string
+        && isAdmin(resource.data.institutionId)
+      );
+    }
+
     match /institutions/{institutionId} {
       allow get: if true;
-      allow list, create, update, delete: if isCompanyOwner();
+      allow list: if isAuthenticated() || isCompanyOwner();
+      allow create, update, delete: if isCompanyOwner();
     }
 
     // --- INSTITUTION RULES ---
@@ -361,8 +379,9 @@ service cloud.firestore {
       // Company Owner can manage institution settings unconditionally (including during setup/pause)
       allow read, write: if isCompanyOwner();
 
-      // Sensitive admin auth doc is STRICTLY Super Admin only (never publicly readable)
-      allow read, write: if docId == 'adminAuth' && canAccessTenant(institutionId) && isSuperAdminDoc(institutionId);
+      // Sensitive admin auth doc is strictly Admin/Super Admin readable and Super Admin/Company Owner writable
+      allow read: if docId == 'adminAuth' && canAccessTenant(institutionId) && isAdmin(institutionId);
+      allow write: if docId == 'adminAuth' && canAccessTenant(institutionId) && (isCompanyOwner() || isSuperAdminDoc(institutionId));
 
       // Public settings required by landing page & portal shells (explicit allowlist, excludes adminAuth)
       allow read: if canAccessTenant(institutionId) && docId in [

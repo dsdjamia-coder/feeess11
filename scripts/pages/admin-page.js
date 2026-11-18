@@ -2,7 +2,7 @@ import { signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCrede
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { doc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, setDoc, getDoc, orderBy, limit, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
-import { ADMIN_AUTH_DOC_ID, INSTITUTION_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION, buildInternalStaffEmail, extractInternalUsername, isInternalStaffEmail } from '../../config/app-config.js';
+import { ADMIN_AUTH_DOC_ID, GLOBAL_USERS_COLLECTION, INSTITUTION_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION, buildInternalStaffEmail, extractInternalUsername, isInternalStaffEmail, normalizeGlobalUserKey } from '../../config/app-config.js';
 import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
@@ -246,7 +246,102 @@ const getDeviceLabel = () => {
     return 'Unknown Device';
 };
 const getStaffAccessRef = (email = '') => doc(db, STAFF_ACCESS_COLLECTION, normalizeEmail(email));
-const syncStaffAccessRecord = async (staffRecord = {}) => {
+
+const assertGlobalStaffLoginAvailable = async (candidateKeys = [], currentEntityId = '', currentPreviousKeys = []) => {
+    const allowedPrevious = new Set(
+        (Array.isArray(currentPreviousKeys) ? currentPreviousKeys : [])
+            .map((k) => normalizeGlobalUserKey(k))
+            .filter(Boolean)
+    );
+    const uniqueCandidates = [...new Set(
+        (Array.isArray(candidateKeys) ? candidateKeys : [])
+            .map((k) => normalizeGlobalUserKey(k))
+            .filter(Boolean)
+    )];
+    for (const key of uniqueCandidates) {
+        if (!key) continue;
+        try {
+            const snap = await getDoc(doc(db, GLOBAL_USERS_COLLECTION, key));
+            if (!snap.exists()) continue;
+            const data = snap.data() || {};
+            const ownerInst = String(data.institutionId || '').trim().toLowerCase();
+            const ownerEntity = String(data.entityId || '').trim();
+            const ownerRole = String(data.role || '').trim().toLowerCase();
+            if (ownerInst && ownerInst !== String(INSTITUTION_ID || '').toLowerCase()) {
+                return {
+                    ok: false,
+                    conflictKey: key,
+                    message: `Username or email "${key}" is already assigned to another institution and cannot be reused.`
+                };
+            }
+            if (ownerRole === 'super_admin' && currentEntityId !== 'super_admin') {
+                return {
+                    ok: false,
+                    conflictKey: key,
+                    message: `Username or email "${key}" is reserved for the Super Admin account.`
+                };
+            }
+            if (!allowedPrevious.has(key) && ownerEntity && currentEntityId && ownerEntity !== currentEntityId) {
+                return {
+                    ok: false,
+                    conflictKey: key,
+                    message: `Username or email "${key}" is already used by another user in this institution.`
+                };
+            }
+        } catch (err) {
+            console.warn('Global user registry check warning:', err);
+        }
+    }
+    return { ok: true };
+};
+
+const syncGlobalStaffKeys = async ({ keys = [], previousKeys = [], entityId = '', role = 'staff', displayName = '', email = '', username = '', isActive = true } = {}) => {
+    const cleanNext = [...new Set(keys.map((k) => normalizeGlobalUserKey(k)).filter(Boolean))];
+    const cleanPrev = [...new Set(previousKeys.map((k) => normalizeGlobalUserKey(k)).filter(Boolean))];
+    for (const oldKey of cleanPrev) {
+        if (!cleanNext.includes(oldKey)) {
+            try {
+                const oldRef = doc(db, GLOBAL_USERS_COLLECTION, oldKey);
+                const oldSnap = await getDoc(oldRef);
+                if (oldSnap.exists() && String(oldSnap.data()?.institutionId || '').toLowerCase() === String(INSTITUTION_ID || '').toLowerCase()) {
+                    await deleteDoc(oldRef);
+                }
+            } catch (_) {}
+        }
+    }
+    for (const key of cleanNext) {
+        try {
+            await setDoc(doc(db, GLOBAL_USERS_COLLECTION, key), {
+                loginKey: key,
+                institutionId: INSTITUTION_ID,
+                role,
+                entityId: entityId || key,
+                email: normalizeEmail(email),
+                username: String(username || '').trim().toLowerCase(),
+                displayName: String(displayName || '').trim(),
+                isActive: isActive !== false,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+        } catch (err) {
+            console.warn('Failed to sync globalUsers entry for', key, err);
+        }
+    }
+};
+
+const removeGlobalStaffKeys = async (keys = []) => {
+    const cleanKeys = [...new Set(keys.map((k) => normalizeGlobalUserKey(k)).filter(Boolean))];
+    for (const key of cleanKeys) {
+        try {
+            const ref = doc(db, GLOBAL_USERS_COLLECTION, key);
+            const snap = await getDoc(ref);
+            if (snap.exists() && String(snap.data()?.institutionId || '').toLowerCase() === String(INSTITUTION_ID || '').toLowerCase()) {
+                await deleteDoc(ref);
+            }
+        } catch (_) {}
+    }
+};
+
+const syncStaffAccessRecord = async (staffRecord = {}, previousRecord = null) => {
     const email = normalizeEmail(staffRecord.email || '');
     if (!email) return;
     const derivedUsername = String(
@@ -286,11 +381,36 @@ const syncStaffAccessRecord = async (staffRecord = {}) => {
             await setDoc(doc(db, STAFF_ACCESS_COLLECTION, derivedUsername), payload, { merge: true });
         } catch (_) {}
     }
+    const prevEmail = normalizeEmail(previousRecord?.email || '');
+    const prevUsername = String(
+        previousRecord?.username
+        || previousRecord?.loginId
+        || (isInternalStaffEmail(prevEmail) ? extractInternalUsername(prevEmail) : '')
+    ).trim().toLowerCase();
+    await syncGlobalStaffKeys({
+        keys: [email, derivedUsername],
+        previousKeys: [prevEmail, prevUsername],
+        entityId: staffRecord.id || email,
+        role: 'staff',
+        displayName: staffRecord.name || '',
+        email,
+        username: derivedUsername,
+        isActive: staffRecord.isActive !== false
+    });
 };
-const removeStaffAccessRecord = async (email = '') => {
+const removeStaffAccessRecord = async (email = '', username = '') => {
     const normalized = normalizeEmail(email);
-    if (!normalized) return;
-    await deleteDoc(getStaffAccessRef(normalized));
+    const derivedUsername = String(
+        username
+        || (isInternalStaffEmail(normalized) ? extractInternalUsername(normalized) : '')
+    ).trim().toLowerCase();
+    if (normalized) {
+        await deleteDoc(getStaffAccessRef(normalized)).catch(() => {});
+    }
+    if (derivedUsername) {
+        await deleteDoc(doc(db, STAFF_ACCESS_COLLECTION, derivedUsername)).catch(() => {});
+    }
+    await removeGlobalStaffKeys([normalized, derivedUsername]);
 };
 const rebuildStaffAccessIndex = async (staffRecords = []) => {
     const accessSnap = await getDocs(collection(db, STAFF_ACCESS_COLLECTION));
@@ -5140,6 +5260,13 @@ document.getElementById('add-staff-btn').addEventListener('click', async () => {
     if(!requirePermission('staff.manage')) return;
     const staffRecord = extractAndValidateStaffForm('st');
     if (!staffRecord) return;
+    if (staffRecord.email || staffRecord.username) {
+        const check = await assertGlobalStaffLoginAvailable([staffRecord.email, staffRecord.username], '');
+        if (!check.ok) {
+            alert(check.message);
+            return;
+        }
+    }
     if(!confirm("Add new staff member?")) return;
     const btn = document.getElementById('add-staff-btn'); btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
 
@@ -5672,8 +5799,19 @@ document.getElementById('edit-staff-update').onclick = async () => {
     if (!editingStaffId) return;
     const nextStaffRecord = extractAndValidateStaffForm('e-st');
     if (!nextStaffRecord) return;
-    if(!confirm("Save changes?")) return;
     const existingStaff = allStaff.find((staffMember) => staffMember.id === editingStaffId) || {};
+    if (nextStaffRecord.email || nextStaffRecord.username) {
+        const check = await assertGlobalStaffLoginAvailable(
+            [nextStaffRecord.email, nextStaffRecord.username],
+            editingStaffId,
+            [existingStaff.email, existingStaff.username]
+        );
+        if (!check.ok) {
+            alert(check.message);
+            return;
+        }
+    }
+    if(!confirm("Save changes?")) return;
     const newInitialPassword = nextStaffRecord._initialAuthPassword || '';
     delete nextStaffRecord._initialAuthPassword;
     const mergedRecord = {
@@ -5691,11 +5829,11 @@ document.getElementById('edit-staff-update').onclick = async () => {
     }
     await updateDoc(doc(db, `${BASE_PATH}/staff`, editingStaffId), mergedRecord);
     if (existingStaff.email && normalizeEmail(existingStaff.email) !== normalizeEmail(mergedRecord.email)) {
-        await removeStaffAccessRecord(existingStaff.email);
+        await removeStaffAccessRecord(existingStaff.email, existingStaff.username);
     }
     const localRecord = { ...mergedRecord, id: editingStaffId };
     delete localRecord.password;
-    await syncStaffAccessRecord(localRecord);
+    await syncStaffAccessRecord(localRecord, existingStaff);
     await logAuditEvent({ category: 'security', action: 'staff.update', entityType: 'staff', entityId: editingStaffId, message: `Staff updated: ${localRecord.name}.` });
     closeEditStaffModal();
     renderStaffList();
@@ -5836,6 +5974,16 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
         return;
     }
 
+    const uniquenessCheck = await assertGlobalStaffLoginAvailable(
+        [normalizedEmail, username],
+        staffId,
+        [staffRecord.email, staffRecord.username]
+    );
+    if (!uniquenessCheck.ok) {
+        alert(uniquenessCheck.message);
+        return;
+    }
+
     const saveBtn = document.getElementById('staff-cred-save-btn');
     const originalBtnHtml = saveBtn ? saveBtn.innerHTML : '';
     if (saveBtn) {
@@ -5844,6 +5992,7 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
     }
 
     try {
+        const previousStaffSnapshot = { ...staffRecord };
         const nextStaffPayload = {
             ...staffRecord,
             email: normalizedEmail,
@@ -5864,9 +6013,9 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
         });
 
         if (staffRecord.email && normalizeEmail(staffRecord.email) !== normalizedEmail) {
-            await removeStaffAccessRecord(staffRecord.email);
+            await removeStaffAccessRecord(staffRecord.email, staffRecord.username);
         }
-        await syncStaffAccessRecord(nextStaffPayload);
+        await syncStaffAccessRecord(nextStaffPayload, previousStaffSnapshot);
 
         staffRecord.email = normalizedEmail;
         staffRecord.username = username;
@@ -5908,8 +6057,8 @@ window.deleteStaff = async (id) => {
 
     try {
         await deleteDoc(doc(db, `${BASE_PATH}/staff`, id));
-        if (staffRecord.email) {
-            await removeStaffAccessRecord(staffRecord.email);
+        if (staffRecord.email || staffRecord.username) {
+            await removeStaffAccessRecord(staffRecord.email, staffRecord.username);
         }
         allStaff = allStaff.filter((st) => st.id !== id);
         await logAuditEvent({
@@ -16465,7 +16614,11 @@ document.getElementById('dir-entry-save-btn')?.addEventListener('click', async (
             };
         }
     }
-    await addDoc(collection(db, `${BASE_PATH}/publicDirectory`), {
+    if (authMeta.username) {
+        const dirCheck = await assertGlobalStaffLoginAvailable([authMeta.username], '');
+        if (!dirCheck.ok) return alert(dirCheck.message);
+    }
+    const createdRef = await addDoc(collection(db, `${BASE_PATH}/publicDirectory`), {
         categoryId,
         values,
         displayOrder: Math.max(1, Number(document.getElementById('dir-entry-order')?.value || 999)),
@@ -16473,6 +16626,16 @@ document.getElementById('dir-entry-save-btn')?.addEventListener('click', async (
         createdAt: Date.now(),
         updatedAt: Date.now()
     });
+    if (authMeta.username) {
+        await syncGlobalStaffKeys({
+            keys: [authMeta.username],
+            entityId: `dir_${createdRef.id}`,
+            role: 'directory',
+            displayName: values?.name || authMeta.usernameRaw || authMeta.username,
+            username: authMeta.username,
+            isActive: true
+        });
+    }
     document.getElementById('dir-entry-order').value = '999';
     renderDirectoryEntryForm();
 });
@@ -16547,12 +16710,31 @@ document.getElementById('dir-entry-edit-save')?.addEventListener('click', async 
         if (!username || !password) return alert('Mapped mode requires valid username/password field values.');
         authMeta = { username: username.toLowerCase(), usernameRaw: username, passwordHash: await hashCredentialValue(password) };
     }
+    if (authMeta.username) {
+        const dirCheck = await assertGlobalStaffLoginAvailable(
+            [authMeta.username],
+            `dir_${entryId}`,
+            [targetEntry?.authMeta?.username]
+        );
+        if (!dirCheck.ok) return alert(dirCheck.message);
+    }
     await updateDoc(doc(db, `${BASE_PATH}/publicDirectory`, entryId), {
         values,
         displayOrder: Math.max(1, Number(document.getElementById('dir-entry-edit-order')?.value || 999)),
         authMeta,
         updatedAt: Date.now()
     });
+    if (authMeta.username || targetEntry?.authMeta?.username) {
+        await syncGlobalStaffKeys({
+            keys: authMeta.username ? [authMeta.username] : [],
+            previousKeys: targetEntry?.authMeta?.username ? [targetEntry.authMeta.username] : [],
+            entityId: `dir_${entryId}`,
+            role: 'directory',
+            displayName: values?.name || authMeta.usernameRaw || authMeta.username || '',
+            username: authMeta.username || '',
+            isActive: true
+        });
+    }
     document.getElementById('dir-entry-edit-popup')?.classList.add('hidden');
     document.getElementById('dir-entry-edit-popup')?.classList.remove('flex');
 });
@@ -16561,7 +16743,11 @@ document.getElementById('dir-entry-edit-delete')?.addEventListener('click', asyn
     const entryId = document.getElementById('dir-entry-edit-id')?.value || '';
     if (!entryId) return;
     if (!confirm('Delete this entry?')) return;
+    const targetEntry = publicDirectoryEntries.find((entry) => entry.id === entryId) || {};
     await deleteDoc(doc(db, `${BASE_PATH}/publicDirectory`, entryId));
+    if (targetEntry?.authMeta?.username) {
+        await removeGlobalStaffKeys([targetEntry.authMeta.username]);
+    }
     document.getElementById('dir-entry-edit-popup')?.classList.add('hidden');
     document.getElementById('dir-entry-edit-popup')?.classList.remove('flex');
 });
@@ -16665,6 +16851,16 @@ document.getElementById('update-admin-credentials-btn')?.addEventListener('click
     const nextEmail = normalizeEmail(requestedEmail || oldEmail);
     const changedEmail = nextEmail !== oldEmail;
     const changedPassword = Boolean(requestedPassword);
+    if (changedEmail) {
+        const nextUsername = nextEmail.split('@')[0];
+        const oldUsername = oldEmail.split('@')[0];
+        const check = await assertGlobalStaffLoginAvailable(
+            [nextEmail, nextUsername],
+            'super_admin',
+            [oldEmail, oldUsername]
+        );
+        if (!check.ok) return alert(check.message);
+    }
     if(!confirm(`Update current admin login credentials?\n${changedEmail ? `Email: ${oldEmail} -> ${nextEmail}` : 'Email: No change'}\n${changedPassword ? 'Password: Will be updated' : 'Password: No change'}`)) return;
 
     try {
@@ -16714,6 +16910,16 @@ document.getElementById('update-admin-credentials-btn')?.addEventListener('click
                         }))
                 }
             }, { merge: true }).catch(() => {});
+            await syncGlobalStaffKeys({
+                keys: [nextEmail, nextEmail.split('@')[0]],
+                previousKeys: [oldEmail, oldEmail.split('@')[0]],
+                entityId: 'super_admin',
+                role: 'super_admin',
+                displayName: authUser.displayName || 'Super Admin',
+                email: nextEmail,
+                username: nextEmail.split('@')[0],
+                isActive: true
+            });
             currentAdminEmail = nextEmail;
         }
 

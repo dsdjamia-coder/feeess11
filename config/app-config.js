@@ -70,6 +70,7 @@ export const INTERNAL_AUTH_DOMAIN = `${INSTITUTION_ID}.internal`;
 export const COMPANY_COLLECTION = 'company';
 export const COMPANY_CONFIG_DOC_ID = 'config';
 export const INSTITUTIONS_COLLECTION = 'institutions';
+export const GLOBAL_USERS_COLLECTION = 'globalUsers';
 export const RESERVED_INSTITUTION_SLUGS = RESERVED_PATH_SEGMENTS;
 export const DEFAULT_COMPANY_ALLOWED_PAGES = {
   admin: true,
@@ -83,6 +84,11 @@ export const DEFAULT_COMPANY_ALLOWED_PAGES = {
   studentActivity: true,
   classroomEvaluation: true
 };
+
+export const normalizeGlobalUserKey = (value = '') => String(value || '')
+  .trim()
+  .toLowerCase()
+  .replace(/[\\/\s]+/g, '_');
 
 export const buildInternalStaffEmail = (username = '', institutionId = INSTITUTION_ID) => {
   const cleanUser = String(username || '').trim().toLowerCase();
