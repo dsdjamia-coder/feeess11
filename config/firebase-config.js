@@ -5,13 +5,13 @@ import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyDdUyk_yvZoQ1JI1pPLJTK51U91BVO0XSA",
-  authDomain: "bright-tube-p07pf.firebaseapp.com",
-  projectId: "bright-tube-p07pf",
-  storageBucket: "bright-tube-p07pf.firebasestorage.app",
-  messagingSenderId: "239455260650",
-  appId: "1:239455260650:web:5c3d61cbd8fcfefccc6c93",
-  firestoreDatabaseId: "ai-studio-feee-81b4709b-982c-4f96-b21b-c346855b9aa2"
+  apiKey: "AIzaSyCn-4GNsQQaPN5moJivg2Cj9W0TJkiteRE",
+  authDomain: "test-noorulislam.firebaseapp.com",
+  projectId: "test-noorulislam",
+  storageBucket: "test-noorulislam.firebasestorage.app",
+  messagingSenderId: "192594386980",
+  appId: "1:192594386980:web:bbd6a0e7c17674ae1538b1",
+  measurementId: "G-KT2PG0G8JV"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -32,9 +32,9 @@ if (!canEnableAppCheck) {
   console.warn('[Security] App Check is not enabled yet: set window.__APP_CHECK_SITE_KEY with a valid reCAPTCHA v3 site key.');
 }
 
-const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true
-}, firebaseConfig.firestoreDatabaseId);
+const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+  ? initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId)
+  : initializeFirestore(app, { experimentalForceLongPolling: true });
 const auth = getAuth(app);
 if (typeof window !== 'undefined') {
   window.__firebaseAuth = auth;
