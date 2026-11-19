@@ -28,9 +28,11 @@ import {
   COMPANY_COLLECTION,
   COMPANY_CONFIG_DOC_ID,
   COMPANY_PUBLIC_CATALOG_DOC_ID,
+  COMPANY_SHOWCASES_SUBCOLLECTION,
   DEFAULT_COMPANY_ALLOWED_PAGES,
   GLOBAL_USERS_COLLECTION,
   INSTITUTIONS_COLLECTION,
+  PLATFORM_SHOWCASE_PAGES,
   RESERVED_INSTITUTION_SLUGS,
   buildInternalStaffEmail,
   extractInternalUsername,
@@ -237,14 +239,24 @@ const COMPANY_VIEWS = {
     elId: 'view-contact',
     title: 'Contact Details',
     subtitle: 'Manage WhatsApp, Instagram, phone, email, and support links shown in popups.'
+  },
+  screenshots: {
+    elId: 'view-screenshots',
+    title: 'Platform Screenshots',
+    subtitle: 'Upload up to 5 showcase screenshots per module for the Root Public Gateway preview.'
   }
 };
+
+const MAX_SHOWCASE_IMAGES_PER_PAGE = 5;
+const ALLOWED_SHOWCASE_KEY_SET = new Set(PLATFORM_SHOWCASE_PAGES.map((p) => p.key));
 
 let allInstitutions = [];
 let pendingPauseTarget = null;
 let verifiedCompanyOwnerEmail = '';
 let activeCompanyView = 'dashboard';
 let catalogState = normalizePublicCatalog({});
+let platformShowcasesMap = new Map();
+const showcaseBusyPages = new Set();
 
 const showToast = (message, tone = 'success') => {
   const el = document.getElementById('company-toast');
@@ -2048,6 +2060,556 @@ const loadPublicCatalog = async () => {
   renderDashboardOverview();
 };
 
+// --- PLATFORM PAGE SCREENSHOTS MANAGER ---
+
+const isSafeShowcaseImageUrl = (rawUrl = '') => {
+  const clean = String(rawUrl || '').trim();
+  if (!clean || clean.length < 8 || clean.length > 240000) return false;
+  if (/^data:image\/(webp|jpeg|jpg|png);base64,[a-z0-9+/=\s]+$/i.test(clean)) {
+    return true;
+  }
+  try {
+    const parsed = new URL(clean);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch (_) {
+    return false;
+  }
+};
+
+const normalizeShowcaseImages = (rawImages = []) => {
+  if (!Array.isArray(rawImages)) return [];
+  const normalized = [];
+  for (const item of rawImages) {
+    if (!item || typeof item !== 'object') continue;
+    const url = String(item.url || '').trim();
+    if (!isSafeShowcaseImageUrl(url)) continue;
+    const id = String(item.id || `shot_${Date.now()}_${normalized.length}`).trim().slice(0, 80);
+    const caption = String(item.caption || '').trim().slice(0, 160);
+    const updatedAt = typeof item.updatedAt === 'string' && item.updatedAt
+      ? item.updatedAt
+      : new Date().toISOString();
+    normalized.push({ id, url, caption, updatedAt });
+    if (normalized.length >= MAX_SHOWCASE_IMAGES_PER_PAGE) break;
+  }
+  return normalized;
+};
+
+const loadImageElementFromFile = (file) => new Promise((resolve, reject) => {
+  const objectUrl = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(objectUrl);
+    resolve(img);
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(objectUrl);
+    reject(new Error(`Unable to decode image "${file.name}".`));
+  };
+  img.src = objectUrl;
+});
+
+const compressShowcaseImageFile = async (file) => {
+  if (!file || !String(file.type || '').startsWith('image/')) {
+    throw new Error(`"${file?.name || 'File'}" is not a supported image format.`);
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    throw new Error(`"${file.name}" exceeds the 20 MB upload limit.`);
+  }
+
+  const img = await loadImageElementFromFile(file);
+  const srcWidth = img.naturalWidth || img.width || 1280;
+  const srcHeight = img.naturalHeight || img.height || 720;
+
+  const maxInitialWidth = 1280;
+  const maxInitialHeight = 900;
+  let scale = Math.min(1, maxInitialWidth / srcWidth, maxInitialHeight / srcHeight);
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Browser canvas is unavailable for image compression.');
+
+  // Detect WebP support
+  const testCanvas = document.createElement('canvas');
+  testCanvas.width = 2;
+  testCanvas.height = 2;
+  const supportsWebp = testCanvas.toDataURL('image/webp', 0.8).startsWith('data:image/webp');
+  const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
+
+  // Target ~90 KB binary (~120,000 Base64 chars), hard ceiling 210,000 chars (rules allow 240,000)
+  const targetMaxChars = 120000;
+  const hardMaxChars = 210000;
+  const qualitySteps = [0.82, 0.72, 0.62, 0.52, 0.42];
+  let bestDataUrl = '';
+
+  for (let pass = 0; pass < 4; pass += 1) {
+    const targetW = Math.max(320, Math.round(srcWidth * scale));
+    const targetH = Math.max(200, Math.round(srcHeight * scale));
+    canvas.width = targetW;
+    canvas.height = targetH;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, targetW, targetH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    for (const quality of qualitySteps) {
+      const candidate = canvas.toDataURL(mimeType, quality);
+      if (!bestDataUrl || candidate.length < bestDataUrl.length) {
+        bestDataUrl = candidate;
+      }
+      if (candidate.length <= targetMaxChars) {
+        return candidate;
+      }
+    }
+
+    scale *= 0.78;
+  }
+
+  if (bestDataUrl && bestDataUrl.length <= hardMaxChars) {
+    return bestDataUrl;
+  }
+  throw new Error(`Could not compress "${file.name}" within storage limits. Try a smaller image.`);
+};
+
+const updateShowcaseCountersUI = () => {
+  let totalImages = 0;
+  let configuredPages = 0;
+  PLATFORM_SHOWCASE_PAGES.forEach((page) => {
+    const count = (platformShowcasesMap.get(page.key) || []).length;
+    totalImages += count;
+    if (count > 0) configuredPages += 1;
+  });
+
+  const sidebarBadge = document.getElementById('sidebar-screenshots-count');
+  const dashSummary = document.getElementById('dash-screenshots-summary');
+  const configuredEl = document.getElementById('screenshots-configured-count');
+  const totalEl = document.getElementById('screenshots-total-count');
+
+  if (sidebarBadge) sidebarBadge.textContent = String(totalImages);
+  if (dashSummary) {
+    dashSummary.textContent = `${totalImages} screenshot${totalImages === 1 ? '' : 's'} across ${configuredPages} / ${PLATFORM_SHOWCASE_PAGES.length} modules`;
+  }
+  if (configuredEl) configuredEl.textContent = `${configuredPages} / ${PLATFORM_SHOWCASE_PAGES.length}`;
+  if (totalEl) totalEl.textContent = `${totalImages} / ${PLATFORM_SHOWCASE_PAGES.length * MAX_SHOWCASE_IMAGES_PER_PAGE}`;
+};
+
+const openScreenshotPreviewModal = (title = 'Screenshot Preview', url = '', meta = '') => {
+  if (!isSafeShowcaseImageUrl(url)) return;
+  const modal = document.getElementById('screenshot-preview-modal');
+  const imgEl = document.getElementById('screenshot-preview-img');
+  const titleEl = document.getElementById('screenshot-preview-title');
+  const metaEl = document.getElementById('screenshot-preview-meta');
+  if (!modal || !imgEl) return;
+
+  imgEl.src = url;
+  if (titleEl) titleEl.textContent = title;
+  if (metaEl) metaEl.textContent = meta || 'Full-size preview';
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+};
+
+const closeScreenshotPreviewModal = () => {
+  const modal = document.getElementById('screenshot-preview-modal');
+  const imgEl = document.getElementById('screenshot-preview-img');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+  if (imgEl) imgEl.src = '';
+};
+
+const persistPageShowcase = async (pageKey, nextImages, successMsg = 'Saved platform screenshots!') => {
+  if (!ALLOWED_SHOWCASE_KEY_SET.has(pageKey)) {
+    throw new Error('Invalid platform module key.');
+  }
+  const cleanImages = normalizeShowcaseImages(nextImages);
+  const payload = {
+    pageKey,
+    images: cleanImages,
+    updatedAt: new Date().toISOString(),
+    updatedBy: String(verifiedCompanyOwnerEmail || 'company').slice(0, 160)
+  };
+  await setDoc(
+    doc(db, COMPANY_COLLECTION, COMPANY_PUBLIC_CATALOG_DOC_ID, COMPANY_SHOWCASES_SUBCOLLECTION, pageKey),
+    payload
+  );
+  platformShowcasesMap.set(pageKey, cleanImages);
+  updateShowcaseCountersUI();
+  renderScreenshotsManager();
+  showToast(successMsg);
+};
+
+const handleShowcaseFileUpload = async (pageKey, fileList) => {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  const existing = platformShowcasesMap.get(pageKey) || [];
+  const remainingSlots = MAX_SHOWCASE_IMAGES_PER_PAGE - existing.length;
+  if (remainingSlots <= 0) {
+    showToast(`Maximum ${MAX_SHOWCASE_IMAGES_PER_PAGE} screenshots already uploaded for this module.`, 'info');
+    return;
+  }
+
+  const pageMeta = PLATFORM_SHOWCASE_PAGES.find((p) => p.key === pageKey);
+  const toProcess = files.slice(0, remainingSlots);
+  const skippedCount = files.length - toProcess.length;
+
+  showcaseBusyPages.add(pageKey);
+  renderScreenshotsManager();
+
+  try {
+    const newItems = [];
+    for (let i = 0; i < toProcess.length; i += 1) {
+      const file = toProcess[i];
+      const compressedUrl = await compressShowcaseImageFile(file);
+      const baseName = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+      newItems.push({
+        id: `shot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${i}`,
+        url: compressedUrl,
+        caption: baseName.slice(0, 120),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    const combined = [...existing, ...newItems].slice(0, MAX_SHOWCASE_IMAGES_PER_PAGE);
+    const note = skippedCount > 0 ? ` (${skippedCount} extra file${skippedCount === 1 ? '' : 's'} skipped due to 5-image limit)` : '';
+    await persistPageShowcase(
+      pageKey,
+      combined,
+      `Uploaded ${newItems.length} screenshot${newItems.length === 1 ? '' : 's'} for ${pageMeta?.label || pageKey}${note}`
+    );
+  } catch (err) {
+    console.error('Screenshot upload error:', err);
+    showToast(err?.message || 'Failed to upload screenshots.', 'error');
+  } finally {
+    showcaseBusyPages.delete(pageKey);
+    renderScreenshotsManager();
+  }
+};
+
+const handleShowcaseUrlAdd = async (pageKey, rawUrl) => {
+  const cleanUrl = String(rawUrl || '').trim();
+  if (!cleanUrl) {
+    showToast('Please enter an image URL first.', 'info');
+    return;
+  }
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(cleanUrl);
+  } catch (_) {
+    showToast('Please enter a valid HTTPS image URL.', 'error');
+    return;
+  }
+  if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+    showToast('Only HTTPS/HTTP image URLs are supported.', 'error');
+    return;
+  }
+  if (cleanUrl.length > 2000) {
+    showToast('Image URL is too long.', 'error');
+    return;
+  }
+
+  const existing = platformShowcasesMap.get(pageKey) || [];
+  if (existing.length >= MAX_SHOWCASE_IMAGES_PER_PAGE) {
+    showToast(`Maximum ${MAX_SHOWCASE_IMAGES_PER_PAGE} screenshots allowed per module.`, 'info');
+    return;
+  }
+
+  const pageMeta = PLATFORM_SHOWCASE_PAGES.find((p) => p.key === pageKey);
+  showcaseBusyPages.add(pageKey);
+  renderScreenshotsManager();
+
+  try {
+    const nextImages = [
+      ...existing,
+      {
+        id: `url_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        url: parsedUrl.href,
+        caption: '',
+        updatedAt: new Date().toISOString()
+      }
+    ];
+    await persistPageShowcase(pageKey, nextImages, `Added screenshot URL for ${pageMeta?.label || pageKey}`);
+  } catch (err) {
+    console.error('Add screenshot URL error:', err);
+    showToast(err?.message || 'Failed to save screenshot URL.', 'error');
+  } finally {
+    showcaseBusyPages.delete(pageKey);
+    renderScreenshotsManager();
+  }
+};
+
+const handleShowcaseMove = async (pageKey, imageIndex, direction) => {
+  const existing = [...(platformShowcasesMap.get(pageKey) || [])];
+  const targetIndex = imageIndex + direction;
+  if (imageIndex < 0 || targetIndex < 0 || targetIndex >= existing.length) return;
+  [existing[imageIndex], existing[targetIndex]] = [existing[targetIndex], existing[imageIndex]];
+
+  showcaseBusyPages.add(pageKey);
+  renderScreenshotsManager();
+
+  try {
+    await persistPageShowcase(pageKey, existing, 'Updated screenshot display order');
+  } catch (err) {
+    showToast(`Failed to reorder screenshot: ${err.message}`, 'error');
+  } finally {
+    showcaseBusyPages.delete(pageKey);
+    renderScreenshotsManager();
+  }
+};
+
+const handleShowcaseDelete = async (pageKey, imageIndex) => {
+  const existing = [...(platformShowcasesMap.get(pageKey) || [])];
+  if (imageIndex < 0 || imageIndex >= existing.length) return;
+  const pageMeta = PLATFORM_SHOWCASE_PAGES.find((p) => p.key === pageKey);
+
+  const ok = await openConfirmDialog({
+    title: 'Delete Screenshot',
+    message: `Remove screenshot #${imageIndex + 1} from ${pageMeta?.label || pageKey}?${existing.length === 1 ? ' This module will automatically revert to the built-in preview card on the Root Gateway.' : ''}`,
+    okLabel: 'Delete'
+  });
+  if (!ok) return;
+
+  existing.splice(imageIndex, 1);
+  showcaseBusyPages.add(pageKey);
+  renderScreenshotsManager();
+
+  try {
+    await persistPageShowcase(pageKey, existing, `Removed screenshot from ${pageMeta?.label || pageKey}`);
+  } catch (err) {
+    showToast(`Failed to delete screenshot: ${err.message}`, 'error');
+  } finally {
+    showcaseBusyPages.delete(pageKey);
+    renderScreenshotsManager();
+  }
+};
+
+const renderScreenshotsManager = () => {
+  const grid = document.getElementById('company-screenshots-grid');
+  if (!grid) return;
+
+  const queryText = String(document.getElementById('screenshots-search-input')?.value || '').trim().toLowerCase();
+  const statusFilter = String(document.getElementById('screenshots-status-filter')?.value || 'all');
+
+  const filteredPages = PLATFORM_SHOWCASE_PAGES.filter((page) => {
+    const imgs = platformShowcasesMap.get(page.key) || [];
+    if (statusFilter === 'configured' && imgs.length === 0) return false;
+    if (statusFilter === 'fallback' && imgs.length > 0) return false;
+    if (queryText) {
+      const hay = `${page.label} ${page.key} ${page.desc}`.toLowerCase();
+      if (!hay.includes(queryText)) return false;
+    }
+    return true;
+  });
+
+  if (!filteredPages.length) {
+    grid.innerHTML = `
+      <div class="col-span-full bg-white border border-slate-200 rounded-2xl p-10 text-center space-y-2">
+        <div class="w-11 h-11 rounded-xl bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+          <i class="fas fa-filter"></i>
+        </div>
+        <h4 class="text-sm font-extrabold text-slate-900">No Matching Platform Modules</h4>
+        <p class="text-xs text-slate-500">Clear your search filter to view all ${PLATFORM_SHOWCASE_PAGES.length} platform modules.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const accentBadgeMap = {
+    blue: 'bg-blue-50 text-blue-600',
+    indigo: 'bg-indigo-50 text-indigo-600',
+    sky: 'bg-sky-50 text-sky-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    violet: 'bg-violet-50 text-violet-600',
+    amber: 'bg-amber-50 text-amber-600',
+    teal: 'bg-teal-50 text-teal-600',
+    cyan: 'bg-cyan-50 text-cyan-600',
+    rose: 'bg-rose-50 text-rose-600',
+    slate: 'bg-slate-100 text-slate-700'
+  };
+
+  grid.innerHTML = filteredPages.map((page, listIdx) => {
+    const images = platformShowcasesMap.get(page.key) || [];
+    const isBusy = showcaseBusyPages.has(page.key);
+    const isFull = images.length >= MAX_SHOWCASE_IMAGES_PER_PAGE;
+    const iconTone = accentBadgeMap[page.accent] || accentBadgeMap.indigo;
+    const modeLabel = images.length === 0
+      ? 'Default UI Fallback'
+      : images.length === 1
+        ? 'Single Image View'
+        : `Carousel (${images.length} Slides)`;
+
+    const thumbsHtml = images.length
+      ? `
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          ${images.map((img, idx) => `
+            <div class="group rounded-xl border border-slate-200 bg-slate-50 overflow-hidden flex flex-col">
+              <button type="button" class="btn-shot-preview relative aspect-[16/10] w-full bg-slate-100 overflow-hidden cursor-pointer block" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" title="Click to preview full size">
+                <img src="${escapeHtml(img.url)}" alt="${escapeHtml(page.label)} screenshot ${idx + 1}" class="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200" referrerpolicy="no-referrer" loading="lazy">
+                <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-slate-900/75 text-white text-[10px] font-extrabold tabular-nums">#${idx + 1}</span>
+              </button>
+              <div class="px-2 py-1.5 bg-white border-t border-slate-200 flex items-center justify-between gap-1">
+                <div class="flex items-center gap-1">
+                  <button type="button" class="btn-shot-move w-6 h-6 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" data-dir="-1" ${idx === 0 || isBusy ? 'disabled' : ''} title="Move Left" aria-label="Move Left">
+                    <i class="fas fa-chevron-left text-[9px]"></i>
+                  </button>
+                  <button type="button" class="btn-shot-move w-6 h-6 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" data-dir="1" ${idx === images.length - 1 || isBusy ? 'disabled' : ''} title="Move Right" aria-label="Move Right">
+                    <i class="fas fa-chevron-right text-[9px]"></i>
+                  </button>
+                </div>
+                <div class="flex items-center gap-1">
+                  <button type="button" class="btn-shot-preview w-6 h-6 rounded-md border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 flex items-center justify-center cursor-pointer" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" title="Preview" aria-label="Preview screenshot">
+                    <i class="fas fa-expand text-[9px]"></i>
+                  </button>
+                  <button type="button" class="btn-shot-delete w-6 h-6 rounded-md border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center cursor-pointer disabled:opacity-40" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" ${isBusy ? 'disabled' : ''} title="Delete Screenshot" aria-label="Delete screenshot">
+                    <i class="fas fa-trash-alt text-[9px]"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `
+      : `
+        <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-center space-y-1">
+          <div class="text-xs font-extrabold text-slate-700">No Custom Screenshots Uploaded</div>
+          <p class="text-[11px] text-slate-500">Root Gateway currently displays the built-in interactive UI preview card for ${escapeHtml(page.label)}.</p>
+        </div>
+      `;
+
+    return `
+      <article class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4">
+        <div class="space-y-3.5">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-start gap-3 min-w-0">
+              <div class="w-10 h-10 rounded-xl ${iconTone} flex items-center justify-center shrink-0 text-sm">
+                <i class="fas ${escapeHtml(page.icon)}"></i>
+              </div>
+              <div class="min-w-0">
+                <h4 class="text-sm font-extrabold text-slate-900 truncate">${String(listIdx + 1).padStart(2, '0')}. ${escapeHtml(page.label)}</h4>
+                <p class="text-[11px] text-slate-500 mt-0.5 leading-snug">${escapeHtml(page.desc)}</p>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="text-xs font-extrabold tabular-nums ${images.length > 0 ? 'text-indigo-700' : 'text-slate-600'}">${images.length} / ${MAX_SHOWCASE_IMAGES_PER_PAGE} Images</div>
+              <div class="text-[10px] font-semibold text-slate-500 mt-0.5">${escapeHtml(modeLabel)}</div>
+            </div>
+          </div>
+
+          ${thumbsHtml}
+        </div>
+
+        <div class="pt-3.5 border-t border-slate-100 space-y-2.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="file" accept="image/*" multiple class="hidden shot-file-input" id="shot-file-${escapeHtml(page.key)}" data-page-key="${escapeHtml(page.key)}" ${isFull || isBusy ? 'disabled' : ''}>
+            <button type="button" class="btn-shot-upload px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white text-xs font-extrabold cursor-pointer disabled:cursor-not-allowed inline-flex items-center gap-1.5 whitespace-nowrap transition" data-page-key="${escapeHtml(page.key)}" ${isFull || isBusy ? 'disabled' : ''}>
+              <i class="fas ${isBusy ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} text-[11px]"></i>
+              <span>${isBusy ? 'Processing...' : isFull ? 'Limit Reached (5/5)' : 'Upload Screenshots'}</span>
+            </button>
+            <span class="text-[11px] text-slate-500 font-medium">Auto-compressed WebP/JPEG · Max 5</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input type="url" class="shot-url-input flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-medium outline-none disabled:opacity-50" data-page-key="${escapeHtml(page.key)}" placeholder="Or paste optional https:// image URL..." ${isFull || isBusy ? 'disabled' : ''}>
+            <button type="button" class="btn-shot-add-url px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap transition" data-page-key="${escapeHtml(page.key)}" ${isFull || isBusy ? 'disabled' : ''}>
+              Add URL
+            </button>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.btn-shot-upload').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.pageKey;
+      const input = document.getElementById(`shot-file-${key}`);
+      if (input && !input.disabled) {
+        input.value = '';
+        input.click();
+      }
+    });
+  });
+
+  grid.querySelectorAll('.shot-file-input').forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const key = input.dataset.pageKey;
+      if (e.target.files?.length) {
+        handleShowcaseFileUpload(key, e.target.files);
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-shot-add-url').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.pageKey;
+      const urlInput = grid.querySelector(`.shot-url-input[data-page-key="${key}"]`);
+      if (urlInput) {
+        handleShowcaseUrlAdd(key, urlInput.value);
+      }
+    });
+  });
+
+  grid.querySelectorAll('.shot-url-input').forEach((input) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleShowcaseUrlAdd(input.dataset.pageKey, input.value);
+      }
+    });
+  });
+
+  grid.querySelectorAll('.btn-shot-move').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      handleShowcaseMove(btn.dataset.pageKey, Number(btn.dataset.shotIdx), Number(btn.dataset.dir));
+    });
+  });
+
+  grid.querySelectorAll('.btn-shot-delete').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      handleShowcaseDelete(btn.dataset.pageKey, Number(btn.dataset.shotIdx));
+    });
+  });
+
+  grid.querySelectorAll('.btn-shot-preview').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.pageKey;
+      const idx = Number(btn.dataset.shotIdx);
+      const imgs = platformShowcasesMap.get(key) || [];
+      const pageMeta = PLATFORM_SHOWCASE_PAGES.find((p) => p.key === key);
+      const shot = imgs[idx];
+      if (shot) {
+        openScreenshotPreviewModal(
+          `${pageMeta?.label || key} — Screenshot #${idx + 1}`,
+          shot.url,
+          `Slide ${idx + 1} of ${imgs.length}${shot.caption ? ` · ${shot.caption}` : ''}`
+        );
+      }
+    });
+  });
+};
+
+const loadPlatformShowcases = async () => {
+  const nextMap = new Map();
+  PLATFORM_SHOWCASE_PAGES.forEach((p) => nextMap.set(p.key, []));
+  try {
+    const snap = await getDocs(
+      collection(db, COMPANY_COLLECTION, COMPANY_PUBLIC_CATALOG_DOC_ID, COMPANY_SHOWCASES_SUBCOLLECTION)
+    );
+    snap.forEach((docSnap) => {
+      const key = docSnap.id;
+      if (!ALLOWED_SHOWCASE_KEY_SET.has(key)) return;
+      const data = docSnap.data() || {};
+      nextMap.set(key, normalizeShowcaseImages(data.images || []));
+    });
+  } catch (err) {
+    console.warn('Could not load platform showcases:', err);
+  }
+  platformShowcasesMap = nextMap;
+  updateShowcaseCountersUI();
+  renderScreenshotsManager();
+};
+
 const verifyCompanyOwnerSession = async (user) => {
   if (!user || user.isAnonymous || !user.email) return false;
   const email = String(user.email).trim().toLowerCase();
@@ -2304,6 +2866,23 @@ const bindEvents = () => {
       }
     }
   });
+
+  // Platform Screenshots Manager events
+  document.getElementById('btn-refresh-screenshots')?.addEventListener('click', loadPlatformShowcases);
+  document.getElementById('screenshots-search-input')?.addEventListener('input', renderScreenshotsManager);
+  document.getElementById('screenshots-status-filter')?.addEventListener('change', renderScreenshotsManager);
+  document.getElementById('btn-close-screenshot-preview')?.addEventListener('click', closeScreenshotPreviewModal);
+  document.getElementById('screenshot-preview-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeScreenshotPreviewModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('screenshot-preview-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        closeScreenshotPreviewModal();
+      }
+    }
+  });
 };
 
 restoreCompanySidebarState();
@@ -2325,5 +2904,5 @@ onAuthStateChanged(auth, async (user) => {
   }
   document.getElementById('company-loader')?.classList.add('hidden');
   document.getElementById('company-shell')?.classList.remove('hidden');
-  await Promise.all([loadInstitutions(), loadPublicCatalog()]);
+  await Promise.all([loadInstitutions(), loadPublicCatalog(), loadPlatformShowcases()]);
 });

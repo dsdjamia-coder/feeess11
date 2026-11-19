@@ -122,6 +122,13 @@
             <span class="sidebar-text truncate">Contact Details</span>
           </span>
         </button>
+        <button type="button" data-company-view="screenshots" title="Platform Screenshots" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="company-nav-inner inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-images w-5 text-center text-sm shrink-0 text-indigo-500"></i>
+            <span class="sidebar-text truncate">Platform Screenshots</span>
+          </span>
+          <span id="sidebar-screenshots-count" class="sidebar-count-pill text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
+        </button>
       </nav>
 
       <div class="p-2.5 border-t border-slate-200 bg-slate-50/70 space-y-2 shrink-0">
@@ -243,6 +250,16 @@
                     <span class="min-w-0">
                       <span class="block text-xs font-extrabold text-slate-900">Update Support &amp; Contact Channels</span>
                       <span id="dash-contact-summary" class="block text-[11px] text-slate-500 truncate">Configure WhatsApp, Instagram, Phone &amp; Email</span>
+                    </span>
+                  </span>
+                  <i class="fas fa-chevron-right text-xs text-slate-400"></i>
+                </button>
+                <button type="button" data-jump-view="screenshots" class="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 text-left transition cursor-pointer">
+                  <span class="flex items-center gap-3 min-w-0">
+                    <span class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><i class="fas fa-images"></i></span>
+                    <span class="min-w-0">
+                      <span class="block text-xs font-extrabold text-slate-900">Manage Platform Screenshots</span>
+                      <span id="dash-screenshots-summary" class="block text-[11px] text-slate-500 truncate">0 screenshots across 0 / 11 modules</span>
                     </span>
                   </span>
                   <i class="fas fa-chevron-right text-xs text-slate-400"></i>
@@ -561,6 +578,54 @@
           </div>
         </section>
 
+        <!-- VIEW 6: PLATFORM SCREENSHOTS MANAGER -->
+        <section id="view-screenshots" class="company-view hidden space-y-5">
+          <!-- Summary & Toolbar Card -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <h3 class="text-base font-extrabold text-slate-900">Platform Page Screenshots</h3>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  Upload up to 5 screenshots per module (auto-compressed for fast loading) or add an external HTTPS image URL. Modules with 0 screenshots automatically display the built-in interactive preview card on the Root Public Gateway.
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 shrink-0">
+                <button type="button" id="btn-refresh-screenshots" class="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <i class="fas fa-rotate"></i>
+                  <span>Refresh</span>
+                </button>
+                <a href="/?public=1#product-demo" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <i class="fas fa-arrow-up-right-from-square text-[11px]"></i>
+                  <span>Open Live Preview</span>
+                </a>
+              </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-slate-600 font-semibold tabular-nums">
+                <span>Modules Configured: <strong id="screenshots-configured-count" class="text-slate-900 font-extrabold">0 / 11</strong></span>
+                <span aria-hidden="true" class="text-slate-300">·</span>
+                <span>Total Screenshots: <strong id="screenshots-total-count" class="text-indigo-700 font-extrabold">0 / 55</strong></span>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="relative">
+                  <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]"></i>
+                  <input type="text" id="screenshots-search-input" placeholder="Filter modules..." class="w-44 sm:w-52 pl-8 pr-3 py-1.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-medium outline-none">
+                </div>
+                <select id="screenshots-status-filter" data-native-select="true" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-bold text-slate-700 outline-none">
+                  <option value="all">All 11 Modules</option>
+                  <option value="configured">With Screenshots</option>
+                  <option value="fallback">Using Default Preview</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 11 Platform Page Cards Grid -->
+          <div id="company-screenshots-grid" class="grid grid-cols-1 xl:grid-cols-2 gap-4"></div>
+        </section>
+
       </main>
     </div>
   </div>
@@ -845,6 +910,24 @@
       <div class="flex justify-center gap-2.5 pt-2">
         <button type="button" id="confirm-cancel" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer">Cancel</button>
         <button type="button" id="confirm-ok" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screenshot Full-Size Lightbox Modal -->
+  <div id="screenshot-preview-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-xs z-[10060] hidden items-center justify-center p-4">
+    <div class="relative max-w-5xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl border border-slate-200">
+      <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h3 id="screenshot-preview-title" class="text-sm font-extrabold text-slate-900 truncate">Screenshot Preview</h3>
+          <p id="screenshot-preview-meta" class="text-[11px] font-semibold text-slate-500 truncate tabular-nums">--</p>
+        </div>
+        <button type="button" id="btn-close-screenshot-preview" class="w-8 h-8 rounded-lg hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer shrink-0" aria-label="Close preview">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="bg-slate-100 flex items-center justify-center p-3 sm:p-5 max-h-[80vh]">
+        <img id="screenshot-preview-img" src="" alt="Platform screenshot preview" class="max-w-full max-h-[72vh] object-contain rounded-lg shadow-sm" referrerpolicy="no-referrer">
       </div>
     </div>
   </div>

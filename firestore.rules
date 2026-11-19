@@ -352,12 +352,59 @@ service cloud.firestore {
         && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 160));
     }
 
+    function isValidShowcasePageKey(pageKey) {
+      return pageKey is string
+        && pageKey in [
+          'public',
+          'admin',
+          'official',
+          'collection',
+          'student',
+          'result',
+          'attendance',
+          'academicPlan',
+          'worksheet',
+          'studentActivity',
+          'classroomEvaluation'
+        ];
+    }
+
+    function isValidShowcaseImageItem(item) {
+      return item is map
+        && item.keys().hasOnly(['id', 'url', 'caption', 'updatedAt'])
+        && item.id is string && item.id.size() >= 1 && item.id.size() <= 80
+        && item.url is string && item.url.size() >= 8 && item.url.size() <= 240000
+        && (!('caption' in item) || (item.caption is string && item.caption.size() <= 160))
+        && (!('updatedAt' in item) || item.updatedAt is string || item.updatedAt is number || item.updatedAt is timestamp);
+    }
+
+    function isValidPageShowcasePayload(pageKey) {
+      return hasOnlyKeys(request.resource.data, ['pageKey', 'images', 'updatedAt', 'updatedBy'])
+        && request.resource.data.pageKey is string
+        && request.resource.data.pageKey == pageKey
+        && request.resource.data.images is list
+        && request.resource.data.images.size() <= 5
+        && (request.resource.data.images.size() == 0 || isValidShowcaseImageItem(request.resource.data.images[0]))
+        && (request.resource.data.images.size() <= 1 || isValidShowcaseImageItem(request.resource.data.images[1]))
+        && (request.resource.data.images.size() <= 2 || isValidShowcaseImageItem(request.resource.data.images[2]))
+        && (request.resource.data.images.size() <= 3 || isValidShowcaseImageItem(request.resource.data.images[3]))
+        && (request.resource.data.images.size() <= 4 || isValidShowcaseImageItem(request.resource.data.images[4]))
+        && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 160))
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is string || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is number);
+    }
+
     // --- COMPANY MASTER PORTAL, GLOBAL USER REGISTRY & INSTITUTION REGISTRY ---
     match /company/publicCatalog {
       allow get: if true;
       allow list: if isCompanyOwner();
       allow create, update: if isCompanyOwner() && isValidPublicCatalogPayload();
       allow delete: if isCompanyOwner();
+    }
+
+    match /company/publicCatalog/showcases/{pageKey} {
+      allow get, list: if true;
+      allow create, update: if isCompanyOwner() && isValidShowcasePageKey(pageKey) && isValidPageShowcasePayload(pageKey);
+      allow delete: if isCompanyOwner() && isValidShowcasePageKey(pageKey);
     }
 
     match /company/{docId} {

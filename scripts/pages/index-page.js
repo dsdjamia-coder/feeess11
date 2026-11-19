@@ -5,9 +5,12 @@ import {
     ADMIN_AUTH_DOC_ID,
     COMPANY_COLLECTION,
     COMPANY_CONFIG_DOC_ID,
+    COMPANY_PUBLIC_CATALOG_DOC_ID,
+    COMPANY_SHOWCASES_SUBCOLLECTION,
     GLOBAL_USERS_COLLECTION,
     INSTITUTIONS_COLLECTION,
     INSTITUTION_ID,
+    PLATFORM_SHOWCASE_PAGES,
     RESERVED_INSTITUTION_SLUGS,
     SINGLE_ADMIN_MODE,
     buildInternalStaffEmail,
@@ -924,23 +927,394 @@ let isRootGatewayMode = false;
 
             const demoTabButtons = Array.from(document.querySelectorAll('[data-demo-tab]'));
             const demoPanels = Array.from(document.querySelectorAll('[data-demo-panel]'));
+            const tabScroller = document.getElementById('demo-tablist-scroller');
+            const tabScrollLeftBtn = document.getElementById('demo-tabs-scroll-left');
+            const tabScrollRightBtn = document.getElementById('demo-tabs-scroll-right');
+
+            let activeDemoTabKey = demoTabButtons[0]?.getAttribute('data-demo-tab') || 'public';
+            const showcaseImagesByPage = new Map();
+            const showcaseSlideIndexByPage = new Map();
+            const showcaseLabelByKey = new Map(PLATFORM_SHOWCASE_PAGES.map((p) => [p.key, p.label]));
+
+            const isSafeShowcaseUrl = (rawUrl = '') => {
+                const clean = String(rawUrl || '').trim();
+                if (!clean || clean.length < 8 || clean.length > 240000) return false;
+                if (/^data:image\/(webp|jpeg|jpg|png);base64,[a-z0-9+/=\s]+$/i.test(clean)) return true;
+                try {
+                    const parsed = new URL(clean);
+                    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+                } catch (_) {
+                    return false;
+                }
+            };
+
+            // Full-screen Showcase Lightbox state & controls
+            let lightboxState = { pageKey: '', images: [], index: 0 };
+            const lightboxModal = document.getElementById('showcase-lightbox-modal');
+            const lightboxImg = document.getElementById('showcase-lightbox-img');
+            const lightboxTitle = document.getElementById('showcase-lightbox-title');
+            const lightboxMeta = document.getElementById('showcase-lightbox-meta');
+            const lightboxPrevBtn = document.getElementById('showcase-lightbox-prev');
+            const lightboxNextBtn = document.getElementById('showcase-lightbox-next');
+            const lightboxCaptionBar = document.getElementById('showcase-lightbox-caption-bar');
+            const lightboxStage = document.getElementById('showcase-lightbox-stage');
+            let lightboxTouchStartX = 0;
+            let lightboxTouchStartY = 0;
+
+            const renderLightboxSlide = () => {
+                const { pageKey, images, index } = lightboxState;
+                if (!images.length || !lightboxImg) return;
+                const safeIdx = ((index % images.length) + images.length) % images.length;
+                lightboxState.index = safeIdx;
+                const shot = images[safeIdx];
+                const moduleLabel = showcaseLabelByKey.get(pageKey) || 'Platform Preview';
+
+                lightboxImg.src = shot.url;
+                lightboxImg.alt = `${moduleLabel} screenshot ${safeIdx + 1}`;
+                if (lightboxTitle) lightboxTitle.textContent = moduleLabel;
+                if (lightboxMeta) {
+                    lightboxMeta.textContent = images.length > 1
+                        ? `Screenshot ${safeIdx + 1} / ${images.length}`
+                        : 'Full-size screenshot preview';
+                }
+                const hasMultiple = images.length > 1;
+                lightboxPrevBtn?.classList.toggle('hidden', !hasMultiple);
+                lightboxNextBtn?.classList.toggle('hidden', !hasMultiple);
+
+                if (lightboxCaptionBar) {
+                    const caption = String(shot.caption || '').trim();
+                    lightboxCaptionBar.textContent = caption;
+                    lightboxCaptionBar.classList.toggle('hidden', !caption);
+                }
+            };
+
+            const openShowcaseLightbox = (pageKey, startIndex = 0) => {
+                const images = showcaseImagesByPage.get(pageKey) || [];
+                if (!images.length || !lightboxModal) return;
+                lightboxState = { pageKey, images, index: startIndex };
+                renderLightboxSlide();
+                lightboxModal.classList.remove('hidden');
+                lightboxModal.classList.add('flex');
+                lightboxModal.setAttribute('aria-hidden', 'false');
+            };
+
+            const closeShowcaseLightbox = () => {
+                if (!lightboxModal) return;
+                lightboxModal.classList.add('hidden');
+                lightboxModal.classList.remove('flex');
+                lightboxModal.setAttribute('aria-hidden', 'true');
+                if (lightboxImg) lightboxImg.src = '';
+                lightboxState = { pageKey: '', images: [], index: 0 };
+            };
+
+            if (lightboxModal && !lightboxModal.dataset.boundShowcaseLightbox) {
+                lightboxModal.dataset.boundShowcaseLightbox = 'true';
+                document.getElementById('btn-close-showcase-lightbox')?.addEventListener('click', closeShowcaseLightbox);
+                lightboxModal.addEventListener('click', (e) => {
+                    if (e.target === lightboxModal) closeShowcaseLightbox();
+                });
+                lightboxPrevBtn?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (lightboxState.images.length > 1) {
+                        lightboxState.index -= 1;
+                        renderLightboxSlide();
+                    }
+                });
+                lightboxNextBtn?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (lightboxState.images.length > 1) {
+                        lightboxState.index += 1;
+                        renderLightboxSlide();
+                    }
+                });
+                lightboxStage?.addEventListener('touchstart', (e) => {
+                    lightboxTouchStartX = e.changedTouches?.[0]?.clientX || 0;
+                    lightboxTouchStartY = e.changedTouches?.[0]?.clientY || 0;
+                }, { passive: true });
+                lightboxStage?.addEventListener('touchend', (e) => {
+                    if (lightboxState.images.length <= 1) return;
+                    const endX = e.changedTouches?.[0]?.clientX || 0;
+                    const endY = e.changedTouches?.[0]?.clientY || 0;
+                    const deltaX = endX - lightboxTouchStartX;
+                    const deltaY = endY - lightboxTouchStartY;
+                    if (Math.abs(deltaX) < 40 || Math.abs(deltaY) > Math.abs(deltaX)) return;
+                    lightboxState.index += deltaX < 0 ? 1 : -1;
+                    renderLightboxSlide();
+                }, { passive: true });
+            }
+
+            const updateCarouselPosition = (pageKey, targetIndex) => {
+                const images = showcaseImagesByPage.get(pageKey) || [];
+                if (images.length <= 1) return;
+                const safeIdx = ((targetIndex % images.length) + images.length) % images.length;
+                showcaseSlideIndexByPage.set(pageKey, safeIdx);
+
+                const wrapper = document.querySelector(`[data-demo-showcase="${pageKey}"]`);
+                if (!wrapper) return;
+                const track = wrapper.querySelector('[data-carousel-track]');
+                const counter = wrapper.querySelector('[data-carousel-counter]');
+                const captionEl = wrapper.querySelector('[data-carousel-caption]');
+                const dots = wrapper.querySelectorAll('[data-carousel-dot]');
+
+                if (track) {
+                    track.style.transform = `translate3d(-${safeIdx * 100}%, 0, 0)`;
+                }
+                if (counter) {
+                    counter.textContent = `${safeIdx + 1} / ${images.length}`;
+                }
+                if (captionEl) {
+                    const cap = String(images[safeIdx]?.caption || '').trim();
+                    captionEl.textContent = cap || `${showcaseLabelByKey.get(pageKey) || 'Platform'} · View ${safeIdx + 1}`;
+                }
+                dots.forEach((dot, idx) => {
+                    const isActive = idx === safeIdx;
+                    dot.setAttribute('aria-current', isActive ? 'true' : 'false');
+                    dot.className = isActive
+                        ? 'h-2 w-6 rounded-full bg-blue-600 transition-all cursor-pointer'
+                        : 'h-2 w-2 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer';
+                });
+            };
+
+            const renderPageShowcaseViewport = (pageKey) => {
+                const wrapper = document.querySelector(`[data-demo-showcase="${pageKey}"]`);
+                if (!wrapper) return;
+                const fallbackEl = wrapper.querySelector('[data-showcase-fallback]');
+                const mediaEl = wrapper.querySelector('[data-showcase-media]');
+                if (!fallbackEl || !mediaEl) return;
+
+                const images = showcaseImagesByPage.get(pageKey) || [];
+                const moduleLabel = showcaseLabelByKey.get(pageKey) || 'Platform Preview';
+
+                if (!images.length) {
+                    fallbackEl.classList.remove('hidden');
+                    mediaEl.classList.add('hidden');
+                    mediaEl.innerHTML = '';
+                    return;
+                }
+
+                fallbackEl.classList.add('hidden');
+                mediaEl.classList.remove('hidden');
+                const currentIdx = Math.min(showcaseSlideIndexByPage.get(pageKey) || 0, images.length - 1);
+                showcaseSlideIndexByPage.set(pageKey, currentIdx);
+
+                if (images.length === 1) {
+                    const shot = images[0];
+                    mediaEl.innerHTML = `
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
+                            <div class="px-4 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="text-xs font-extrabold text-slate-800 truncate">${escapeHtml(moduleLabel)}</span>
+                                    <span class="text-[11px] font-semibold text-slate-400 hidden sm:inline">· Live Screen</span>
+                                </div>
+                                <button type="button" data-showcase-zoom="0" class="px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap transition">
+                                    <i class="fas fa-expand text-[10px]" aria-hidden="true"></i>
+                                    <span>Zoom</span>
+                                </button>
+                            </div>
+                            <button type="button" data-showcase-zoom="0" class="block w-full aspect-[16/10] bg-slate-100 overflow-hidden cursor-zoom-in relative group" aria-label="Open full-size screenshot for ${escapeHtml(moduleLabel)}">
+                                <img src="${escapeHtml(shot.url)}" alt="${escapeHtml(moduleLabel)} platform screenshot" class="w-full h-full object-contain transition-transform duration-200 group-hover:scale-[1.01]" referrerpolicy="no-referrer" loading="lazy">
+                            </button>
+                            ${shot.caption ? `<div class="px-4 py-2 bg-white border-t border-slate-200 text-[11px] font-semibold text-slate-600 truncate">${escapeHtml(shot.caption)}</div>` : ''}
+                        </div>
+                    `;
+                    mediaEl.querySelectorAll('[data-showcase-zoom]').forEach((btn) => {
+                        btn.addEventListener('click', () => openShowcaseLightbox(pageKey, 0));
+                    });
+                    const imgEl = mediaEl.querySelector('img');
+                    imgEl?.addEventListener('error', () => {
+                        fallbackEl.classList.remove('hidden');
+                        mediaEl.classList.add('hidden');
+                    }, { once: true });
+                    return;
+                }
+
+                // Multi-screenshot interactive carousel (2–5 images)
+                mediaEl.innerHTML = `
+                    <div class="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
+                        <div class="px-4 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="text-xs font-extrabold text-slate-800 truncate">${escapeHtml(moduleLabel)}</span>
+                                <span aria-hidden="true" class="text-slate-300">·</span>
+                                <span data-carousel-counter class="text-xs font-extrabold text-blue-600 tabular-nums shrink-0">${currentIdx + 1} / ${images.length}</span>
+                            </div>
+                            <button type="button" data-carousel-zoom-active class="px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap transition">
+                                <i class="fas fa-expand text-[10px]" aria-hidden="true"></i>
+                                <span>Zoom</span>
+                            </button>
+                        </div>
+
+                        <div data-carousel-stage class="relative aspect-[16/10] bg-slate-100 overflow-hidden select-none" style="touch-action: pan-y;">
+                            <div data-carousel-track class="flex h-full transition-transform duration-200 ease-out" style="transform: translate3d(-${currentIdx * 100}%, 0, 0);">
+                                ${images.map((shot, idx) => `
+                                    <button type="button" data-showcase-zoom="${idx}" class="w-full h-full shrink-0 flex items-center justify-center bg-slate-100 cursor-zoom-in overflow-hidden" aria-label="Zoom ${escapeHtml(moduleLabel)} screenshot ${idx + 1}">
+                                        <img src="${escapeHtml(shot.url)}" alt="${escapeHtml(moduleLabel)} screenshot ${idx + 1}" class="w-full h-full object-contain pointer-events-none" referrerpolicy="no-referrer" loading="lazy">
+                                    </button>
+                                `).join('')}
+                            </div>
+
+                            <button type="button" data-carousel-prev class="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/95 hover:bg-white text-slate-900 border border-slate-200 shadow-md items-center justify-center cursor-pointer transition active:scale-95" aria-label="Previous screenshot">
+                                <i class="fas fa-chevron-left text-xs" aria-hidden="true"></i>
+                            </button>
+                            <button type="button" data-carousel-next class="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/95 hover:bg-white text-slate-900 border border-slate-200 shadow-md items-center justify-center cursor-pointer transition active:scale-95" aria-label="Next screenshot">
+                                <i class="fas fa-chevron-right text-xs" aria-hidden="true"></i>
+                            </button>
+                        </div>
+
+                        <div class="px-4 py-2.5 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                            <span data-carousel-caption class="text-[11px] font-semibold text-slate-500 truncate max-w-[60%]">
+                                ${escapeHtml(images[currentIdx]?.caption || `${moduleLabel} · Swipe or use arrows`)}
+                            </span>
+                            <div class="flex items-center gap-1.5" role="group" aria-label="Screenshot slides">
+                                ${images.map((_, idx) => `
+                                    <button type="button" data-carousel-dot="${idx}" aria-label="Go to slide ${idx + 1}" aria-current="${idx === currentIdx ? 'true' : 'false'}" class="${idx === currentIdx ? 'h-2 w-6 rounded-full bg-blue-600 transition-all cursor-pointer' : 'h-2 w-2 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer'}"></button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                mediaEl.querySelector('[data-carousel-prev]')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    updateCarouselPosition(pageKey, (showcaseSlideIndexByPage.get(pageKey) || 0) - 1);
+                });
+                mediaEl.querySelector('[data-carousel-next]')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    updateCarouselPosition(pageKey, (showcaseSlideIndexByPage.get(pageKey) || 0) + 1);
+                });
+                mediaEl.querySelectorAll('[data-carousel-dot]').forEach((dot) => {
+                    dot.addEventListener('click', () => {
+                        updateCarouselPosition(pageKey, Number(dot.getAttribute('data-carousel-dot') || 0));
+                    });
+                });
+                mediaEl.querySelector('[data-carousel-zoom-active]')?.addEventListener('click', () => {
+                    openShowcaseLightbox(pageKey, showcaseSlideIndexByPage.get(pageKey) || 0);
+                });
+                mediaEl.querySelectorAll('[data-showcase-zoom]').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        openShowcaseLightbox(pageKey, Number(btn.getAttribute('data-showcase-zoom') || 0));
+                    });
+                });
+
+                // Mobile touch-swipe support (40px horizontal threshold)
+                const stage = mediaEl.querySelector('[data-carousel-stage]');
+                let touchStartX = 0;
+                let touchStartY = 0;
+                stage?.addEventListener('touchstart', (e) => {
+                    touchStartX = e.changedTouches?.[0]?.clientX || 0;
+                    touchStartY = e.changedTouches?.[0]?.clientY || 0;
+                }, { passive: true });
+                stage?.addEventListener('touchend', (e) => {
+                    const endX = e.changedTouches?.[0]?.clientX || 0;
+                    const endY = e.changedTouches?.[0]?.clientY || 0;
+                    const deltaX = endX - touchStartX;
+                    const deltaY = endY - touchStartY;
+                    if (Math.abs(deltaX) < 40 || Math.abs(deltaY) > Math.abs(deltaX)) return;
+                    updateCarouselPosition(pageKey, (showcaseSlideIndexByPage.get(pageKey) || 0) + (deltaX < 0 ? 1 : -1));
+                }, { passive: true });
+            };
+
+            const selectDemoTab = (selectedTab) => {
+                activeDemoTabKey = selectedTab;
+                demoTabButtons.forEach((b) => {
+                    const isActive = (b.getAttribute('data-demo-tab') || '') === selectedTab;
+                    b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                    b.className = isActive
+                        ? 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg bg-blue-600 text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5'
+                        : 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5';
+                    if (isActive && typeof b.scrollIntoView === 'function') {
+                        b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                    }
+                });
+                demoPanels.forEach((panel) => {
+                    const panelKey = panel.getAttribute('data-demo-panel') || '';
+                    panel.classList.toggle('hidden', panelKey !== selectedTab);
+                });
+            };
+
             demoTabButtons.forEach((btn) => {
                 if (btn.dataset.boundDemoTab) return;
                 btn.dataset.boundDemoTab = 'true';
                 btn.addEventListener('click', () => {
-                    const selectedTab = btn.getAttribute('data-demo-tab') || 'fee-receipt';
-                    demoTabButtons.forEach((b) => {
-                        const isActive = (b.getAttribute('data-demo-tab') || 'fee-receipt') === selectedTab;
-                        b.className = isActive
-                            ? 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg bg-blue-600 text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5'
-                            : 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5';
-                    });
-                    demoPanels.forEach((panel) => {
-                        const panelKey = panel.getAttribute('data-demo-panel') || '';
-                        panel.classList.toggle('hidden', panelKey !== selectedTab);
-                    });
+                    const selectedTab = btn.getAttribute('data-demo-tab') || 'public';
+                    selectDemoTab(selectedTab);
                 });
             });
+
+            if (tabScrollLeftBtn && !tabScrollLeftBtn.dataset.boundScroll) {
+                tabScrollLeftBtn.dataset.boundScroll = 'true';
+                tabScrollLeftBtn.addEventListener('click', () => {
+                    tabScroller?.scrollBy({ left: -260, behavior: 'smooth' });
+                });
+            }
+            if (tabScrollRightBtn && !tabScrollRightBtn.dataset.boundScroll) {
+                tabScrollRightBtn.dataset.boundScroll = 'true';
+                tabScrollRightBtn.addEventListener('click', () => {
+                    tabScroller?.scrollBy({ left: 260, behavior: 'smooth' });
+                });
+            }
+
+            if (!document.documentElement.dataset.boundShowcaseKeyboard) {
+                document.documentElement.dataset.boundShowcaseKeyboard = 'true';
+                document.addEventListener('keydown', (e) => {
+                    if (!isRootGatewayMode) return;
+                    const lightboxOpen = lightboxModal && !lightboxModal.classList.contains('hidden');
+                    if (lightboxOpen) {
+                        if (e.key === 'Escape') {
+                            closeShowcaseLightbox();
+                        } else if (e.key === 'ArrowLeft' && lightboxState.images.length > 1) {
+                            lightboxState.index -= 1;
+                            renderLightboxSlide();
+                        } else if (e.key === 'ArrowRight' && lightboxState.images.length > 1) {
+                            lightboxState.index += 1;
+                            renderLightboxSlide();
+                        }
+                        return;
+                    }
+
+                    const activeTag = String(document.activeElement?.tagName || '').toLowerCase();
+                    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+                    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+                    const demoSection = document.getElementById('product-demo');
+                    if (!demoSection) return;
+                    const rect = demoSection.getBoundingClientRect();
+                    const isSectionVisible = rect.top < window.innerHeight && rect.bottom > 0;
+                    if (!isSectionVisible) return;
+
+                    const imgs = showcaseImagesByPage.get(activeDemoTabKey) || [];
+                    if (imgs.length <= 1) return;
+                    updateCarouselPosition(
+                        activeDemoTabKey,
+                        (showcaseSlideIndexByPage.get(activeDemoTabKey) || 0) + (e.key === 'ArrowRight' ? 1 : -1)
+                    );
+                });
+            }
+
+            // Load uploaded platform showcase screenshots from Firestore (public read)
+            (async () => {
+                try {
+                    const snap = await getDocs(
+                        collection(db, COMPANY_COLLECTION, COMPANY_PUBLIC_CATALOG_DOC_ID, COMPANY_SHOWCASES_SUBCOLLECTION)
+                    );
+                    snap.forEach((docSnap) => {
+                        const pageKey = docSnap.id;
+                        if (!showcaseLabelByKey.has(pageKey)) return;
+                        const rawImages = Array.isArray(docSnap.data()?.images) ? docSnap.data().images : [];
+                        const validImages = rawImages
+                            .filter((item) => item && typeof item === 'object' && isSafeShowcaseUrl(item.url))
+                            .slice(0, 5)
+                            .map((item, idx) => ({
+                                id: String(item.id || `${pageKey}_${idx}`),
+                                url: String(item.url).trim(),
+                                caption: String(item.caption || '').trim()
+                            }));
+                        showcaseImagesByPage.set(pageKey, validImages);
+                        renderPageShowcaseViewport(pageKey);
+                    });
+                } catch (err) {
+                    console.warn('Platform showcases load notice:', err);
+                }
+            })();
 
             renderVersionInfo();
             loaded.config = true;

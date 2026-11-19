@@ -177,12 +177,43 @@
         "updatedBy": { "type": "string", "maxLength": 160 },
         "updatedAt": { "type": "string" }
       }
+    },
+    "CompanyPageShowcase": {
+      "title": "CompanyPageShowcase",
+      "description": "Per-page showcase screenshots (up to 5 images) displayed in the Root Public Gateway interactive preview.",
+      "type": "object",
+      "properties": {
+        "pageKey": {
+          "type": "string",
+          "enum": [
+            "public",
+            "admin",
+            "official",
+            "collection",
+            "student",
+            "result",
+            "attendance",
+            "academicPlan",
+            "worksheet",
+            "studentActivity",
+            "classroomEvaluation"
+          ]
+        },
+        "images": { "type": "array" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string", "maxLength": 160 }
+      },
+      "required": ["pageKey", "images"]
     }
   },
   "firestore": {
     "/company/publicCatalog": {
       "schema": { "$ref": "#/entities/CompanyPublicCatalog" },
       "description": "Publicly readable subscription plans and support contact channels"
+    },
+    "/company/publicCatalog/showcases/{pageKey}": {
+      "schema": { "$ref": "#/entities/CompanyPageShowcase" },
+      "description": "Per-page showcase screenshots managed by the platform owner and publicly readable on the Root Gateway"
     },
     "/institutions/{institutionId}/settings/{docId}": {
       "schema": { "$ref": "#/entities/Setting" },

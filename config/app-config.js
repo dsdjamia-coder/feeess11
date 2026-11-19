@@ -70,6 +70,7 @@ export const INTERNAL_AUTH_DOMAIN = `${INSTITUTION_ID}.internal`;
 export const COMPANY_COLLECTION = 'company';
 export const COMPANY_CONFIG_DOC_ID = 'config';
 export const COMPANY_PUBLIC_CATALOG_DOC_ID = 'publicCatalog';
+export const COMPANY_SHOWCASES_SUBCOLLECTION = 'showcases';
 export const INSTITUTIONS_COLLECTION = 'institutions';
 export const GLOBAL_USERS_COLLECTION = 'globalUsers';
 export const RESERVED_INSTITUTION_SLUGS = RESERVED_PATH_SEGMENTS;
@@ -85,6 +86,86 @@ export const DEFAULT_COMPANY_ALLOWED_PAGES = {
   studentActivity: true,
   classroomEvaluation: true
 };
+
+export const PLATFORM_SHOWCASE_PAGES = [
+  {
+    key: 'public',
+    label: 'Public Website',
+    icon: 'fa-globe',
+    accent: 'blue',
+    desc: 'Institution homepage, notices, gallery, faculty & public directories'
+  },
+  {
+    key: 'admin',
+    label: 'Admin Dashboard',
+    icon: 'fa-sliders',
+    accent: 'indigo',
+    desc: 'Admissions, class promotions, staff access, fee setup & governance'
+  },
+  {
+    key: 'official',
+    label: 'Official Hub',
+    icon: 'fa-compass',
+    accent: 'sky',
+    desc: 'Central staff & admin command portal with live KPIs and module launcher'
+  },
+  {
+    key: 'collection',
+    label: 'Fee & Receipt',
+    icon: 'fa-receipt',
+    accent: 'emerald',
+    desc: 'Cashier counter, instant receipts, arrears tracking & financial ledger'
+  },
+  {
+    key: 'student',
+    label: 'Student Portal',
+    icon: 'fa-user-graduate',
+    accent: 'blue',
+    desc: '24/7 parent & student self-service, digital receipts & sibling switcher'
+  },
+  {
+    key: 'result',
+    label: 'Exam & Rank Card',
+    icon: 'fa-award',
+    accent: 'violet',
+    desc: 'Term mark entry, automated grading, class ranks & progress cards'
+  },
+  {
+    key: 'attendance',
+    label: 'Daily Attendance',
+    icon: 'fa-calendar-check',
+    accent: 'amber',
+    desc: 'Mobile roll call, session attendance & monthly analytics'
+  },
+  {
+    key: 'academicPlan',
+    label: 'Academic Plan',
+    icon: 'fa-book-open-reader',
+    accent: 'teal',
+    desc: 'Curriculum planning, syllabus milestones & master class timetables'
+  },
+  {
+    key: 'worksheet',
+    label: 'Worksheets',
+    icon: 'fa-file-lines',
+    accent: 'cyan',
+    desc: 'Digital registers, custom printable sheets, ID cards & study resources'
+  },
+  {
+    key: 'studentActivity',
+    label: 'Activity & Merit',
+    icon: 'fa-medal',
+    accent: 'rose',
+    desc: 'Co-curricular logs, competitions, student tasks & merit points'
+  },
+  {
+    key: 'classroomEvaluation',
+    label: 'Classroom Evaluation',
+    icon: 'fa-clipboard-check',
+    accent: 'slate',
+    desc: 'Inspection rubrics, behaviour tracking & class quality audits'
+  }
+];
 
 export const normalizeGlobalUserKey = (value = '') => String(value || '')
   .trim()
