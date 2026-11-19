@@ -1985,16 +1985,16 @@
                                     <div>
                                         <label class="block text-sm font-semibold mb-1">Institution Logo (Max 60KB)</label>
                                         <div class="flex items-center gap-3 p-3 bg-gray-50 border rounded-xl">
-                                            <div class="relative w-14 h-14 rounded-lg border-2 border-slate-200 overflow-hidden bg-white flex items-center justify-center shrink-0 shadow-xs">
-                                                <img id="web-logo-preview" class="w-full h-full object-contain hidden" alt="Logo Preview">
-                                                <i id="web-logo-placeholder" class="fas fa-image text-2xl text-slate-300"></i>
+                                            <div class="relative w-14 h-14 rounded-lg border-2 border-slate-200 overflow-hidden bg-white flex items-center justify-center shrink-0 shadow-xs p-1">
+                                                <img id="web-logo-preview" src="/assets/images/logo.png" class="w-full h-full object-contain" alt="Logo Preview" referrerpolicy="no-referrer">
+                                                <i id="web-logo-placeholder" class="fas fa-image text-2xl text-slate-300 hidden"></i>
                                             </div>
                                             <div class="flex-1 space-y-1">
-                                                <div class="flex flex-wrap gap-2">
-                                                    <button type="button" id="web-logo-upload-btn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition"><i class="fas fa-upload"></i> Upload Logo</button>
-                                                    <button type="button" id="web-logo-remove-btn" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-bold transition hidden">Remove</button>
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    <button type="button" id="web-logo-upload-btn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition cursor-pointer"><i class="fas fa-upload"></i> Upload Logo</button>
+                                                    <button type="button" id="web-logo-remove-btn" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-bold transition hidden cursor-pointer">Reset to Default</button>
                                                 </div>
-                                                <p class="text-[11px] text-gray-500">Auto-compressed to under 60KB Base64</p>
+                                                <p id="web-logo-status-note" class="text-[11px] font-semibold text-slate-500">Default Company Logo active (Fallback) • Auto-compressed &lt; 60KB</p>
                                             </div>
                                         </div>
                                         <input type="hidden" id="web-logo" value="">

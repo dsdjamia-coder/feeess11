@@ -441,13 +441,18 @@ const renderCatalogContent = (container, catalog, options) => {
 
   const contactSectionHtml = `
     <div id="premium-modal-contact-section" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-      <div class="space-y-0.5 min-w-0">
-        <div class="text-xs font-extrabold text-slate-900">
-          ${esc(contact.brandName || 'Platform Support & Upgrades')}
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-white border border-slate-200 p-1.5 flex items-center justify-center shrink-0 shadow-2xs">
+          <img src="/assets/images/logo.png" alt="Company Logo" class="w-full h-full object-contain rounded-lg" referrerpolicy="no-referrer">
         </div>
-        <p class="text-xs text-slate-600 leading-relaxed">
-          ${esc(contact.supportNote || (contactButtons.length > 0 ? 'Reach out directly on any channel to activate modules or request custom pricing.' : 'Contact your platform provider directly to upgrade or renew your subscription.'))}
-        </p>
+        <div class="space-y-0.5 min-w-0">
+          <div class="text-xs font-extrabold text-slate-900">
+            ${esc(contact.brandName || 'Institution Manage — Platform Support & Upgrades')}
+          </div>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            ${esc(contact.supportNote || (contactButtons.length > 0 ? 'Reach out directly on any channel to activate modules or request custom pricing.' : 'Contact your platform provider directly to upgrade or renew your subscription.'))}
+          </p>
+        </div>
       </div>
       ${contactButtons.length > 0 ? `<div class="flex flex-wrap items-center gap-2 shrink-0">${contactButtons.join('')}</div>` : ''}
     </div>
@@ -503,8 +508,11 @@ export const openPremiumPlansModal = async ({
     <div class="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden" style="font-family:'Plus Jakarta Sans',sans-serif;">
       <div class="px-5 py-4 sm:px-6 bg-slate-50 border-b border-slate-200 flex items-start justify-between gap-3 shrink-0">
         <div class="flex items-start gap-3 min-w-0">
-          <div class="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 border border-amber-200 flex items-center justify-center text-lg shrink-0">
-            <i class="fas fa-crown"></i>
+          <div class="relative w-12 h-12 rounded-2xl bg-white border border-slate-200 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
+            <img src="/assets/images/logo.png" alt="Company Logo" class="w-full h-full object-contain rounded-xl" referrerpolicy="no-referrer">
+            <span class=" -bottom-1 -right-1 absolute w-5 h-5 rounded-full bg-amber-500 text-white border-2 border-white flex items-center justify-center text-[9px] shadow-xs">
+              <i class="fas fa-crown"></i>
+            </span>
           </div>
           <div class="min-w-0">
             <div class="text-[11px] font-extrabold uppercase tracking-wider text-amber-700 truncate">${esc(resolvedHeader.kicker)}</div>

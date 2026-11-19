@@ -339,24 +339,62 @@ const formatPriceNumber = (value = 0) => {
 // Fix minor guard in parseSuperAdminLoginInput for non-email usernames
 const validateUsernameStrict = (clean = '') => /^[a-z0-9._-]{3,60}$/.test(clean);
 
-const closeMobileSidebar = () => {
+const STORAGE_KEY_SIDEBAR_COLLAPSED = 'company_sidebar_collapsed';
+const STORAGE_KEY_ACTIVE_VIEW = 'company_active_view';
+
+const applyCompanySidebarCollapsed = (collapsed = false, persist = true) => {
   const sidebar = document.getElementById('company-sidebar');
-  const backdrop = document.getElementById('company-sidebar-backdrop');
-  sidebar?.classList.add('-translate-x-full');
-  backdrop?.classList.add('hidden');
+  const toggleIcon = document.getElementById('company-sidebar-toggle-icon');
+  const toggleBtn = document.getElementById('btn-open-company-sidebar');
+  const isCollapsed = Boolean(collapsed);
+
+  if (sidebar) {
+    sidebar.setAttribute('data-collapsed', isCollapsed ? 'true' : 'false');
+  }
+  if (toggleIcon) {
+    toggleIcon.className = isCollapsed ? 'fas fa-angles-right text-xs' : 'fas fa-bars text-xs';
+  }
+  if (toggleBtn) {
+    toggleBtn.title = isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar';
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_COLLAPSED, isCollapsed ? '1' : '0');
+    } catch (_) {}
+  }
 };
 
-const openMobileSidebar = () => {
+const toggleCompanySidebar = () => {
   const sidebar = document.getElementById('company-sidebar');
-  const backdrop = document.getElementById('company-sidebar-backdrop');
-  sidebar?.classList.remove('-translate-x-full');
-  backdrop?.classList.remove('hidden');
+  const currentlyCollapsed = sidebar?.getAttribute('data-collapsed') === 'true';
+  applyCompanySidebarCollapsed(!currentlyCollapsed, true);
+};
+
+const restoreCompanySidebarState = () => {
+  let savedCollapsed = false;
+  try {
+    savedCollapsed = localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED) === '1';
+  } catch (_) {}
+  applyCompanySidebarCollapsed(savedCollapsed, false);
+};
+
+const getSavedCompanyView = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_ACTIVE_VIEW) || 'dashboard';
+    return COMPANY_VIEWS[saved] ? saved : 'dashboard';
+  } catch (_) {
+    return 'dashboard';
+  }
 };
 
 const setActiveCompanyView = (viewKey = 'dashboard') => {
   const targetKey = COMPANY_VIEWS[viewKey] ? viewKey : 'dashboard';
   activeCompanyView = targetKey;
   const meta = COMPANY_VIEWS[targetKey];
+
+  try {
+    localStorage.setItem(STORAGE_KEY_ACTIVE_VIEW, targetKey);
+  } catch (_) {}
 
   Object.entries(COMPANY_VIEWS).forEach(([key, cfg]) => {
     const section = document.getElementById(cfg.elId);
@@ -374,8 +412,6 @@ const setActiveCompanyView = (viewKey = 'dashboard') => {
   const subtitleEl = document.getElementById('company-view-subtitle');
   if (titleEl) titleEl.textContent = meta.title;
   if (subtitleEl) subtitleEl.textContent = meta.subtitle;
-
-  closeMobileSidebar();
 };
 
 const updateSlugPreviewFor = (inputId, previewId) => {
@@ -400,11 +436,22 @@ const updateSlugPreviewFor = (inputId, previewId) => {
 
 const updateSlugPreview = () => updateSlugPreviewFor('inst-slug', 'inst-slug-preview');
 
-const renderAllowedPagesCheckboxesInto = (containerId, checkboxClass, selectedMap = DEFAULT_COMPANY_ALLOWED_PAGES) => {
+const renderAllowedPagesCheckboxesInto = (containerId, checkboxClass, selectedMap = DEFAULT_COMPANY_ALLOWED_PAGES, isCompact = false) => {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = PAGE_DEFINITIONS.map((item) => {
     const isChecked = selectedMap?.[item.key] !== false;
+    if (isCompact) {
+      return `
+        <label class="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-indigo-50/50 hover:border-indigo-200 cursor-pointer transition">
+          <input type="checkbox" class="rounded border-slate-300 text-indigo-600 shrink-0 ${checkboxClass}" data-page-key="${escapeHtml(item.key)}" ${isChecked ? 'checked' : ''}>
+          <div class="min-w-0">
+            <div class="text-[11px] font-extrabold text-slate-800 truncate">${escapeHtml(item.label)}</div>
+            <div class="text-[10px] text-slate-500 truncate">${escapeHtml(item.desc)}</div>
+          </div>
+        </label>
+      `;
+    }
     return `
       <label class="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50/50 hover:border-indigo-200 cursor-pointer transition">
         <input type="checkbox" class="mt-0.5 rounded border-slate-300 text-indigo-600 ${checkboxClass}" data-page-key="${escapeHtml(item.key)}" ${isChecked ? 'checked' : ''}>
@@ -418,7 +465,7 @@ const renderAllowedPagesCheckboxesInto = (containerId, checkboxClass, selectedMa
 };
 
 const renderAllowedPagesCheckboxes = (selectedMap = DEFAULT_COMPANY_ALLOWED_PAGES) => {
-  renderAllowedPagesCheckboxesInto('inst-allowed-pages-grid', 'inst-page-checkbox', selectedMap);
+  renderAllowedPagesCheckboxesInto('inst-allowed-pages-grid', 'inst-page-checkbox', selectedMap, false);
 };
 
 const readAllowedPagesFromCheckboxes = (checkboxClass = 'inst-page-checkbox') => {
@@ -462,7 +509,7 @@ const initAddInstitutionPageForm = () => {
     pwdEl.type = 'password';
     pwdEl.required = true;
   }
-  if (eyeEl) eyeEl.className = 'fas fa-eye text-xs';
+  if (eyeEl) eyeEl.className = 'fas fa-eye text-[11px]';
 
   const todayStr = toIsoDateInput();
   const startEl = document.getElementById('add-inst-start-date');
@@ -474,7 +521,7 @@ const initAddInstitutionPageForm = () => {
   if (expEl) expEl.value = addMonthsToDateStr(todayStr, 12);
   if (lifetimeEl) lifetimeEl.checked = false;
 
-  renderAllowedPagesCheckboxesInto('add-inst-allowed-pages-grid', 'add-inst-page-checkbox', DEFAULT_COMPANY_ALLOWED_PAGES);
+  renderAllowedPagesCheckboxesInto('add-inst-allowed-pages-grid', 'add-inst-page-checkbox', DEFAULT_COMPANY_ALLOWED_PAGES, true);
   syncLifetimeInputsFor('add-inst');
   updateSlugPreviewFor('add-inst-slug', 'add-inst-slug-preview');
 };
@@ -541,7 +588,7 @@ const renderDashboardOverview = () => {
 
   if (!allInstitutions.length) {
     container.innerHTML = `
-      <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center space-y-2">
+      <div class="p-6 text-center space-y-2">
         <p class="text-xs font-bold text-slate-700">No institutions provisioned yet.</p>
         <button type="button" id="btn-dash-empty-add" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5">
           <i class="fas fa-plus"></i><span>Provision Institution</span>
@@ -562,45 +609,69 @@ const renderDashboardOverview = () => {
       if (ra !== rb) return ra - rb;
       return String(a.name || a.slug).localeCompare(String(b.name || b.slug));
     })
-    .slice(0, 6);
+    .slice(0, 8);
 
-  container.innerHTML = sorted.map((inst) => {
-    const slug = String(inst.slug || inst.id || '').trim().toLowerCase();
-    const state = classifyInstitutionState(inst);
-    const badgeClass = state.code === 'paused'
-      ? 'bg-amber-100 text-amber-800 border-amber-200'
-      : state.code === 'expired'
-        ? 'bg-rose-100 text-rose-800 border-rose-200'
-        : state.code === 'expiring'
-          ? 'bg-orange-100 text-orange-800 border-orange-200'
-          : 'bg-emerald-100 text-emerald-800 border-emerald-200';
-    const pages = { ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) };
-    const enabledCount = PAGE_DEFINITIONS.filter((p) => pages[p.key] !== false).length;
+  container.innerHTML = `
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+          <th class="py-2.5 pl-4 pr-2 w-10 text-center">#</th>
+          <th class="py-2.5 px-3">Institution &amp; URL</th>
+          <th class="py-2.5 px-3">Plan &amp; Validity</th>
+          <th class="py-2.5 px-3 text-center">Pages</th>
+          <th class="py-2.5 pl-3 pr-4 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 text-xs">
+        ${sorted.map((inst, idx) => {
+          const slug = String(inst.slug || inst.id || '').trim().toLowerCase();
+          const state = classifyInstitutionState(inst);
+          const badgeClass = state.code === 'paused'
+            ? 'bg-amber-100 text-amber-800 border-amber-200'
+            : state.code === 'expired'
+              ? 'bg-rose-100 text-rose-800 border-rose-200'
+              : state.code === 'expiring'
+                ? 'bg-orange-100 text-orange-800 border-orange-200'
+                : 'bg-emerald-100 text-emerald-800 border-emerald-200';
+          const pages = { ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) };
+          const enabledCount = PAGE_DEFINITIONS.filter((p) => pages[p.key] !== false).length;
+          const expiryShort = inst.isLifetime
+            ? 'Lifetime Validity'
+            : (inst.expiryDate ? `Exp: ${formatDateDisplay(inst.expiryDate)}` : 'No Expiry Date');
 
-    return `
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-white transition">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs font-extrabold text-slate-900 truncate">${escapeHtml(inst.name || slug)}</span>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${badgeClass}">${escapeHtml(state.label)}</span>
-          </div>
-          <div class="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-            <span class="font-mono text-indigo-600 font-bold">/${escapeHtml(slug)}</span>
-            <span>${escapeHtml(inst.planName || 'Standard')}</span>
-            <span>${enabledCount}/${PAGE_DEFINITIONS.length} pages</span>
-          </div>
-        </div>
-        <div class="flex items-center gap-1.5 shrink-0">
-          <button type="button" class="btn-dash-edit-inst px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer" data-slug="${escapeHtml(slug)}">
-            Edit
-          </button>
-          ${state.code === 'paused'
-            ? `<button type="button" class="btn-dash-resume-inst px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer" data-slug="${escapeHtml(slug)}">Resume</button>`
-            : `<a href="/${escapeHtml(slug)}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold">Open</a>`}
-        </div>
-      </div>
-    `;
-  }).join('');
+          return `
+            <tr class="hover:bg-slate-50/80 transition align-top">
+              <td class="py-2.5 pl-4 pr-2 text-center font-extrabold text-slate-400 tabular-nums">${idx + 1}</td>
+              <td class="py-2.5 px-3 min-w-[160px]">
+                <div class="font-extrabold text-slate-900 truncate max-w-[200px]">${escapeHtml(inst.name || slug)}</div>
+                <div class="font-mono text-[11px] font-bold text-indigo-600 truncate">/${escapeHtml(slug)}</div>
+              </td>
+              <td class="py-2.5 px-3">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-extrabold">${escapeHtml(inst.planName || 'Standard')}</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${badgeClass}">${escapeHtml(state.label)}</span>
+                </div>
+                <div class="text-[11px] text-slate-500 mt-1">${escapeHtml(expiryShort)}</div>
+              </td>
+              <td class="py-2.5 px-3 text-center whitespace-nowrap">
+                <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-extrabold text-[11px] tabular-nums">${enabledCount}/${PAGE_DEFINITIONS.length}</span>
+              </td>
+              <td class="py-2.5 pl-3 pr-4 text-right whitespace-nowrap">
+                <div class="inline-flex flex-col items-stretch gap-1 w-24">
+                  <button type="button" class="btn-dash-edit-inst px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer text-center" data-slug="${escapeHtml(slug)}">
+                    Edit
+                  </button>
+                  ${state.code === 'paused'
+                    ? `<button type="button" class="btn-dash-resume-inst px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer text-center" data-slug="${escapeHtml(slug)}">Continue</button>`
+                    : `<a href="/${escapeHtml(slug)}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold text-center">Open</a>`}
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
 
   container.querySelectorAll('.btn-dash-edit-inst').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -636,7 +707,7 @@ const renderInstitutionsGrid = () => {
 
   if (!filtered.length) {
     grid.innerHTML = `
-      <div class="col-span-full bg-white border border-dashed border-slate-300 rounded-3xl p-10 text-center">
+      <div class="p-10 text-center">
         <div class="w-12 h-12 mx-auto mb-3 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center text-xl">
           <i class="fas fa-school"></i>
         </div>
@@ -652,135 +723,167 @@ const renderInstitutionsGrid = () => {
   }
 
   const origin = window.location.origin || '';
-  grid.innerHTML = filtered.map((inst) => {
-    const slug = String(inst.slug || inst.id || '').trim().toLowerCase();
-    const state = classifyInstitutionState(inst);
-    const cleanUrl = `${origin}/${slug}`;
-    const pages = { ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) };
-    const enabledCount = PAGE_DEFINITIONS.filter((p) => pages[p.key] !== false).length;
-    const isPaused = state.code === 'paused';
+  grid.innerHTML = `
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+            <th class="py-3 pl-4 pr-2 w-12 text-center">#</th>
+            <th class="py-3 px-3 min-w-[210px]">Institution &amp; URL</th>
+            <th class="py-3 px-3 min-w-[230px]">Super Admin Credentials</th>
+            <th class="py-3 px-3 min-w-[190px]">Plan &amp; Validity</th>
+            <th class="py-3 px-3 min-w-[140px]">Pages / Modules</th>
+            <th class="py-3 pl-3 pr-4 text-right min-w-[145px]">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200 text-xs">
+          ${filtered.map((inst, idx) => {
+            const slug = String(inst.slug || inst.id || '').trim().toLowerCase();
+            const state = classifyInstitutionState(inst);
+            const cleanUrl = `${origin}/${slug}`;
+            const pages = { ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) };
+            const enabledPages = PAGE_DEFINITIONS.filter((p) => pages[p.key] !== false);
+            const disabledPages = PAGE_DEFINITIONS.filter((p) => pages[p.key] === false);
+            const enabledCount = enabledPages.length;
+            const isPaused = state.code === 'paused';
 
-    const badgeClasses = isPaused
-      ? 'bg-amber-100 text-amber-800 border-amber-200'
-      : state.code === 'expired'
-        ? 'bg-rose-100 text-rose-800 border-rose-200'
-        : state.code === 'expiring'
-          ? 'bg-orange-100 text-orange-800 border-orange-200'
-          : 'bg-emerald-100 text-emerald-800 border-emerald-200';
+            const badgeClasses = isPaused
+              ? 'bg-amber-100 text-amber-800 border-amber-200'
+              : state.code === 'expired'
+                ? 'bg-rose-100 text-rose-800 border-rose-200'
+                : state.code === 'expiring'
+                  ? 'bg-orange-100 text-orange-800 border-orange-200'
+                  : 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
-    const expiryLabel = inst.isLifetime
-      ? 'Lifetime Validity'
-      : (inst.expiryDate ? `Expires: ${formatDateDisplay(inst.expiryDate)}` : 'No Expiry Date');
+            const expiryLabel = inst.isLifetime
+              ? 'Lifetime Validity'
+              : (inst.expiryDate ? `Expires: ${formatDateDisplay(inst.expiryDate)}` : 'No Expiry Date');
 
-    const loginDisplay = inst.adminLoginDisplay
-      || (isInternalStaffEmail(inst.adminEmail || '') ? extractInternalUsername(inst.adminEmail || '') : (inst.adminEmail || '--'));
-    const storedPass = String(inst.adminPassword || '');
+            const loginDisplay = inst.adminLoginDisplay
+              || (isInternalStaffEmail(inst.adminEmail || '') ? extractInternalUsername(inst.adminEmail || '') : (inst.adminEmail || '--'));
+            const storedPass = String(inst.adminPassword || '');
 
-    return `
-      <article class="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs hover:shadow-md transition flex flex-col justify-between gap-4">
-        <div class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="text-base font-extrabold text-slate-900 truncate">${escapeHtml(inst.name || slug)}</h3>
-                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${badgeClasses}">${escapeHtml(state.label)}</span>
-              </div>
-              <div class="text-xs font-mono font-bold text-indigo-600 mt-1 truncate">/${escapeHtml(slug)}</div>
-              <div class="text-[11px] text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                ${inst.place ? `<span><i class="fas fa-location-dot mr-1 text-slate-400"></i>${escapeHtml(inst.place)}</span>` : ''}
-                ${inst.phone ? `<span><i class="fas fa-phone mr-1 text-slate-400"></i>${escapeHtml(inst.phone)}</span>` : ''}
-              </div>
-            </div>
-            <span class="px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 text-[11px] font-extrabold shrink-0">
-              ${escapeHtml(inst.planName || 'Standard')}
-            </span>
-          </div>
+            return `
+              <tr class="inst-table-row hover:bg-slate-50/80 transition align-top">
+                <!-- 1. Serial Number -->
+                <td class="py-3.5 pl-4 pr-2 text-center font-extrabold text-slate-400 tabular-nums">
+                  ${idx + 1}
+                </td>
 
-          <div class="rounded-xl bg-slate-50 border border-slate-200/90 p-3 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                <i class="fas fa-user-shield mr-1 text-indigo-600"></i>Super Admin: ${escapeHtml(inst.adminName || 'Master Admin')}
-              </span>
-              <button type="button" class="btn-edit-inst text-[11px] font-extrabold text-indigo-600 hover:text-indigo-800 cursor-pointer inline-flex items-center gap-1" data-slug="${escapeHtml(slug)}">
-                <i class="fas fa-pen-to-square"></i><span>Change Credentials</span>
-              </button>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <div class="flex items-center justify-between gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 min-w-0">
-                <div class="min-w-0 truncate">
-                  <span class="text-[10px] font-bold text-slate-400 block leading-none">Username / Email</span>
-                  <span class="font-mono font-bold text-slate-800 text-xs truncate block mt-0.5">${escapeHtml(loginDisplay)}</span>
-                </div>
-                <button type="button" class="btn-copy-admin-login w-7 h-7 rounded-md hover:bg-slate-100 text-slate-500 hover:text-indigo-600 shrink-0 flex items-center justify-center cursor-pointer" data-val="${escapeHtml(loginDisplay)}" title="Copy Username / Email">
-                  <i class="fas fa-copy text-[11px]"></i>
-                </button>
-              </div>
-              <div class="flex items-center justify-between gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 min-w-0">
-                <div class="min-w-0 truncate">
-                  <span class="text-[10px] font-bold text-slate-400 block leading-none">Password</span>
-                  ${storedPass
-                    ? `<span class="card-pass-display font-mono font-bold text-slate-800 text-xs truncate block mt-0.5" data-pass="${escapeHtml(storedPass)}" data-visible="false">••••••••</span>`
-                    : `<span class="text-[11px] font-semibold text-amber-700 truncate block mt-0.5">Click Edit to set/view</span>`}
-                </div>
-                ${storedPass ? `
-                  <div class="flex items-center gap-0.5 shrink-0">
-                    <button type="button" class="btn-toggle-card-pass w-7 h-7 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center cursor-pointer" title="Show / Hide Password">
-                      <i class="fas fa-eye text-[11px]"></i>
-                    </button>
-                    <button type="button" class="btn-copy-admin-pass w-7 h-7 rounded-md hover:bg-slate-100 text-slate-500 hover:text-indigo-600 flex items-center justify-center cursor-pointer" data-val="${escapeHtml(storedPass)}" title="Copy Password">
-                      <i class="fas fa-copy text-[11px]"></i>
+                <!-- 2. Institution & URL -->
+                <td class="py-3.5 px-3">
+                  <div class="font-extrabold text-slate-900 text-xs sm:text-sm leading-snug">${escapeHtml(inst.name || slug)}</div>
+                  <div class="flex items-center gap-1.5 mt-1">
+                    <a href="/${escapeHtml(slug)}" target="_blank" rel="noopener noreferrer" class="font-mono text-xs font-bold text-indigo-600 hover:underline truncate max-w-[160px]" title="Open /${escapeHtml(slug)}">/${escapeHtml(slug)}</a>
+                    <button type="button" class="btn-copy-url w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-indigo-600 flex items-center justify-center cursor-pointer shrink-0" data-url="${escapeHtml(cleanUrl)}" title="Copy Portal URL">
+                      <i class="fas fa-copy text-[10px]"></i>
                     </button>
                   </div>
-                ` : ''}
-              </div>
-            </div>
-          </div>
+                  ${(inst.place || inst.phone) ? `
+                    <div class="text-[11px] text-slate-500 mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                      ${inst.place ? `<span><i class="fas fa-location-dot mr-1 text-slate-400"></i>${escapeHtml(inst.place)}</span>` : ''}
+                      ${inst.phone ? `<span><i class="fas fa-phone mr-1 text-slate-400"></i>${escapeHtml(inst.phone)}</span>` : ''}
+                    </div>
+                  ` : ''}
+                </td>
 
-          ${isPaused && inst.pauseReason ? `
-            <div class="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-800">
-              <i class="fas fa-info-circle mr-1"></i>Pause Reason: ${escapeHtml(inst.pauseReason)}
-            </div>
-          ` : ''}
+                <!-- 3. Super Admin Credentials -->
+                <td class="py-3.5 px-3">
+                  <div class="rounded-xl bg-slate-50 border border-slate-200/90 p-2.5 space-y-1.5">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 truncate">
+                        <i class="fas fa-user-shield mr-1 text-indigo-600"></i>${escapeHtml(inst.adminName || 'Master Admin')}
+                      </span>
+                      <button type="button" class="btn-edit-inst text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 cursor-pointer shrink-0" data-slug="${escapeHtml(slug)}" title="Edit Credentials">
+                        <i class="fas fa-pen-to-square mr-0.5"></i>Edit
+                      </button>
+                    </div>
+                    <div class="flex items-center justify-between gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1">
+                      <div class="min-w-0 truncate">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase mr-1">User:</span>
+                        <span class="font-mono font-bold text-slate-800 text-[11px]">${escapeHtml(loginDisplay)}</span>
+                      </div>
+                      <button type="button" class="btn-copy-admin-login w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 shrink-0 flex items-center justify-center cursor-pointer" data-val="${escapeHtml(loginDisplay)}" title="Copy Username / Email">
+                        <i class="fas fa-copy text-[10px]"></i>
+                      </button>
+                    </div>
+                    <div class="flex items-center justify-between gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1">
+                      <div class="min-w-0 truncate">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase mr-1">Pass:</span>
+                        ${storedPass
+                          ? `<span class="card-pass-display font-mono font-bold text-slate-800 text-[11px]" data-pass="${escapeHtml(storedPass)}" data-visible="false">••••••••</span>`
+                          : `<span class="text-[10px] font-semibold text-amber-700">Set in Edit</span>`}
+                      </div>
+                      ${storedPass ? `
+                        <div class="flex items-center gap-0.5 shrink-0">
+                          <button type="button" class="btn-toggle-card-pass w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center cursor-pointer" title="Show / Hide Password">
+                            <i class="fas fa-eye text-[10px]"></i>
+                          </button>
+                          <button type="button" class="btn-copy-admin-pass w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 flex items-center justify-center cursor-pointer" data-val="${escapeHtml(storedPass)}" title="Copy Password">
+                            <i class="fas fa-copy text-[10px]"></i>
+                          </button>
+                        </div>
+                      ` : ''}
+                    </div>
+                  </div>
+                </td>
 
-          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-slate-600 bg-slate-50 rounded-xl px-3 py-2 border border-slate-100">
-            <span><i class="fas fa-calendar-days mr-1.5 text-slate-400"></i>${escapeHtml(expiryLabel)}</span>
-            <span><i class="fas fa-layer-group mr-1.5 text-indigo-500"></i>${enabledCount}/${PAGE_DEFINITIONS.length} Pages Enabled</span>
-          </div>
+                <!-- 4. Plan & Validity (with Status merged inside) -->
+                <td class="py-3.5 px-3">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 text-[11px] font-extrabold">
+                      ${escapeHtml(inst.planName || 'Standard')}
+                    </span>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border whitespace-nowrap ${badgeClasses}">
+                      ${escapeHtml(state.label)}
+                    </span>
+                  </div>
+                  <div class="text-[11px] font-semibold text-slate-600 mt-1.5">
+                    <i class="fas fa-calendar-days mr-1 text-slate-400"></i>${escapeHtml(expiryLabel)}
+                  </div>
+                  ${isPaused && inst.pauseReason ? `
+                    <div class="mt-1.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 max-w-[200px] leading-snug">
+                      ${escapeHtml(inst.pauseReason)}
+                    </div>
+                  ` : ''}
+                </td>
 
-          <div class="flex flex-wrap gap-1.5">
-            ${PAGE_DEFINITIONS.map((p) => {
-              const on = pages[p.key] !== false;
-              return `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold ${on ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-slate-100 text-slate-400 line-through'}">${escapeHtml(p.label)}</span>`;
-            }).join('')}
-          </div>
-        </div>
+                <!-- 5. Pages / Modules -->
+                <td class="py-3.5 px-3">
+                  <button type="button" class="btn-edit-inst text-left group cursor-pointer" data-slug="${escapeHtml(slug)}" title="Click to configure allowed pages">
+                    <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 group-hover:bg-indigo-50 text-slate-800 group-hover:text-indigo-700 border border-slate-200 group-hover:border-indigo-200 text-[11px] font-extrabold tabular-nums transition">
+                      <i class="fas fa-layer-group text-indigo-500 text-[10px]"></i>
+                      <span>${enabledCount}/${PAGE_DEFINITIONS.length} Enabled</span>
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-1 max-w-[150px] truncate">
+                      ${disabledPages.length === 0
+                        ? '<span class="text-emerald-700 font-semibold">All modules unlocked</span>'
+                        : `<span class="text-amber-700 font-semibold">${disabledPages.length} premium locked</span>`}
+                    </div>
+                  </button>
+                </td>
 
-        <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <button type="button" class="btn-copy-url px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer" data-url="${escapeHtml(cleanUrl)}">
-              <i class="fas fa-copy mr-1"></i>Copy URL
-            </button>
-            <a href="/${escapeHtml(slug)}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold inline-flex items-center gap-1">
-              <i class="fas fa-arrow-up-right-from-square"></i><span>Open</span>
-            </a>
-            <button type="button" class="btn-edit-inst px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer" data-slug="${escapeHtml(slug)}">
-              <i class="fas fa-sliders mr-1"></i>Edit & Pages
-            </button>
-          </div>
-          <div class="flex flex-wrap items-center gap-1.5">
-            ${!inst.isLifetime ? `
-              <button type="button" class="btn-extend-inst px-2 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold cursor-pointer" data-slug="${escapeHtml(slug)}" data-months="1">+1M</button>
-              <button type="button" class="btn-extend-inst px-2 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold cursor-pointer" data-slug="${escapeHtml(slug)}" data-months="3">+3M</button>
-              <button type="button" class="btn-extend-inst px-2 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold cursor-pointer" data-slug="${escapeHtml(slug)}" data-months="12">+1Y</button>
-            ` : ''}
-            ${isPaused
-              ? `<button type="button" class="btn-resume-inst px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold cursor-pointer" data-slug="${escapeHtml(slug)}"><i class="fas fa-play mr-1"></i>Continue</button>`
-              : `<button type="button" class="btn-pause-inst px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-extrabold cursor-pointer" data-slug="${escapeHtml(slug)}"><i class="fas fa-pause mr-1"></i>Pause</button>`}
-          </div>
-        </div>
-      </article>
-    `;
-  }).join('');
+                <!-- 6. Actions (Stacked one per line: Edit & Pages, Open, Pause/Continue) -->
+                <td class="py-3.5 pl-3 pr-4 text-right">
+                  <div class="inline-flex flex-col items-stretch gap-1.5 w-32">
+                    <button type="button" class="btn-edit-inst w-full px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap" data-slug="${escapeHtml(slug)}">
+                      <i class="fas fa-sliders text-[10px]"></i><span>Edit &amp; Pages</span>
+                    </button>
+                    <a href="/${escapeHtml(slug)}" target="_blank" rel="noopener noreferrer" class="w-full px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+                      <i class="fas fa-arrow-up-right-from-square text-[10px]"></i><span>Open</span>
+                    </a>
+                    ${isPaused
+                      ? `<button type="button" class="btn-resume-inst w-full px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap" data-slug="${escapeHtml(slug)}"><i class="fas fa-play text-[10px]"></i><span>Continue</span></button>`
+                      : `<button type="button" class="btn-pause-inst w-full px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-extrabold cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap" data-slug="${escapeHtml(slug)}"><i class="fas fa-pause text-[10px]"></i><span>Pause</span></button>`}
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 
   grid.querySelectorAll('.btn-copy-url').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -822,19 +925,19 @@ const renderInstitutionsGrid = () => {
 
   grid.querySelectorAll('.btn-toggle-card-pass').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const card = btn.closest('article');
-      const display = card?.querySelector('.card-pass-display');
+      const row = btn.closest('.inst-table-row') || btn.closest('tr') || btn.closest('article');
+      const display = row?.querySelector('.card-pass-display');
       const icon = btn.querySelector('i');
       if (!display) return;
       const isVisible = display.dataset.visible === 'true';
       if (isVisible) {
         display.textContent = '••••••••';
         display.dataset.visible = 'false';
-        if (icon) icon.className = 'fas fa-eye text-[11px]';
+        if (icon) icon.className = 'fas fa-eye text-[10px]';
       } else {
         display.textContent = display.dataset.pass || '';
         display.dataset.visible = 'true';
-        if (icon) icon.className = 'fas fa-eye-slash text-[11px]';
+        if (icon) icon.className = 'fas fa-eye-slash text-[10px]';
       }
     });
   });
@@ -1989,10 +2092,9 @@ const verifyCompanyOwnerSession = async (user) => {
 };
 
 const bindEvents = () => {
-  // Sidebar navigation & mobile drawer
-  document.getElementById('btn-open-company-sidebar')?.addEventListener('click', openMobileSidebar);
-  document.getElementById('btn-close-company-sidebar')?.addEventListener('click', closeMobileSidebar);
-  document.getElementById('company-sidebar-backdrop')?.addEventListener('click', closeMobileSidebar);
+  // Persistent Expand / Collapse sidebar toggle
+  document.getElementById('btn-open-company-sidebar')?.addEventListener('click', toggleCompanySidebar);
+  document.getElementById('btn-close-company-sidebar')?.addEventListener('click', () => applyCompanySidebarCollapsed(true, true));
 
   document.querySelectorAll('.company-nav-btn[data-company-view]').forEach((btn) => {
     btn.addEventListener('click', () => setActiveCompanyView(btn.dataset.companyView));
@@ -2001,7 +2103,6 @@ const bindEvents = () => {
     btn.addEventListener('click', () => setActiveCompanyView(btn.dataset.jumpView));
   });
 
-  document.getElementById('btn-header-add-inst')?.addEventListener('click', () => setActiveCompanyView('add-institution'));
   document.getElementById('btn-open-add-inst')?.addEventListener('click', () => setActiveCompanyView('add-institution'));
 
   const openCatalogPreview = () => {
@@ -2205,9 +2306,10 @@ const bindEvents = () => {
   });
 };
 
+restoreCompanySidebarState();
 bindEvents();
 initAddInstitutionPageForm();
-setActiveCompanyView('dashboard');
+setActiveCompanyView(getSavedCompanyView());
 
 let authInitialized = false;
 onAuthStateChanged(auth, async (user) => {

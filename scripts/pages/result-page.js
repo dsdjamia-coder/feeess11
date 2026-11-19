@@ -9565,7 +9565,7 @@ const renderConsolidatedCanvas = (canvasEl, data) => {
     const instName = institutionConfig.appName || 'Institution Name';
     const instPlace = institutionConfig.place || '';
     const instReg = institutionConfig.regNo || '';
-    const logoSrc = institutionConfig.logoUrl || document.getElementById('header-logo')?.getAttribute('src') || 'assets/images/logo.png';
+    const logoSrc = institutionConfig.logoUrl || document.getElementById('header-logo')?.getAttribute('src') || '/assets/images/logo.png';
     const orderLabels = { rank: 'Rank Order', admission: 'Admission No Order', gender: 'Boys First, then Girls', alpha: 'Alphabetical Order' };
     const examLabel = data.classReports[0]?.examContext?.label || data.examId;
 
@@ -9705,7 +9705,7 @@ const renderConsolidatedCanvas = (canvasEl, data) => {
             <!-- Institutional A4 Landscape Header with Logo, Name, Place, Reg No -->
             <div class="flex flex-col sm:flex-row items-center justify-between pb-3 sm:pb-4 mb-3 sm:mb-4 border-b border-slate-200 gap-3 sm:gap-4 text-center sm:text-left">
                 <div class="flex items-center gap-2.5 sm:gap-3.5">
-                    <img src="${escapeHtml(logoSrc)}" alt="Logo" class="w-11 h-11 sm:w-14 sm:h-14 object-contain rounded-xl border border-slate-200 p-1 bg-white shadow-2xs shrink-0" onerror="this.style.display='none'">
+                    <img src="${escapeHtml(logoSrc)}" alt="Logo" class="w-11 h-11 sm:w-14 sm:h-14 object-contain rounded-xl border border-slate-200 p-1 bg-white shadow-2xs shrink-0" onerror="this.onerror=null;this.src='/assets/images/logo.png'">
                     <div>
                         <h1 class="text-base sm:text-2xl font-black text-slate-900 tracking-tight uppercase">${escapeHtml(instName)}</h1>
                         <div class="text-[11px] sm:text-xs text-slate-500 font-semibold flex flex-wrap items-center gap-1.5 sm:gap-2 mt-0.5 justify-center sm:justify-start">
@@ -9738,7 +9738,7 @@ const renderIndividualCanvas = (canvasEl, data) => {
     const instName = institutionConfig.appName || 'Institution Name';
     const instPlace = institutionConfig.place || '';
     const instReg = institutionConfig.regNo || '';
-    const logoSrc = institutionConfig.logoUrl || document.getElementById('header-logo')?.getAttribute('src') || 'assets/images/logo.png';
+    const logoSrc = institutionConfig.logoUrl || document.getElementById('header-logo')?.getAttribute('src') || '/assets/images/logo.png';
     const allStudents = data.allStudentsList;
 
     if (!allStudents.length) {

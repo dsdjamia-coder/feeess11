@@ -962,7 +962,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         } catch (_e) {}
       }
       const institutionName = resolveInstitutionName(conf) || 'Official Portal';
-      const effectiveLogo = rememberInstitutionLogo(conf.logoUrl || '') || '/assets/images/logo.png';
+      const effectiveLogo = rememberInstitutionLogo(conf.logoUrl || '', institutionName) || '/assets/images/logo.png';
       ['header-logo', 'official-login-modal-logo'].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;

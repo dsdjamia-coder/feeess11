@@ -99,12 +99,12 @@ const resolveInstitutionName = (conf = {}) => String(
 const applyOfficialBranding = (conf = {}) => {
   institutionConfig = conf || {};
   const institutionName = resolveInstitutionName(conf) || 'Official Portal';
-  const effectiveLogo = rememberInstitutionLogo(conf.logoUrl || '') || 'assets/images/logo.png';
+  const effectiveLogo = rememberInstitutionLogo(conf.logoUrl || '', institutionName) || '/assets/images/logo.png';
   ['header-logo', 'header-logo-right', 'official-login-modal-logo'].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     el.src = effectiveLogo;
-    el.onerror = () => { el.onerror = null; el.src = 'assets/images/logo.png'; };
+    el.onerror = () => { el.onerror = null; el.src = '/assets/images/logo.png'; };
   });
   document.getElementById('header-title').textContent = institutionName;
   const loginInstitutionName = document.getElementById('official-login-institution-name');

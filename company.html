@@ -23,89 +23,120 @@
     * { font-family: 'Plus Jakarta Sans', sans-serif; }
     body { background: #f8fafc; color: #0f172a; }
     .tabular-nums { font-variant-numeric: tabular-nums; }
+    #company-sidebar[data-collapsed="true"] { width: 4.25rem; }
+    #company-sidebar[data-collapsed="false"] { width: 15.5rem; }
+    #company-sidebar[data-collapsed="true"] .sidebar-text,
+    #company-sidebar[data-collapsed="true"] .sidebar-section-label,
+    #company-sidebar[data-collapsed="true"] .sidebar-count-pill,
+    #company-sidebar[data-collapsed="true"] .sidebar-user-meta {
+      display: none !important;
+    }
+    #company-sidebar[data-collapsed="true"] .company-nav-btn {
+      justify-content: center !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+    #company-sidebar[data-collapsed="true"] .company-nav-inner {
+      justify-content: center !important;
+    }
+    #company-sidebar[data-collapsed="true"] .sidebar-brand-row {
+      justify-content: center !important;
+      padding-left: 0.5rem !important;
+      padding-right: 0.5rem !important;
+    }
+    #company-sidebar[data-collapsed="true"] .sidebar-brand-toggle {
+      display: none !important;
+    }
+    #company-sidebar[data-collapsed="true"] .sidebar-footer-actions {
+      grid-template-columns: 1fr !important;
+    }
   </style>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
 
   <div id="company-loader" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white rounded-3xl p-8 max-w-xs w-full text-center shadow-2xl border border-slate-200">
-      <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-2xl">
-        <i class="fas fa-circle-notch fa-spin"></i>
+      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white border border-slate-200 p-2 flex items-center justify-center shadow-sm relative">
+        <img src="/assets/images/logo.png" alt="Institution Manage" class="w-full h-full object-contain rounded-xl" referrerpolicy="no-referrer">
       </div>
       <h2 class="text-base font-extrabold text-slate-900">Verifying Company Access</h2>
-      <p class="text-xs text-slate-500 mt-1">Connecting to master platform registry...</p>
+      <p class="text-xs text-slate-500 mt-1"><i class="fas fa-circle-notch fa-spin text-indigo-600 mr-1.5"></i>Connecting to master platform registry...</p>
     </div>
   </div>
 
   <!-- Toast Banner -->
   <div id="company-toast" class="hidden fixed bottom-5 right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5"></div>
 
-  <div id="company-shell" class="hidden min-h-screen flex flex-col lg:flex-row">
-    <!-- Mobile Sidebar Backdrop -->
-    <div id="company-sidebar-backdrop" class="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-xs hidden lg:hidden"></div>
+  <div id="company-shell" class="hidden min-h-screen flex flex-row">
 
-    <!-- Side Menu Bar -->
-    <aside id="company-sidebar" class="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transform -translate-x-full lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen transition-transform duration-200 shrink-0">
-      <div class="h-16 px-4 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
+    <!-- Persistent Expandable / Collapsible Side Menu Bar -->
+    <aside id="company-sidebar" data-collapsed="false" class="sticky top-0 h-screen z-40 bg-white border-r border-slate-200 flex flex-col transition-all duration-200 shrink-0 select-none">
+      <div class="sidebar-brand-row h-16 px-3.5 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-slate-900 text-white flex items-center justify-center shadow-xs shrink-0">
-            <i class="fas fa-building-shield text-sm"></i>
+          <div class="w-9 h-9 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-xs shrink-0" title="Institution Manage — Company Console">
+            <img src="/assets/images/logo.png" alt="Institution Manage" class="w-full h-full object-contain rounded-lg" referrerpolicy="no-referrer">
           </div>
-          <div class="min-w-0">
+          <div class="sidebar-text min-w-0">
             <h1 id="company-brand-title" class="text-sm font-extrabold text-slate-900 truncate">Institution Manage</h1>
             <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">Company Console</p>
           </div>
         </div>
-        <button type="button" id="btn-close-company-sidebar" class="lg:hidden w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 flex items-center justify-center cursor-pointer" aria-label="Close Menu">
-          <i class="fas fa-times"></i>
+        <button type="button" id="btn-close-company-sidebar" class="sidebar-brand-toggle w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center cursor-pointer shrink-0" title="Collapse Sidebar" aria-label="Collapse Sidebar">
+          <i class="fas fa-angles-left text-xs"></i>
         </button>
       </div>
 
-      <nav class="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Company Navigation">
-        <div class="px-3 pt-1 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Workspace</div>
-        <button type="button" data-company-view="dashboard" class="company-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
-          <i class="fas fa-chart-pie w-4 text-center shrink-0"></i>
-          <span class="truncate">Dashboard</span>
-        </button>
-        <button type="button" data-company-view="add-institution" class="company-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
-          <i class="fas fa-plus-circle w-4 text-center shrink-0"></i>
-          <span class="truncate">Add Institution</span>
-        </button>
-        <button type="button" data-company-view="institutions" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
-          <span class="inline-flex items-center gap-3 min-w-0">
-            <i class="fas fa-school w-4 text-center shrink-0"></i>
-            <span class="truncate">Institutions</span>
+      <nav class="flex-1 overflow-y-auto p-2.5 space-y-1" aria-label="Company Navigation">
+        <div class="sidebar-section-label px-2.5 pt-1 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Workspace</div>
+        <button type="button" data-company-view="dashboard" title="Dashboard" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="company-nav-inner inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-chart-pie w-5 text-center text-sm shrink-0"></i>
+            <span class="sidebar-text truncate">Dashboard</span>
           </span>
-          <span id="sidebar-inst-count" class="text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
+        </button>
+        <button type="button" data-company-view="add-institution" title="Add Institution" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="company-nav-inner inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-plus-circle w-5 text-center text-sm shrink-0"></i>
+            <span class="sidebar-text truncate">Add Institution</span>
+          </span>
+        </button>
+        <button type="button" data-company-view="institutions" title="Institutions" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="company-nav-inner inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-school w-5 text-center text-sm shrink-0"></i>
+            <span class="sidebar-text truncate">Institutions</span>
+          </span>
+          <span id="sidebar-inst-count" class="sidebar-count-pill text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
         </button>
 
-        <div class="px-3 pt-4 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Subscriptions &amp; Growth</div>
-        <button type="button" data-company-view="plans" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
-          <span class="inline-flex items-center gap-3 min-w-0">
-            <i class="fas fa-crown w-4 text-center shrink-0 text-amber-500"></i>
-            <span class="truncate">Premium Plans &amp; Offers</span>
+        <div class="sidebar-section-label px-2.5 pt-3.5 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Subscriptions &amp; Growth</div>
+        <button type="button" data-company-view="plans" title="Premium Plans & Offers" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="company-nav-inner inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-crown w-5 text-center text-sm shrink-0 text-amber-500"></i>
+            <span class="sidebar-text truncate">Premium Plans &amp; Offers</span>
           </span>
-          <span id="sidebar-plans-count" class="text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
+          <span id="sidebar-plans-count" class="sidebar-count-pill text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
         </button>
-        <button type="button" data-company-view="contact" class="company-nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
-          <i class="fas fa-headset w-4 text-center shrink-0"></i>
-          <span class="truncate">Contact Details</span>
+        <button type="button" data-company-view="contact" title="Contact Details" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="company-nav-inner inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-headset w-5 text-center text-sm shrink-0"></i>
+            <span class="sidebar-text truncate">Contact Details</span>
+          </span>
         </button>
       </nav>
 
-      <div class="p-3 border-t border-slate-200 bg-slate-50/70 space-y-2 shrink-0">
-        <div class="px-2 py-1">
+      <div class="p-2.5 border-t border-slate-200 bg-slate-50/70 space-y-2 shrink-0">
+        <div class="sidebar-user-meta px-2 py-1">
           <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Signed in as</div>
           <div id="company-owner-email" class="text-[11px] font-semibold text-slate-700 truncate mt-0.5">--</div>
         </div>
-        <div class="grid grid-cols-2 gap-2">
-          <a href="/?public=1" class="px-2.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+        <div class="sidebar-footer-actions grid grid-cols-2 gap-1.5">
+          <a href="/?public=1" title="Public Home" class="px-2.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
             <i class="fas fa-globe text-indigo-500"></i>
-            <span>Home</span>
+            <span class="sidebar-text">Home</span>
           </a>
-          <button type="button" id="btn-company-signout" class="px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-extrabold transition cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+          <button type="button" id="btn-company-signout" title="Sign Out" class="px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-extrabold transition cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
             <i class="fas fa-right-from-bracket"></i>
-            <span>Sign Out</span>
+            <span class="sidebar-text">Sign Out</span>
           </button>
         </div>
       </div>
@@ -116,8 +147,8 @@
       <!-- Top Bar -->
       <header class="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 shrink-0">
         <div class="flex items-center gap-3 min-w-0">
-          <button type="button" id="btn-open-company-sidebar" class="lg:hidden w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center cursor-pointer shrink-0" aria-label="Open Navigation Menu">
-            <i class="fas fa-bars"></i>
+          <button type="button" id="btn-open-company-sidebar" class="w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center cursor-pointer shrink-0 transition" title="Expand / Collapse Sidebar" aria-label="Expand or Collapse Navigation Sidebar">
+            <i id="company-sidebar-toggle-icon" class="fas fa-bars"></i>
           </button>
           <div class="min-w-0">
             <h2 id="company-view-title" class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Dashboard</h2>
@@ -128,10 +159,6 @@
           <button type="button" id="btn-header-preview-plans" class="px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-extrabold transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
             <i class="fas fa-crown text-amber-600"></i>
             <span class="hidden sm:inline">Preview Plans Modal</span>
-          </button>
-          <button type="button" id="btn-header-add-inst" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-            <i class="fas fa-plus"></i>
-            <span>Add Institution</span>
           </button>
         </div>
       </header>
@@ -223,9 +250,9 @@
               </div>
             </div>
 
-            <!-- Institution Watchlist -->
-            <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
-              <div class="flex items-center justify-between gap-2">
+            <!-- Institution Watchlist Table -->
+            <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col">
+              <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-2">
                 <div>
                   <h3 class="text-sm font-extrabold text-slate-900">Institution Status Overview</h3>
                   <p class="text-[11px] text-slate-500">Expiring, paused, and recently managed portals.</p>
@@ -234,98 +261,98 @@
                   View All
                 </button>
               </div>
-              <div id="dashboard-institutions-overview" class="space-y-2.5"></div>
+              <div id="dashboard-institutions-overview" class="overflow-x-auto flex-1"></div>
             </div>
           </div>
         </section>
 
-        <!-- VIEW 2: ADD INSTITUTION -->
+        <!-- VIEW 2: ADD INSTITUTION (COMPACT DESKTOP WORKSPACE) -->
         <section id="view-add-institution" class="company-view hidden">
-          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div class="max-w-3xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
+            <div class="px-4 sm:px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 class="text-base font-extrabold text-slate-900">Provision New Institution</h3>
-                <p class="text-xs text-slate-500">Configure portal URL slug, Super Admin credentials, subscription validity, and allowed pages.</p>
+                <h3 class="text-sm sm:text-base font-extrabold text-slate-900">Provision New Institution</h3>
+                <p class="text-[11px] text-slate-500">Configure clean URL slug, Super Admin credentials, subscription validity, and allowed modules.</p>
               </div>
-              <button type="button" id="btn-reset-add-inst-page" class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">
+              <button type="button" id="btn-reset-add-inst-page" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer">
                 Reset Form
               </button>
             </div>
 
-            <form id="add-inst-page-form" class="p-5 sm:p-6 space-y-6 text-xs sm:text-sm">
+            <form id="add-inst-page-form" class="p-4 sm:p-5 space-y-4 text-xs">
               <!-- 1. Identity -->
-              <div class="space-y-3">
-                <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">1. Institution Identity &amp; Clean URL</div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div class="space-y-2.5">
+                <div class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600">1. Institution Identity &amp; Clean URL</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-name">Institution Name <span class="text-rose-500">*</span></label>
-                    <input type="text" id="add-inst-name" required maxlength="120" placeholder="e.g. Demo Public Academy" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-name">Institution Name <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-name" required maxlength="120" placeholder="e.g. Demo Public Academy" class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none font-semibold text-xs">
                   </div>
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-slug">Portal URL Slug <span class="text-rose-500">*</span></label>
-                    <input type="text" id="add-inst-slug" required maxlength="64" placeholder="e.g. demo-academy" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-mono font-bold lowercase">
-                    <div id="add-inst-slug-preview" class="text-[11px] font-semibold text-indigo-600 mt-1 truncate">URL: /demo-academy</div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-slug">Portal URL Slug <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-slug" required maxlength="64" placeholder="e.g. demo-academy" class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none font-mono font-bold lowercase text-xs">
+                    <div id="add-inst-slug-preview" class="text-[10px] font-semibold text-indigo-600 mt-0.5 truncate">URL: /demo-academy</div>
                   </div>
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-place">Place / City</label>
-                    <input type="text" id="add-inst-place" maxlength="100" placeholder="e.g. Malappuram" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-medium">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-place">Place / City</label>
+                    <input type="text" id="add-inst-place" maxlength="100" placeholder="e.g. Malappuram" class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none font-medium text-xs">
                   </div>
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-phone">Contact Phone</label>
-                    <input type="text" id="add-inst-phone" maxlength="25" placeholder="e.g. +91 9876543210" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-medium">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-phone">Contact Phone</label>
+                    <input type="text" id="add-inst-phone" maxlength="25" placeholder="e.g. +91 9876543210" class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none font-medium text-xs">
                   </div>
                 </div>
               </div>
 
               <!-- 2. Super Admin -->
-              <div class="space-y-3 pt-5 border-t border-slate-200">
-                <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">2. Institution Super Admin Credentials</div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-admin-name">Super Admin Name <span class="text-rose-500">*</span></label>
-                    <input type="text" id="add-inst-admin-name" required maxlength="80" placeholder="e.g. Principal / Master Admin" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
-                  </div>
-                  <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-admin-email">Super Admin Username or Email <span class="text-rose-500">*</span></label>
-                    <input type="text" id="add-inst-admin-email" required maxlength="120" placeholder="e.g. admin@institution.com or unique_username" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold lowercase">
-                    <div class="text-[11px] font-medium text-slate-500 mt-1">Must be globally unique across all institutions and staff.</div>
-                  </div>
+              <div class="space-y-2.5 pt-3.5 border-t border-slate-200">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600">2. Super Admin Credentials</div>
+                  <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer">
+                    <input type="checkbox" id="add-inst-link-existing-auth" class="rounded border-slate-300 text-indigo-600">
+                    <span>Account already exists in Firebase Auth</span>
+                  </label>
                 </div>
-                <div class="space-y-2">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <label class="block text-xs font-bold text-slate-700" for="add-inst-admin-password">Super Admin Password <span class="text-rose-500">*</span></label>
-                    <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-600 cursor-pointer">
-                      <input type="checkbox" id="add-inst-link-existing-auth" class="rounded border-slate-300 text-indigo-600">
-                      <span>Account already exists in Firebase Auth</span>
-                    </label>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-admin-name">Super Admin Name <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-admin-name" required maxlength="80" placeholder="e.g. Master Admin" class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none font-semibold text-xs">
                   </div>
-                  <div class="relative max-w-md">
-                    <input type="password" id="add-inst-admin-password" minlength="6" maxlength="64" required placeholder="Minimum 6 characters" class="w-full pl-3.5 pr-20 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 outline-none font-semibold">
-                    <div class="absolute inset-y-0 right-1.5 flex items-center gap-1">
-                      <button type="button" id="btn-toggle-add-inst-pass" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer" title="Show / Hide Password">
-                        <i id="add-inst-pass-eye" class="fas fa-eye text-xs"></i>
-                      </button>
-                      <button type="button" id="btn-copy-add-inst-pass" class="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-indigo-600 flex items-center justify-center cursor-pointer" title="Copy Password">
-                        <i class="fas fa-copy text-xs"></i>
-                      </button>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-admin-email">Username or Email <span class="text-rose-500">*</span></label>
+                    <input type="text" id="add-inst-admin-email" required maxlength="120" placeholder="unique_username or email" class="w-full px-3 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none font-semibold lowercase text-xs">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-admin-password">Password <span class="text-rose-500">*</span></label>
+                    <div class="relative">
+                      <input type="password" id="add-inst-admin-password" minlength="6" maxlength="64" required placeholder="Min 6 characters" class="w-full pl-3 pr-16 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none font-semibold text-xs">
+                      <div class="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                        <button type="button" id="btn-toggle-add-inst-pass" class="w-7 h-7 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer" title="Show / Hide Password">
+                          <i id="add-inst-pass-eye" class="fas fa-eye text-[11px]"></i>
+                        </button>
+                        <button type="button" id="btn-copy-add-inst-pass" class="w-7 h-7 rounded-md hover:bg-slate-100 text-slate-500 hover:text-indigo-600 flex items-center justify-center cursor-pointer" title="Copy Password">
+                          <i class="fas fa-copy text-[11px]"></i>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div class="text-[10px] font-medium text-slate-500">Username/Email must be globally unique across all institutions and staff.</div>
               </div>
 
               <!-- 3. Subscription -->
-              <div class="space-y-3 pt-5 border-t border-slate-200">
+              <div class="space-y-2.5 pt-3.5 border-t border-slate-200">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">3. Subscription Plan &amp; Validity</div>
-                  <label class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-800 cursor-pointer">
+                  <div class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600">3. Subscription Plan &amp; Validity</div>
+                  <label class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-[11px] font-bold text-indigo-800 cursor-pointer">
                     <input type="checkbox" id="add-inst-is-lifetime" class="rounded border-indigo-300 text-indigo-600">
                     <span>Lifetime / Unlimited Access</span>
                   </label>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-plan-name">Plan Tier</label>
-                    <select id="add-inst-plan-name" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-plan-name">Plan Tier</label>
+                    <select id="add-inst-plan-name" data-native-select="true" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 font-bold text-slate-800 outline-none text-xs">
                       <option value="Trial">Trial</option>
                       <option value="Standard" selected>Standard</option>
                       <option value="Premium">Premium</option>
@@ -333,44 +360,44 @@
                     </select>
                   </div>
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-duration-months">Duration</label>
-                    <select id="add-inst-duration-months" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-duration-months">Duration</label>
+                    <select id="add-inst-duration-months" data-native-select="true" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 font-bold text-slate-800 outline-none text-xs">
                       <option value="1">1 Month</option>
                       <option value="3">3 Months</option>
                       <option value="6">6 Months</option>
-                      <option value="12" selected>12 Months (1 Year)</option>
-                      <option value="24">24 Months (2 Years)</option>
+                      <option value="12" selected>12 Months (1Y)</option>
+                      <option value="24">24 Months (2Y)</option>
                       <option value="0">Custom Date</option>
                     </select>
                   </div>
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-start-date">Start Date</label>
-                    <input type="date" id="add-inst-start-date" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-start-date">Start Date</label>
+                    <input type="date" id="add-inst-start-date" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 font-bold text-slate-800 outline-none text-xs">
                   </div>
                   <div>
-                    <label class="block text-xs font-bold text-slate-700 mb-1" for="add-inst-expiry-date">Expiry Date</label>
-                    <input type="date" id="add-inst-expiry-date" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-expiry-date">Expiry Date</label>
+                    <input type="date" id="add-inst-expiry-date" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 font-bold text-slate-800 outline-none text-xs">
                   </div>
                 </div>
               </div>
 
               <!-- 4. Allowed Pages -->
-              <div class="space-y-3 pt-5 border-t border-slate-200">
+              <div class="space-y-2.5 pt-3.5 border-t border-slate-200">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages &amp; Modules</div>
-                  <div class="flex items-center gap-2">
-                    <button type="button" id="btn-add-pages-select-all" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Enable All</button>
-                    <button type="button" id="btn-add-pages-core-only" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Core Only</button>
+                  <div class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages &amp; Modules</div>
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" id="btn-add-pages-select-all" class="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer">Enable All</button>
+                    <button type="button" id="btn-add-pages-core-only" class="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer">Core Only</button>
                   </div>
                 </div>
-                <div id="add-inst-allowed-pages-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5"></div>
+                <div id="add-inst-allowed-pages-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2"></div>
               </div>
 
-              <div id="add-inst-form-error" class="hidden rounded-xl bg-rose-50 border border-rose-200 text-rose-700 px-3.5 py-2.5 text-xs font-bold"></div>
+              <div id="add-inst-form-error" class="hidden rounded-xl bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 text-xs font-bold"></div>
 
-              <div class="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
-                <button type="button" data-jump-view="institutions" class="px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">View Institutions</button>
-                <button type="submit" id="btn-submit-add-inst-page" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
+              <div class="pt-3.5 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                <button type="button" data-jump-view="institutions" class="px-3.5 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer">View Institutions</button>
+                <button type="submit" id="btn-submit-add-inst-page" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-1.5">
                   <i class="fas fa-save"></i>
                   <span>Create Institution</span>
                 </button>
@@ -379,16 +406,16 @@
           </div>
         </section>
 
-        <!-- VIEW 3: INSTITUTIONS LIST -->
-        <section id="view-institutions" class="company-view hidden space-y-5">
+        <!-- VIEW 3: INSTITUTIONS LIST (NUMBERED TABLE FORMAT) -->
+        <section id="view-institutions" class="company-view hidden space-y-4">
           <!-- Toolbar -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
               <div class="relative flex-1 max-w-md">
                 <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                <input type="text" id="inst-search-input" placeholder="Search by name, slug, place, or admin email..." class="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-medium outline-none">
+                <input type="text" id="inst-search-input" placeholder="Search by name, slug, place, or admin username/email..." class="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-medium outline-none">
               </div>
-              <select id="inst-status-filter" data-native-select="true" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs sm:text-sm font-bold text-slate-700 outline-none">
+              <select id="inst-status-filter" data-native-select="true" class="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-bold text-slate-700 outline-none">
                 <option value="all">All Statuses</option>
                 <option value="active">Active Only</option>
                 <option value="paused">Paused Only</option>
@@ -397,19 +424,19 @@
               </select>
             </div>
             <div class="flex items-center gap-2">
-              <button type="button" id="btn-refresh-institutions" class="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-bold cursor-pointer inline-flex items-center gap-1.5">
+              <button type="button" id="btn-refresh-institutions" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5">
                 <i class="fas fa-rotate"></i>
                 <span>Refresh</span>
               </button>
-              <button type="button" id="btn-open-add-inst" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
+              <button type="button" id="btn-open-add-inst" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-1.5">
                 <i class="fas fa-plus"></i>
                 <span>Add Institution</span>
               </button>
             </div>
           </div>
 
-          <!-- Institutions Grid -->
-          <div id="institutions-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+          <!-- Institutions Table Container -->
+          <div id="institutions-grid" class="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden"></div>
         </section>
 
         <!-- VIEW 4: PREMIUM PLANS & OFFERS -->

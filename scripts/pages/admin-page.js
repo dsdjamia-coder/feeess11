@@ -4816,16 +4816,36 @@ const updateLogoWidgetPreview = (logoUrl) => {
     const preview = document.getElementById('web-logo-preview');
     const placeholder = document.getElementById('web-logo-placeholder');
     const removeBtn = document.getElementById('web-logo-remove-btn');
+    const statusNote = document.getElementById('web-logo-status-note');
     const logoInput = document.getElementById('web-logo');
-    if (logoInput) logoInput.value = logoUrl || '';
-    if (logoUrl) {
-        if (preview) { preview.src = logoUrl; preview.classList.remove('hidden'); }
+    const cleanLogo = String(logoUrl || '').trim();
+    if (logoInput) logoInput.value = cleanLogo;
+    if (cleanLogo) {
+        if (preview) {
+            preview.src = cleanLogo;
+            preview.classList.remove('hidden');
+            preview.onerror = () => {
+                preview.onerror = null;
+                preview.src = '/assets/images/logo.png';
+            };
+        }
         if (placeholder) placeholder.classList.add('hidden');
         if (removeBtn) removeBtn.classList.remove('hidden');
+        if (statusNote) {
+            statusNote.textContent = 'Custom Institution Logo active (Used across portals & App Install icon)';
+            statusNote.className = 'text-[11px] font-semibold text-emerald-700';
+        }
     } else {
-        if (preview) preview.classList.add('hidden');
-        if (placeholder) placeholder.classList.remove('hidden');
+        if (preview) {
+            preview.src = '/assets/images/logo.png';
+            preview.classList.remove('hidden');
+        }
+        if (placeholder) placeholder.classList.add('hidden');
         if (removeBtn) removeBtn.classList.add('hidden');
+        if (statusNote) {
+            statusNote.textContent = 'Default Company Logo active (Fallback) • Upload custom logo (< 60KB)';
+            statusNote.className = 'text-[11px] font-semibold text-slate-500';
+        }
     }
 };
 
@@ -19102,7 +19122,7 @@ onAuthStateChanged(auth, async (user) => {
             document.getElementById('footer-inst-name').textContent = d.appName || 'Institution Name';
             renderVersionInfo();
             document.getElementById('app-subtitle-header').textContent = d.appSubtitle || 'Institute Management';
-            const effectiveLogoUrl = rememberInstitutionLogo(d.logoUrl || '') || '/assets/images/logo.png';
+            const effectiveLogoUrl = rememberInstitutionLogo(d.logoUrl || '', d.appName || '') || '/assets/images/logo.png';
             ['admin-header-logo', 'admin-loader-logo'].forEach((id) => {
                 const logoEl = document.getElementById(id);
                 if (!logoEl) return;

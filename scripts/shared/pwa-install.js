@@ -1,4 +1,4 @@
-import { registerServiceWorker } from './app-common.js';
+import { DEFAULT_LOGO_URL, escapeHtml, getActivePwaBranding, registerServiceWorker } from './app-common.js';
 
 let deferredPrompt = null;
 let promptListenersInitialized = false;
@@ -32,11 +32,37 @@ export const clearPromptDismissed = () => {
     } catch (_err) {}
 };
 
+const refreshInstallModalBranding = () => {
+    const branding = getActivePwaBranding();
+    const logoImg = document.getElementById('pwa-install-modal-logo');
+    const titleEl = document.getElementById('pwa-install-modal-title');
+    const descEl = document.getElementById('pwa-install-modal-desc');
+    if (logoImg) {
+        logoImg.src = branding.logoUrl || DEFAULT_LOGO_URL;
+        logoImg.onerror = () => {
+            logoImg.onerror = null;
+            logoImg.src = DEFAULT_LOGO_URL;
+        };
+    }
+    if (titleEl) {
+        titleEl.textContent = branding.name ? `Install ${branding.name}` : 'Install App';
+    }
+    if (descEl) {
+        descEl.textContent = branding.isRoot
+            ? 'Install Institution Manage on your device for fast access and a native app experience.'
+            : `Install ${branding.name} on your device with its official app icon for fast access and offline support.`;
+    }
+};
+
 export const initPwaPromptListener = () => {
     if (promptListenersInitialized) return;
     promptListenersInitialized = true;
 
     registerServiceWorker();
+
+    window.addEventListener('pwa-branding-updated', () => {
+        refreshInstallModalBranding();
+    });
 
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
@@ -58,8 +84,12 @@ export const initPwaPromptListener = () => {
 
 const ensureInstallModal = () => {
     let modal = document.getElementById('pwa-install-modal');
-    if (modal) return modal;
+    if (modal) {
+        refreshInstallModalBranding();
+        return modal;
+    }
 
+    const branding = getActivePwaBranding();
     modal = document.createElement('div');
     modal.id = 'pwa-install-modal';
     modal.className = 'fixed inset-0 z-[9999] hidden items-center justify-center bg-slate-950/65 backdrop-blur-xs p-4 no-print';
@@ -71,12 +101,12 @@ const ensureInstallModal = () => {
             <button type="button" id="pwa-install-close-btn" class="absolute top-3.5 right-3.5 h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition cursor-pointer border-none" aria-label="Close">
                 <i class="fas fa-times text-xs"></i>
             </button>
-            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white text-2xl shadow-lg shadow-blue-500/25">
-                <i class="fas fa-download"></i>
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white border border-slate-200 p-2 flex items-center justify-center shadow-md">
+                <img id="pwa-install-modal-logo" src="${escapeHtml(branding.logoUrl || DEFAULT_LOGO_URL)}" alt="App Icon" class="w-full h-full object-contain rounded-xl" referrerpolicy="no-referrer">
             </div>
-            <h3 id="pwa-install-modal-title" class="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight mb-2">Install App</h3>
-            <p class="text-xs sm:text-sm text-slate-600 mb-6 leading-relaxed">
-                Install this app on your device for fast access, offline availability, and an app-like experience.
+            <h3 id="pwa-install-modal-title" class="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight mb-2">${escapeHtml(branding.name ? `Install ${branding.name}` : 'Install App')}</h3>
+            <p id="pwa-install-modal-desc" class="text-xs sm:text-sm text-slate-600 mb-6 leading-relaxed">
+                ${escapeHtml(branding.isRoot ? 'Install Institution Manage on your device for fast access and a native app experience.' : `Install ${branding.name} on your device with its official app icon for fast access and offline support.`)}
             </p>
             <div class="flex flex-col gap-2.5">
                 <button type="button" id="pwa-install-action-btn" class="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-sm font-bold shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer border-none">
@@ -90,12 +120,14 @@ const ensureInstallModal = () => {
         </div>
     `;
     document.body.appendChild(modal);
+    refreshInstallModalBranding();
     return modal;
 };
 
 const showIosInstallGuide = () => {
     let guideModal = document.getElementById('pwa-ios-guide-modal');
     if (!guideModal) {
+        const branding = getActivePwaBranding();
         guideModal = document.createElement('div');
         guideModal.id = 'pwa-ios-guide-modal';
         guideModal.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/65 backdrop-blur-xs p-4 no-print';
@@ -104,10 +136,10 @@ const showIosInstallGuide = () => {
                 <button type="button" id="pwa-ios-guide-close" class="absolute top-3.5 right-3.5 h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition cursor-pointer border-none" aria-label="Close">
                     <i class="fas fa-times text-xs"></i>
                 </button>
-                <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl">
-                    <i class="fas fa-arrow-up-from-bracket"></i>
+                <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white border border-slate-200 p-2 flex items-center justify-center shadow-sm">
+                    <img src="${escapeHtml(branding.logoUrl || DEFAULT_LOGO_URL)}" alt="App Icon" class="w-full h-full object-contain rounded-xl" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/assets/images/logo.png'">
                 </div>
-                <h3 class="text-lg font-extrabold text-slate-900 mb-2">Install on iOS</h3>
+                <h3 class="text-base sm:text-lg font-extrabold text-slate-900 mb-2">Install ${escapeHtml(branding.name || 'App')} on iOS</h3>
                 <p class="text-xs text-slate-600 mb-4 leading-relaxed text-left">
                     1. Tap the <strong>Share</strong> button <i class="fas fa-arrow-up-from-bracket mx-1 text-blue-600"></i> in Safari.<br>
                     2. Scroll down and tap <strong>Add to Home Screen</strong> <i class="fas fa-plus-square mx-1 text-slate-700"></i>.<br>

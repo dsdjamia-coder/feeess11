@@ -171,8 +171,15 @@ const setLink = (id, value, prefix = '') => {
     if (safeValue) el.href = safeValue;
 };
 
-const DEFAULT_LOGO_URL = '/assets/images/logo.png';
-const LOGO_CACHE_KEY = 'institution_logo_url_v1';
+export const DEFAULT_LOGO_URL = '/assets/images/logo.png';
+export const DEFAULT_PWA_ICON_192 = '/assets/images/pwa-192x192.png';
+export const DEFAULT_PWA_ICON_512 = '/assets/images/pwa-512x512.png';
+export const DEFAULT_PWA_ICON_MASKABLE_512 = '/assets/images/pwa-maskable-512x512.png';
+export const DEFAULT_APPLE_TOUCH_ICON = '/assets/images/apple-touch-icon.png';
+
+const getLogoCacheKey = () => `institution_logo_url_v2_${INSTITUTION_ID || 'school'}`;
+const getNameCacheKey = () => `institution_name_v2_${INSTITUTION_ID || 'school'}`;
+
 const FAST_LOGO_IDS = [
     'splash-logo-img',
     'header-logo',
@@ -191,19 +198,261 @@ const normalizeLogoUrl = (logoUrl = '') => {
 };
 
 export const getCachedInstitutionLogo = () => {
+    if (isRootGatewayLocation()) return '';
     try {
-        return normalizeLogoUrl(localStorage.getItem(LOGO_CACHE_KEY) || '');
+        return normalizeLogoUrl(localStorage.getItem(getLogoCacheKey()) || '');
     } catch (_error) {
         return '';
     }
 };
 
-export const rememberInstitutionLogo = (logoUrl = '') => {
+export const getCachedInstitutionName = () => {
+    if (isRootGatewayLocation()) return '';
+    try {
+        return String(localStorage.getItem(getNameCacheKey()) || '').trim();
+    } catch (_error) {
+        return '';
+    }
+};
+
+export const rememberInstitutionName = (name = '') => {
+    if (isRootGatewayLocation()) return '';
+    const cleanName = String(name || '').trim();
+    try {
+        if (cleanName) localStorage.setItem(getNameCacheKey(), cleanName);
+        else localStorage.removeItem(getNameCacheKey());
+    } catch (_error) {}
+    return cleanName;
+};
+
+let lastDynamicPwaSignature = '';
+const generatedIconCache = new Map();
+
+const buildCondensedShortName = (fullName = '') => {
+    const clean = String(fullName || '').trim();
+    if (!clean) return 'InstManage';
+    if (clean.length <= 12) return clean;
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+        const firstWord = words[0];
+        if (firstWord.length >= 3 && firstWord.length <= 12) return firstWord;
+        const acronym = words.map((w) => w[0]).join('').toUpperCase();
+        if (acronym.length >= 3 && acronym.length <= 12) return acronym;
+    }
+    return clean.slice(0, 12).trim();
+};
+
+const renderSquarePngIconsFromLogo = (logoSrc = '') => new Promise((resolve) => {
+    const cleanSrc = normalizeLogoUrl(logoSrc);
+    if (!cleanSrc || cleanSrc === DEFAULT_LOGO_URL || cleanSrc.endsWith('/assets/images/logo.png')) {
+        resolve(null);
+        return;
+    }
+    if (generatedIconCache.has(cleanSrc)) {
+        resolve(generatedIconCache.get(cleanSrc));
+        return;
+    }
+    try {
+        const img = new Image();
+        if (!cleanSrc.startsWith('data:')) {
+            img.crossOrigin = 'anonymous';
+        }
+        img.onload = () => {
+            try {
+                const buildSize = (size, padRatio = 0.06, fillBg = '#ffffff') => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = size;
+                    canvas.height = size;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return '';
+                    if (fillBg) {
+                        ctx.fillStyle = fillBg;
+                        ctx.fillRect(0, 0, size, size);
+                    }
+                    const pad = Math.round(size * padRatio);
+                    const avail = size - pad * 2;
+                    const natW = img.naturalWidth || img.width || size;
+                    const natH = img.naturalHeight || img.height || size;
+                    const scale = Math.min(avail / natW, avail / natH);
+                    const drawW = Math.round(natW * scale);
+                    const drawH = Math.round(natH * scale);
+                    const dx = Math.round((size - drawW) / 2);
+                    const dy = Math.round((size - drawH) / 2);
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, dx, dy, drawW, drawH);
+                    return canvas.toDataURL('image/png');
+                };
+
+                const icon192 = buildSize(192, 0.06, '#ffffff');
+                const icon512 = buildSize(512, 0.06, '#ffffff');
+                const iconMaskable512 = buildSize(512, 0.14, '#ffffff');
+                const iconApple180 = buildSize(180, 0.08, '#ffffff');
+
+                if (icon192 && icon512) {
+                    const pack = {
+                        icon192,
+                        icon512,
+                        iconMaskable512: iconMaskable512 || icon512,
+                        iconApple180: iconApple180 || icon192
+                    };
+                    generatedIconCache.set(cleanSrc, pack);
+                    resolve(pack);
+                    return;
+                }
+            } catch (_canvasErr) {}
+            resolve(null);
+        };
+        img.onerror = () => resolve(null);
+        img.src = cleanSrc;
+    } catch (_err) {
+        resolve(null);
+    }
+});
+
+export const syncDynamicPwaBranding = async ({ name = '', logoUrl = '' } = {}) => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const isRoot = isRootGatewayLocation() || window.location.pathname.startsWith('/company');
+    const resolvedName = isRoot
+        ? 'Institution Manage'
+        : (String(name || '').trim() || getCachedInstitutionName() || 'Institution Manage');
+    const resolvedLogo = isRoot
+        ? DEFAULT_LOGO_URL
+        : (normalizeLogoUrl(logoUrl) || getCachedInstitutionLogo() || DEFAULT_LOGO_URL);
+
+    if (!isRoot && name) {
+        rememberInstitutionName(name);
+    }
+
+    const startPath = isRoot
+        ? '/'
+        : `${BASE_PATH || `/${INSTITUTION_ID}`}/`;
+    const signature = `${startPath}::${resolvedName}::${resolvedLogo}`;
+    if (signature === lastDynamicPwaSignature) return;
+    lastDynamicPwaSignature = signature;
+
+    const shortName = isRoot ? 'InstManage' : buildCondensedShortName(resolvedName);
+
+    let appleTitleMeta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (!appleTitleMeta && document.head) {
+        appleTitleMeta = document.createElement('meta');
+        appleTitleMeta.setAttribute('name', 'apple-mobile-web-app-title');
+        document.head.appendChild(appleTitleMeta);
+    }
+    if (appleTitleMeta) {
+        appleTitleMeta.setAttribute('content', resolvedName);
+    }
+
+    document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((linkEl) => {
+        if (linkEl.getAttribute('href') !== resolvedLogo) {
+            linkEl.setAttribute('href', resolvedLogo);
+        }
+    });
+
+    const customPack = (!isRoot && resolvedLogo !== DEFAULT_LOGO_URL)
+        ? await renderSquarePngIconsFromLogo(resolvedLogo)
+        : null;
+
+    const appleIconHref = customPack?.iconApple180 || DEFAULT_APPLE_TOUCH_ICON;
+    document.querySelectorAll('link[rel="apple-touch-icon"]').forEach((linkEl) => {
+        if (linkEl.getAttribute('href') !== appleIconHref) {
+            linkEl.setAttribute('href', appleIconHref);
+        }
+    });
+
+    const origin = window.location.origin;
+    const toAbs = (url) => (url.startsWith('data:') || url.startsWith('http')) ? url : `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+
+    const manifestObj = {
+        id: `${origin}${startPath}`,
+        name: resolvedName,
+        short_name: shortName,
+        description: isRoot
+            ? 'Institution Manage - Multi-Institution Management Platform'
+            : `${resolvedName} - Official Portal & Learning Management App`,
+        start_url: `${origin}${startPath}`,
+        scope: `${origin}${startPath}`,
+        display: 'standalone',
+        background_color: '#f8fafc',
+        theme_color: '#2563eb',
+        icons: [
+            {
+                src: toAbs(customPack?.icon192 || DEFAULT_PWA_ICON_192),
+                sizes: '192x192',
+                type: 'image/png',
+                purpose: 'any'
+            },
+            {
+                src: toAbs(customPack?.icon512 || DEFAULT_PWA_ICON_512),
+                sizes: '512x512',
+                type: 'image/png',
+                purpose: 'any'
+            },
+            {
+                src: toAbs(customPack?.iconMaskable512 || DEFAULT_PWA_ICON_MASKABLE_512),
+                sizes: '512x512',
+                type: 'image/png',
+                purpose: 'maskable'
+            }
+        ]
+    };
+
+    try {
+        const manifestJson = JSON.stringify(manifestObj);
+        const manifestDataUrl = `data:application/manifest+json;charset=utf-8,${encodeURIComponent(manifestJson)}`;
+        let manifestLink = document.querySelector('link[rel="manifest"]');
+        if (!manifestLink && document.head) {
+            manifestLink = document.createElement('link');
+            manifestLink.setAttribute('rel', 'manifest');
+            document.head.appendChild(manifestLink);
+        }
+        if (manifestLink) {
+            manifestLink.setAttribute('href', manifestDataUrl);
+        }
+    } catch (_err) {}
+
+    try {
+        window.dispatchEvent(new CustomEvent('pwa-branding-updated', {
+            detail: {
+                name: resolvedName,
+                shortName,
+                logoUrl: resolvedLogo,
+                isRoot
+            }
+        }));
+    } catch (_err) {}
+};
+
+export const getActivePwaBranding = () => {
+    const isRoot = isRootGatewayLocation() || (typeof window !== 'undefined' && window.location.pathname.startsWith('/company'));
+    const name = isRoot
+        ? 'Institution Manage'
+        : (getCachedInstitutionName() || 'Institution Manage');
+    const logoUrl = isRoot
+        ? DEFAULT_LOGO_URL
+        : (getCachedInstitutionLogo() || DEFAULT_LOGO_URL);
+    return {
+        name,
+        shortName: isRoot ? 'InstManage' : buildCondensedShortName(name),
+        logoUrl,
+        isRoot
+    };
+};
+
+export const rememberInstitutionLogo = (logoUrl = '', institutionName = '') => {
+    if (isRootGatewayLocation()) return DEFAULT_LOGO_URL;
     const normalizedLogo = normalizeLogoUrl(logoUrl);
     try {
-        if (normalizedLogo) localStorage.setItem(LOGO_CACHE_KEY, normalizedLogo);
-        else localStorage.removeItem(LOGO_CACHE_KEY);
+        if (normalizedLogo) localStorage.setItem(getLogoCacheKey(), normalizedLogo);
+        else localStorage.removeItem(getLogoCacheKey());
     } catch (_error) {}
+    if (institutionName) {
+        rememberInstitutionName(institutionName);
+    }
+    syncDynamicPwaBranding({
+        name: institutionName || getCachedInstitutionName(),
+        logoUrl: normalizedLogo || DEFAULT_LOGO_URL
+    });
     return normalizedLogo;
 };
 
@@ -244,6 +493,7 @@ const setLogo = (ids, logoUrl, { useCachedFallback = false } = {}) => {
 
 export const applyCachedInstitutionLogo = (ids = FAST_LOGO_IDS) => {
     setLogo(ids, '', { useCachedFallback: true });
+    syncDynamicPwaBranding();
 };
 
 const applyCachedLogoWhenReady = () => applyCachedInstitutionLogo();
@@ -876,7 +1126,7 @@ export const applyInstitutionBranding = (conf = {}, options = {}) => {
         }
     });
 
-    rememberInstitutionLogo(conf.logoUrl || '');
+    rememberInstitutionLogo(conf.logoUrl || '', appName);
     setLogo(logoIds, conf.logoUrl);
     const effectiveFavicon = normalizeLogoUrl(conf.logoUrl) || DEFAULT_LOGO_URL;
     document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((linkEl) => {

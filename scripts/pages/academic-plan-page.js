@@ -2950,10 +2950,17 @@ const updatePrintBrandingHeaders = (docTitle, dateElId) => {
         const dEl = document.getElementById(dateElId);
         if (dEl) dEl.textContent = `Date of Publication: ${todayStr}`;
     }
-    if (institutionConfig.logoUrl) {
-        document.querySelectorAll('.inst-print-logo').forEach(img => { img.src = institutionConfig.logoUrl; });
-        document.querySelectorAll('.inst-print-logo-wrap').forEach(wrap => { wrap.classList.remove('hidden'); });
-    }
+    const effectivePrintLogo = institutionConfig.logoUrl || '/assets/images/logo.png';
+    document.querySelectorAll('.inst-print-logo').forEach((img) => {
+        img.src = effectivePrintLogo;
+        img.onerror = () => {
+            img.onerror = null;
+            img.src = '/assets/images/logo.png';
+        };
+    });
+    document.querySelectorAll('.inst-print-logo-wrap').forEach((wrap) => {
+        wrap.classList.remove('hidden');
+    });
 };
 
 const printTimetableRoutine = () => {
@@ -6189,13 +6196,15 @@ const loadMasterExamTimetable = async () => {
     if (placeEl) placeEl.textContent = `Place: ${instPlace}`;
     if (issueDate) issueDate.textContent = `Date of Publication: ${new Date().toLocaleDateString('en-GB')}`;
 
-    if (institutionConfig.logoUrl) {
-        const logoImg = document.getElementById('master-inst-logo');
-        const logoContainer = document.getElementById('master-inst-logo-container');
-        if (logoImg && logoContainer) {
-            logoImg.src = institutionConfig.logoUrl;
-            logoContainer.classList.remove('hidden');
-        }
+    const logoImg = document.getElementById('master-inst-logo');
+    const logoContainer = document.getElementById('master-inst-logo-container');
+    if (logoImg && logoContainer) {
+        logoImg.src = institutionConfig.logoUrl || '/assets/images/logo.png';
+        logoImg.onerror = () => {
+            logoImg.onerror = null;
+            logoImg.src = '/assets/images/logo.png';
+        };
+        logoContainer.classList.remove('hidden');
     }
 
     const grid = document.getElementById('exam-master-grid');
