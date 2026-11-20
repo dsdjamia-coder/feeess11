@@ -18,7 +18,7 @@ import {
   signOut as firebaseSignOut
 } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js';
-import { auth, db, functions } from '../../config/firebase-config.js';
+import { auth, db, functions, firebaseConfig } from '../../config/firebase-config.js';
 import {
   COMPANY_COLLECTION,
   COMPANY_CONFIG_DOC_ID,
