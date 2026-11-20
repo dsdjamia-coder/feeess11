@@ -17,7 +17,8 @@ import {
   onAuthStateChanged,
   signOut as firebaseSignOut
 } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-import { auth, db } from '../../config/firebase-config.js';
+import { httpsCallable } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js';
+import { auth, db, functions } from '../../config/firebase-config.js';
 import {
   COMPANY_COLLECTION,
   COMPANY_CONFIG_DOC_ID,
@@ -2295,6 +2296,19 @@ const verifyCompanyOwnerSession = async (user) => {
       || data.ownersIndex?.[email] === true
       || ownersList.some((o) => String(o?.email || '').trim().toLowerCase() === email && o?.isActive !== false);
     if (!isOwner) return false;
+
+    try {
+      const tokenRes = await user.getIdTokenResult();
+      if (tokenRes?.claims?.companyOwner !== true) {
+        const syncClaimsFn = httpsCallable(functions, 'syncCompanyOwnerClaims');
+        const syncRes = await syncClaimsFn();
+        if (syncRes?.data?.ok) {
+          await user.getIdToken(true);
+        }
+      }
+    } catch (claimErr) {
+      console.warn('Company owner claim sync notice:', claimErr?.message || claimErr);
+    }
 
     verifiedCompanyOwnerEmail = email;
     const brandTitle = document.getElementById('company-brand-title');

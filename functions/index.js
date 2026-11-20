@@ -707,3 +707,39 @@ exports.changeOwnPassword = onCall({ cors: true }, async (request) => {
 
   return { ok: true };
 });
+
+// =========================================================================
+// 6. PROTECTED (COMPANY OWNER ONLY): syncCompanyOwnerClaims
+// =========================================================================
+exports.syncCompanyOwnerClaims = onCall({ cors: true }, async (request) => {
+  const authCtx = request.auth;
+  if (!authCtx || !authCtx.uid || !authCtx.token) {
+    throw new HttpsError('unauthenticated', 'Authentication is required.');
+  }
+  if (authCtx.token.firebase?.sign_in_provider === 'custom' || authCtx.token.firebase?.sign_in_provider === 'anonymous') {
+    throw new HttpsError('permission-denied', 'Company Owner email authentication is required.');
+  }
+  const verified = await isCompanyOwnerAuth(authCtx);
+  if (!verified) {
+    throw new HttpsError('permission-denied', 'Account is not authorized as a Company Owner in company/config.');
+  }
+
+  const userRecord = await adminAuth.getUser(authCtx.uid);
+  const existingClaims = (userRecord.customClaims && typeof userRecord.customClaims === 'object')
+    ? userRecord.customClaims
+    : {};
+
+  if (existingClaims.companyOwner !== true) {
+    await adminAuth.setCustomUserClaims(authCtx.uid, {
+      ...existingClaims,
+      companyOwner: true
+    });
+  }
+
+  return {
+    ok: true,
+    companyOwner: true,
+    email: String(authCtx.token.email || '').trim().toLowerCase()
+  };
+});
+
