@@ -3,7 +3,7 @@
   "description": "Firebase Cloud Functions (Gen 2) for Custom Username + Custom Auth Token Authentication",
   "main": "index.js",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "scripts": {
     "lint": "node --check index.js",
