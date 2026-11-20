@@ -40,10 +40,14 @@ export const buildStaffUid = (slug = '', staffId = '') =>
 const extractCallableErrorMessage = (err, fallback = 'Authentication service request failed.') => {
   const code = String(err?.code || '').trim();
   const rawMsg = String(err?.message || '').replace(/^Firebase:\s*/i, '').trim();
-  if (code === 'functions/unavailable' || code === 'functions/not-found' || code === 'functions/internal') {
-    if (!rawMsg || rawMsg.toLowerCase() === 'internal' || rawMsg.toLowerCase().includes('not-found')) {
-      return 'Authentication Cloud Function is not deployed yet. Deploy functions via "firebase deploy --only functions".';
-    }
+  if (code === 'functions/not-found') {
+    return 'Authentication Cloud Function is not deployed yet. Deploy functions via "firebase deploy --only functions".';
+  }
+  if (code === 'functions/unavailable') {
+    return 'Authentication service is temporarily unavailable. Check your network connection and try again.';
+  }
+  if (code === 'functions/internal' && (!rawMsg || rawMsg.toLowerCase() === 'internal')) {
+    return 'Authentication server internal error while issuing session token. Ensure the Cloud Functions runtime service account has the "Service Account Token Creator" IAM role and the IAM Service Account Credentials API is enabled.';
   }
   return rawMsg || fallback;
 };

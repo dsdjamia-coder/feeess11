@@ -325,7 +325,20 @@ exports.loginWithCustomUsername = onCall({ cors: true }, async (request) => {
     displayUsername
   };
 
-  const customToken = await adminAuth.createCustomToken(uid, customClaims);
+  let customToken = '';
+  try {
+    customToken = await adminAuth.createCustomToken(uid, customClaims);
+  } catch (tokenErr) {
+    console.error('[loginWithCustomUsername] createCustomToken failed:', tokenErr);
+    const errText = String(tokenErr?.message || tokenErr || '');
+    if (/signBlob|iamcredentials|permission|denied|token creator/i.test(errText)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Custom token signing permission is missing on the Cloud Functions runtime service account. Grant "Service Account Token Creator" to the Compute Engine default service account and enable the IAM Service Account Credentials API.'
+      );
+    }
+    throw new HttpsError('internal', `Failed to generate authentication token: ${errText.slice(0, 180)}`);
+  }
 
   return {
     customToken,
