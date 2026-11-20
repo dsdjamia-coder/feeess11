@@ -8599,16 +8599,29 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         syncLiveStaffSession({ authoritative: !snap.metadata?.fromCache });
       }, () => {});
 
-      if ((window.AppSession?.getRole?.() || '') === 'admin' && auth.currentUser && !auth.currentUser.isAnonymous) {
+      if ((window.AppSession?.getRole?.() || '') === 'admin' && !window.AppSession?.hasCompanySession?.() && auth.currentUser && !auth.currentUser.isAnonymous) {
         onSnapshot(doc(db, `${BASE_PATH}/settings`, ADMIN_AUTH_DOC_ID), (adminSnap) => {
           if (isRevokingOfficialSession || adminSnap.metadata?.fromCache || !adminSnap.exists()) return;
+          if (window.AppSession?.hasCompanySession?.()) return;
           const adminData = adminSnap.data() || {};
-          const currentEmail = normalizeText(auth.currentUser?.email || userSession?.email || '');
-          if (!currentEmail) return;
+          const currentUid = String(auth.currentUser?.uid || '').trim();
+          const currentLogin = normalizeText(auth.currentUser?.email || userSession?.username || userSession?.email || '');
+          if (!currentUid && !currentLogin) return;
+
+          const adminUid = String(adminData.uid || '').trim();
+          const primaryUsername = normalizeText(adminData.username || adminData.displayUsername || adminData.loginDisplay || '');
           const primaryEmail = normalizeText(adminData.email || '');
           const extraAdmins = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminData.admins) ? adminData.admins : []);
-          const stillActive = (primaryEmail && primaryEmail === currentEmail)
-            || extraAdmins.some((acc) => normalizeText(acc?.email) === currentEmail && acc?.isActive !== false);
+
+          const stillActive = adminData.isActive !== false && (
+            (adminUid && currentUid && adminUid === currentUid)
+            || (primaryUsername && currentLogin && primaryUsername === currentLogin)
+            || (primaryEmail && currentLogin && primaryEmail === currentLogin)
+            || extraAdmins.some((acc) => acc?.isActive !== false && (
+              (acc?.uid && currentUid && String(acc.uid).trim() === currentUid)
+              || (currentLogin && (normalizeText(acc?.username) === currentLogin || normalizeText(acc?.displayUsername) === currentLogin || normalizeText(acc?.email) === currentLogin))
+            ))
+          );
           if (!stillActive) {
             isRevokingOfficialSession = true;
             window.AppSession?.revokeCurrentAccount?.({

@@ -9291,9 +9291,24 @@ onAuthStateChanged(auth, async (user) => {
             const adminSnap = await getDoc(adminRef);
 
             const adminData = adminSnap.exists() ? adminSnap.data() : {};
-            const adminEmail = (adminData.email || '').toLowerCase();
+            const adminUid = String(adminData.uid || '').trim();
+            const adminUsername = String(adminData.username || adminData.displayUsername || adminData.loginDisplay || '').trim().toLowerCase();
+            const adminEmail = String(adminData.email || '').trim().toLowerCase();
+            const normalizedLogin = String(currentUserEmail || '').trim().toLowerCase();
             const adminAccounts = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminData.admins) ? adminData.admins : []);
-            if(adminEmail === (currentUserEmail || '').toLowerCase() || adminAccounts.some((account) => (account.email || '').toLowerCase() === (currentUserEmail || '').toLowerCase() && account.isActive !== false) || window.AppSession?.getRole?.() === 'admin') {
+            const matchesAdminDoc = adminData.isActive !== false && (
+                (adminUid && user?.uid && adminUid === user.uid)
+                || (adminUsername && normalizedLogin && adminUsername === normalizedLogin)
+                || (adminEmail && normalizedLogin && adminEmail === normalizedLogin)
+                || adminAccounts.some((account) => account?.isActive !== false && (
+                    (account?.uid && user?.uid && String(account.uid).trim() === user.uid)
+                    || (normalizedLogin && (
+                        String(account?.username || '').trim().toLowerCase() === normalizedLogin
+                        || String(account?.email || '').trim().toLowerCase() === normalizedLogin
+                    ))
+                ))
+            );
+            if (matchesAdminDoc || window.AppSession?.getRole?.() === 'admin' || window.AppSession?.hasCompanySession?.()) {
                 isCurrentAdmin = true;
                 window.AppSession?.startAdmin();
             } else {
