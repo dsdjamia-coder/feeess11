@@ -38,18 +38,25 @@
     },
     "StaffAccess": {
       "title": "StaffAccess",
-      "description": "Permissions and access control for staff members.",
+      "description": "Permissions and access control for staff members keyed by Custom Auth UID.",
       "type": "object",
       "properties": {
-        "email": { "type": "string" },
+        "uid": { "type": "string" },
+        "staffId": { "type": "string" },
+        "username": { "type": "string" },
+        "displayUsername": { "type": "string" },
         "loginId": { "type": "string" },
-        "passwordHash": { "type": "string" },
         "isActive": { "type": "boolean" },
-        "collection": { "type": "boolean" },
-        "result": { "type": "boolean" },
-        "worksheet": { "type": "boolean" },
-        "admin": { "type": "boolean" },
-        "assignedClasses": { "type": "array" }
+        "canCollect": { "type": "boolean" },
+        "canManageResults": { "type": "boolean" },
+        "canAccessWorksheet": { "type": "boolean" },
+        "canAccessAttendance": { "type": "boolean" },
+        "canAccessAcademicPlan": { "type": "boolean" },
+        "canAccessActivity": { "type": "boolean" },
+        "canAccessEvaluation": { "type": "boolean" },
+        "canAccessAdmin": { "type": "boolean" },
+        "actLikeSuperAdmin": { "type": "boolean" },
+        "dutyClasses": { "type": "array" }
       }
     },
     "Student": {
@@ -204,9 +211,36 @@
         "updatedBy": { "type": "string", "maxLength": 160 }
       },
       "required": ["pageKey", "images"]
+    },
+    "AuthCredential": {
+      "title": "AuthCredential",
+      "description": "Server-only custom username credential vault storing salted scrypt password hashes and deterministic Auth UIDs. Inaccessible to clients.",
+      "type": "object",
+      "properties": {
+        "keyHash": { "type": "string" },
+        "username": { "type": "string", "maxLength": 60 },
+        "displayUsername": { "type": "string", "maxLength": 60 },
+        "passwordSalt": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "uid": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin", "staff"] },
+        "institutionId": { "type": "string" },
+        "institutionName": { "type": "string" },
+        "staffId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "failedAttempts": { "type": "number" },
+        "lockUntilMs": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["keyHash", "username", "passwordSalt", "passwordHash", "uid", "role", "institutionId"]
     }
   },
   "firestore": {
+    "/authCredentials/{keyHash}": {
+      "schema": { "$ref": "#/entities/AuthCredential" },
+      "description": "Server-only custom username authentication vault accessed strictly via Firebase Cloud Functions"
+    },
     "/company/publicCatalog": {
       "schema": { "$ref": "#/entities/CompanyPublicCatalog" },
       "description": "Publicly readable subscription plans and support contact channels"

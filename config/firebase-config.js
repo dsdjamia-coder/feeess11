@@ -1,6 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { initializeFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFunctions } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+import { getStorage } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -37,8 +39,10 @@ const db = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabas
   ? initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId)
   : initializeFirestore(app, { experimentalForceLongPolling: true });
 const auth = getAuth(app);
+const functions = getFunctions(app, 'asia-south1');
+const storage = getStorage(app);
 if (typeof window !== 'undefined') {
   window.__firebaseAuth = auth;
 }
 
-export { app, db, auth, appCheck, canEnableAppCheck, firebaseConfig };
+export { app, db, auth, functions, storage, appCheck, canEnableAppCheck, firebaseConfig };

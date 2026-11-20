@@ -4,6 +4,7 @@ import { db, auth } from '../../config/firebase-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, isUpcomingAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
 import { registerPortalForPwa } from '../shared/pwa-install.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
+import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -3652,59 +3653,85 @@ const studentPwa = registerPortalForPwa('student', {
                     alert('Photo upload is currently disabled by administrator.');
                     return;
                 }
-                const base64 = studentInteractiveCropper.getCroppedBase64(50, 400);
-
-                document.getElementById('student-crop-modal')?.classList.add('hidden');
-                document.getElementById('student-crop-modal')?.classList.remove('flex');
-
-                // Render updated image on UI immediately with circular progress ring
-                document.getElementById('dash-avatar').innerHTML = `<img src="${base64}" class="w-full h-full object-cover rounded-full" alt="Profile Photo">`;
+                const previousPhoto = String(studentProfile?.photo || studentProfile?.profile?.photo || '').trim();
+                let previewObjectUrl = '';
                 const progressCtrl = startAvatarCircularProgress();
 
                 try {
+                    const blob = await studentInteractiveCropper.getCroppedBlob(
+                        MEDIA_PRESETS.PROFILE.maxKb,
+                        MEDIA_PRESETS.PROFILE.maxDim
+                    );
+                    previewObjectUrl = URL.createObjectURL(blob);
+
+                    document.getElementById('student-crop-modal')?.classList.add('hidden');
+                    document.getElementById('student-crop-modal')?.classList.remove('flex');
+
+                    // Show crisp temporary local preview while uploading with circular progress ring
+                    document.getElementById('dash-avatar').innerHTML = `<img src="${previewObjectUrl}" class="w-full h-full object-cover rounded-full" alt="Profile Photo">`;
+
                     if (!auth.currentUser) {
                         await signInAnonymously(auth);
                     }
-                    progressCtrl.setProgress(35);
+                    progressCtrl.setProgress(15);
+
+                    const uploadRes = await uploadImageToStorage(
+                        blob,
+                        `institutions/${INSTITUTION_ID}/students/submissions`,
+                        {
+                            ...MEDIA_PRESETS.PROFILE,
+                            skipCompression: true,
+                            fileNamePrefix: studentId,
+                            onProgress: (pct) => {
+                                progressCtrl.setProgress(15 + Math.round(pct * 0.55));
+                            }
+                        }
+                    );
+                    const uploadedUrl = uploadRes.url;
+
+                    progressCtrl.setProgress(75);
                     const studentDocRef = doc(db, `${BASE_PATH}/students`, studentId);
                     await setDoc(studentDocRef, {
-                        photo: base64,
-                        profile: { photo: base64 }
+                        photo: uploadedUrl,
+                        profile: { photo: uploadedUrl }
                     }, { merge: true });
 
-                    progressCtrl.setProgress(85);
+                    progressCtrl.setProgress(90);
                     await setDoc(doc(db, `${BASE_PATH}/studentPhotoSubmissions`, studentId), {
-                        photo: base64,
+                        photo: uploadedUrl,
                         updatedAt: Date.now()
                     }, { merge: true });
 
+                    if (previousPhoto && previousPhoto !== uploadedUrl) {
+                        deleteStorageUrlIfManaged(previousPhoto);
+                    }
+
                     await progressCtrl.complete();
-                    document.getElementById('dash-avatar').innerHTML = `<img src="${base64}" class="w-full h-full object-cover rounded-full" alt="Profile Photo">`;
+                    document.getElementById('dash-avatar').innerHTML = `<img src="${escapeHtml(uploadedUrl)}" class="w-full h-full object-cover rounded-full" alt="Profile Photo">`;
                     const viewerImgEl = document.getElementById('student-photo-viewer-img');
-                    if (viewerImgEl) viewerImgEl.src = base64;
+                    if (viewerImgEl) viewerImgEl.src = uploadedUrl;
                     const topPhotoInput = document.getElementById('top-edit-photo-val');
                     const topPhotoPreview = document.getElementById('top-edit-photo-preview');
                     const topPhotoPlaceholder = document.getElementById('top-edit-photo-placeholder');
                     const topRemoveBtn = document.getElementById('top-edit-remove-btn');
-                    if (topPhotoInput) topPhotoInput.value = base64;
-                    if (topPhotoPreview) { topPhotoPreview.src = base64; topPhotoPreview.classList.remove('hidden'); }
+                    if (topPhotoInput) topPhotoInput.value = uploadedUrl;
+                    if (topPhotoPreview) { topPhotoPreview.src = uploadedUrl; topPhotoPreview.classList.remove('hidden'); }
                     if (topPhotoPlaceholder) topPhotoPlaceholder.classList.add('hidden');
                     if (topRemoveBtn) topRemoveBtn.classList.remove('hidden');
                     if (studentProfile) {
-                        studentProfile.photo = base64;
-                        studentProfile.profile = { ...(studentProfile.profile || {}), photo: base64 };
+                        studentProfile.photo = uploadedUrl;
+                        studentProfile.profile = { ...(studentProfile.profile || {}), photo: uploadedUrl };
                     }
                     if (studentPhotoSubmission && typeof studentPhotoSubmission === 'object') {
-                        studentPhotoSubmission.photo = base64;
+                        studentPhotoSubmission.photo = uploadedUrl;
                     }
                     if (groupMemberProfileMap[studentId]) {
                         groupMemberProfileMap[studentId] = {
                             ...groupMemberProfileMap[studentId],
-                            photo: base64,
-                            profile: { ...(groupMemberProfileMap[studentId].profile || {}), photo: base64 }
+                            photo: uploadedUrl,
+                            profile: { ...(groupMemberProfileMap[studentId].profile || {}), photo: uploadedUrl }
                         };
                     }
-                    // Photo is already 100% uploaded and saved; do not re-open the edit modal for a second Save confirmation
                     wasStudentEditModalOpenBeforeCrop = false;
                     if (studentProfile) {
                         renderConcessionAndGroupSection(studentProfile);
@@ -3712,7 +3739,11 @@ const studentPwa = registerPortalForPwa('student', {
                 } catch (err) {
                     progressCtrl.fail();
                     console.error('Failed to save student photo:', err);
-                    alert('Failed to save photo: ' + err.message);
+                    alert('Failed to save photo: ' + (err?.message || err));
+                } finally {
+                    if (previewObjectUrl) {
+                        try { URL.revokeObjectURL(previewObjectUrl); } catch (_) {}
+                    }
                 }
             });
         };
@@ -4254,7 +4285,9 @@ const studentPwa = registerPortalForPwa('student', {
                     alert('Photo upload is currently disabled by administrator.');
                     return;
                 }
-                const newPhoto = photoValInput?.value || '';
+                const newPhoto = String(photoValInput?.value || '').trim();
+                const liveBefore = studentProfile || currentSt;
+                const previousPhoto = String(liveBefore?.photo || liveBefore?.profile?.photo || '').trim();
 
                 saveBtn.disabled = true;
                 saveBtn.textContent = 'Saving...';
@@ -4278,6 +4311,10 @@ const studentPwa = registerPortalForPwa('student', {
                         photo: newPhoto,
                         updatedAt: Date.now()
                     }, { merge: true });
+
+                    if (previousPhoto && previousPhoto !== newPhoto) {
+                        deleteStorageUrlIfManaged(previousPhoto);
+                    }
 
                     const liveSt = studentProfile || currentSt;
                     liveSt.photo = newPhoto;

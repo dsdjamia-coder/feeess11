@@ -1,8 +1,9 @@
-import { onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
 import { db, auth } from '../../config/firebase-config.js';
-import { BASE_PATH, INSTITUTION_ID, applyCachedInstitutionLogo, buildInternalStaffEmail, escapeHtml, rememberInstitutionLogo, sanitizeUrl } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyCachedInstitutionLogo, escapeHtml, rememberInstitutionLogo, sanitizeUrl } from '../shared/app-common.js';
 import { appLog } from '../shared/logger.js';
 import { showToast } from '../shared/toaster.js';
+import { signInWithCustomUsernameAndPassword } from '../shared/custom-auth-service.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 import { collection, doc, getDoc, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
@@ -999,45 +1000,44 @@ const tryLogin = async () => {
   const passHash = await hashCredentialValue(password);
   let session = null;
 
-  let authCred = null;
-  if (uname.includes('@')) {
-    try {
-      authCred = await signInWithEmailAndPassword(auth, username, password);
-    } catch (_error) {}
-  } else if (!uname.includes('@')) {
-    try {
-      authCred = await signInWithEmailAndPassword(auth, buildInternalStaffEmail(uname, INSTITUTION_ID), password);
-    } catch (_error) {}
-  }
+  let customAuthResult = null;
+  try {
+    customAuthResult = await signInWithCustomUsernameAndPassword(auth, {
+      username,
+      password,
+      institutionId: INSTITUTION_ID
+    });
+  } catch (_error) {}
 
-  if (authCred?.user?.email) {
-    const authedEmail = String(authCred.user.email).toLowerCase();
-    try {
-      const adminAuthSnap = await getDoc(doc(db, `${BASE_PATH}/settings`, 'adminAuth'));
-      const adminAuth = adminAuthSnap.exists() ? adminAuthSnap.data() : {};
-      if (String(adminAuth.email || '').toLowerCase() === authedEmail || adminAuth?.adminsIndex?.[authedEmail] === true) {
-        session = { name: 'Super Admin', username: authedEmail, type: 'Admin', source: 'firebase', photo: '/assets/images/logo.png' };
+  if (customAuthResult?.userCred?.user) {
+    const profile = customAuthResult.profile || {};
+    const displayUser = String(profile.displayUsername || profile.username || username).trim();
+    if (profile.role === 'super_admin') {
+      session = {
+        name: profile.displayName || 'Super Admin',
+        username: displayUser,
+        type: 'Admin',
+        source: 'firebase',
+        photo: '/assets/images/logo.png'
+      };
+    } else if (profile.role === 'staff') {
+      let staffData = {};
+      if (profile.staffId) {
+        try {
+          const staffSnap = await getDoc(doc(db, `${BASE_PATH}/staff`, profile.staffId));
+          if (staffSnap.exists()) staffData = staffSnap.data() || {};
+        } catch (_err) {}
       }
-    } catch (_err) {}
-
-    if (!session) {
-      const staffSnap = await getDocs(collection(db, `${BASE_PATH}/staff`));
-      const staff = staffSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })).find((item) => {
-        if (item.isActive === false) return false;
-        const staffEmail = String(item.email || '').toLowerCase().trim();
-        const usernames = [
-          staffEmail,
-          item.username,
-          item.userName,
-          item.loginId,
-          item.login,
-          item.staffId
-        ].map((v) => String(v || '').toLowerCase().trim()).filter(Boolean);
-        return staffEmail === authedEmail || usernames.includes(uname);
-      });
-      if (staff) {
-        session = { ...staff, name: staff.name || 'Staff', username: authedEmail, type: staff.type || 'Staff', source: 'staff', photo: staff.photo || '' };
-      }
+      session = {
+        ...staffData,
+        id: profile.staffId || staffData.id || '',
+        uid: customAuthResult.userCred.user.uid,
+        name: staffData.name || profile.displayName || 'Staff',
+        username: displayUser,
+        type: staffData.type || 'Staff',
+        source: 'staff',
+        photo: staffData.photo || ''
+      };
     }
   }
 

@@ -5,6 +5,7 @@ import { ADMIN_AUTH_DOC_ID } from '../../config/app-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, ensureTenantStatusAndAccess, escapeHtml, populateAcademicYearSelect, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
+import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -3685,38 +3686,66 @@ const closeStCropModal = () => {
     if (cameraInput) cameraInput.value = '';
 };
 
-const applyStCropAndAttach = () => {
+const applyStCropAndAttach = async () => {
     if (!stCropper) {
         closeStCropModal();
         return;
     }
-    // Export strictly under 50 KB compressed JPEG base64
-    const base64 = stCropper.getCroppedBase64(50);
-
-    if (stCropTargetModal === 'portion') {
-        const input = document.getElementById('modal-st-portion-image');
-        const img = document.getElementById('modal-st-portion-thumb-img');
-        const wrap = document.getElementById('modal-st-portion-thumb-wrap');
-        if (input) input.value = base64;
-        if (img) {
-            img.src = base64;
-            img.dataset.fullImg = base64;
-        }
-        if (wrap) wrap.classList.remove('hidden');
-    } else if (stCropTargetModal === 'remarks') {
-        const input = document.getElementById('modal-st-remarks-image');
-        const img = document.getElementById('modal-st-remarks-thumb-img');
-        const wrap = document.getElementById('modal-st-remarks-thumb-wrap');
-        if (input) input.value = base64;
-        if (img) {
-            img.src = base64;
-            img.dataset.fullImg = base64;
-        }
-        if (wrap) wrap.classList.remove('hidden');
+    const applyBtn = document.getElementById('btn-st-crop-apply');
+    const originalHtml = applyBtn ? applyBtn.innerHTML : '';
+    if (applyBtn) {
+        applyBtn.disabled = true;
+        applyBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Uploading...';
     }
+    try {
+        const blob = await stCropper.getCroppedBlob(
+            MEDIA_PRESETS.ACADEMIC_PLAN.maxKb,
+            MEDIA_PRESETS.ACADEMIC_PLAN.maxDim
+        );
+        const uploadRes = await uploadImageToStorage(
+            blob,
+            `institutions/${INSTITUTION_ID}/academic/plans`,
+            {
+                ...MEDIA_PRESETS.ACADEMIC_PLAN,
+                skipCompression: true,
+                fileNamePrefix: stCropTargetModal === 'remarks' ? 'remarks' : 'portion'
+            }
+        );
+        const uploadedUrl = uploadRes.url;
 
-    closeStCropModal();
-    showToast('Photo cropped and attached (<50 KB)!', 'success');
+        if (stCropTargetModal === 'portion') {
+            const input = document.getElementById('modal-st-portion-image');
+            const img = document.getElementById('modal-st-portion-thumb-img');
+            const wrap = document.getElementById('modal-st-portion-thumb-wrap');
+            if (input) input.value = uploadedUrl;
+            if (img) {
+                img.src = uploadedUrl;
+                img.dataset.fullImg = uploadedUrl;
+            }
+            if (wrap) wrap.classList.remove('hidden');
+        } else if (stCropTargetModal === 'remarks') {
+            const input = document.getElementById('modal-st-remarks-image');
+            const img = document.getElementById('modal-st-remarks-thumb-img');
+            const wrap = document.getElementById('modal-st-remarks-thumb-wrap');
+            if (input) input.value = uploadedUrl;
+            if (img) {
+                img.src = uploadedUrl;
+                img.dataset.fullImg = uploadedUrl;
+            }
+            if (wrap) wrap.classList.remove('hidden');
+        }
+
+        closeStCropModal();
+        showToast('Photo compressed & uploaded!', 'success');
+    } catch (err) {
+        console.error('Failed to upload academic plan attachment:', err);
+        showToast('Failed to upload photo: ' + (err?.message || 'Upload error'), 'error');
+    } finally {
+        if (applyBtn) {
+            applyBtn.disabled = false;
+            applyBtn.innerHTML = originalHtml || 'Crop &amp; Attach Photo';
+        }
+    }
 };
 
 const openStImageLightbox = (src, caption = 'Attached Teaching Photo') => {
@@ -4053,6 +4082,10 @@ const saveTaughtPortionModal = async () => {
     const docId = `${year}__${classLabel}__${dateStr}`;
     let logData = cachedSyllabusDailyLogs[docId];
 
+    const previousPortionImage = String(
+        cachedSyllabusDailyLogs[docId]?.periods?.find(p => p.slotId === slotId)?.descriptionImage || ''
+    ).trim();
+
     if (!logData || !Array.isArray(logData.periods)) {
         let dayName = 'Monday';
         try {
@@ -4126,6 +4159,9 @@ const saveTaughtPortionModal = async () => {
 
     try {
         await setDoc(doc(db, `${BASE_PATH}/syllabusDailyLogs`, docId), logData, { merge: true });
+        if (previousPortionImage && previousPortionImage !== image) {
+            deleteStorageUrlIfManaged(previousPortionImage);
+        }
         cachedSyllabusDailyLogs[docId] = logData;
         stMonthlyLogsMap[dateStr] = logData;
 
@@ -4200,6 +4236,10 @@ const saveTeacherRemarksModal = async () => {
     const docId = `${year}__${classLabel}__${dateStr}`;
     let logData = cachedSyllabusDailyLogs[docId];
 
+    const previousRemarksImage = String(
+        cachedSyllabusDailyLogs[docId]?.periods?.find(p => p.slotId === slotId)?.remarksImage || ''
+    ).trim();
+
     if (!logData || !Array.isArray(logData.periods)) {
         let dayName = 'Monday';
         try {
@@ -4268,6 +4308,9 @@ const saveTeacherRemarksModal = async () => {
 
     try {
         await setDoc(doc(db, `${BASE_PATH}/syllabusDailyLogs`, docId), logData, { merge: true });
+        if (previousRemarksImage && previousRemarksImage !== image) {
+            deleteStorageUrlIfManaged(previousRemarksImage);
+        }
         cachedSyllabusDailyLogs[docId] = logData;
         stMonthlyLogsMap[dateStr] = logData;
 

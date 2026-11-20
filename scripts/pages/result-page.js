@@ -5,6 +5,7 @@ import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '.
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, isPastAcademicYearLabel, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 import { showToast } from '../shared/toaster.js';
+import { getAuthClaims } from '../shared/custom-auth-service.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -327,11 +328,13 @@ const resolveResultAccess = async ({ isAdminUser = false, staffDocs = [], user =
 
     const myStaffDoc = staffDocs.find((s) => {
         const sId = s.id;
-        const sLoginId = String(s.loginId || s.username || '').trim().toLowerCase();
+        const sAuthUid = String(s.authUid || '').trim();
+        const sLoginId = String(s.loginId || s.username || s.displayUsername || '').trim().toLowerCase();
         const sEmail = normalizeEmail(s.email);
         const sName = String(s.name || '').trim().toLowerCase();
         const sPhone = String(s.phone || '').replace(/\D/g, '');
-        return (staffIdKey && sId === staffIdKey)
+        return (user?.uid && sAuthUid && sAuthUid === user.uid)
+            || (staffIdKey && sId === staffIdKey)
             || (sLoginId && normalizedUserKey && sLoginId === normalizedUserKey)
             || (sEmail && staffEmailKey && sEmail === staffEmailKey)
             || (sPhone && staffPhoneKey && sPhone.length >= 7 && staffPhoneKey.includes(sPhone))
@@ -360,16 +363,21 @@ const resolveResultAccess = async ({ isAdminUser = false, staffDocs = [], user =
     );
 
     if (!hasResultPermission) {
-        const emailToLookup = normalizeEmail(user?.email || staffAccess?.email || staffAccess?.userKey || '');
-        if (emailToLookup) {
-            const staffAccessRef = doc(db, STAFF_ACCESS_COLLECTION, emailToLookup);
-            const staffAccessSnap = await getDoc(staffAccessRef);
-            if (staffAccessSnap.exists()) {
-                const accessData = staffAccessSnap.data() || {};
-                hasResultPermission = accessData.isActive !== false && (
-                    accessData.result === true || accessData.canManageResults === true || accessData.canAccessAdmin === true || accessData.actLikeSuperAdmin === true
-                );
-            }
+        const lookupKeys = [
+            String(user?.uid || '').trim(),
+            normalizeEmail(user?.email || staffAccess?.email || staffAccess?.userKey || '')
+        ].filter(Boolean);
+        for (const accessKey of lookupKeys) {
+            try {
+                const staffAccessSnap = await getDoc(doc(db, STAFF_ACCESS_COLLECTION, accessKey));
+                if (staffAccessSnap.exists()) {
+                    const accessData = staffAccessSnap.data() || {};
+                    hasResultPermission = accessData.isActive !== false && (
+                        accessData.result === true || accessData.canManageResults === true || accessData.canAccessAdmin === true || accessData.actLikeSuperAdmin === true
+                    );
+                    if (hasResultPermission) break;
+                }
+            } catch (_) {}
         }
     }
 
@@ -976,26 +984,36 @@ onAuthStateChanged(auth, async (user) => {
         return;
     }
 
-    // Get login ID (Username) from current session, exactly like collection-page.js
+    // Get login ID (Username) and custom auth claims
+    const claims = await getAuthClaims(user);
     const staffAccess = window.AppSession?.getStaffAccess?.() || {};
-    currentUserKey = String(staffAccess.loginId || staffAccess.userKey || staffAccess.email || window.AppSession?.getStaffEmail?.() || user.email || '').trim().toLowerCase();
+    currentUserKey = String(claims.username || staffAccess.loginId || staffAccess.userKey || staffAccess.email || window.AppSession?.getStaffEmail?.() || user.email || '').trim().toLowerCase();
     
     try {
         // 1. Check if user is Master Admin or Admin-privileged staff
         let adminEmail = '';
+        let adminUid = '';
         let adminAccounts = [];
         try {
             const adminRef = doc(db, `${BASE_PATH}/settings`, ADMIN_AUTH_DOC_ID);
             const adminSnap = await getDoc(adminRef);
             const adminData = adminSnap.exists() ? adminSnap.data() : {};
             adminEmail = String(adminData.email || '').toLowerCase();
+            adminUid = String(adminData.uid || '').trim();
             adminAccounts = SINGLE_ADMIN_MODE ? [] : (Array.isArray(adminData.admins) ? adminData.admins : []);
         } catch (adminErr) {
             // Non-admin staff won't have read access to adminAuth; this is expected and safe to continue
             console.info('Admin auth record restricted for this session, evaluating staff permissions.');
         }
-        
-        isCurrentAdmin = (window.AppSession?.getRole?.() === 'admin')
+
+        const isCustomSuperAdmin = Boolean(
+            claims.customAuth
+            && claims.role === 'super_admin'
+            && claims.institutionId === String(INSTITUTION_ID || '').trim().toLowerCase()
+        );
+        isCurrentAdmin = isCustomSuperAdmin
+                         || (adminUid && adminUid === user.uid)
+                         || (window.AppSession?.getRole?.() === 'admin')
                          || (staffAccess?.actLikeSuperAdmin === true)
                          || (staffAccess?.canAccessAdmin === true)
                          || (staffAccess?.admin === true)

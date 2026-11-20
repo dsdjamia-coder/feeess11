@@ -16,6 +16,18 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.email != null;
     }
 
+    function isCustomAuth() {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider == 'custom'
+        && request.auth.token.customAuth == true;
+    }
+
+    function customAuthUsername() {
+      return isCustomAuth() && ('username' in request.auth.token) && request.auth.token.username is string
+        ? request.auth.token.username.lower()
+        : '';
+    }
+
     function companyConfigRef() {
       return /databases/$(database)/documents/company/config;
     }
@@ -84,41 +96,30 @@ service cloud.firestore {
     }
 
     function isSuperAdminDoc(institutionId) {
-      return hasEmailIdentity()
+      return isCustomAuth()
+        && ('role' in request.auth.token)
+        && request.auth.token.role == 'super_admin'
+        && ('institutionId' in request.auth.token)
+        && request.auth.token.institutionId == institutionId
         && exists(adminAuthRef(institutionId))
-        && (
-          (
-            'email' in adminData(institutionId)
-            && adminData(institutionId).email is string
-            && adminData(institutionId).email.lower() == request.auth.token.email.lower()
-          )
-          || (
-            'adminsIndex' in adminData(institutionId)
-            && adminData(institutionId).adminsIndex is map
-            && (
-              adminData(institutionId).adminsIndex[request.auth.token.email] == true
-              || adminData(institutionId).adminsIndex[request.auth.token.email.lower()] == true
-            )
-          )
-        );
+        && ('uid' in adminData(institutionId))
+        && adminData(institutionId).uid == request.auth.uid
+        && (!('isActive' in adminData(institutionId)) || adminData(institutionId).isActive != false);
     }
 
-    function staffAccessRef(institutionId) {
-      return /databases/$(database)/documents/institutions/$(institutionId)/staffAccess/$(request.auth.token.email);
-    }
-
-    function staffAccessLowerRef(institutionId) {
-      return /databases/$(database)/documents/institutions/$(institutionId)/staffAccess/$(request.auth.token.email.lower());
+    function staffAccessUidRef(institutionId) {
+      return /databases/$(database)/documents/institutions/$(institutionId)/staffAccess/$(request.auth.uid);
     }
 
     function hasStaffAccessDoc(institutionId) {
-      return hasEmailIdentity() && (exists(staffAccessRef(institutionId)) || exists(staffAccessLowerRef(institutionId)));
+      return isCustomAuth()
+        && ('institutionId' in request.auth.token)
+        && request.auth.token.institutionId == institutionId
+        && exists(staffAccessUidRef(institutionId));
     }
 
     function staffData(institutionId) {
-      return exists(staffAccessRef(institutionId))
-        ? get(staffAccessRef(institutionId)).data
-        : get(staffAccessLowerRef(institutionId)).data;
+      return get(staffAccessUidRef(institutionId)).data;
     }
 
     function isStaff(institutionId) {
@@ -138,30 +139,22 @@ service cloud.firestore {
       return isAdmin(institutionId) || (isStaff(institutionId) && staffData(institutionId).canCollect == true);
     }
 
-    function isInternalUsernameEmail() {
-      return hasEmailIdentity() && request.auth.token.email.lower().matches('.*@[a-z0-9-_]+\\.internal$');
-    }
-
-    function authEmailUsernamePrefix() {
-      return request.auth.token.email.lower().split('@')[0];
-    }
-
     function matchesCollectorIdentity(institutionId, data) {
       return (
         ('collectedByUid' in data && data.collectedByUid is string && data.collectedByUid == request.auth.uid)
         || (hasEmailIdentity() && 'collectedByEmail' in data && data.collectedByEmail is string && data.collectedByEmail.lower() == request.auth.token.email.lower())
-        || (hasEmailIdentity() && 'collectedBy' in data && data.collectedBy is string && (
-          data.collectedBy.lower() == request.auth.token.email.lower()
-          || (isInternalUsernameEmail() && data.collectedBy.lower() == authEmailUsernamePrefix())
+        || (isCustomAuth() && 'collectedBy' in data && data.collectedBy is string && (
+          data.collectedBy.lower() == customAuthUsername()
           || (isStaff(institutionId) && (
-            ('email' in staffData(institutionId) && staffData(institutionId).email is string && data.collectedBy.lower() == staffData(institutionId).email.lower())
-            || ('loginId' in staffData(institutionId) && staffData(institutionId).loginId is string && data.collectedBy.lower() == staffData(institutionId).loginId.lower())
+            ('loginId' in staffData(institutionId) && staffData(institutionId).loginId is string && data.collectedBy.lower() == staffData(institutionId).loginId.lower())
             || ('username' in staffData(institutionId) && staffData(institutionId).username is string && data.collectedBy.lower() == staffData(institutionId).username.lower())
+            || ('displayUsername' in staffData(institutionId) && staffData(institutionId).displayUsername is string && data.collectedBy.lower() == staffData(institutionId).displayUsername.lower())
             || ('userKey' in staffData(institutionId) && staffData(institutionId).userKey is string && data.collectedBy.lower() == staffData(institutionId).userKey.lower())
             || ('staffId' in staffData(institutionId) && staffData(institutionId).staffId is string && data.collectedBy.lower() == staffData(institutionId).staffId.lower())
             || ('name' in staffData(institutionId) && staffData(institutionId).name is string && data.collectedBy.lower() == staffData(institutionId).name.lower())
           ))
         ))
+        || (hasEmailIdentity() && 'collectedBy' in data && data.collectedBy is string && data.collectedBy.lower() == request.auth.token.email.lower())
       );
     }
 
@@ -243,10 +236,10 @@ service cloud.firestore {
 
     function isAllowedStaffSelfPhotoUpdate(institutionId, docId) {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return hasEmailIdentity()
+      return isCustomAuth()
         && isStaff(institutionId)
         && (
-          ('email' in resource.data && resource.data.email is string && resource.data.email.lower() == request.auth.token.email.lower())
+          ('authUid' in resource.data && resource.data.authUid is string && resource.data.authUid == request.auth.uid)
           || ('staffId' in staffData(institutionId) && staffData(institutionId).staffId == docId)
         )
         && changed.hasOnly(['photo', 'updatedAt'])
@@ -411,6 +404,12 @@ service cloud.firestore {
       allow read, write: if isCompanyOwner() && docId != 'publicCatalog';
     }
 
+    // Server-only credential vault (password salts & scrypt hashes).
+    // Strictly inaccessible to all client SDKs; accessed ONLY via Firebase Admin SDK in Cloud Functions.
+    match /authCredentials/{keyHash} {
+      allow read, write: if false;
+    }
+
     match /globalUsers/{loginKey} {
       allow get: if true;
       allow list: if isCompanyOwner();
@@ -509,19 +508,20 @@ service cloud.firestore {
       allow update: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isAllowedStaffSelfPhotoUpdate(institutionId, docId));
     }
 
-    // 3. Staff Access (Roles & Permissions - scoped to Admin or own signed-in Staff identity)
+    // 3. Staff Access (Roles & Permissions - scoped to Admin or own signed-in Staff UID)
     match /institutions/{institutionId}/staffAccess/{docId} {
       allow list: if canAccessTenant(institutionId) && isAdmin(institutionId);
       allow get: if canAccessTenant(institutionId) && (
         isAdmin(institutionId)
-        || (hasEmailIdentity() && (docId == request.auth.token.email || isStaff(institutionId)))
+        || (isCustomAuth() && request.auth.token.institutionId == institutionId && docId == request.auth.uid)
       );
       allow create, delete: if canAccessTenant(institutionId) && isAdmin(institutionId);
       allow update: if canAccessTenant(institutionId) && (
         isAdmin(institutionId)
         || (
-          hasEmailIdentity()
-          && docId == request.auth.token.email
+          isCustomAuth()
+          && request.auth.token.institutionId == institutionId
+          && docId == request.auth.uid
           && isStaff(institutionId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo', 'updatedAt'])
           && (!('photo' in request.resource.data.diff(resource.data).affectedKeys()) || validOfficialPhotoString(request.resource.data.photo))

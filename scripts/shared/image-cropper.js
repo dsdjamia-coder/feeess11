@@ -533,12 +533,11 @@ export class InteractiveCropper {
     }
 
     /**
-     * Extracts cropped region with high resolution and compresses to under target maxKb
-     * @param {number} [maxKb=50]
-     * @param {number} [maxDim=500]
-     * @returns {string} base64 data URL (image/jpeg)
+     * Internal helper that renders the rotated + cropped region onto a fresh canvas.
+     * @param {number} [maxDim=600]
+     * @returns {HTMLCanvasElement}
      */
-    getCroppedBase64(maxKb = this.maxKb, maxDim = 500) {
+    _renderCroppedCanvas(maxDim = 600) {
         if (!this.image) throw new Error('No image loaded in cropper');
 
         const isRotated90or270 = this.rotation === 90 || this.rotation === 270;
@@ -564,7 +563,6 @@ export class InteractiveCropper {
         const cropNormW = this._cropRect.width * scale;
         const cropNormH = this._cropRect.height * scale;
 
-        // Calculate output dimensions keeping aspect ratio
         let outW = cropNormW;
         let outH = cropNormH;
         const maxOut = Math.max(outW, outH);
@@ -595,6 +593,77 @@ export class InteractiveCropper {
             exportCanvas.width,
             exportCanvas.height
         );
+
+        return exportCanvas;
+    }
+
+    /**
+     * Extracts cropped region as a Smart WebP (or JPEG fallback) Blob strictly under maxKb.
+     * Ideal for uploading directly to Firebase Storage.
+     * @param {number} [maxKb=150]
+     * @param {number} [maxDim=600]
+     * @returns {Promise<Blob>}
+     */
+    async getCroppedBlob(maxKb = 150, maxDim = 600) {
+        const exportCanvas = this._renderCroppedCanvas(maxDim);
+        const maxBytes = maxKb * 1024;
+
+        let supportsWebp = false;
+        try {
+            const testCanvas = document.createElement('canvas');
+            testCanvas.width = 2;
+            testCanvas.height = 2;
+            supportsWebp = testCanvas.toDataURL('image/webp', 0.8).startsWith('data:image/webp');
+        } catch (_) {
+            supportsWebp = false;
+        }
+        const mimeType = supportsWebp ? 'image/webp' : 'image/jpeg';
+
+        const encodeCanvas = (canvas, q) =>
+            new Promise((resolve, reject) => {
+                canvas.toBlob(
+                    (b) => (b ? resolve(b) : reject(new Error('Failed to encode cropped image.'))),
+                    mimeType,
+                    q
+                );
+            });
+
+        let quality = supportsWebp ? 0.86 : 0.85;
+        let blob = await encodeCanvas(exportCanvas, quality);
+
+        while (blob.size > maxBytes && quality > 0.35) {
+            quality = Math.max(0.35, Number((quality - 0.08).toFixed(2)));
+            blob = await encodeCanvas(exportCanvas, quality);
+        }
+
+        let currentScale = 0.88;
+        let activeCanvas = exportCanvas;
+        while (blob.size > maxBytes && currentScale > 0.35 && Math.max(activeCanvas.width, activeCanvas.height) > 160) {
+            const sw = Math.max(50, Math.round(exportCanvas.width * currentScale));
+            const sh = Math.max(50, Math.round(exportCanvas.height * currentScale));
+            const scaleCanvas = document.createElement('canvas');
+            scaleCanvas.width = sw;
+            scaleCanvas.height = sh;
+            const sCtx = scaleCanvas.getContext('2d');
+            sCtx.imageSmoothingEnabled = true;
+            sCtx.imageSmoothingQuality = 'high';
+            sCtx.drawImage(exportCanvas, 0, 0, sw, sh);
+            activeCanvas = scaleCanvas;
+            blob = await encodeCanvas(scaleCanvas, Math.max(0.55, quality));
+            currentScale -= 0.1;
+        }
+
+        return blob;
+    }
+
+    /**
+     * Extracts cropped region with high resolution and compresses to under target maxKb
+     * @param {number} [maxKb=50]
+     * @param {number} [maxDim=500]
+     * @returns {string} base64 data URL (image/jpeg)
+     */
+    getCroppedBase64(maxKb = this.maxKb, maxDim = 500) {
+        const exportCanvas = this._renderCroppedCanvas(maxDim);
 
         // Smart iterative compression strictly under maxKb
         let quality = 0.85;

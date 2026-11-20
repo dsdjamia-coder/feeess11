@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' blob: data: https://*.firebaseapp.com https://unpkg.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' blob: data: https://*.firebaseapp.com https://unpkg.com;">
     <meta name="referrer" content="no-referrer">
     <title>Admin Dashboard - Institution Manage</title>
     
@@ -836,7 +836,7 @@
                                 <i id="add-stu-photo-placeholder" class="fas fa-user text-3xl text-slate-400"></i>
                             </div>
                             <div class="flex-1 text-center sm:text-left space-y-1.5">
-                                <label class="block text-xs font-black text-slate-700">Student Profile Photo (Max 50KB)</label>
+                                <label class="block text-xs font-black text-slate-700">Student Profile Photo (Smart WebP • Max 150KB)</label>
                                 <div class="flex flex-wrap gap-2 justify-center sm:justify-start">
                                     <button type="button" id="add-stu-camera-btn" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-camera"></i> Camera</button>
                                     <button type="button" id="add-stu-upload-btn" class="px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-upload"></i> Upload</button>
@@ -1983,7 +1983,7 @@
                                     <div><label class="block text-sm font-semibold mb-1">App Subtitle</label><input type="text" id="app-subtitle-input" class="w-full p-2.5 border rounded-lg bg-gray-50"></div>
                                     <div><label class="block text-sm font-semibold mb-1">Register Number</label><input type="text" id="web-regno" class="w-full p-2.5 border rounded-lg bg-gray-50" placeholder="e.g. Reg: 12345"></div>
                                     <div>
-                                        <label class="block text-sm font-semibold mb-1">Institution Logo (Max 60KB)</label>
+                                        <label class="block text-sm font-semibold mb-1">Institution Logo (Smart WebP • Max 150KB)</label>
                                         <div class="flex items-center gap-3 p-3 bg-gray-50 border rounded-xl">
                                             <div class="relative w-14 h-14 rounded-lg border-2 border-slate-200 overflow-hidden bg-white flex items-center justify-center shrink-0 shadow-xs p-1">
                                                 <img id="web-logo-preview" src="/assets/images/logo.png" class="w-full h-full object-contain" alt="Logo Preview" referrerpolicy="no-referrer">
@@ -1994,7 +1994,7 @@
                                                     <button type="button" id="web-logo-upload-btn" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition cursor-pointer"><i class="fas fa-upload"></i> Upload Logo</button>
                                                     <button type="button" id="web-logo-remove-btn" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-bold transition hidden cursor-pointer">Reset to Default</button>
                                                 </div>
-                                                <p id="web-logo-status-note" class="text-[11px] font-semibold text-slate-500">Default Company Logo active (Fallback) • Auto-compressed &lt; 60KB</p>
+                                                <p id="web-logo-status-note" class="text-[11px] font-semibold text-slate-500">Default Company Logo active (Fallback) • Smart WebP &lt; 150KB</p>
                                             </div>
                                         </div>
                                         <input type="hidden" id="web-logo" value="">
@@ -2068,7 +2068,7 @@
                                 <textarea id="new-notice-txt" rows="5" class="w-full p-2.5 border rounded-lg resize-y text-sm" placeholder="Enter Notice Details or Links (Optional if image is uploaded)..."></textarea>
                             </div>
                             <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                                <label class="block text-xs font-bold text-slate-700 mb-2"><i class="fas fa-image text-blue-600 mr-1"></i> Notice Image <span class="font-normal text-slate-400">(Optional · Max 60KB Auto-Compressed)</span></label>
+                                <label class="block text-xs font-bold text-slate-700 mb-2"><i class="fas fa-image text-blue-600 mr-1"></i> Notice Image <span class="font-normal text-slate-400">(Optional · Smart WebP Max 500KB)</span></label>
                                 <div class="flex flex-col sm:flex-row items-center gap-3">
                                     <div class="relative w-28 h-20 rounded-lg border-2 border-dashed border-slate-300 bg-white overflow-hidden flex items-center justify-center shrink-0">
                                         <img id="new-notice-img-preview" class="w-full h-full object-contain hidden" alt="Notice Image Preview">
@@ -2114,7 +2114,7 @@
                 <div class="card p-5 rounded-xl shadow-sm">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-2 mb-4 gap-2">
                         <h2 class="text-xl font-bold text-gray-800"><i class="fas fa-images mr-2 text-blue-600"></i> Gallery Management</h2>
-                        <span class="text-xs font-semibold text-gray-500">Max 75KB per photo · Default Order 50+</span>
+                        <span class="text-xs font-semibold text-gray-500">Smart WebP Max 500KB per photo · Default Order 50+</span>
                     </div>
 
                     <!-- Enhanced Batch Photo Upload Card -->
@@ -2136,7 +2136,7 @@
                             </div>
                             <div>
                                 <p class="text-xs font-bold text-slate-800">Click to choose photos or drag and drop here</p>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Select multiple photos simultaneously from your file manager · Auto-compressed to 75KB</p>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Select multiple photos simultaneously from your file manager · Smart WebP up to 500KB</p>
                             </div>
                             <button type="button" id="new-gal-upload-btn" class="mt-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition pointer-events-none">
                                 <i class="fas fa-folder-open"></i> Choose Photos
@@ -2225,21 +2225,21 @@
                             <div>
                                 <h4 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                                     <i class="fas fa-key text-red-500 text-[11px]"></i>
-                                    Update Super Admin Credentials
+                                    Update Super Admin Password
                                 </h4>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Change Email and/or Password. Current password is required to verify identity.</p>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Change your Super Admin password securely. Username changes are managed from the Company Portal.</p>
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                 <div class="sm:col-span-2">
                                     <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">Current Password <span class="text-red-500">*</span></label>
                                     <input type="password" id="admin-cred-current-password" class="w-full py-1.5 px-2.5 text-xs border border-slate-300 rounded-md bg-white text-slate-800 focus:ring-1 focus:ring-red-500 focus:border-red-500" placeholder="Enter current password">
                                 </div>
-                                <div>
+                                <div class="hidden">
                                     <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">New Email (optional)</label>
                                     <input type="email" id="admin-cred-new-email" class="w-full py-1.5 px-2.5 text-xs border border-slate-300 rounded-md bg-white text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-red-500 focus:border-red-500" placeholder="new-admin@institute.com">
                                 </div>
-                                <div>
-                                    <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">New Password (optional)</label>
+                                <div class="sm:col-span-2">
+                                    <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">New Password <span class="text-red-500">*</span></label>
                                     <input type="password" id="admin-cred-new-password" class="w-full py-1.5 px-2.5 text-xs border border-slate-300 rounded-md bg-white text-slate-800 placeholder-slate-400 focus:ring-1 focus:ring-red-500 focus:border-red-500" placeholder="At least 6 characters">
                                 </div>
                             </div>
@@ -3467,39 +3467,35 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1">
-                        <i class="fas fa-user-circle text-violet-600 mr-1"></i> Login Username or Email <span class="text-red-500">*</span>
+                        <i class="fas fa-user-circle text-violet-600 mr-1"></i> Login Username <span class="text-red-500">*</span>
                     </label>
-                    <input type="text" id="staff-cred-email" maxlength="60" class="w-full p-2.5 border rounded-lg text-sm bg-white font-mono focus:ring-2 focus:ring-violet-500" placeholder="e.g. rashid or teacher@school.com" autocomplete="off">
+                    <input type="text" id="staff-cred-email" maxlength="60" class="w-full p-2.5 border rounded-lg text-sm bg-white font-mono focus:ring-2 focus:ring-violet-500" placeholder="e.g. teacher_ali, staff.01, or user@school.com" autocomplete="off">
                     <div class="mt-1.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1">
-                        <div class="font-bold text-slate-800 text-[11px]">Format Requirements:</div>
+                        <div class="font-bold text-slate-800 text-[11px]">Username Rules:</div>
                         <div class="text-slate-600 text-[11px] flex items-center gap-1.5">
                             <i class="fas fa-check text-emerald-600"></i>
-                            <span>Allowed: letters (a-z), numbers (0-9), underscores (_), or email</span>
+                            <span>3–60 characters; letters, numbers, and symbols allowed (globally unique)</span>
                         </div>
                         <div class="text-slate-600 text-[11px] flex items-center gap-1.5">
                             <i class="fas fa-times text-rose-500"></i>
-                            <span>Not allowed: spaces or special symbols (@ allowed only for email)</span>
+                            <span>Spaces are not allowed</span>
                         </div>
-                        <div class="text-slate-500 text-[10px]">Min 3 chars (max 60); min 6 chars for password (max 60).</div>
                     </div>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1">
-                        <i class="fas fa-lock text-violet-600 mr-1"></i> Login Password <span class="text-red-500">*</span>
+                        <i class="fas fa-lock text-violet-600 mr-1"></i> Login Password
                     </label>
                     <div class="relative">
-                        <input type="password" id="staff-cred-password" maxlength="60" class="w-full p-2.5 pr-10 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-violet-500" placeholder="Enter new password" autocomplete="new-password">
+                        <input type="password" id="staff-cred-password" maxlength="60" class="w-full p-2.5 pr-10 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-violet-500" placeholder="Min 6 chars (leave blank to keep current password)" autocomplete="new-password">
                         <button type="button" id="staff-cred-toggle-pass" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm p-1">
                             <i class="fas fa-eye" id="staff-cred-eye-icon"></i>
                         </button>
                     </div>
-                    <p class="text-[11px] text-gray-500 mt-1">Credentials are stored securely in Firebase Authentication (never saved in plain text). For existing real-email accounts, use Send Reset Email if the staff member forgets their password.</p>
+                    <p class="text-[11px] text-gray-500 mt-1">Passwords are encrypted on the server and never saved in plain text. Leave password blank to rename only the username.</p>
                 </div>
             </div>
             <div class="flex flex-wrap justify-between items-center gap-2 pt-4 border-t mt-5">
-                <button type="button" id="staff-cred-send-reset-btn" class="hidden px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-lg transition items-center gap-1.5">
-                    <i class="fas fa-envelope"></i> Send Reset Email
-                </button>
                 <div class="flex justify-end gap-3 ml-auto">
                     <button type="button" id="staff-cred-cancel-btn" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg transition">Cancel</button>
                     <button type="button" id="staff-cred-save-btn" class="px-5 py-2 btn-primary text-xs font-bold rounded-lg shadow-sm transition flex items-center gap-1.5">
@@ -3796,7 +3792,7 @@
                         <i id="e-stu-photo-placeholder" class="fas fa-user text-3xl text-slate-400"></i>
                     </div>
                     <div class="flex-1 text-center sm:text-left space-y-1.5">
-                        <label class="block text-xs font-black text-slate-700">1. Student Profile Photo (Max 50KB)</label>
+                        <label class="block text-xs font-black text-slate-700">1. Student Profile Photo (Smart WebP • Max 150KB)</label>
                         <div class="flex flex-wrap gap-2 justify-center sm:justify-start">
                             <button type="button" id="e-stu-camera-btn" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-camera"></i> Camera</button>
                             <button type="button" id="e-stu-upload-btn" class="px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-upload"></i> Upload</button>

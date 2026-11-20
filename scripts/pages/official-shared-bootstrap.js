@@ -6,6 +6,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     import { InteractiveCropper } from '../shared/image-cropper.js';
     import { registerPortalForPwa } from '../shared/pwa-install.js';
     import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
+    import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
 
     const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -4114,10 +4115,16 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         return false;
       }
 
-      if (newPhoto && newPhoto.length > 98000) {
-        showOfficialToast('Compressed image still exceeds 50 KB limit. Please crop tighter.', 'error');
+      if (newPhoto && newPhoto.startsWith('data:') && newPhoto.length > 220000) {
+        showOfficialToast('Image exceeds size limit. Please crop tighter.', 'error');
         return false;
       }
+
+      const previousPhoto = target.kind === 'staff'
+        ? String(target.profile?.photo || '').trim()
+        : target.kind === 'directory'
+          ? String(target.profile?.values?.photo || '').trim()
+          : String(institutionConfig?.adminProfile?.photo || '').trim();
 
       try {
         if (!auth.currentUser) {
@@ -4137,10 +4144,10 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
               : allStaff[staffIdx].customFields;
             allStaff[staffIdx] = { ...allStaff[staffIdx], photo: newPhoto, ...(nextCustomFields ? { customFields: nextCustomFields } : {}), updatedAt: now };
           }
-          const staffEmail = String(auth.currentUser?.email || target.profile?.email || userSession?.email || '').trim().toLowerCase();
-          if (staffEmail) {
+          const staffAccessDocId = String(auth.currentUser?.uid || target.profile?.authUid || auth.currentUser?.email || target.profile?.email || userSession?.email || '').trim();
+          if (staffAccessDocId) {
             try {
-              await updateDoc(doc(db, `${BASE_PATH}/staffAccess`, staffEmail), {
+              await updateDoc(doc(db, `${BASE_PATH}/staffAccess`, staffAccessDocId), {
                 photo: newPhoto,
                 updatedAt: now
               });
@@ -4168,6 +4175,10 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           };
           await setDoc(configRef, { adminProfile: nextAdminProfile }, { merge: true });
           institutionConfig = { ...(institutionConfig || {}), adminProfile: nextAdminProfile };
+        }
+
+        if (previousPhoto && previousPhoto !== newPhoto) {
+          deleteStorageUrlIfManaged(previousPhoto);
         }
 
         syncLocalSessionPhotoCache(newPhoto);
@@ -4449,16 +4460,46 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
 
       document.getElementById('official-crop-save-btn')?.addEventListener('click', async () => {
         if (!officialCropper) return;
+        const target = getCurrentPhotoTarget();
+        if (target.kind === 'none') {
+          showOfficialToast('Unable to locate your profile record.', 'error');
+          return;
+        }
         const saveBtn = document.getElementById('official-crop-save-btn');
         if (saveBtn) {
           saveBtn.disabled = true;
-          saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+          saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
         }
+        let uploadedUrl = '';
         try {
-          const base64 = officialCropper.getCroppedBase64(50, 400);
-          const ok = await persistOfficialProfilePhoto(base64);
-          if (ok) closeOfficialCropModal();
+          if (!auth.currentUser) {
+            await signInAnonymously(auth);
+          }
+          const blob = await officialCropper.getCroppedBlob(
+            MEDIA_PRESETS.PROFILE.maxKb,
+            MEDIA_PRESETS.PROFILE.maxDim
+          );
+          const storageFolder = target.kind === 'staff'
+            ? `institutions/${INSTITUTION_ID}/staff/photos`
+            : target.kind === 'directory'
+              ? `institutions/${INSTITUTION_ID}/public/directory`
+              : `institutions/${INSTITUTION_ID}/public/branding`;
+          const uploadRes = await uploadImageToStorage(blob, storageFolder, {
+            ...MEDIA_PRESETS.PROFILE,
+            skipCompression: true,
+            fileNamePrefix: target.kind
+          });
+          uploadedUrl = uploadRes.url;
+          const ok = await persistOfficialProfilePhoto(uploadedUrl);
+          if (ok) {
+            closeOfficialCropModal();
+          } else {
+            deleteStorageUrlIfManaged(uploadedUrl);
+          }
         } catch (err) {
+          if (uploadedUrl) {
+            deleteStorageUrlIfManaged(uploadedUrl);
+          }
           console.error('Crop/save failed:', err);
           showOfficialToast(err?.message || 'Failed to crop and save photo.', 'error');
         } finally {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://*.firebaseapp.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://*.firebaseapp.com;">
   <title>Academic Planning - Institution Manage</title>
 
   <!-- Session Guards -->
@@ -1982,7 +1982,7 @@
             <button type="button" id="btn-st-portion-file" class="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-xl font-bold text-xs transition border border-slate-200 flex items-center gap-1.5 cursor-pointer">
               <i class="fas fa-image text-indigo-600"></i> Upload Photo
             </button>
-            <span class="text-[10px] text-slate-400 font-medium">Automatic crop &amp; compress &lt; 50 KB</span>
+            <span class="text-[10px] text-slate-400 font-medium">Automatic crop &amp; Smart WebP &lt; 500 KB</span>
           </div>
 
           <div id="modal-st-portion-thumb-wrap" class="mt-2.5 flex items-center gap-2.5 hidden">
@@ -2045,7 +2045,7 @@
             <button type="button" id="btn-st-remarks-file" class="px-3 py-1.5 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 text-slate-700 rounded-xl font-bold text-xs transition border border-slate-200 flex items-center gap-1.5 cursor-pointer">
               <i class="fas fa-image text-purple-600"></i> Upload Photo
             </button>
-            <span class="text-[10px] text-slate-400 font-medium">Automatic crop &amp; compress &lt; 50 KB</span>
+            <span class="text-[10px] text-slate-400 font-medium">Automatic crop &amp; Smart WebP &lt; 500 KB</span>
           </div>
 
           <div id="modal-st-remarks-thumb-wrap" class="mt-2.5 flex items-center gap-2.5 hidden">
@@ -2083,7 +2083,7 @@
           </span>
           <div>
             <h3 class="font-black text-sm text-white">Crop &amp; Optimize Photo</h3>
-            <p class="text-[11px] text-slate-400 font-medium">Select aspect ratio, adjust crop box and save under 50 KB</p>
+            <p class="text-[11px] text-slate-400 font-medium">Select aspect ratio, adjust crop box and upload Smart WebP under 500 KB</p>
           </div>
         </div>
         <button type="button" id="btn-st-crop-cancel-x" class="text-slate-400 hover:text-white p-1 text-sm cursor-pointer">
@@ -2131,7 +2131,7 @@
             <i class="fas fa-arrows-rotate"></i> Reset
           </button>
         </div>
-        <span class="text-[11px] font-bold text-slate-400">Target size: &lt; 50 KB</span>
+        <span class="text-[11px] font-bold text-slate-400">Target size: Smart WebP &lt; 500 KB</span>
       </div>
 
       <!-- Footer Actions -->

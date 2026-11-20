@@ -10,27 +10,74 @@ service firebase.storage {
       return isSignedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
-    function isValidImage() {
-      return request.resource.size < 2 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    function isCompanyOwner() {
+      return isAuthenticated()
+        && request.auth.token.firebase.sign_in_provider != 'custom'
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() == 'salamkvkavu5@gmail.com';
     }
 
-    // Public institution assets (branding, notices, gallery)
+    function isInstitutionMember(institutionId) {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider == 'custom'
+        && request.auth.token.customAuth == true
+        && request.auth.token.institutionId == institutionId;
+    }
+
+    function isValidImage(maxBytes) {
+      return request.resource != null
+        && request.resource.size <= maxBytes
+        && request.resource.contentType != null
+        && request.resource.contentType.matches('image/(webp|jpeg|jpg|png)');
+    }
+
+    // Platform Showcase Screenshots (Company Super Owner only; max 600KB ceiling for 500KB WebP/JPEG)
+    match /company/showcases/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if isCompanyOwner() && isValidImage(600 * 1024);
+      allow delete: if isCompanyOwner();
+    }
+
+    // Institution Public Directory photos (also allows signed-in directory members to upload their own 150KB ID photo)
+    match /institutions/{institutionId}/public/directory/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if isSignedIn() && isValidImage(250 * 1024);
+      allow delete: if isInstitutionMember(institutionId) || isCompanyOwner();
+    }
+
+    // Institution Public assets: branding/logo (150KB), notices (500KB), gallery (500KB)
     match /institutions/{institutionId}/public/{allPaths=**} {
       allow read: if true;
-      allow write: if isAuthenticated() && isValidImage();
+      allow create, update: if (isInstitutionMember(institutionId) || isCompanyOwner()) && isValidImage(600 * 1024);
+      allow delete: if isInstitutionMember(institutionId) || isCompanyOwner();
     }
 
-    // Staff photos
+    // Staff profile & ID card photos (max 250KB ceiling for 150KB WebP/JPEG)
     match /institutions/{institutionId}/staff/{allPaths=**} {
       allow read: if true;
-      allow write: if isAuthenticated() && isValidImage();
+      allow create, update: if (isInstitutionMember(institutionId) || isCompanyOwner()) && isValidImage(250 * 1024);
+      allow delete: if isInstitutionMember(institutionId) || isCompanyOwner();
     }
 
-    // Student photos and document submissions
-    match /institutions/{institutionId}/students/{allPaths=**} {
+    // Admin-managed student profile photos (max 250KB ceiling for 150KB WebP/JPEG)
+    match /institutions/{institutionId}/students/photos/{allPaths=**} {
       allow read: if isSignedIn();
-      allow write: if isAuthenticated() && isValidImage();
+      allow create, update: if (isInstitutionMember(institutionId) || isCompanyOwner()) && isValidImage(250 * 1024);
+      allow delete: if isInstitutionMember(institutionId) || isCompanyOwner();
+    }
+
+    // Student Portal self-uploaded photo submissions (signed-in/anonymous student session; max 250KB)
+    match /institutions/{institutionId}/students/submissions/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidImage(250 * 1024);
+      allow delete: if isInstitutionMember(institutionId) || isCompanyOwner();
+    }
+
+    // Academic Plan taught portion & teacher remarks attachments (max 600KB ceiling for 500KB WebP/JPEG)
+    match /institutions/{institutionId}/academic/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if (isInstitutionMember(institutionId) || isCompanyOwner()) && isValidImage(600 * 1024);
+      allow delete: if isInstitutionMember(institutionId) || isCompanyOwner();
     }
 
     // Deny all other arbitrary paths by default

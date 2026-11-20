@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://*.firebaseapp.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.sheetjs.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://*.firebaseapp.com;">
   <title>Official Portal - Institution Manage</title>
   
   <script src="/scripts/shared/session-guard.js"></script>
@@ -382,7 +382,7 @@
             </button>
           </div>
           <input type="file" id="official-photo-file-input" accept="image/*" class="hidden">
-          <p class="text-[11px] text-slate-500 font-medium leading-relaxed">Take a photo in natural camera ratio or upload an image. Square crop &amp; 50 KB max compression will be applied before saving.</p>
+          <p class="text-[11px] text-slate-500 font-medium leading-relaxed">Take a photo in natural camera ratio or upload an image. Square crop &amp; Smart WebP (max 150 KB) compression will be applied before saving.</p>
         </div>
         <div class="flex justify-end border-t border-slate-200 pt-3">
           <button type="button" id="official-photo-edit-cancel" class="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">Close</button>
@@ -427,7 +427,7 @@
               <i class="fas fa-crop-simple text-indigo-600"></i>
               <span>Crop &amp; Position Photo</span>
             </h3>
-            <p class="text-[11px] text-slate-500 font-medium">Adjust square crop (1:1). Compressed to max 50 KB on save.</p>
+            <p class="text-[11px] text-slate-500 font-medium">Adjust square crop (1:1). Smart WebP compressed up to 150 KB on save.</p>
           </div>
           <button type="button" id="official-crop-close-btn" class="w-8 h-8 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center text-xl font-bold transition cursor-pointer" aria-label="Close cropper">&times;</button>
         </div>

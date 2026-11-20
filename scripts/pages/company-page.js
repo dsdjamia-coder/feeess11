@@ -1,4 +1,3 @@
-import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
 import {
   collection,
   deleteDoc,
@@ -15,29 +14,21 @@ import {
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 import {
-  createUserWithEmailAndPassword,
-  getAuth,
   onAuthStateChanged,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  updatePassword
+  signOut as firebaseSignOut
 } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-import { auth, db, firebaseConfig } from '../../config/firebase-config.js';
+import { auth, db } from '../../config/firebase-config.js';
 import {
   COMPANY_COLLECTION,
   COMPANY_CONFIG_DOC_ID,
   COMPANY_PUBLIC_CATALOG_DOC_ID,
   COMPANY_SHOWCASES_SUBCOLLECTION,
   DEFAULT_COMPANY_ALLOWED_PAGES,
-  GLOBAL_USERS_COLLECTION,
   INSTITUTIONS_COLLECTION,
   PLATFORM_SHOWCASE_PAGES,
   RESERVED_INSTITUTION_SLUGS,
-  buildInternalStaffEmail,
   extractInternalUsername,
-  isInternalStaffEmail,
-  normalizeGlobalUserKey
+  isInternalStaffEmail
 } from '../../config/app-config.js';
 import {
   escapeHtml,
@@ -51,153 +42,18 @@ import {
   normalizePublicCatalog,
   openPremiumPlansModal
 } from '../shared/premium-plans-modal.js';
+import {
+  buildSuperAdminUid,
+  upsertInstitutionSuperAdminCredential,
+  validateCustomUsername
+} from '../shared/custom-auth-service.js';
+import {
+  MEDIA_PRESETS,
+  deleteStorageUrlIfManaged,
+  uploadImageToStorage
+} from '../shared/storage-media-service.js';
 
 registerServiceWorker();
-
-const hashCredentialValue = async (rawValue = '') => {
-  const value = String(rawValue || '');
-  if (!value) return '';
-  if (!window.crypto?.subtle) return value;
-  const encoded = new TextEncoder().encode(value);
-  const digest = await window.crypto.subtle.digest('SHA-256', encoded);
-  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
-};
-
-const parseSuperAdminLoginInput = (rawInput = '', slug = '') => {
-  const clean = String(rawInput || '').trim().toLowerCase();
-  if (!clean) {
-    return { valid: false, error: 'Super Admin Username or Email is required.' };
-  }
-  if (clean.includes('@')) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(clean)) {
-      return { valid: false, error: 'Please enter a valid Super Admin email address.' };
-    }
-    if (isInternalStaffEmail(clean)) {
-      const uname = extractInternalUsername(clean);
-      return {
-        valid: true,
-        email: clean,
-        username: uname,
-        loginDisplay: uname || clean
-      };
-    }
-    return {
-      valid: true,
-      email: clean,
-      username: clean.split('@')[0] || clean,
-      loginDisplay: clean
-    };
-  }
-  const usernameRegex = /^[a-z0-9._-]{3,60}$/;
-  if (!usernameRegex.test(clean)) {
-    return {
-      valid: false,
-      error: 'Super Admin Username must be 3-60 characters using only letters, numbers, dots, hyphens, or underscores (no spaces).'
-    };
-  }
-  return {
-    valid: true,
-    email: buildInternalStaffEmail(clean, slug),
-    username: clean,
-    loginDisplay: clean
-  };
-};
-
-const getGlobalKeysForAdmin = ({ email = '', username = '', loginDisplay = '' } = {}) => {
-  const keys = new Set();
-  [email, username, loginDisplay].forEach((val) => {
-    const k = normalizeGlobalUserKey(val);
-    if (k) keys.add(k);
-  });
-  return Array.from(keys);
-};
-
-const assertGlobalLoginAvailable = async ({ email, username, loginDisplay, slug }) => {
-  const candidateKeys = getGlobalKeysForAdmin({ email, username, loginDisplay });
-
-  for (const other of allInstitutions) {
-    const otherSlug = String(other.slug || other.id || '').trim().toLowerCase();
-    if (!otherSlug || otherSlug === slug) continue;
-    const otherKeys = new Set(getGlobalKeysForAdmin({
-      email: other.adminEmail || '',
-      username: other.adminUsername || '',
-      loginDisplay: other.adminLoginDisplay || ''
-    }));
-    const conflict = candidateKeys.find((k) => otherKeys.has(k));
-    if (conflict) {
-      throw new Error(`Username / Email "${loginDisplay}" is already used by institution "${other.name || otherSlug}". Every username must be globally unique.`);
-    }
-  }
-
-  for (const key of candidateKeys) {
-    const snap = await getDoc(doc(db, GLOBAL_USERS_COLLECTION, key));
-    if (!snap.exists()) continue;
-    const data = snap.data() || {};
-    const ownerInst = String(data.institutionId || '').trim().toLowerCase();
-    const ownerRole = String(data.role || '').trim().toLowerCase();
-    if ((ownerInst && ownerInst !== slug) || (ownerInst === slug && ownerRole && ownerRole !== 'super_admin')) {
-      const targetDesc = ownerInst && ownerInst !== slug
-        ? `institution "${data.institutionName || ownerInst}"`
-        : `a staff/user account in "/${slug}"`;
-      throw new Error(`Username / Email "${key}" is already taken by ${targetDesc}. Please choose a different unique username or email.`);
-    }
-  }
-};
-
-const syncSuperAdminGlobalUser = async ({
-  slug,
-  instName,
-  adminName,
-  email,
-  username,
-  loginDisplay,
-  authVaultEmail = '',
-  passwordHash = '',
-  previousEmail = '',
-  previousUsername = '',
-  previousLoginDisplay = ''
-}) => {
-  const nextKeys = new Set(getGlobalKeysForAdmin({ email, username, loginDisplay }));
-  const prevKeys = getGlobalKeysForAdmin({
-    email: previousEmail,
-    username: previousUsername,
-    loginDisplay: previousLoginDisplay
-  });
-
-  for (const oldKey of prevKeys) {
-    if (!nextKeys.has(oldKey)) {
-      try {
-        const oldSnap = await getDoc(doc(db, GLOBAL_USERS_COLLECTION, oldKey));
-        if (oldSnap.exists() && oldSnap.data()?.institutionId === slug && oldSnap.data()?.role === 'super_admin') {
-          await deleteDoc(doc(db, GLOBAL_USERS_COLLECTION, oldKey));
-        }
-      } catch (_) {}
-    }
-  }
-
-  const basePayload = {
-    email,
-    username,
-    loginDisplay,
-    ...(authVaultEmail ? { authVaultEmail } : {}),
-    ...(passwordHash ? { passwordHash } : {}),
-    institutionId: slug,
-    institutionName: instName || slug,
-    role: 'super_admin',
-    entityId: 'super_admin',
-    displayName: adminName || 'Super Admin',
-    isActive: true,
-    updatedAt: new Date().toISOString()
-  };
-
-  for (const key of nextKeys) {
-    await setDoc(doc(db, GLOBAL_USERS_COLLECTION, key), {
-      ...basePayload,
-      loginKey: key
-    }, { merge: true });
-  }
-};
 
 const PAGE_DEFINITIONS = [
   { key: 'admin', label: 'Admin Dashboard', desc: 'Full institution configuration, students & staff setup', core: true },
@@ -771,9 +627,7 @@ const renderInstitutionsGrid = () => {
               ? 'Lifetime Validity'
               : (inst.expiryDate ? `Expires: ${formatDateDisplay(inst.expiryDate)}` : 'No Expiry Date');
 
-            const loginDisplay = inst.adminLoginDisplay
-              || (isInternalStaffEmail(inst.adminEmail || '') ? extractInternalUsername(inst.adminEmail || '') : (inst.adminEmail || '--'));
-            const storedPass = String(inst.adminPassword || '');
+            const loginDisplay = inst.adminDisplayUsername || inst.adminUsername || inst.adminLoginDisplay || inst.adminEmail || '--';
 
             return `
               <tr class="inst-table-row hover:bg-slate-50/80 transition align-top">
@@ -815,27 +669,15 @@ const renderInstitutionsGrid = () => {
                         <span class="text-[9px] font-bold text-slate-400 uppercase mr-1">User:</span>
                         <span class="font-mono font-bold text-slate-800 text-[11px]">${escapeHtml(loginDisplay)}</span>
                       </div>
-                      <button type="button" class="btn-copy-admin-login w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 shrink-0 flex items-center justify-center cursor-pointer" data-val="${escapeHtml(loginDisplay)}" title="Copy Username / Email">
+                      <button type="button" class="btn-copy-admin-login w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 shrink-0 flex items-center justify-center cursor-pointer" data-val="${escapeHtml(loginDisplay)}" title="Copy Username">
                         <i class="fas fa-copy text-[10px]"></i>
                       </button>
                     </div>
                     <div class="flex items-center justify-between gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1">
                       <div class="min-w-0 truncate">
                         <span class="text-[9px] font-bold text-slate-400 uppercase mr-1">Pass:</span>
-                        ${storedPass
-                          ? `<span class="card-pass-display font-mono font-bold text-slate-800 text-[11px]" data-pass="${escapeHtml(storedPass)}" data-visible="false">••••••••</span>`
-                          : `<span class="text-[10px] font-semibold text-amber-700">Set in Edit</span>`}
+                        <span class="text-[10px] font-semibold text-emerald-700"><i class="fas fa-lock mr-1 text-[9px]"></i>Encrypted • Edit to Reset</span>
                       </div>
-                      ${storedPass ? `
-                        <div class="flex items-center gap-0.5 shrink-0">
-                          <button type="button" class="btn-toggle-card-pass w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900 flex items-center justify-center cursor-pointer" title="Show / Hide Password">
-                            <i class="fas fa-eye text-[10px]"></i>
-                          </button>
-                          <button type="button" class="btn-copy-admin-pass w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 flex items-center justify-center cursor-pointer" data-val="${escapeHtml(storedPass)}" title="Copy Password">
-                            <i class="fas fa-copy text-[10px]"></i>
-                          </button>
-                        </div>
-                      ` : ''}
                     </div>
                   </div>
                 </td>
@@ -998,28 +840,12 @@ const loadInstitutions = async () => {
         const authSnap = await getDoc(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'adminAuth'));
         if (authSnap.exists()) {
           const authData = authSnap.data() || {};
-          if (authData.email && !inst.adminEmail) inst.adminEmail = authData.email;
+          if (authData.uid) inst.adminUid = authData.uid;
           if (authData.username) inst.adminUsername = authData.username;
-          if (authData.loginDisplay) inst.adminLoginDisplay = authData.loginDisplay;
-          if (authData.adminPassword) inst.adminPassword = authData.adminPassword;
-          if (authData.authVaultEmail) inst.authVaultEmail = authData.authVaultEmail;
-          if (authData.passwordHash) inst.passwordHash = authData.passwordHash;
-        }
-        const parsed = parseSuperAdminLoginInput(inst.adminLoginDisplay || inst.adminEmail || '', slug);
-        if (parsed.valid) {
-          inst.adminEmail = parsed.email;
-          inst.adminUsername = parsed.username;
-          inst.adminLoginDisplay = parsed.loginDisplay;
-          await syncSuperAdminGlobalUser({
-            slug,
-            instName: inst.name || slug,
-            adminName: inst.adminName || 'Master Admin',
-            email: parsed.email,
-            username: parsed.username,
-            loginDisplay: parsed.loginDisplay,
-            authVaultEmail: inst.authVaultEmail || '',
-            passwordHash: inst.passwordHash || ''
-          });
+          if (authData.displayUsername || authData.loginDisplay) {
+            inst.adminLoginDisplay = authData.displayUsername || authData.loginDisplay;
+          }
+          if (authData.authMode) inst.authMode = authData.authMode;
         }
       } catch (e) {
         console.warn(`AdminAuth sync notice for /${slug}:`, e);
@@ -1066,7 +892,7 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
 
   if (mode === 'edit' && inst) {
     document.getElementById('inst-modal-title').textContent = `Edit Institution: ${inst.name || inst.slug}`;
-    document.getElementById('inst-modal-subtitle').textContent = 'Update details, allowed modules, Super Admin username/email, password, or subscription validity.';
+    document.getElementById('inst-modal-subtitle').textContent = 'Update details, allowed modules, Super Admin username, password, or subscription validity.';
     document.getElementById('inst-name').value = inst.name || '';
     slugEl.value = inst.slug || inst.id || '';
     slugEl.readOnly = true;
@@ -1076,24 +902,24 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
     document.getElementById('inst-admin-name').value = inst.adminName || 'Master Admin';
 
     const displayLogin = inst.adminLoginDisplay
+      || inst.adminUsername
       || (isInternalStaffEmail(inst.adminEmail || '') ? extractInternalUsername(inst.adminEmail || '') : (inst.adminEmail || ''));
     document.getElementById('inst-admin-email').value = displayLogin;
 
     if (passInput) {
       passInput.disabled = false;
       passInput.required = false;
-      passInput.value = inst.adminPassword || '';
-      passInput.placeholder = inst.adminPassword ? 'Current password loaded (edit to change)' : 'Enter new password (min 6 characters)';
+      passInput.value = '';
+      passInput.placeholder = 'Leave blank to keep current password, or enter new password';
     }
     if (passLabel) {
-      passLabel.innerHTML = 'Super Admin Password <span class="text-slate-400 font-normal">(View or edit to change)</span>';
+      passLabel.innerHTML = 'Set New Super Admin Password <span class="text-slate-400 font-normal">(Optional)</span>';
     }
     if (passHint) {
-      passHint.textContent = 'Click the eye icon to view the current password, or type a new password here to change it immediately.';
+      passHint.textContent = 'Passwords are stored encrypted on the server. Enter a new password (min 6 characters) to reset it immediately.';
     }
     linkExistingWrap?.classList.add('hidden');
-    const hasRealEmail = Boolean(inst.adminEmail && inst.adminEmail.includes('@') && !isInternalStaffEmail(inst.adminEmail));
-    resetBtn?.classList.toggle('hidden', !hasRealEmail);
+    resetBtn?.classList.add('hidden');
 
     editStatusWrap?.classList.remove('hidden');
     document.getElementById('inst-status-select').value = String(inst.status || 'active').toLowerCase() === 'paused' ? 'paused' : 'active';
@@ -1107,7 +933,7 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
     renderAllowedPagesCheckboxes({ ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) });
   } else {
     document.getElementById('inst-modal-title').textContent = 'Add New Institution';
-    document.getElementById('inst-modal-subtitle').textContent = 'Provisions institution workspace, unique Super Admin credentials, and subscription rules.';
+    document.getElementById('inst-modal-subtitle').textContent = 'Provisions institution workspace, globally unique Super Admin username, and subscription rules.';
     slugEl.readOnly = false;
     slugEl.value = '';
     slugEl.classList.remove('bg-slate-100', 'text-slate-500');
@@ -1116,8 +942,7 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
     document.getElementById('inst-duration-months').value = '12';
     document.getElementById('inst-expiry-date').value = addMonthsToDateStr(todayStr, 12);
     document.getElementById('inst-is-lifetime').checked = false;
-    document.getElementById('inst-link-existing-auth').checked = false;
-    linkExistingWrap?.classList.remove('hidden');
+    linkExistingWrap?.classList.add('hidden');
     if (passInput) {
       passInput.disabled = false;
       passInput.required = true;
@@ -1128,7 +953,7 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
       passLabel.innerHTML = 'Super Admin Password <span class="text-rose-500">*</span>';
     }
     if (passHint) {
-      passHint.textContent = 'You can view or change the Super Admin password at any time from this console.';
+      passHint.textContent = 'Passwords are encrypted securely on the server. You can update the username or password at any time from this console.';
     }
     resetBtn?.classList.add('hidden');
     editStatusWrap?.classList.add('hidden');
@@ -1154,75 +979,6 @@ const showErrorInBox = (boxId, msg) => {
   box.classList.remove('hidden');
 };
 
-const provisionOrUpdateAdminAuthUser = async ({
-  slug,
-  targetEmail,
-  targetPassword,
-  previousEmail = '',
-  previousPassword = '',
-  existingAuthVaultEmail = '',
-  linkExistingAuth = false
-}) => {
-  if (!targetPassword) {
-    return { authVaultEmail: existingAuthVaultEmail || targetEmail };
-  }
-  const appName = `SecondaryProvisioner_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const secondaryApp = initializeApp(firebaseConfig, appName);
-  const secondaryAuth = getAuth(secondaryApp);
-  let resolvedVaultEmail = existingAuthVaultEmail || targetEmail;
-
-  try {
-    try {
-      await createUserWithEmailAndPassword(secondaryAuth, targetEmail, targetPassword);
-      resolvedVaultEmail = targetEmail;
-      try { await firebaseSignOut(secondaryAuth); } catch (_) {}
-      return { authVaultEmail: resolvedVaultEmail };
-    } catch (createErr) {
-      if (createErr?.code !== 'auth/email-already-in-use') {
-        throw createErr;
-      }
-    }
-
-    const candidatePasswords = Array.from(new Set([previousPassword, targetPassword].filter(Boolean)));
-    let updatedDirect = false;
-    for (const candidatePass of candidatePasswords) {
-      try {
-        const cred = await signInWithEmailAndPassword(secondaryAuth, targetEmail, candidatePass);
-        if (cred?.user) {
-          if (candidatePass !== targetPassword) {
-            await updatePassword(cred.user, targetPassword);
-          }
-          resolvedVaultEmail = targetEmail;
-          updatedDirect = true;
-          try { await firebaseSignOut(secondaryAuth); } catch (_) {}
-          break;
-        }
-      } catch (_) {}
-    }
-
-    if (updatedDirect) {
-      return { authVaultEmail: resolvedVaultEmail };
-    }
-
-    const passDigest = await hashCredentialValue(`${slug}:${targetEmail}:${targetPassword}`);
-    const vaultAliasEmail = `vault_${passDigest.slice(0, 12)}@${slug}.internal`;
-    try {
-      await createUserWithEmailAndPassword(secondaryAuth, vaultAliasEmail, targetPassword);
-      resolvedVaultEmail = vaultAliasEmail;
-    } catch (vaultErr) {
-      if (vaultErr?.code === 'auth/email-already-in-use') {
-        resolvedVaultEmail = vaultAliasEmail;
-      } else if (!linkExistingAuth) {
-        throw vaultErr;
-      }
-    }
-    try { await firebaseSignOut(secondaryAuth); } catch (_) {}
-    return { authVaultEmail: resolvedVaultEmail };
-  } finally {
-    try { await deleteApp(secondaryApp); } catch (_) {}
-  }
-};
-
 const saveInstitutionData = async ({
   mode = 'create',
   name,
@@ -1232,7 +988,6 @@ const saveInstitutionData = async ({
   adminName,
   rawAdminLogin,
   adminPassword,
-  linkExistingAuth,
   planName,
   isLifetime,
   durationMonths,
@@ -1260,28 +1015,20 @@ const saveInstitutionData = async ({
     return false;
   }
 
-  const parsedLogin = parseSuperAdminLoginInput(rawAdminLogin, slug);
-  if (parsedLogin.error) {
-    showErrorInBox(errorBoxId, parsedLogin.error);
+  const parsedUsername = validateCustomUsername(rawAdminLogin);
+  if (!parsedUsername.valid) {
+    showErrorInBox(errorBoxId, parsedUsername.error || 'Please enter a valid Super Admin Username (no spaces).');
     return false;
   }
-  if (!parsedLogin.valid) {
-    showErrorInBox(errorBoxId, 'Please enter a valid Super Admin Username or Email.');
-    return false;
-  }
-  if (!rawAdminLogin.includes('@') && !validateUsernameStrict(rawAdminLogin.trim().toLowerCase())) {
-    showErrorInBox(errorBoxId, 'Super Admin Username must be 3-60 characters using only letters, numbers, dots, hyphens, or underscores (no spaces).');
-    return false;
-  }
-  const { email: adminEmail, username: adminUsername, loginDisplay: adminLoginDisplay } = parsedLogin;
+  const adminUsername = parsedUsername.username;
+  const adminLoginDisplay = parsedUsername.displayUsername;
 
   if (!isLifetime && !expiryDate) {
     showErrorInBox(errorBoxId, 'Please select an Expiry Date or enable Lifetime Access.');
     return false;
   }
 
-  const existingInst = allInstitutions.find((i) => (i.slug || i.id) === slug) || null;
-  if (mode === 'create' && !linkExistingAuth && (!adminPassword || adminPassword.length < 6)) {
+  if (mode === 'create' && (!adminPassword || adminPassword.length < 6)) {
     showErrorInBox(errorBoxId, 'Super Admin Password must be at least 6 characters.');
     return false;
   }
@@ -1300,43 +1047,37 @@ const saveInstitutionData = async ({
   try {
     const expiryTimestamp = isLifetime ? null : toExpiryTimestamp(expiryDate);
 
-    await assertGlobalLoginAvailable({
-      email: adminEmail,
-      username: adminUsername,
-      loginDisplay: adminLoginDisplay,
-      slug
-    });
-
-    const effectivePassword = adminPassword || existingInst?.adminPassword || '';
-    const passwordHash = effectivePassword ? await hashCredentialValue(effectivePassword) : (existingInst?.passwordHash || '');
-
     if (mode === 'create') {
       const existingSnap = await getDoc(doc(db, INSTITUTIONS_COLLECTION, slug));
       if (existingSnap.exists()) {
         throw new Error(`Portal URL Slug "/${slug}" is already taken by another institution.`);
       }
+    }
 
-      const authRes = await provisionOrUpdateAdminAuthUser({
-        slug,
-        targetEmail: adminEmail,
-        targetPassword: effectivePassword,
-        linkExistingAuth
-      });
-      const authVaultEmail = authRes.authVaultEmail || adminEmail;
+    // 1. Provision or update Super Admin custom username & scrypt-hashed password via Cloud Function
+    const credRes = await upsertInstitutionSuperAdminCredential({
+      mode,
+      slug,
+      institutionName: name,
+      adminName,
+      username: adminLoginDisplay,
+      password: adminPassword || ''
+    });
+    const adminUid = credRes?.uid || buildSuperAdminUid(slug);
 
-      const adminsIndex = { [adminEmail]: true };
-      if (authVaultEmail) adminsIndex[authVaultEmail] = true;
-
-      const batch = writeBatch(db);
+    // 2. Persist institution metadata & public config (never storing plaintext passwords)
+    const batch = writeBatch(db);
+    if (mode === 'create') {
       batch.set(doc(db, INSTITUTIONS_COLLECTION, slug), {
         slug,
         name,
         place,
         phone,
         adminName,
-        adminEmail,
+        adminUid,
         adminUsername,
         adminLoginDisplay,
+        authMode: 'custom_token',
         status: 'active',
         isActive: true,
         pauseReason: '',
@@ -1351,86 +1092,16 @@ const saveInstitutionData = async ({
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
-
-      batch.set(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'adminAuth'), {
-        email: adminEmail,
-        username: adminUsername,
-        loginDisplay: adminLoginDisplay,
-        adminPassword: effectivePassword,
-        passwordHash,
-        authVaultEmail,
-        adminsIndex,
-        admins: [
-          {
-            name: adminName,
-            email: adminEmail,
-            username: adminUsername,
-            role: 'super_admin',
-            isActive: true
-          }
-        ],
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      batch.set(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'config'), {
-        appName: name,
-        place,
-        contactPhone: phone,
-        contactEmail: adminEmail,
-        enabledModules: { ...allowedPages },
-        adminProfile: {
-          name: adminName,
-          email: adminEmail,
-          username: adminUsername
-        },
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      await batch.commit();
-
-      await syncSuperAdminGlobalUser({
-        slug,
-        instName: name,
-        adminName,
-        email: adminEmail,
-        username: adminUsername,
-        loginDisplay: adminLoginDisplay,
-        authVaultEmail,
-        passwordHash
-      });
-
-      showToast(`Created /${slug} (${adminLoginDisplay}) successfully!`);
     } else {
-      let authVaultEmail = existingInst?.authVaultEmail || adminEmail;
-      const passwordChanged = Boolean(adminPassword && adminPassword !== (existingInst?.adminPassword || ''));
-      const loginChanged = adminEmail !== (existingInst?.adminEmail || '');
-
-      if (effectivePassword && (passwordChanged || loginChanged || !existingInst?.authVaultEmail)) {
-        const authRes = await provisionOrUpdateAdminAuthUser({
-          slug,
-          targetEmail: adminEmail,
-          targetPassword: effectivePassword,
-          previousEmail: existingInst?.adminEmail || '',
-          previousPassword: existingInst?.adminPassword || '',
-          existingAuthVaultEmail: existingInst?.authVaultEmail || '',
-          linkExistingAuth: true
-        });
-        authVaultEmail = authRes.authVaultEmail || adminEmail;
-      }
-
-      const adminsIndex = { [adminEmail]: true };
-      if (authVaultEmail) adminsIndex[authVaultEmail] = true;
-
-      const batch = writeBatch(db);
       batch.update(doc(db, INSTITUTIONS_COLLECTION, slug), {
         name,
         place,
         phone,
         adminName,
-        adminEmail,
+        adminUid,
         adminUsername,
         adminLoginDisplay,
+        authMode: 'custom_token',
         status,
         isActive: status === 'active',
         pauseReason,
@@ -1443,59 +1114,29 @@ const saveInstitutionData = async ({
         allowedPages,
         updatedAt: serverTimestamp()
       });
-
-      batch.set(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'adminAuth'), {
-        email: adminEmail,
-        username: adminUsername,
-        loginDisplay: adminLoginDisplay,
-        adminPassword: effectivePassword,
-        passwordHash,
-        authVaultEmail,
-        adminsIndex,
-        admins: [
-          {
-            name: adminName,
-            email: adminEmail,
-            username: adminUsername,
-            role: 'super_admin',
-            isActive: true
-          }
-        ],
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      batch.set(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'config'), {
-        appName: name,
-        place,
-        contactPhone: phone,
-        contactEmail: adminEmail,
-        enabledModules: { ...allowedPages },
-        adminProfile: {
-          name: adminName,
-          email: adminEmail,
-          username: adminUsername
-        },
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      await batch.commit();
-
-      await syncSuperAdminGlobalUser({
-        slug,
-        instName: name,
-        adminName,
-        email: adminEmail,
-        username: adminUsername,
-        loginDisplay: adminLoginDisplay,
-        authVaultEmail,
-        passwordHash,
-        previousEmail: existingInst?.adminEmail || '',
-        previousUsername: existingInst?.adminUsername || '',
-        previousLoginDisplay: existingInst?.adminLoginDisplay || ''
-      });
-
-      showToast(`Updated /${slug} successfully!`);
     }
+
+    batch.set(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'config'), {
+      appName: name,
+      place,
+      contactPhone: phone,
+      enabledModules: { ...allowedPages },
+      adminProfile: {
+        uid: adminUid,
+        name: adminName,
+        username: adminUsername,
+        displayUsername: adminLoginDisplay
+      },
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    await batch.commit();
+
+    showToast(
+      mode === 'create'
+        ? `Created /${slug} (Username: ${adminLoginDisplay}) successfully!`
+        : `Updated /${slug} successfully!`
+    );
 
     await loadInstitutions();
     return true;
@@ -1530,7 +1171,6 @@ const handleInstitutionSubmit = async (e) => {
     adminName: String(document.getElementById('inst-admin-name').value || '').trim() || 'Master Admin',
     rawAdminLogin: String(document.getElementById('inst-admin-email').value || '').trim(),
     adminPassword: String(document.getElementById('inst-admin-password').value || '').trim(),
-    linkExistingAuth: document.getElementById('inst-link-existing-auth')?.checked === true,
     planName: String(document.getElementById('inst-plan-name').value || 'Standard').trim(),
     isLifetime: document.getElementById('inst-is-lifetime')?.checked === true,
     durationMonths: Number(document.getElementById('inst-duration-months').value || 0),
@@ -1562,7 +1202,6 @@ const handleAddInstPageSubmit = async (e) => {
     adminName: String(document.getElementById('add-inst-admin-name').value || '').trim() || 'Master Admin',
     rawAdminLogin: String(document.getElementById('add-inst-admin-email').value || '').trim(),
     adminPassword: String(document.getElementById('add-inst-admin-password').value || '').trim(),
-    linkExistingAuth: document.getElementById('add-inst-link-existing-auth')?.checked === true,
     planName: String(document.getElementById('add-inst-plan-name').value || 'Standard').trim(),
     isLifetime,
     durationMonths: Number(document.getElementById('add-inst-duration-months').value || 0),
@@ -2257,15 +1896,30 @@ const handleShowcaseFileUpload = async (pageKey, fileList) => {
   showcaseBusyPages.add(pageKey);
   renderScreenshotsManager();
 
+  const uploadedUrlsThisBatch = [];
   try {
     const newItems = [];
     for (let i = 0; i < toProcess.length; i += 1) {
       const file = toProcess[i];
-      const compressedUrl = await compressShowcaseImageFile(file);
+      if (!file || !String(file.type || '').startsWith('image/')) {
+        throw new Error(`"${file?.name || 'File'}" is not a supported image format.`);
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        throw new Error(`"${file.name}" exceeds the 20 MB upload limit.`);
+      }
+      const uploadRes = await uploadImageToStorage(
+        file,
+        `company/showcases/${pageKey}`,
+        {
+          ...MEDIA_PRESETS.SHOWCASE,
+          fileNamePrefix: pageKey
+        }
+      );
+      uploadedUrlsThisBatch.push(uploadRes.url);
       const baseName = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
       newItems.push({
         id: `shot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${i}`,
-        url: compressedUrl,
+        url: uploadRes.url,
         caption: baseName.slice(0, 120),
         updatedAt: new Date().toISOString()
       });
@@ -2279,6 +1933,9 @@ const handleShowcaseFileUpload = async (pageKey, fileList) => {
       `Uploaded ${newItems.length} screenshot${newItems.length === 1 ? '' : 's'} for ${pageMeta?.label || pageKey}${note}`
     );
   } catch (err) {
+    if (uploadedUrlsThisBatch.length) {
+      await Promise.allSettled(uploadedUrlsThisBatch.map((u) => deleteStorageUrlIfManaged(u)));
+    }
     console.error('Screenshot upload error:', err);
     showToast(err?.message || 'Failed to upload screenshots.', 'error');
   } finally {
@@ -2370,12 +2027,15 @@ const handleShowcaseDelete = async (pageKey, imageIndex) => {
   });
   if (!ok) return;
 
-  existing.splice(imageIndex, 1);
+  const [removedShot] = existing.splice(imageIndex, 1);
   showcaseBusyPages.add(pageKey);
   renderScreenshotsManager();
 
   try {
     await persistPageShowcase(pageKey, existing, `Removed screenshot from ${pageMeta?.label || pageKey}`);
+    if (removedShot?.url) {
+      deleteStorageUrlIfManaged(removedShot.url);
+    }
   } catch (err) {
     showToast(`Failed to delete screenshot: ${err.message}`, 'error');
   } finally {
@@ -2726,10 +2386,6 @@ const bindEvents = () => {
     }
   });
   document.getElementById('add-inst-is-lifetime')?.addEventListener('change', () => syncLifetimeInputsFor('add-inst'));
-  document.getElementById('add-inst-link-existing-auth')?.addEventListener('change', (e) => {
-    const pwd = document.getElementById('add-inst-admin-password');
-    if (pwd) pwd.required = !e.target.checked;
-  });
   document.getElementById('btn-add-pages-select-all')?.addEventListener('click', () => {
     document.querySelectorAll('.add-inst-page-checkbox').forEach((cb) => { cb.checked = true; });
   });
@@ -2785,12 +2441,6 @@ const bindEvents = () => {
     }
   });
   document.getElementById('inst-is-lifetime')?.addEventListener('change', syncLifetimeInputs);
-  document.getElementById('inst-link-existing-auth')?.addEventListener('change', (e) => {
-    const pwd = document.getElementById('inst-admin-password');
-    if (pwd) {
-      pwd.required = !e.target.checked && document.getElementById('inst-form-mode').value === 'create';
-    }
-  });
 
   document.getElementById('btn-pages-select-all')?.addEventListener('click', () => {
     document.querySelectorAll('.inst-page-checkbox').forEach((cb) => { cb.checked = true; });
@@ -2799,23 +2449,6 @@ const bindEvents = () => {
     document.querySelectorAll('.inst-page-checkbox').forEach((cb) => {
       cb.checked = CORE_PAGE_KEYS.has(cb.dataset.pageKey);
     });
-  });
-
-  document.getElementById('btn-send-admin-reset')?.addEventListener('click', async () => {
-    const email = String(document.getElementById('inst-admin-email')?.value || '').trim().toLowerCase();
-    if (!email || !email.includes('@') || isInternalStaffEmail(email)) return;
-    const ok = await openConfirmDialog({
-      title: 'Send Password Reset Email',
-      message: `Send a Firebase password reset link to ${email}?`,
-      okLabel: 'Send Email'
-    });
-    if (!ok) return;
-    try {
-      await sendPasswordResetEmail(auth, email);
-      showToast(`Password reset email sent to ${email}`);
-    } catch (err) {
-      showToast(`Failed to send reset email: ${err.message}`, 'error');
-    }
   });
 
   // Pause modal
