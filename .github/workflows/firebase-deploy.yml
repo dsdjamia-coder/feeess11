@@ -1,0 +1,49 @@
+name: Deploy Firebase Functions & Security Rules
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'functions/**'
+      - 'firestore.rules'
+      - 'storage.rules'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/firebase-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to test-noorulislam
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install and check Cloud Functions
+        working-directory: functions
+        run: |
+          npm install --omit=dev
+          npm run lint
+
+      - name: Authenticate with Firebase Service Account
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy Functions, Firestore Rules, and Storage Rules
+        run: npx --yes firebase-tools deploy --only functions,firestore:rules,storage --project test-noorulislam --force
