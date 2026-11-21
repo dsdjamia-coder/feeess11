@@ -1203,15 +1203,15 @@
             </div>
 
             <!-- ================= OFFICIAL 2FA LOGIN FLOW ================= -->
-            <!-- Official Step 1: Username or Email -->
+            <!-- Official Step 1: Account Username -->
             <div id="official-step-1" class="login-step-panel hidden">
                 <div class="login-field-group">
-                    <label for="login-username" class="login-field-label">Username or Company Email</label>
+                    <label for="login-username" class="login-field-label">Username</label>
                     <div class="login-input-group">
                         <i class="fas fa-user login-input-leading" aria-hidden="true"></i>
-                        <input type="text" id="login-username" maxlength="60" class="login-field-input" placeholder="e.g., staff_username or admin_id" autocomplete="username">
+                        <input type="text" id="login-username" maxlength="100" class="login-field-input" placeholder="Enter your username" autocomplete="username">
                     </div>
-                    <p class="login-field-hint">For Staff, Management, Institution Admin, and Company Console accounts.</p>
+                    <p class="login-field-hint">For Staff, Management, and Institution Admin accounts.</p>
                 </div>
                 <button type="button" id="btn-verify-user" class="login-primary-btn">
                     <i class="fas fa-arrow-right" aria-hidden="true"></i>

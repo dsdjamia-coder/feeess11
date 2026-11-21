@@ -342,13 +342,13 @@ let isRootGatewayMode = false;
             if (isOpeningLoginFlow) return;
             isOpeningLoginFlow = true;
             try {
-                if (isRootGatewayMode && window.AppSession?.hasCompanySession?.()) {
+                const params = new URLSearchParams(window.location.search);
+                const forceAdd = params.get('addStudent') === '1' || params.get('login') === 'new';
+
+                if (!forceAdd && window.AppSession?.hasCompanySession?.()) {
                     window.location.href = '/company';
                     return;
                 }
-
-                const params = new URLSearchParams(window.location.search);
-                const forceAdd = params.get('addStudent') === '1' || params.get('login') === 'new';
 
                 // Official accounts (Admin / Staff) strictly enforce single-session access
                 if (!isRootGatewayMode && !forceAdd && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
@@ -2771,7 +2771,7 @@ let isRootGatewayMode = false;
             const userInput = document.getElementById('login-username');
             const rawInput = (userInput?.value || '').trim();
             if (!rawInput) {
-                showLoginMessage('Please enter your Username or Company Email.');
+                showLoginMessage('Please enter your username.');
                 userInput?.focus();
                 return;
             }
@@ -2831,14 +2831,14 @@ let isRootGatewayMode = false;
                     }
                 }
 
-                // 2. Root Platform Gateway: Allow Company Owner Email/Password sign-in (No OTP)
+                // 2. Root Platform Gateway: Silent owner email verification path
                 if (!matched && isRootGatewayMode) {
                     if (cleanLower.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanLower)) {
                         matched = {
                             type: 'company_owner',
                             data: null,
-                            displayName: cleanLower.split('@')[0] || 'Company Owner',
-                            meta: 'Company Console Account',
+                            displayName: cleanLower.split('@')[0] || 'Account',
+                            meta: 'Official Account',
                             loginEmail: cleanLower,
                             loginId: cleanLower
                         };
@@ -2846,7 +2846,7 @@ let isRootGatewayMode = false;
                         showLoginMessage(customLookupError.message || 'Unable to reach authentication service.');
                         return;
                     } else {
-                        showLoginMessage(`User "${rawInput}" not found. Enter a valid Super Admin / Staff username or Company Owner email.`);
+                        showLoginMessage(`Account "${rawInput}" not found. Please check your username and try again.`);
                         userInput?.focus();
                         return;
                     }
@@ -2886,13 +2886,13 @@ let isRootGatewayMode = false;
                     }
                 }
 
-                // 4. Tenant Portal: Allow Company Owner email fallback (No OTP)
+                // 4. Tenant Portal: Silent owner email path (works identically from any institution's Official login)
                 if (!matched && !isRootGatewayMode && cleanLower.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanLower)) {
                     matched = {
                         type: 'company_owner',
                         data: null,
                         displayName: cleanLower.split('@')[0] || 'Account',
-                        meta: 'Company Owner Verification',
+                        meta: 'Official Account',
                         loginEmail: cleanLower,
                         loginId: cleanLower
                     };
@@ -2932,9 +2932,7 @@ let isRootGatewayMode = false;
                     }
 
                     if (passHint) {
-                        passHint.textContent = isCompanyOwner
-                            ? 'Enter your Company Owner password. If 2-Step SMS OTP is enabled, a 6-digit code will be sent next.'
-                            : 'After verifying your password, an SMS OTP will be sent to your registered mobile.';
+                        passHint.textContent = 'After verifying your password, an SMS OTP will be sent to your registered mobile.';
                     }
                     const officialNoticeEl = document.getElementById('official-otp-session-notice');
                     if (officialNoticeEl) {
@@ -2942,7 +2940,7 @@ let isRootGatewayMode = false;
                     }
                     if (submitBtn) {
                         submitBtn.disabled = false;
-                        submitBtn.innerHTML = isCompanyOwner ? SIGN_IN_BTN_HTML : SEND_OFFICIAL_OTP_BTN_HTML;
+                        submitBtn.innerHTML = SEND_OFFICIAL_OTP_BTN_HTML;
                     }
 
                     hideAllLoginPanels();
@@ -3094,11 +3092,11 @@ let isRootGatewayMode = false;
             }
 
             const isCompanyOwner = verifiedUser.type === 'company_owner';
-            const defaultBtnHtml = isCompanyOwner ? SIGN_IN_BTN_HTML : SEND_OFFICIAL_OTP_BTN_HTML;
+            const defaultBtnHtml = SEND_OFFICIAL_OTP_BTN_HTML;
             const btn = document.getElementById('btn-login-submit');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>${isCompanyOwner ? 'Authenticating...' : 'Verifying & Sending OTP...'}</span>`;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Verifying &amp; Sending OTP...</span>';
             }
             showLoginMessage('');
 
@@ -3112,7 +3110,7 @@ let isRootGatewayMode = false;
                     return;
                 }
 
-                // A. Company Owner Login (Email/Password + Server-Verified 2-Step SMS OTP when otpPhone is configured)
+                // A. Owner Account Login (Email/Password + Server-Verified 2-Step SMS OTP when otpPhone is configured)
                 if (isCompanyOwner) {
                     await window.AppSession?.clearAll?.();
                     const loginEmail = String(verifiedUser.loginEmail || verifiedUser.loginId || '').trim().toLowerCase();
@@ -3121,15 +3119,14 @@ let isRootGatewayMode = false;
                         userCred = await signInWithEmailAndPassword(auth, loginEmail, enteredPassword);
                     } catch (authErr) {
                         const code = String(authErr?.code || '').trim();
-                        const proj = firebaseConfig?.projectId || 'unknown';
                         showLoginMessage(
-                            code === 'auth/invalid-credential' || code === 'auth/wrong-password'
-                                ? `Invalid email or password (${code}). Check Company Owner credentials in Firebase Auth (${proj}).`
-                                : `Authentication failed (${code || 'error'}): ${authErr?.message || 'Check credentials.'}`
+                            code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found'
+                                ? 'Invalid username or password. Please check your credentials and try again.'
+                                : `Authentication failed: ${authErr?.message || 'Please check your credentials and try again.'}`
                         );
                         if (btn) {
                             btn.disabled = false;
-                            btn.innerHTML = SIGN_IN_BTN_HTML;
+                            btn.innerHTML = defaultBtnHtml;
                         }
                         return;
                     }
@@ -3144,7 +3141,7 @@ let isRootGatewayMode = false;
                                 confirmationResult: null,
                                 cachedPassword: '',
                                 flowType: 'company_owner',
-                                ownerName: otpInit.ownerName || 'Company Owner',
+                                ownerName: otpInit.ownerName || 'Administrator',
                                 companyName: otpInit.companyName || 'Institution Manage',
                                 email: otpInit.email || String(userCred?.user?.email || loginEmail).trim().toLowerCase()
                             };
@@ -3156,7 +3153,7 @@ let isRootGatewayMode = false;
                         if (otpInit?.ok) {
                             try { await userCred.user.getIdToken(true); } catch (_) {}
                             window.AppSession?.startCompany?.({
-                                name: otpInit.ownerName || 'Company Owner',
+                                name: otpInit.ownerName || 'Administrator',
                                 email: otpInit.email || String(userCred?.user?.email || loginEmail).trim().toLowerCase(),
                                 companyName: otpInit.companyName || 'Institution Manage'
                             });
@@ -3169,7 +3166,7 @@ let isRootGatewayMode = false;
                             const authedEmail = String(userCred?.user?.email || loginEmail).trim().toLowerCase();
                             let isOwner = false;
                             let companyName = 'Institution Manage';
-                            let ownerName = 'Company Owner';
+                            let ownerName = 'Administrator';
                             try {
                                 const companyRef = doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID);
                                 const companySnap = await getDocFromServer(companyRef).catch(() => getDoc(companyRef));
@@ -3183,7 +3180,7 @@ let isRootGatewayMode = false;
                                     if (primaryEmail === authedEmail || indexMatch || Boolean(arrayMatch) || ownerEmailsArr.includes(authedEmail)) {
                                         isOwner = true;
                                         companyName = String(data.companyName || 'Institution Manage').trim();
-                                        ownerName = String(arrayMatch?.name || data.name || data.ownerName || 'Company Owner').trim();
+                                        ownerName = String(arrayMatch?.name || data.name || data.ownerName || 'Administrator').trim();
                                     }
                                 }
                             } catch (_) {}
@@ -3195,19 +3192,19 @@ let isRootGatewayMode = false;
                         }
 
                         try { await signOut(auth); } catch (_) {}
-                        showLoginMessage(otpInitErr?.message || 'Unable to verify Company Owner account.');
+                        showLoginMessage(otpInitErr?.message || 'Unable to verify account credentials.');
                         if (btn) {
                             btn.disabled = false;
-                            btn.innerHTML = SIGN_IN_BTN_HTML;
+                            btn.innerHTML = defaultBtnHtml;
                         }
                         return;
                     }
 
                     try { await signOut(auth); } catch (_) {}
-                    showLoginMessage(`Account "${loginEmail}" is not authorized as a Company Console Owner.`);
+                    showLoginMessage('This account is not authorized to sign in.');
                     if (btn) {
                         btn.disabled = false;
-                        btn.innerHTML = SIGN_IN_BTN_HTML;
+                        btn.innerHTML = defaultBtnHtml;
                     }
                     return;
                 }
@@ -3311,7 +3308,7 @@ let isRootGatewayMode = false;
                     officialOtpState.flowType = '';
                     await window.AppSession?.clearAll?.();
                     window.AppSession?.startCompany?.({
-                        name: completeRes?.ownerName || officialOtpState.ownerName || 'Company Owner',
+                        name: completeRes?.ownerName || officialOtpState.ownerName || 'Administrator',
                         email: completeRes?.email || officialOtpState.email || auth.currentUser?.email || '',
                         companyName: completeRes?.companyName || officialOtpState.companyName || 'Institution Manage'
                     });
@@ -3554,7 +3551,7 @@ let isRootGatewayMode = false;
         });
 
         document.getElementById('login-username')?.addEventListener('input', (e) => {
-            if (e.target.value.length > 60) e.target.value = e.target.value.slice(0, 60);
+            if (e.target.value.length > 100) e.target.value = e.target.value.slice(0, 100);
         });
         document.getElementById('login-password')?.addEventListener('input', (e) => {
             if (e.target.value.length > 60) e.target.value = e.target.value.slice(0, 60);

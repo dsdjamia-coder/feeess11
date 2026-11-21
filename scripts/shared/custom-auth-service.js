@@ -64,17 +64,19 @@ export const buildSuperAdminUid = (slug = '') => `sa_${String(slug || '').trim()
 export const buildStaffUid = (slug = '', staffId = '') =>
   `st_${String(slug || '').trim().toLowerCase()}_${String(staffId || '').trim()}`;
 
-const extractCallableErrorMessage = (err, fallback = 'Authentication service request failed.') => {
+const extractCallableErrorMessage = (err, fallback = 'Authentication service request failed.', { isTokenMinting = false } = {}) => {
   const code = String(err?.code || '').trim();
   const rawMsg = String(err?.message || '').replace(/^Firebase:\s*/i, '').trim();
   if (code === 'functions/not-found') {
-    return 'Authentication Cloud Function is not deployed yet. Deploy functions via "firebase deploy --only functions".';
+    return 'Authentication service is not available yet. Please try again shortly.';
   }
   if (code === 'functions/unavailable') {
     return 'Authentication service is temporarily unavailable. Check your network connection and try again.';
   }
   if (code === 'functions/internal' && (!rawMsg || rawMsg.toLowerCase() === 'internal')) {
-    return 'Authentication server internal error while issuing session token. Ensure the Cloud Functions runtime service account has the "Service Account Token Creator" IAM role and the IAM Service Account Credentials API is enabled.';
+    return isTokenMinting
+      ? 'Authentication server internal error while issuing session token. Ensure the Cloud Functions runtime service account has the "Service Account Token Creator" IAM role and the IAM Service Account Credentials API is enabled.'
+      : 'Authentication server encountered an unexpected error. Please try again.';
   }
   return rawMsg || fallback;
 };
@@ -146,7 +148,7 @@ export const completeOfficialOtpLoginAndSignIn = async (authInstance, { challeng
       profile: loginRes.profile || {}
     };
   } catch (err) {
-    const msg = extractCallableErrorMessage(err, 'OTP verification failed. Please try again.');
+    const msg = extractCallableErrorMessage(err, 'OTP verification failed. Please try again.', { isTokenMinting: true });
     const wrapped = new Error(msg);
     wrapped.code = err?.code || 'functions/unauthenticated';
     throw wrapped;
@@ -220,7 +222,7 @@ export const initiateCompanyOwnerOtp = async () => {
     const res = await initiateCompanyOwnerOtpCallable({});
     return res?.data || null;
   } catch (err) {
-    const msg = extractCallableErrorMessage(err, 'Unable to initiate Company Owner OTP verification.');
+    const msg = extractCallableErrorMessage(err, 'Unable to initiate OTP verification.');
     const wrapped = new Error(msg);
     wrapped.code = err?.code || 'functions/permission-denied';
     throw wrapped;
@@ -235,7 +237,7 @@ export const completeCompanyOwnerOtpLogin = async ({ challengeId, phoneIdToken }
     });
     return res?.data || null;
   } catch (err) {
-    const msg = extractCallableErrorMessage(err, 'Company Owner OTP verification failed.');
+    const msg = extractCallableErrorMessage(err, 'OTP verification failed. Please try again.');
     const wrapped = new Error(msg);
     wrapped.code = err?.code || 'functions/unauthenticated';
     throw wrapped;

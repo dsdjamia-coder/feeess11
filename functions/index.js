@@ -1574,21 +1574,21 @@ exports.syncCompanyOwnerClaims = onCall({ cors: true }, async (request) => {
 exports.initiateCompanyOwnerOtp = onCall({ cors: true }, async (request) => {
   const authCtx = request.auth;
   if (!authCtx || !authCtx.uid || !authCtx.token) {
-    throw new HttpsError('unauthenticated', 'Company Owner authentication is required.');
+    throw new HttpsError('unauthenticated', 'Account authentication is required.');
   }
   const provider = String(authCtx.token.firebase?.sign_in_provider || '').toLowerCase();
   if (provider === 'custom' || provider === 'anonymous' || provider === 'phone') {
-    throw new HttpsError('permission-denied', 'Company Owner email/password sign-in is required.');
+    throw new HttpsError('permission-denied', 'Standard account sign-in is required.');
   }
 
   const email = String(authCtx.token.email || '').trim().toLowerCase();
   if (!email) {
-    throw new HttpsError('permission-denied', 'Authenticated Company Owner email is missing.');
+    throw new HttpsError('permission-denied', 'Authenticated account identifier is missing.');
   }
 
   const snap = await db.collection(COMPANY_COLLECTION).doc(COMPANY_CONFIG_DOC_ID).get();
   if (!snap.exists) {
-    throw new HttpsError('permission-denied', 'Company configuration document not found.');
+    throw new HttpsError('permission-denied', 'Account configuration not found.');
   }
   const data = snap.data() || {};
   const ownersList = Array.isArray(data.owners) ? data.owners : [];
@@ -1605,11 +1605,11 @@ exports.initiateCompanyOwnerOtp = onCall({ cors: true }, async (request) => {
     || ownerEmailsArr.includes(email);
 
   if (!isOwner) {
-    throw new HttpsError('permission-denied', `Account "${email}" is not authorized as a Company Console Owner.`);
+    throw new HttpsError('permission-denied', 'This account is not authorized to sign in.');
   }
 
   const companyName = String(data.companyName || 'Institution Manage').trim();
-  const ownerName = String(matchedOwner?.name || data.name || data.ownerName || 'Company Owner').trim();
+  const ownerName = String(matchedOwner?.name || data.name || data.ownerName || 'Administrator').trim();
 
   // Resolve configured OTP mobile number: owner-specific first, then company/config.otpPhone
   const phoneCandidates = [
@@ -1669,7 +1669,7 @@ exports.initiateCompanyOwnerOtp = onCall({ cors: true }, async (request) => {
     otpRequired: true,
     challengeId,
     phoneE164,
-    maskedPhone: maskPhoneNumber(phoneE164),
+    maskedPhone: maskPhoneDisplay(phoneE164),
     email,
     ownerName,
     companyName
@@ -1684,11 +1684,11 @@ exports.initiateCompanyOwnerOtp = onCall({ cors: true }, async (request) => {
 exports.completeCompanyOwnerOtpLogin = onCall({ cors: true }, async (request) => {
   const authCtx = request.auth;
   if (!authCtx || !authCtx.uid || !authCtx.token) {
-    throw new HttpsError('unauthenticated', 'Company Owner authentication is required.');
+    throw new HttpsError('unauthenticated', 'Account authentication is required.');
   }
   const provider = String(authCtx.token.firebase?.sign_in_provider || '').toLowerCase();
   if (provider === 'custom' || provider === 'anonymous' || provider === 'phone') {
-    throw new HttpsError('permission-denied', 'Company Owner email/password session is required.');
+    throw new HttpsError('permission-denied', 'Standard account session is required.');
   }
 
   const challengeId = String(request.data?.challengeId || '').trim();
@@ -1706,7 +1706,7 @@ exports.completeCompanyOwnerOtpLogin = onCall({ cors: true }, async (request) =>
     throw new HttpsError('permission-denied', 'Invalid OTP verification session type.');
   }
   if (preview.uid !== authCtx.uid) {
-    throw new HttpsError('permission-denied', 'OTP verification session does not match the signed-in Company Owner.');
+    throw new HttpsError('permission-denied', 'OTP verification session does not match the signed-in account.');
   }
 
   // Verify the SMS OTP phone token BEFORE consuming the challenge so typos/expired tokens can retry
@@ -1717,7 +1717,7 @@ exports.completeCompanyOwnerOtpLogin = onCall({ cors: true }, async (request) =>
   return {
     ok: true,
     email: String(challenge.email || authCtx.token.email || '').trim().toLowerCase(),
-    ownerName: String(challenge.ownerName || 'Company Owner').trim(),
+    ownerName: String(challenge.ownerName || 'Administrator').trim(),
     companyName: String(challenge.companyName || 'Institution Manage').trim()
   };
 });
