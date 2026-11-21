@@ -1821,6 +1821,10 @@
                         </div>
                     </div>
                     <p class="login-field-hint">Enter the parent or student mobile number registered with the institution.</p>
+                    <div class="login-session-notice">
+                        <i class="fas fa-circle-info" aria-hidden="true"></i>
+                        <span><strong>One-time device verification:</strong> Once signed in, you stay logged in on this device with no session time limit. OTP is only required again if you log out or sign in on another device.</span>
+                    </div>
                 </div>
                 <button type="button" id="btn-student-verify-phone" class="login-primary-btn">
                     <i class="fas fa-arrow-right" aria-hidden="true"></i>
@@ -1828,7 +1832,7 @@
                 </button>
             </div>
 
-            <!-- Student Step 2: Masked Student Preview & Send OTP -->
+            <!-- Student Step 2: Confirm Student Details & Send OTP -->
             <div id="student-step-2" class="login-step-panel hidden">
                 <div class="login-verified-card">
                     <div class="login-verified-identity">
@@ -1847,9 +1851,9 @@
                 </div>
 
                 <div class="login-field-group">
-                    <div class="login-field-label">Linked Student Preview</div>
+                    <div class="login-field-label">Confirm Student Details</div>
                     <div id="student-preview-list" class="login-preview-list"></div>
-                    <p class="login-field-hint">Full student profiles unlock after verifying the SMS OTP sent to your mobile.</p>
+                    <p class="login-field-hint">Confirm the student name and class above, then tap Send OTP to verify this device.</p>
                 </div>
 
                 <button type="button" id="btn-student-send-otp" class="login-primary-btn">
@@ -1885,6 +1889,10 @@
                     <div class="login-otp-footer">
                         <span id="student-otp-timer-text" class="login-otp-timer"></span>
                         <button type="button" id="btn-student-resend-otp" class="login-link-btn" disabled>Resend OTP</button>
+                    </div>
+                    <div class="login-session-notice">
+                        <i class="fas fa-shield-halved" aria-hidden="true"></i>
+                        <span>One-time verification for this device — no session time limit after login until you log out or switch devices. Max 2 resends per 15 minutes.</span>
                     </div>
                 </div>
 
@@ -1949,6 +1957,10 @@
                         </button>
                     </div>
                     <p id="login-password-hint" class="login-field-hint">After verifying your password, an SMS OTP will be sent to your registered mobile.</p>
+                    <div id="official-otp-session-notice" class="login-session-notice">
+                        <i class="fas fa-circle-info" aria-hidden="true"></i>
+                        <span><strong>One-time device verification:</strong> Once signed in, you stay logged in on this device with no session time limit. OTP is only required again if you log out or sign in on another device.</span>
+                    </div>
                 </div>
 
                 <button type="button" id="btn-login-submit" class="login-primary-btn">
@@ -1984,6 +1996,10 @@
                     <div class="login-otp-footer">
                         <span id="official-otp-timer-text" class="login-otp-timer"></span>
                         <button type="button" id="btn-official-resend-otp" class="login-link-btn" disabled>Resend OTP</button>
+                    </div>
+                    <div class="login-session-notice">
+                        <i class="fas fa-shield-halved" aria-hidden="true"></i>
+                        <span>One-time verification for this device — no session time limit after login until you log out or switch devices. Max 2 resends per 15 minutes.</span>
                     </div>
                 </div>
 

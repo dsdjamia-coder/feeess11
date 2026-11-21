@@ -3416,7 +3416,8 @@ body:not(.worksheet-fullscreen-mode) .worksheet-sticky-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 6px 10px;
     margin-top: 2px;
 }
 
@@ -3425,6 +3426,27 @@ body:not(.worksheet-fullscreen-mode) .worksheet-sticky-header {
     font-weight: 500;
     color: #64748b;
     font-variant-numeric: tabular-nums;
+}
+
+#login-modal .login-session-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+
+#login-modal .login-session-notice i {
+    color: #2563eb;
+    font-size: 13px;
+    margin-top: 2px;
+    flex-shrink: 0;
 }
 
 #login-modal .login-link-btn {

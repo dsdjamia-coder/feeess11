@@ -30,6 +30,7 @@ const OTP_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_AUTH_FRESHNESS_SEC = 10 * 60; // 10 minutes max age for verified Phone ID token
 const OTP_RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const OTP_RATE_MAX_REQUESTS = 5;
+const OTP_SEND_MAX_REQUESTS = 3; // 1 initial OTP + max 2 resends per 15-minute window
 
 // --- Helpers ---
 
@@ -175,10 +176,13 @@ const verifyPasswordScrypt = (password, salt, expectedHashHex) => {
 const buildSuperAdminUid = (slug) => `sa_${slug}`;
 const buildStaffUid = (slug, staffId) => `st_${slug}_${staffId}`;
 
-const enforceOtpRateLimit = async (bucketKey = '') => {
+const enforceOtpRateLimit = async (bucketKey = '', maxRequests = OTP_RATE_MAX_REQUESTS) => {
   const keyHash = sha256Hex(String(bucketKey || 'default').toLowerCase());
   const ref = db.collection(OTP_RATE_LIMITS_COLLECTION).doc(keyHash);
   const nowMs = Date.now();
+  const limit = Number.isFinite(Number(maxRequests)) && Number(maxRequests) > 0
+    ? Number(maxRequests)
+    : OTP_RATE_MAX_REQUESTS;
 
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -187,12 +191,12 @@ const enforceOtpRateLimit = async (bucketKey = '') => {
       ? data.timestamps.map(Number).filter((ts) => Number.isFinite(ts) && (nowMs - ts) < OTP_RATE_WINDOW_MS)
       : [];
 
-    if (existingTimestamps.length >= OTP_RATE_MAX_REQUESTS) {
+    if (existingTimestamps.length >= limit) {
       const oldest = Math.min(...existingTimestamps);
       const waitMins = Math.max(1, Math.ceil((OTP_RATE_WINDOW_MS - (nowMs - oldest)) / 60000));
       throw new HttpsError(
         'resource-exhausted',
-        `Too many OTP requests. Please wait ${waitMins} minute${waitMins === 1 ? '' : 's'} before trying again.`
+        `OTP resend limit reached (maximum ${Math.max(0, limit - 1)} resends per 15 minutes). Please wait ${waitMins} minute${waitMins === 1 ? '' : 's'} before trying again.`
       );
     }
 
@@ -651,7 +655,7 @@ exports.verifyOfficialPasswordForOtp = onCall({ cors: true }, async (request) =>
   }
 
   // Enforce SMS abuse protection rate limit
-  await enforceOtpRateLimit(`official:${credInst}:${uid}:${phoneE164}`);
+  await enforceOtpRateLimit(`official:${credInst}:${uid}:${phoneE164}`, OTP_SEND_MAX_REQUESTS);
 
   // Reset failed password attempts on verified password
   if (Number(cred.failedAttempts || 0) > 0 || Number(cred.lockUntilMs || 0) > 0) {
@@ -861,7 +865,7 @@ exports.verifyDirectoryPasswordForOtp = onCall({ cors: true }, async (request) =
     );
   }
 
-  await enforceOtpRateLimit(`directory:${slug}:${matchedEntry.id}:${phoneE164}`);
+  await enforceOtpRateLimit(`directory:${slug}:${matchedEntry.id}:${phoneE164}`, OTP_SEND_MAX_REQUESTS);
 
   const displayName = String(matchedEntry.name || values.name || values.Name || matchedEntry.authMeta?.usernameRaw || rawUsername).trim();
   const roleTitle = String(values.role || matchedEntry.role || 'Category User').trim();
@@ -966,18 +970,23 @@ exports.lookupStudentsByPhone = onCall({ cors: true }, async (request) => {
     };
   }
 
-  // Strictly return ONLY masked name and class before OTP verification
-  const maskedPreviews = matched.map((st) => ({
-    maskedName: maskStudentName(st.name),
-    classLabel: st.class ? `Class ${st.class}` : 'Student'
-  }));
+  // Return full student name and class for confirmation before OTP verification
+  const studentConfirmations = matched.map((st) => {
+    const fullName = String(st.name || 'Student').trim() || 'Student';
+    return {
+      name: fullName,
+      fullName,
+      maskedName: fullName,
+      classLabel: st.class ? `Class ${st.class}` : 'Student'
+    };
+  });
 
   return {
     found: true,
     count: matched.length,
     phoneE164,
     maskedPhone: maskPhoneDisplay(phoneE164),
-    students: maskedPreviews
+    students: studentConfirmations
   };
 });
 

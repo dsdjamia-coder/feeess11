@@ -1813,7 +1813,84 @@ let isRootGatewayMode = false;
             flowType: '' // 'custom_auth' | 'directory'
         };
         let recaptchaVerifierInstance = null;
+        let recaptchaMountCounter = 0;
         let otpResendTimers = { student: null, official: null };
+
+        const OTP_QUOTA_STORAGE_KEY = 'app_otp_send_quota_v1';
+        const OTP_MAX_TOTAL_SENDS = 3; // 1 initial OTP + max 2 resends
+        const OTP_MAX_RESENDS = OTP_MAX_TOTAL_SENDS - 1;
+        const OTP_QUOTA_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+        const getOtpQuotaKey = (scope = 'student', phoneE164 = '') =>
+            `${INSTITUTION_ID || 'root'}:${scope}:${String(phoneE164 || '').trim().toLowerCase()}`;
+
+        const readOtpQuotaStore = () => {
+            try {
+                const raw = localStorage.getItem(OTP_QUOTA_STORAGE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (_) {
+                return {};
+            }
+        };
+
+        const writeOtpQuotaStore = (store) => {
+            try {
+                localStorage.setItem(OTP_QUOTA_STORAGE_KEY, JSON.stringify(store));
+            } catch (_) {}
+        };
+
+        const getOtpQuotaStatus = (scope = 'student', phoneE164 = '') => {
+            const nowMs = Date.now();
+            const key = getOtpQuotaKey(scope, phoneE164);
+            const store = readOtpQuotaStore();
+            const rawList = Array.isArray(store[key]) ? store[key] : [];
+            const active = rawList
+                .map(Number)
+                .filter((ts) => Number.isFinite(ts) && (nowMs - ts) < OTP_QUOTA_WINDOW_MS)
+                .sort((a, b) => a - b);
+
+            if (active.length !== rawList.length) {
+                if (active.length) store[key] = active;
+                else delete store[key];
+                writeOtpQuotaStore(store);
+            }
+
+            const totalSent = active.length;
+            const remainingSends = Math.max(0, OTP_MAX_TOTAL_SENDS - totalSent);
+            const resendsUsed = Math.max(0, Math.min(OTP_MAX_RESENDS, totalSent - 1));
+            const locked = totalSent >= OTP_MAX_TOTAL_SENDS;
+            const waitMinutes = locked && active.length
+                ? Math.max(1, Math.ceil((OTP_QUOTA_WINDOW_MS - (nowMs - active[0])) / 60000))
+                : 0;
+
+            return {
+                totalSent,
+                resendsUsed,
+                remainingSends,
+                locked,
+                waitMinutes
+            };
+        };
+
+        const recordOtpSendAttempt = (scope = 'student', phoneE164 = '') => {
+            if (!phoneE164) return getOtpQuotaStatus(scope, phoneE164);
+            const nowMs = Date.now();
+            const key = getOtpQuotaKey(scope, phoneE164);
+            const store = readOtpQuotaStore();
+            // Prune stale buckets opportunistically
+            Object.keys(store).forEach((bucket) => {
+                const list = Array.isArray(store[bucket]) ? store[bucket] : [];
+                const fresh = list.map(Number).filter((ts) => Number.isFinite(ts) && (nowMs - ts) < OTP_QUOTA_WINDOW_MS);
+                if (fresh.length) store[bucket] = fresh;
+                else delete store[bucket];
+            });
+            const current = Array.isArray(store[key]) ? store[key] : [];
+            current.push(nowMs);
+            store[key] = current;
+            writeOtpQuotaStore(store);
+            return getOtpQuotaStatus(scope, phoneE164);
+        };
 
         const VERIFY_BTN_HTML = '<i class="fas fa-arrow-right" aria-hidden="true"></i><span>Verify Account</span>';
         const SIGN_IN_BTN_HTML = '<i class="fas fa-shield-halved" aria-hidden="true"></i><span>Sign In Securely</span>';
@@ -1849,7 +1926,7 @@ let isRootGatewayMode = false;
             });
         };
 
-        const startOtpResendTimer = (scope = 'student', seconds = 60) => {
+        const startOtpResendTimer = (scope = 'student', seconds = 60, phoneE164 = '') => {
             if (otpResendTimers[scope]) {
                 clearInterval(otpResendTimers[scope]);
                 otpResendTimers[scope] = null;
@@ -1858,24 +1935,50 @@ let isRootGatewayMode = false;
             const resendBtn = document.getElementById(scope === 'student' ? 'btn-student-resend-otp' : 'btn-official-resend-otp');
             let remaining = seconds;
             const renderTick = () => {
+                const quota = phoneE164 ? getOtpQuotaStatus(scope, phoneE164) : { locked: false, remainingSends: OTP_MAX_RESENDS, waitMinutes: 0 };
+                if (quota.locked) {
+                    if (otpResendTimers[scope]) {
+                        clearInterval(otpResendTimers[scope]);
+                        otpResendTimers[scope] = null;
+                    }
+                    if (timerEl) {
+                        timerEl.textContent = `Resend limit reached (${OTP_MAX_RESENDS}/${OTP_MAX_RESENDS} used). Try again in ${quota.waitMinutes} min.`;
+                    }
+                    if (resendBtn) {
+                        resendBtn.disabled = true;
+                        resendBtn.textContent = 'Limit Reached';
+                    }
+                    return;
+                }
+                const leftCount = Math.min(OTP_MAX_RESENDS, quota.remainingSends);
                 if (remaining > 0) {
-                    if (timerEl) timerEl.textContent = `Resend available in ${remaining}s`;
-                    if (resendBtn) resendBtn.disabled = true;
+                    if (timerEl) {
+                        timerEl.textContent = `Resend in ${remaining}s (${leftCount} resend${leftCount === 1 ? '' : 's'} left)`;
+                    }
+                    if (resendBtn) {
+                        resendBtn.disabled = true;
+                        resendBtn.textContent = 'Resend OTP';
+                    }
                 } else {
                     if (timerEl) timerEl.textContent = 'Did not receive the SMS?';
-                    if (resendBtn) resendBtn.disabled = false;
+                    if (resendBtn) {
+                        resendBtn.disabled = false;
+                        resendBtn.textContent = `Resend OTP (${leftCount} left)`;
+                    }
                 }
             };
             renderTick();
-            otpResendTimers[scope] = setInterval(() => {
-                remaining -= 1;
-                if (remaining <= 0) {
-                    clearInterval(otpResendTimers[scope]);
-                    otpResendTimers[scope] = null;
-                    remaining = 0;
-                }
-                renderTick();
-            }, 1000);
+            if (!phoneE164 || !getOtpQuotaStatus(scope, phoneE164).locked) {
+                otpResendTimers[scope] = setInterval(() => {
+                    remaining -= 1;
+                    if (remaining <= 0) {
+                        clearInterval(otpResendTimers[scope]);
+                        otpResendTimers[scope] = null;
+                        remaining = 0;
+                    }
+                    renderTick();
+                }, 1000);
+            }
         };
 
         const resetRecaptchaVerifier = () => {
@@ -1884,7 +1987,9 @@ let isRootGatewayMode = false;
                 recaptchaVerifierInstance = null;
             }
             const container = document.getElementById('firebase-recaptcha-container');
-            if (container) container.innerHTML = '';
+            if (container) {
+                container.replaceChildren();
+            }
         };
 
         const ensureRecaptchaVerifier = async () => {
@@ -1893,16 +1998,20 @@ let isRootGatewayMode = false;
                 throw new Error('Verification container is missing. Please reload the page.');
             }
             resetRecaptchaVerifier();
-            recaptchaVerifierInstance = new RecaptchaVerifier(auth, 'firebase-recaptcha-container', {
+            // Mount each RecaptchaVerifier on a brand-new child element so Google reCAPTCHA never throws
+            // "reCAPTCHA has already been rendered in this element" on Resend OTP or retry.
+            const slot = document.createElement('div');
+            slot.id = `firebase-recaptcha-slot-${++recaptchaMountCounter}`;
+            container.appendChild(slot);
+
+            recaptchaVerifierInstance = new RecaptchaVerifier(auth, slot, {
                 size: 'invisible',
                 callback: () => {},
                 'expired-callback': () => {
                     resetRecaptchaVerifier();
                 }
             });
-            try {
-                await recaptchaVerifierInstance.render();
-            } catch (_) {}
+            await recaptchaVerifierInstance.render();
             return recaptchaVerifierInstance;
         };
 
@@ -2450,15 +2559,18 @@ let isRootGatewayMode = false;
                     summaryEl.textContent = cnt === 1 ? '1 student linked' : `${cnt} students linked`;
                 }
                 if (previewListEl) {
-                    previewListEl.innerHTML = lookup.students.map((item) => `
+                    previewListEl.innerHTML = lookup.students.map((item) => {
+                        const displayName = item.fullName || item.name || item.maskedName || 'Student';
+                        const displayClass = item.classLabel || 'Student';
+                        return `
                         <div class="login-preview-item">
-                            <span class="login-preview-avatar" aria-hidden="true"><i class="fas fa-user-graduate"></i></span>
-                            <div class="login-preview-meta">
-                                <div class="login-preview-name">${escapeHtml(item.maskedName || 'Student')}</div>
-                                <div class="login-preview-class">${escapeHtml(item.classLabel || 'Student')}</div>
+                            <span class="login-preview-icon" aria-hidden="true"><i class="fas fa-user-graduate"></i></span>
+                            <div class="min-w-0">
+                                <div class="login-preview-name">${escapeHtml(displayName)}</div>
+                                <div class="login-preview-meta">${escapeHtml(displayClass)}</div>
                             </div>
-                        </div>
-                    `).join('');
+                        </div>`;
+                    }).join('');
                 }
 
                 hideAllLoginPanels();
@@ -2482,6 +2594,18 @@ let isRootGatewayMode = false;
             }
             const sendBtn = document.getElementById('btn-student-send-otp');
             const resendBtn = document.getElementById('btn-student-resend-otp');
+            const quotaBefore = getOtpQuotaStatus('student', studentOtpState.phoneE164);
+            if (quotaBefore.locked) {
+                const limitMsg = isResend
+                    ? `Resend limit reached (${OTP_MAX_RESENDS}/${OTP_MAX_RESENDS} used). Please wait ${quotaBefore.waitMinutes} minute${quotaBefore.waitMinutes === 1 ? '' : 's'} before requesting a new OTP.`
+                    : `Maximum OTP limit (${OTP_MAX_TOTAL_SENDS} OTPs per 15 minutes) reached for this mobile number. Please wait ${quotaBefore.waitMinutes} minute${quotaBefore.waitMinutes === 1 ? '' : 's'} and try again.`;
+                showLoginMessage(limitMsg);
+                if (isResend) {
+                    startOtpResendTimer('student', 0, studentOtpState.phoneE164);
+                }
+                return;
+            }
+
             if (!isResend && sendBtn) {
                 sendBtn.disabled = true;
                 sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Sending OTP...</span>';
@@ -2496,6 +2620,7 @@ let isRootGatewayMode = false;
                 const verifier = await ensureRecaptchaVerifier();
                 const confirmationResult = await signInWithPhoneNumber(auth, studentOtpState.phoneE164, verifier);
                 studentOtpState.confirmationResult = confirmationResult;
+                recordOtpSendAttempt('student', studentOtpState.phoneE164);
 
                 const otpPhoneMeta = document.getElementById('student-otp-phone-meta');
                 if (otpPhoneMeta) otpPhoneMeta.textContent = `Code sent to ${studentOtpState.maskedPhone || studentOtpState.phoneE164}`;
@@ -2509,14 +2634,17 @@ let isRootGatewayMode = false;
                     otpInput.value = '';
                     setTimeout(() => otpInput.focus(), 50);
                 }
-                startOtpResendTimer('student', 60);
+                startOtpResendTimer('student', 60, studentOtpState.phoneE164);
             } catch (err) {
                 console.error('Student send OTP error:', err);
                 resetRecaptchaVerifier();
                 showLoginMessage(formatPhoneAuthError(err, 'Failed to send SMS OTP. Please try again.'));
                 if (isResend && resendBtn) {
-                    resendBtn.disabled = false;
-                    resendBtn.textContent = 'Resend OTP';
+                    const quotaNow = getOtpQuotaStatus('student', studentOtpState.phoneE164);
+                    resendBtn.disabled = quotaNow.locked;
+                    resendBtn.textContent = quotaNow.locked
+                        ? 'Limit Reached'
+                        : `Resend OTP (${Math.min(OTP_MAX_RESENDS, quotaNow.remainingSends)} left)`;
                 }
             } finally {
                 if (!isResend && sendBtn) {
@@ -2524,7 +2652,11 @@ let isRootGatewayMode = false;
                     sendBtn.innerHTML = SEND_STUDENT_OTP_BTN_HTML;
                 }
                 if (isResend && resendBtn && !otpResendTimers.student) {
-                    resendBtn.textContent = 'Resend OTP';
+                    const quotaNow = getOtpQuotaStatus('student', studentOtpState.phoneE164);
+                    resendBtn.disabled = quotaNow.locked;
+                    resendBtn.textContent = quotaNow.locked
+                        ? 'Limit Reached'
+                        : `Resend OTP (${Math.min(OTP_MAX_RESENDS, quotaNow.remainingSends)} left)`;
                 }
             }
         };
@@ -2816,6 +2948,10 @@ let isRootGatewayMode = false;
                             ? 'Enter your Company Owner password to sign in.'
                             : 'After verifying your password, an SMS OTP will be sent to your registered mobile.';
                     }
+                    const officialNoticeEl = document.getElementById('official-otp-session-notice');
+                    if (officialNoticeEl) {
+                        officialNoticeEl.classList.toggle('hidden', isCompanyOwner);
+                    }
                     if (submitBtn) {
                         submitBtn.disabled = false;
                         submitBtn.innerHTML = isCompanyOwner ? SIGN_IN_BTN_HTML : SEND_OFFICIAL_OTP_BTN_HTML;
@@ -2856,6 +2992,18 @@ let isRootGatewayMode = false;
                 return;
             }
             const resendBtn = document.getElementById('btn-official-resend-otp');
+            const quotaBefore = getOtpQuotaStatus('official', officialOtpState.phoneE164);
+            if (quotaBefore.locked) {
+                const limitMsg = isResend
+                    ? `Resend limit reached (${OTP_MAX_RESENDS}/${OTP_MAX_RESENDS} used). Please wait ${quotaBefore.waitMinutes} minute${quotaBefore.waitMinutes === 1 ? '' : 's'} before requesting a new OTP.`
+                    : `Maximum OTP limit (${OTP_MAX_TOTAL_SENDS} OTPs per 15 minutes) reached for this account. Please wait ${quotaBefore.waitMinutes} minute${quotaBefore.waitMinutes === 1 ? '' : 's'} and try again.`;
+                showLoginMessage(limitMsg);
+                if (isResend) {
+                    startOtpResendTimer('official', 0, officialOtpState.phoneE164);
+                }
+                return;
+            }
+
             if (isResend && resendBtn) {
                 resendBtn.disabled = true;
                 resendBtn.textContent = 'Sending...';
@@ -2893,6 +3041,7 @@ let isRootGatewayMode = false;
                 const verifier = await ensureRecaptchaVerifier();
                 const confirmationResult = await signInWithPhoneNumber(auth, officialOtpState.phoneE164, verifier);
                 officialOtpState.confirmationResult = confirmationResult;
+                recordOtpSendAttempt('official', officialOtpState.phoneE164);
 
                 const otpNameEl = document.getElementById('official-otp-name');
                 const otpPhoneEl = document.getElementById('official-otp-phone-meta');
@@ -2908,19 +3057,26 @@ let isRootGatewayMode = false;
                     otpInput.value = '';
                     setTimeout(() => otpInput.focus(), 50);
                 }
-                startOtpResendTimer('official', 60);
+                startOtpResendTimer('official', 60, officialOtpState.phoneE164);
             } catch (err) {
                 console.error('Official SMS OTP error:', err);
                 resetRecaptchaVerifier();
                 showLoginMessage(formatPhoneAuthError(err, 'Failed to send SMS OTP. Please try again.'));
                 if (isResend && resendBtn) {
-                    resendBtn.disabled = false;
-                    resendBtn.textContent = 'Resend OTP';
+                    const quotaNow = getOtpQuotaStatus('official', officialOtpState.phoneE164);
+                    resendBtn.disabled = quotaNow.locked;
+                    resendBtn.textContent = quotaNow.locked
+                        ? 'Limit Reached'
+                        : `Resend OTP (${Math.min(OTP_MAX_RESENDS, quotaNow.remainingSends)} left)`;
                 }
                 throw err;
             } finally {
                 if (isResend && resendBtn && !otpResendTimers.official) {
-                    resendBtn.textContent = 'Resend OTP';
+                    const quotaNow = getOtpQuotaStatus('official', officialOtpState.phoneE164);
+                    resendBtn.disabled = quotaNow.locked;
+                    resendBtn.textContent = quotaNow.locked
+                        ? 'Limit Reached'
+                        : `Resend OTP (${Math.min(OTP_MAX_RESENDS, quotaNow.remainingSends)} left)`;
                 }
             }
         };
