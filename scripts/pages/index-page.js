@@ -1994,6 +1994,10 @@ let isRootGatewayMode = false;
 
         const formatPhoneAuthError = (err, fallback = 'Unable to send or verify SMS OTP. Please try again.') => {
             const code = String(err?.code || '').trim();
+            const rawMessage = String(err?.message || '').trim();
+            const currentHostname = typeof window !== 'undefined' && window.location?.hostname
+                ? window.location.hostname
+                : 'this domain';
             if (code === 'auth/invalid-verification-code') {
                 return 'Invalid 6-digit OTP code. Please check the SMS and try again.';
             }
@@ -2002,6 +2006,12 @@ let isRootGatewayMode = false;
             }
             if (code === 'auth/too-many-requests') {
                 return 'Too many OTP attempts from this device. Please wait a few minutes and try again.';
+            }
+            if (
+                code === 'auth/unauthorized-domain'
+                || (code === 'auth/captcha-check-failed' && /hostname match not found/i.test(rawMessage))
+            ) {
+                return `SMS verification is not enabled for this domain (${currentHostname}). Please add this domain to Firebase Authorized Domains.`;
             }
             if (code === 'auth/captcha-check-failed') {
                 return 'Security verification (reCAPTCHA) failed. Please refresh the page and try again.';
