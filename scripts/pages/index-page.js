@@ -1,4 +1,4 @@
-import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, onSnapshot, collection, getDoc, getDocFromServer, getDocs, setDoc, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
 import {
@@ -35,7 +35,13 @@ import {
 } from '../shared/pwa-install.js';
 import {
     verifyLoginIdentifier,
-    signInWithCustomUsernameAndPassword
+    verifyOfficialPasswordForOtp,
+    completeOfficialOtpLoginAndSignIn,
+    verifyDirectoryPasswordForOtp,
+    completeDirectoryOtpLogin,
+    lookupStudentsByPhone,
+    completeStudentOtpLogin,
+    normalizePhoneToE164Client
 } from '../shared/custom-auth-service.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
@@ -144,7 +150,8 @@ let isRootGatewayMode = false;
             renderSavedAccounts();
             document.getElementById('saved-student-modal').style.display = 'flex';
         };
-        const openStudentLoginModal = () => {
+        let isAddingStudentAccountFlow = false;
+        const openStudentLoginModal = (options = {}) => {
             if (window.AppSession?.hasCompanySession?.()) {
                 window.location.href = '/company';
                 return;
@@ -153,9 +160,13 @@ let isRootGatewayMode = false;
                 window.location.href = getPageUrl('official.html');
                 return;
             }
-            document.getElementById('login-modal').style.display = 'flex'; 
+            isAddingStudentAccountFlow = Boolean(options?.addStudent);
+            const preferredMode = isRootGatewayMode
+                ? 'official'
+                : (options?.mode === 'official' ? 'official' : 'student');
+            document.getElementById('login-modal').style.display = 'flex';
             setMobileMenuState(false);
-            resetUniversalLoginForm();
+            resetUniversalLoginForm(preferredMode);
             const sessionNotice = window.AppSession?.consumeFlash?.();
             if (sessionNotice) showLoginMessage(sessionNotice);
             // Warm up verification registries in background while user types
@@ -497,7 +508,7 @@ let isRootGatewayMode = false;
         }
         document.getElementById('saved-student-add-btn')?.addEventListener('click', () => {
             document.getElementById('saved-student-modal').style.display = 'none';
-            openStudentLoginModal();
+            openStudentLoginModal({ mode: 'student', addStudent: true });
         });
         document.getElementById('saved-student-list')?.addEventListener('click', async (e) => {
             const removeBtn = e.target.closest('.saved-account-remove') || e.target.closest('.saved-student-remove');
@@ -1781,11 +1792,35 @@ let isRootGatewayMode = false;
             });
         });
         
-        // State for unified smart verification & login
+        // State for Student OTP & Official 2FA Login
+        let activeLoginMode = 'student';
         let verifiedUser = null;
+        let studentOtpState = {
+            rawPhone: '',
+            countryCode: '+91',
+            phoneE164: '',
+            maskedPhone: '',
+            previews: [],
+            confirmationResult: null,
+            verifiedStudents: []
+        };
+        let officialOtpState = {
+            challengeId: '',
+            phoneE164: '',
+            maskedPhone: '',
+            confirmationResult: null,
+            cachedPassword: '',
+            flowType: '' // 'custom_auth' | 'directory'
+        };
+        let recaptchaVerifierInstance = null;
+        let otpResendTimers = { student: null, official: null };
 
         const VERIFY_BTN_HTML = '<i class="fas fa-arrow-right" aria-hidden="true"></i><span>Verify Account</span>';
         const SIGN_IN_BTN_HTML = '<i class="fas fa-shield-halved" aria-hidden="true"></i><span>Sign In Securely</span>';
+        const SEND_OFFICIAL_OTP_BTN_HTML = '<i class="fas fa-shield-halved" aria-hidden="true"></i><span>Verify &amp; Send OTP</span>';
+        const VERIFY_PHONE_BTN_HTML = '<i class="fas fa-arrow-right" aria-hidden="true"></i><span>Verify Mobile</span>';
+        const SEND_STUDENT_OTP_BTN_HTML = '<i class="fas fa-paper-plane" aria-hidden="true"></i><span>Send OTP</span>';
+        const VERIFY_OTP_BTN_HTML = '<i class="fas fa-check-circle" aria-hidden="true"></i><span>Verify &amp; Sign In</span>';
 
         const loginModalLogoEl = document.getElementById('login-modal-logo');
         const loginModalLogoFallbackEl = document.getElementById('login-modal-logo-fallback');
@@ -1805,29 +1840,159 @@ let isRootGatewayMode = false;
             }
         });
 
-        const setLoginStepState = (step = 1) => {
+        const stopOtpTimers = () => {
+            ['student', 'official'].forEach((key) => {
+                if (otpResendTimers[key]) {
+                    clearInterval(otpResendTimers[key]);
+                    otpResendTimers[key] = null;
+                }
+            });
+        };
+
+        const startOtpResendTimer = (scope = 'student', seconds = 60) => {
+            if (otpResendTimers[scope]) {
+                clearInterval(otpResendTimers[scope]);
+                otpResendTimers[scope] = null;
+            }
+            const timerEl = document.getElementById(scope === 'student' ? 'student-otp-timer-text' : 'official-otp-timer-text');
+            const resendBtn = document.getElementById(scope === 'student' ? 'btn-student-resend-otp' : 'btn-official-resend-otp');
+            let remaining = seconds;
+            const renderTick = () => {
+                if (remaining > 0) {
+                    if (timerEl) timerEl.textContent = `Resend available in ${remaining}s`;
+                    if (resendBtn) resendBtn.disabled = true;
+                } else {
+                    if (timerEl) timerEl.textContent = 'Did not receive the SMS?';
+                    if (resendBtn) resendBtn.disabled = false;
+                }
+            };
+            renderTick();
+            otpResendTimers[scope] = setInterval(() => {
+                remaining -= 1;
+                if (remaining <= 0) {
+                    clearInterval(otpResendTimers[scope]);
+                    otpResendTimers[scope] = null;
+                    remaining = 0;
+                }
+                renderTick();
+            }, 1000);
+        };
+
+        const resetRecaptchaVerifier = () => {
+            if (recaptchaVerifierInstance) {
+                try { recaptchaVerifierInstance.clear(); } catch (_) {}
+                recaptchaVerifierInstance = null;
+            }
+            const container = document.getElementById('firebase-recaptcha-container');
+            if (container) container.innerHTML = '';
+        };
+
+        const ensureRecaptchaVerifier = async () => {
+            const container = document.getElementById('firebase-recaptcha-container');
+            if (!container) {
+                throw new Error('Verification container is missing. Please reload the page.');
+            }
+            resetRecaptchaVerifier();
+            recaptchaVerifierInstance = new RecaptchaVerifier(auth, 'firebase-recaptcha-container', {
+                size: 'invisible',
+                callback: () => {},
+                'expired-callback': () => {
+                    resetRecaptchaVerifier();
+                }
+            });
+            try {
+                await recaptchaVerifierInstance.render();
+            } catch (_) {}
+            return recaptchaVerifierInstance;
+        };
+
+        const formatPhoneAuthError = (err, fallback = 'Unable to send or verify SMS OTP. Please try again.') => {
+            const code = String(err?.code || '').trim();
+            if (code === 'auth/invalid-verification-code') {
+                return 'Invalid 6-digit OTP code. Please check the SMS and try again.';
+            }
+            if (code === 'auth/code-expired') {
+                return 'This OTP code has expired. Click Resend OTP to receive a new code.';
+            }
+            if (code === 'auth/too-many-requests') {
+                return 'Too many OTP attempts from this device. Please wait a few minutes and try again.';
+            }
+            if (code === 'auth/captcha-check-failed') {
+                return 'Security verification (reCAPTCHA) failed. Please refresh the page and try again.';
+            }
+            if (code === 'auth/operation-not-allowed') {
+                return 'Phone SMS authentication is not enabled yet in Firebase Console. Please contact the administrator.';
+            }
+            if (code === 'auth/invalid-phone-number') {
+                return 'Invalid mobile number format. Please check the country code and digits.';
+            }
+            if (code === 'auth/quota-exceeded') {
+                return 'SMS OTP quota limit reached. Please contact the administrator.';
+            }
+            if (code === 'auth/network-request-failed') {
+                return 'Network error while verifying OTP. Check your internet connection and try again.';
+            }
+            return err?.message || fallback;
+        };
+
+        const setLoginStepState = (step = 1, { totalSteps = 3, labels = null } = {}) => {
             const step1Item = document.getElementById('login-progress-step-1');
             const step2Item = document.getElementById('login-progress-step-2');
+            const step3Item = document.getElementById('login-progress-step-3');
             const stepDot1 = document.getElementById('login-step-dot-1');
-            const stepLine = document.getElementById('login-progress-line');
+            const stepDot2 = document.getElementById('login-step-dot-2');
+            const stepDot3 = document.getElementById('login-step-dot-3');
+            const stepLabel1 = document.getElementById('login-step-label-1');
+            const stepLabel2 = document.getElementById('login-step-label-2');
+            const stepLabel3 = document.getElementById('login-step-label-3');
+            const line1 = document.getElementById('login-progress-line-1');
+            const line2 = document.getElementById('login-progress-line-2');
 
-            if (step === 2) {
-                step1Item?.classList.remove('is-active');
-                step1Item?.classList.add('is-completed');
-                step1Item?.removeAttribute('aria-current');
-                if (stepDot1) stepDot1.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i>';
-                stepLine?.classList.add('is-completed');
-                step2Item?.classList.add('is-active');
-                step2Item?.setAttribute('aria-current', 'step');
-            } else {
-                step1Item?.classList.add('is-active');
-                step1Item?.classList.remove('is-completed');
-                step1Item?.setAttribute('aria-current', 'step');
-                if (stepDot1) stepDot1.textContent = '1';
-                stepLine?.classList.remove('is-completed');
-                step2Item?.classList.remove('is-active');
-                step2Item?.removeAttribute('aria-current');
+            if (Array.isArray(labels)) {
+                if (stepLabel1 && labels[0]) stepLabel1.textContent = labels[0];
+                if (stepLabel2 && labels[1]) stepLabel2.textContent = labels[1];
+                if (stepLabel3 && labels[2]) stepLabel3.textContent = labels[2];
             }
+
+            const showStep3 = totalSteps >= 3;
+            step3Item?.classList.toggle('hidden', !showStep3);
+            line2?.classList.toggle('hidden', !showStep3);
+
+            const applyItem = (item, dot, num) => {
+                if (!item) return;
+                item.classList.remove('is-active', 'is-completed');
+                item.removeAttribute('aria-current');
+                if (step > num) {
+                    item.classList.add('is-completed');
+                    if (dot) dot.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i>';
+                } else if (step === num) {
+                    item.classList.add('is-active');
+                    item.setAttribute('aria-current', 'step');
+                    if (dot) dot.textContent = String(num);
+                } else {
+                    if (dot) dot.textContent = String(num);
+                }
+            };
+
+            applyItem(step1Item, stepDot1, 1);
+            applyItem(step2Item, stepDot2, 2);
+            applyItem(step3Item, stepDot3, 3);
+            line1?.classList.toggle('is-completed', step > 1);
+            line2?.classList.toggle('is-completed', step > 2);
+        };
+
+        const hideAllLoginPanels = () => {
+            [
+                'student-step-1',
+                'student-step-2',
+                'student-step-3',
+                'student-step-select',
+                'official-step-1',
+                'official-step-2',
+                'official-step-3'
+            ].forEach((id) => {
+                document.getElementById(id)?.classList.add('hidden');
+            });
         };
 
         const resetPasswordVisibility = () => {
@@ -1845,13 +2010,23 @@ let isRootGatewayMode = false;
             }
         };
 
+        const closeLoginModal = () => {
+            stopOtpTimers();
+            resetRecaptchaVerifier();
+            const modalEl = document.getElementById('login-modal');
+            if (modalEl) modalEl.style.display = 'none';
+            officialOtpState.cachedPassword = '';
+            showLoginMessage('');
+        };
+
         const loginModalEl = document.getElementById('login-modal');
+        document.getElementById('btn-close-login-modal')?.addEventListener('click', closeLoginModal);
         loginModalEl?.addEventListener('click', (e) => {
-            if (e.target === loginModalEl) loginModalEl.style.display = 'none';
+            if (e.target === loginModalEl) closeLoginModal();
         });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && loginModalEl && loginModalEl.style.display === 'flex') {
-                loginModalEl.style.display = 'none';
+                closeLoginModal();
             }
         });
 
@@ -1869,45 +2044,167 @@ let isRootGatewayMode = false;
             }
         });
 
-        const resetUniversalLoginForm = () => {
-            verifiedUser = null;
-            setLoginStepState(1);
-            resetPasswordVisibility();
-            document.getElementById('login-step-2')?.classList.add('hidden');
-            document.getElementById('login-step-1')?.classList.remove('hidden');
-            const verifyBtn = document.getElementById('btn-verify-user');
-            if (verifyBtn) {
-                verifyBtn.disabled = false;
-                verifyBtn.innerHTML = VERIFY_BTN_HTML;
-            }
-            const submitBtn = document.getElementById('btn-login-submit');
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = SIGN_IN_BTN_HTML;
-            }
-            const userInput = document.getElementById('login-username');
-            if (userInput) {
-                userInput.value = '';
-                userInput.focus();
-            }
-            const passInput = document.getElementById('login-password');
-            if (passInput) passInput.value = '';
+        const setLoginMode = (mode = 'student') => {
+            const effectiveMode = isRootGatewayMode ? 'official' : (mode === 'official' ? 'official' : 'student');
+            activeLoginMode = effectiveMode;
+            stopOtpTimers();
             showLoginMessage('');
+
+            const tabsWrap = document.getElementById('login-mode-tabs');
+            const studentTab = document.getElementById('login-tab-student');
+            const officialTab = document.getElementById('login-tab-official');
+            tabsWrap?.classList.toggle('hidden', isRootGatewayMode);
+
+            if (studentTab) {
+                const active = effectiveMode === 'student';
+                studentTab.classList.toggle('is-active', active);
+                studentTab.setAttribute('aria-selected', active ? 'true' : 'false');
+            }
+            if (officialTab) {
+                const active = effectiveMode === 'official';
+                officialTab.classList.toggle('is-active', active);
+                officialTab.setAttribute('aria-selected', active ? 'true' : 'false');
+            }
+
+            verifiedUser = null;
+            studentOtpState = {
+                rawPhone: '',
+                countryCode: document.getElementById('student-country-code')?.value || '+91',
+                phoneE164: '',
+                maskedPhone: '',
+                previews: [],
+                confirmationResult: null,
+                verifiedStudents: []
+            };
+            officialOtpState = {
+                challengeId: '',
+                phoneE164: '',
+                maskedPhone: '',
+                confirmationResult: null,
+                cachedPassword: '',
+                flowType: ''
+            };
+
+            hideAllLoginPanels();
+            resetPasswordVisibility();
+
+            if (effectiveMode === 'student') {
+                setLoginStepState(1, { totalSteps: 3, labels: ['Mobile', 'Confirm', 'OTP'] });
+                document.getElementById('student-step-1')?.classList.remove('hidden');
+                const phoneInput = document.getElementById('student-login-phone');
+                if (phoneInput) {
+                    phoneInput.value = '';
+                    setTimeout(() => phoneInput.focus(), 40);
+                }
+                const verifyPhoneBtn = document.getElementById('btn-student-verify-phone');
+                if (verifyPhoneBtn) {
+                    verifyPhoneBtn.disabled = false;
+                    verifyPhoneBtn.innerHTML = VERIFY_PHONE_BTN_HTML;
+                }
+                const sendOtpBtn = document.getElementById('btn-student-send-otp');
+                if (sendOtpBtn) {
+                    sendOtpBtn.disabled = false;
+                    sendOtpBtn.innerHTML = SEND_STUDENT_OTP_BTN_HTML;
+                }
+                const verifyOtpBtn = document.getElementById('btn-student-verify-otp');
+                if (verifyOtpBtn) {
+                    verifyOtpBtn.disabled = false;
+                    verifyOtpBtn.innerHTML = VERIFY_OTP_BTN_HTML;
+                }
+                const otpInput = document.getElementById('student-otp-input');
+                if (otpInput) otpInput.value = '';
+            } else {
+                setLoginStepState(1, { totalSteps: 3, labels: ['Account', 'Password', 'OTP'] });
+                document.getElementById('official-step-1')?.classList.remove('hidden');
+                const userInput = document.getElementById('login-username');
+                if (userInput) {
+                    userInput.value = '';
+                    setTimeout(() => userInput.focus(), 40);
+                }
+                const passInput = document.getElementById('login-password');
+                if (passInput) passInput.value = '';
+                const otpInput = document.getElementById('official-otp-input');
+                if (otpInput) otpInput.value = '';
+                const verifyBtn = document.getElementById('btn-verify-user');
+                if (verifyBtn) {
+                    verifyBtn.disabled = false;
+                    verifyBtn.innerHTML = VERIFY_BTN_HTML;
+                }
+                const submitBtn = document.getElementById('btn-login-submit');
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = SEND_OFFICIAL_OTP_BTN_HTML;
+                }
+                const officialVerifyBtn = document.getElementById('btn-official-verify-otp');
+                if (officialVerifyBtn) {
+                    officialVerifyBtn.disabled = false;
+                    officialVerifyBtn.innerHTML = VERIFY_OTP_BTN_HTML;
+                }
+            }
         };
+
+        const resetUniversalLoginForm = (preferredMode = null) => {
+            const targetMode = preferredMode || (isRootGatewayMode ? 'official' : 'student');
+            setLoginMode(targetMode);
+        };
+
+        document.getElementById('login-tab-student')?.addEventListener('click', () => {
+            if (!isRootGatewayMode) setLoginMode('student');
+        });
+        document.getElementById('login-tab-official')?.addEventListener('click', () => {
+            setLoginMode('official');
+        });
+
+        document.getElementById('btn-student-change-phone')?.addEventListener('click', () => {
+            stopOtpTimers();
+            hideAllLoginPanels();
+            setLoginStepState(1, { totalSteps: 3, labels: ['Mobile', 'Confirm', 'OTP'] });
+            document.getElementById('student-step-1')?.classList.remove('hidden');
+            showLoginMessage('');
+            document.getElementById('student-login-phone')?.focus();
+        });
+
+        document.getElementById('btn-student-otp-change')?.addEventListener('click', () => {
+            stopOtpTimers();
+            studentOtpState.confirmationResult = null;
+            hideAllLoginPanels();
+            setLoginStepState(1, { totalSteps: 3, labels: ['Mobile', 'Confirm', 'OTP'] });
+            document.getElementById('student-step-1')?.classList.remove('hidden');
+            showLoginMessage('');
+            document.getElementById('student-login-phone')?.focus();
+        });
 
         document.getElementById('btn-change-user')?.addEventListener('click', () => {
             verifiedUser = null;
-            setLoginStepState(1);
+            officialOtpState = { challengeId: '', phoneE164: '', maskedPhone: '', confirmationResult: null, cachedPassword: '', flowType: '' };
+            stopOtpTimers();
+            hideAllLoginPanels();
+            setLoginStepState(1, { totalSteps: 3, labels: ['Account', 'Password', 'OTP'] });
             resetPasswordVisibility();
-            document.getElementById('login-step-2')?.classList.add('hidden');
-            document.getElementById('login-step-1')?.classList.remove('hidden');
+            document.getElementById('official-step-1')?.classList.remove('hidden');
             const submitBtn = document.getElementById('btn-login-submit');
             if (submitBtn) {
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = SIGN_IN_BTN_HTML;
+                submitBtn.innerHTML = SEND_OFFICIAL_OTP_BTN_HTML;
             }
             document.getElementById('login-username')?.focus();
             showLoginMessage('');
+        });
+
+        document.getElementById('btn-official-otp-back')?.addEventListener('click', () => {
+            stopOtpTimers();
+            officialOtpState.confirmationResult = null;
+            officialOtpState.challengeId = '';
+            hideAllLoginPanels();
+            setLoginStepState(2, { totalSteps: 3, labels: ['Account', 'Password', 'OTP'] });
+            document.getElementById('official-step-2')?.classList.remove('hidden');
+            const submitBtn = document.getElementById('btn-login-submit');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = SEND_OFFICIAL_OTP_BTN_HTML;
+            }
+            showLoginMessage('');
+            document.getElementById('login-password')?.focus();
         });
 
         const normalizeAdmKey = (value = '') => String(value || '').trim().toLowerCase().replace(/[\\/\s]+/g, '_');
@@ -2077,11 +2374,284 @@ let isRootGatewayMode = false;
             return validList;
         };
 
+        // =========================================================================
+        // STUDENT MOBILE OTP FLOW
+        // =========================================================================
+        const checkStudentPortalAvailable = () => {
+            if (window.AppSession?.isCompanyPageAllowed?.('student') === false) {
+                showLoginMessage('Student Portal is a Premium module (Premium - Upgrade).');
+                openPremiumPlansModal({
+                    contextType: 'module',
+                    moduleKey: 'student',
+                    moduleName: 'Student Portal',
+                    institutionName: globalInstitutionConfig?.appName || ''
+                });
+                return false;
+            }
+            if (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false) {
+                showLoginMessage('Student Portal is currently disabled by institution administration.');
+                return false;
+            }
+            return true;
+        };
+
+        const handleStudentVerifyPhone = async () => {
+            if (isRootGatewayMode) return;
+            if (!checkStudentPortalAvailable()) return;
+
+            const phoneInput = document.getElementById('student-login-phone');
+            const countrySelect = document.getElementById('student-country-code');
+            const rawPhone = String(phoneInput?.value || '').trim();
+            const countryCode = String(countrySelect?.value || '+91').trim();
+            const normalizedE164 = normalizePhoneToE164Client(rawPhone, countryCode);
+
+            if (!normalizedE164) {
+                showLoginMessage('Please enter a valid 10-digit mobile number.');
+                phoneInput?.focus();
+                return;
+            }
+
+            const btn = document.getElementById('btn-student-verify-phone');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Checking...</span>';
+            }
+            showLoginMessage('');
+
+            try {
+                const lookup = await lookupStudentsByPhone({
+                    institutionId: INSTITUTION_ID,
+                    phone: rawPhone,
+                    countryCode
+                });
+
+                if (!lookup?.found || !Array.isArray(lookup.students) || !lookup.students.length) {
+                    showLoginMessage('No active student record is registered with this mobile number. Please contact the school office.');
+                    phoneInput?.focus();
+                    return;
+                }
+
+                studentOtpState = {
+                    rawPhone,
+                    countryCode,
+                    phoneE164: lookup.phoneE164 || normalizedE164,
+                    maskedPhone: lookup.maskedPhone || normalizedE164,
+                    previews: lookup.students,
+                    confirmationResult: null,
+                    verifiedStudents: []
+                };
+
+                const phoneEl = document.getElementById('student-preview-phone');
+                const summaryEl = document.getElementById('student-preview-summary');
+                const previewListEl = document.getElementById('student-preview-list');
+                if (phoneEl) phoneEl.textContent = studentOtpState.maskedPhone;
+                if (summaryEl) {
+                    const cnt = lookup.students.length;
+                    summaryEl.textContent = cnt === 1 ? '1 student linked' : `${cnt} students linked`;
+                }
+                if (previewListEl) {
+                    previewListEl.innerHTML = lookup.students.map((item) => `
+                        <div class="login-preview-item">
+                            <span class="login-preview-avatar" aria-hidden="true"><i class="fas fa-user-graduate"></i></span>
+                            <div class="login-preview-meta">
+                                <div class="login-preview-name">${escapeHtml(item.maskedName || 'Student')}</div>
+                                <div class="login-preview-class">${escapeHtml(item.classLabel || 'Student')}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                hideAllLoginPanels();
+                setLoginStepState(2, { totalSteps: 3, labels: ['Mobile', 'Confirm', 'OTP'] });
+                document.getElementById('student-step-2')?.classList.remove('hidden');
+            } catch (err) {
+                console.error('Student phone lookup error:', err);
+                showLoginMessage(err?.message || 'Unable to verify mobile number. Please try again.');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = VERIFY_PHONE_BTN_HTML;
+                }
+            }
+        };
+
+        const sendStudentSmsOtp = async ({ isResend = false } = {}) => {
+            if (!studentOtpState.phoneE164) {
+                setLoginMode('student');
+                return;
+            }
+            const sendBtn = document.getElementById('btn-student-send-otp');
+            const resendBtn = document.getElementById('btn-student-resend-otp');
+            if (!isResend && sendBtn) {
+                sendBtn.disabled = true;
+                sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Sending OTP...</span>';
+            }
+            if (isResend && resendBtn) {
+                resendBtn.disabled = true;
+                resendBtn.textContent = 'Sending...';
+            }
+            showLoginMessage('');
+
+            try {
+                const verifier = await ensureRecaptchaVerifier();
+                const confirmationResult = await signInWithPhoneNumber(auth, studentOtpState.phoneE164, verifier);
+                studentOtpState.confirmationResult = confirmationResult;
+
+                const otpPhoneMeta = document.getElementById('student-otp-phone-meta');
+                if (otpPhoneMeta) otpPhoneMeta.textContent = `Code sent to ${studentOtpState.maskedPhone || studentOtpState.phoneE164}`;
+
+                hideAllLoginPanels();
+                setLoginStepState(3, { totalSteps: 3, labels: ['Mobile', 'Confirm', 'OTP'] });
+                document.getElementById('student-step-3')?.classList.remove('hidden');
+
+                const otpInput = document.getElementById('student-otp-input');
+                if (otpInput) {
+                    otpInput.value = '';
+                    setTimeout(() => otpInput.focus(), 50);
+                }
+                startOtpResendTimer('student', 60);
+            } catch (err) {
+                console.error('Student send OTP error:', err);
+                resetRecaptchaVerifier();
+                showLoginMessage(formatPhoneAuthError(err, 'Failed to send SMS OTP. Please try again.'));
+                if (isResend && resendBtn) {
+                    resendBtn.disabled = false;
+                    resendBtn.textContent = 'Resend OTP';
+                }
+            } finally {
+                if (!isResend && sendBtn) {
+                    sendBtn.disabled = false;
+                    sendBtn.innerHTML = SEND_STUDENT_OTP_BTN_HTML;
+                }
+                if (isResend && resendBtn && !otpResendTimers.student) {
+                    resendBtn.textContent = 'Resend OTP';
+                }
+            }
+        };
+
+        const finalizeStudentSessionSelection = async (selectedStudent, allVerifiedStudents = []) => {
+            if (!selectedStudent?.studentId) return;
+            const list = Array.isArray(allVerifiedStudents) && allVerifiedStudents.length
+                ? allVerifiedStudents
+                : [selectedStudent];
+
+            if (!isAddingStudentAccountFlow && !window.AppSession?.hasStudentSession?.()) {
+                await window.AppSession?.clearAll?.({ clearRemembered: false });
+            }
+
+            // Register all linked siblings verified under this phone number
+            list.forEach((st) => {
+                if (!st?.studentId) return;
+                window.AppSession?.registerStudentAccount?.(st.studentId, {
+                    name: st.name || '',
+                    class: st.class || '',
+                    adm: st.adm || ''
+                }, { append: true });
+            });
+
+            window.AppSession?.startStudent?.(selectedStudent.studentId, {
+                name: selectedStudent.name || '',
+                class: selectedStudent.class || '',
+                adm: selectedStudent.adm || ''
+            });
+
+            await Promise.race([
+                syncStudentGroupMembersToSession(selectedStudent.studentId, { clearDismissed: true }),
+                new Promise((resolve) => setTimeout(resolve, 1500))
+            ]);
+            window.location.href = getPageUrl('student.html');
+        };
+
+        const handleStudentVerifyOtp = async () => {
+            const otpInput = document.getElementById('student-otp-input');
+            const code = String(otpInput?.value || '').replace(/\D/g, '').trim();
+            if (code.length !== 6) {
+                showLoginMessage('Please enter the 6-digit OTP sent to your mobile.');
+                otpInput?.focus();
+                return;
+            }
+            if (!studentOtpState.confirmationResult) {
+                showLoginMessage('OTP session expired. Please request a new OTP.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-student-verify-otp');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Verifying OTP...</span>';
+            }
+            showLoginMessage('');
+
+            try {
+                const phoneCred = await studentOtpState.confirmationResult.confirm(code);
+                const phoneIdToken = await phoneCred.user.getIdToken(true);
+                const completeRes = await completeStudentOtpLogin({
+                    institutionId: INSTITUTION_ID,
+                    phoneIdToken
+                });
+
+                const students = Array.isArray(completeRes?.students) ? completeRes.students : [];
+                if (!students.length) {
+                    showLoginMessage('No active student profile is linked to this mobile number.');
+                    return;
+                }
+
+                stopOtpTimers();
+                studentOtpState.verifiedStudents = students;
+
+                if (students.length === 1) {
+                    if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Loading Dashboard...</span>';
+                    await finalizeStudentSessionSelection(students[0], students);
+                    return;
+                }
+
+                // Multiple siblings linked to this mobile -> display selection list
+                const verifiedListEl = document.getElementById('student-verified-list');
+                if (verifiedListEl) {
+                    verifiedListEl.innerHTML = students.map((st, idx) => `
+                        <button type="button" class="login-sibling-btn" data-verified-student-index="${idx}">
+                            <span class="login-preview-avatar" aria-hidden="true"><i class="fas fa-user-graduate"></i></span>
+                            <span class="login-sibling-info">
+                                <span class="login-sibling-name">${escapeHtml(st.name || 'Student')}</span>
+                                <span class="login-sibling-meta">Class ${escapeHtml(st.class || '-')} • Adm: ${escapeHtml(st.adm || '-')}</span>
+                            </span>
+                            <i class="fas fa-chevron-right login-sibling-chevron" aria-hidden="true"></i>
+                        </button>
+                    `).join('');
+                }
+
+                hideAllLoginPanels();
+                setLoginStepState(4, { totalSteps: 3, labels: ['Mobile', 'Confirm', 'OTP'] });
+                document.getElementById('student-step-select')?.classList.remove('hidden');
+            } catch (err) {
+                console.error('Student OTP confirm error:', err);
+                showLoginMessage(formatPhoneAuthError(err, 'OTP verification failed. Please check the code and try again.'));
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = VERIFY_OTP_BTN_HTML;
+                }
+            }
+        };
+
+        document.getElementById('student-verified-list')?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-verified-student-index]');
+            if (!btn) return;
+            const idx = Number(btn.dataset.verifiedStudentIndex);
+            const selected = studentOtpState.verifiedStudents?.[idx];
+            if (!selected) return;
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            await finalizeStudentSessionSelection(selected, studentOtpState.verifiedStudents);
+        });
+
+        // =========================================================================
+        // OFFICIAL (ADMIN / STAFF / DIRECTORY / COMPANY OWNER) 2FA FLOW
+        // =========================================================================
         const verifyUniversalIdentifier = async () => {
             const userInput = document.getElementById('login-username');
             const rawInput = (userInput?.value || '').trim();
             if (!rawInput) {
-                showLoginMessage('Please enter your Username, Admission Number, or Email.');
+                showLoginMessage('Please enter your Username or Company Email.');
                 userInput?.focus();
                 return;
             }
@@ -2130,7 +2700,9 @@ let isRootGatewayMode = false;
                                     ? `${isSuper ? 'Super Admin' : 'Staff Member'} • ${lookupRes.institutionName}`
                                     : (isSuper ? 'Super Admin' : 'Staff Member'),
                                 loginId: lookupRes.displayUsername || lookupRes.username || rawInput,
-                                targetInstitutionId: String(lookupRes.institutionId || INSTITUTION_ID || '').trim().toLowerCase()
+                                targetInstitutionId: String(lookupRes.institutionId || INSTITUTION_ID || '').trim().toLowerCase(),
+                                hasPhone: Boolean(lookupRes.hasPhone),
+                                maskedPhone: String(lookupRes.maskedPhone || '').trim()
                             };
                         }
                     } catch (fnErr) {
@@ -2139,7 +2711,7 @@ let isRootGatewayMode = false;
                     }
                 }
 
-                // 2. Root Platform Gateway: Allow Company Owner Email/Password sign-in
+                // 2. Root Platform Gateway: Allow Company Owner Email/Password sign-in (No OTP)
                 if (!matched && isRootGatewayMode) {
                     if (cleanLower.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanLower)) {
                         matched = {
@@ -2160,41 +2732,7 @@ let isRootGatewayMode = false;
                     }
                 }
 
-                // 3. Tenant Portal: Strict Student Auth Lookup (exact Admission Number)
-                if (!matched && !isRootGatewayMode && cleanAdm) {
-                    try {
-                        let lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, `adm_${cleanAdm}`));
-                        if (lookupSnap.exists()) {
-                            const stData = lookupSnap.data() || {};
-                            if (stData.studentId) {
-                                matched = {
-                                    type: 'student',
-                                    data: stData,
-                                    displayName: stData.name || 'Student',
-                                    meta: `Student • Class ${stData.class || '-'} (Adm: ${stData.adm || rawInput})`
-                                };
-                            }
-                        } else {
-                            lookupSnap = await getDoc(doc(db, `${BASE_PATH}/studentAuthLookup`, cleanAdm));
-                            if (lookupSnap.exists()) {
-                                const stData = lookupSnap.data() || {};
-                                const recordAdmKey = normalizeAdmKey(stData.adm || '');
-                                if (stData.studentId && (!recordAdmKey || recordAdmKey === cleanAdm)) {
-                                    matched = {
-                                        type: 'student',
-                                        data: stData,
-                                        displayName: stData.name || 'Student',
-                                        meta: `Student • Class ${stData.class || '-'} (Adm: ${stData.adm || rawInput})`
-                                    };
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Student lookup notice:', e);
-                    }
-                }
-
-                // 4. Tenant Portal: Strict Directory Login Verification
+                // 3. Tenant Portal: Directory / Management Login Verification
                 if (!matched && !isRootGatewayMode) {
                     const dirMatch = (Array.isArray(directoryEntries) ? directoryEntries : []).find((e) => {
                         if (!e?.categoryId) return false;
@@ -2211,17 +2749,24 @@ let isRootGatewayMode = false;
                     if (dirMatch) {
                         const displayName = dirMatch.name || dirMatch.values?.name || dirMatch.values?.Name || String(dirMatch.authMeta?.usernameRaw || 'Category User');
                         const resolvedUsername = String(dirMatch.authMeta?.username || cleanLower).toLowerCase().trim();
+                        const rawDirPhone = dirMatch.phone || dirMatch.values?.phone || dirMatch.values?.Phone || dirMatch.values?.mobile || dirMatch.values?.Mobile || dirMatch.values?.contact || '';
+                        const dirPhoneE164 = normalizePhoneToE164Client(rawDirPhone);
+                        const dirMaskedPhone = dirPhoneE164
+                            ? `${dirPhoneE164.slice(0, 3)} ${'*'.repeat(Math.max(4, dirPhoneE164.length - 7))}${dirPhoneE164.slice(-4)}`
+                            : '';
                         matched = {
                             type: 'directory',
                             data: dirMatch,
                             displayName,
                             meta: dirMatch.role || dirMatch.values?.role || 'Category User',
-                            loginId: resolvedUsername
+                            loginId: resolvedUsername,
+                            hasPhone: Boolean(dirPhoneE164),
+                            maskedPhone: dirMaskedPhone
                         };
                     }
                 }
 
-                // 5. Tenant Portal: Allow Company Owner email fallback
+                // 4. Tenant Portal: Allow Company Owner email fallback (No OTP)
                 if (!matched && !isRootGatewayMode && cleanLower.includes('@') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanLower)) {
                     matched = {
                         type: 'company_owner',
@@ -2234,59 +2779,54 @@ let isRootGatewayMode = false;
                 }
 
                 if (matched) {
-                    if (!isRootGatewayMode && matched.type === 'student') {
-                        if (window.AppSession?.isCompanyPageAllowed?.('student') === false) {
-                            showLoginMessage('Student Portal is a Premium module (Premium - Upgrade).');
-                            openPremiumPlansModal({
-                                contextType: 'module',
-                                moduleKey: 'student',
-                                moduleName: 'Student Portal',
-                                institutionName: globalInstitutionConfig?.appName || ''
-                            });
-                            return;
-                        }
-                        if (globalInstitutionConfig?.enabledModules?.student === false || window.AppSession?.isModuleEnabled('student') === false) {
-                            showLoginMessage('Student Portal is currently disabled by institution administration.');
-                            return;
-                        }
-                    }
                     verifiedUser = matched;
                     const nameEl = document.getElementById('verified-user-name');
                     const metaEl = document.getElementById('verified-user-meta');
+                    const phoneMetaEl = document.getElementById('verified-user-phone-meta');
                     const avatarIcon = document.getElementById('verified-user-avatar-icon');
-                    const passLeadingIcon = document.getElementById('login-password-leading-icon');
-                    const passLabel = document.getElementById('login-password-label');
                     const passInput = document.getElementById('login-password');
                     const passHint = document.getElementById('login-password-hint');
+                    const submitBtn = document.getElementById('btn-login-submit');
 
                     if (nameEl) nameEl.textContent = matched.displayName;
                     if (metaEl) metaEl.textContent = matched.meta;
                     resetPasswordVisibility();
 
-                    if (matched.type === 'student') {
-                        if (avatarIcon) avatarIcon.className = 'fas fa-user-graduate';
-                        if (passLeadingIcon) passLeadingIcon.className = 'fas fa-mobile-screen-button login-input-leading';
-                        if (passLabel) passLabel.textContent = 'Registered Mobile Number (Password)';
-                        if (passInput) {
-                            passInput.placeholder = '10-digit mobile number';
-                            passInput.type = 'password';
+                    const isCompanyOwner = matched.type === 'company_owner';
+                    const isShield = isCompanyOwner || (matched.type === 'custom_auth' && matched.role === 'super_admin');
+                    if (avatarIcon) avatarIcon.className = isShield ? 'fas fa-user-shield' : 'fas fa-user-tie';
+
+                    if (phoneMetaEl) {
+                        if (isCompanyOwner) {
+                            phoneMetaEl.classList.add('hidden');
+                            phoneMetaEl.classList.remove('is-missing');
+                            phoneMetaEl.textContent = '';
+                        } else if (matched.hasPhone && matched.maskedPhone) {
+                            phoneMetaEl.classList.remove('hidden', 'is-missing');
+                            phoneMetaEl.innerHTML = `<i class="fas fa-mobile-screen-button" aria-hidden="true"></i><span>OTP mobile: ${escapeHtml(matched.maskedPhone)}</span>`;
+                        } else {
+                            phoneMetaEl.classList.remove('hidden');
+                            phoneMetaEl.classList.add('is-missing');
+                            phoneMetaEl.innerHTML = '<i class="fas fa-triangle-exclamation" aria-hidden="true"></i><span>No OTP mobile number registered</span>';
                         }
-                        if (passHint) passHint.textContent = 'Enter the mobile phone number registered with the school.';
-                    } else {
-                        const isShield = matched.type === 'company_owner' || (matched.type === 'custom_auth' && matched.role === 'super_admin');
-                        if (avatarIcon) avatarIcon.className = isShield ? 'fas fa-user-shield' : 'fas fa-user-tie';
-                        if (passLeadingIcon) passLeadingIcon.className = 'fas fa-lock login-input-leading';
-                        if (passLabel) passLabel.textContent = 'Password';
-                        if (passInput) {
-                            passInput.placeholder = 'Enter account password';
-                            passInput.type = 'password';
-                        }
-                        if (passHint) passHint.textContent = 'Enter your account password to sign in.';
                     }
 
-                    setLoginStepState(2);
-                    document.getElementById('login-step-1')?.classList.add('hidden');
-                    document.getElementById('login-step-2')?.classList.remove('hidden');
+                    if (passHint) {
+                        passHint.textContent = isCompanyOwner
+                            ? 'Enter your Company Owner password to sign in.'
+                            : 'After verifying your password, an SMS OTP will be sent to your registered mobile.';
+                    }
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = isCompanyOwner ? SIGN_IN_BTN_HTML : SEND_OFFICIAL_OTP_BTN_HTML;
+                    }
+
+                    hideAllLoginPanels();
+                    setLoginStepState(2, {
+                        totalSteps: isCompanyOwner ? 2 : 3,
+                        labels: isCompanyOwner ? ['Account', 'Password', ''] : ['Account', 'Password', 'OTP']
+                    });
+                    document.getElementById('official-step-2')?.classList.remove('hidden');
                     if (passInput) {
                         passInput.value = '';
                         passInput.focus();
@@ -2295,12 +2835,12 @@ let isRootGatewayMode = false;
                     if (customLookupError) {
                         showLoginMessage(customLookupError.message || 'Unable to verify username.');
                     } else {
-                        showLoginMessage(`User "${rawInput}" not found. Please verify your Username or Admission Number.`);
+                        showLoginMessage(`Official account "${rawInput}" not found. Students should switch to the Student tab.`);
                     }
                     userInput?.focus();
                 }
             } catch (err) {
-                console.error('Universal verification error:', err);
+                console.error('Official verification error:', err);
                 showLoginMessage('Verification error: ' + err.message);
             } finally {
                 if (btn) {
@@ -2310,252 +2850,117 @@ let isRootGatewayMode = false;
             }
         };
 
-        const handleUniversalLoginSubmit = async () => {
-            if (!verifiedUser) {
-                resetUniversalLoginForm();
+        const dispatchOfficialSmsOtp = async ({ isResend = false } = {}) => {
+            if (!officialOtpState.phoneE164) {
+                showLoginMessage('OTP verification session expired. Please verify your password again.');
                 return;
             }
-
-            const passInput = document.getElementById('login-password');
-            const enteredPass = (passInput?.value || '').trim();
-            if (!enteredPass) {
-                const isStudent = verifiedUser.type === 'student';
-                showLoginMessage(isStudent ? 'Please enter registered mobile number.' : 'Please enter your password.');
-                passInput?.focus();
-                return;
-            }
-
-            const btn = document.getElementById('btn-login-submit');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Authenticating...</span>';
+            const resendBtn = document.getElementById('btn-official-resend-otp');
+            if (isResend && resendBtn) {
+                resendBtn.disabled = true;
+                resendBtn.textContent = 'Sending...';
             }
             showLoginMessage('');
 
             try {
-                if (verifiedUser.type === 'student') {
-                    const enteredPhone = normalizePhone(enteredPass);
-                    const st = verifiedUser.data;
-                    const phones = Array.isArray(st.phones)
-                        ? st.phones
-                        : [normalizePhone(st.phone || '')];
-
-                    const isMatch = phones.some(p => p && (p === enteredPhone || p.endsWith(enteredPhone) || enteredPhone.endsWith(p)));
-                    if (isMatch) {
-                        showLoginMessage('');
-                        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Loading Dashboard...</span>';
-                        await window.AppSession?.clearAll?.();
-                        if (!auth.currentUser) {
-                            try { await signInAnonymously(auth); } catch (_) {}
-                        }
-                        window.AppSession?.startStudent(st.studentId, {
-                            name: st.name || '',
-                            class: st.class || '',
-                            adm: st.adm || ''
+                // On resend, refresh the server-side challenge so the 5-minute TTL resets cleanly
+                if (isResend && verifiedUser && officialOtpState.cachedPassword) {
+                    if (officialOtpState.flowType === 'custom_auth') {
+                        const refreshed = await verifyOfficialPasswordForOtp({
+                            username: verifiedUser.loginId,
+                            password: officialOtpState.cachedPassword,
+                            institutionId: isRootGatewayMode ? '' : INSTITUTION_ID
                         });
-                        await Promise.race([
-                            syncStudentGroupMembersToSession(st.studentId, { clearDismissed: true }),
-                            new Promise((resolve) => setTimeout(resolve, 1500))
-                        ]);
-                        window.location.href = getPageUrl('student.html');
-                        return;
-                    } else {
-                        showLoginMessage('Incorrect registered mobile number. Please check and try again.');
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.innerHTML = SIGN_IN_BTN_HTML;
+                        if (refreshed?.challengeId) {
+                            officialOtpState.challengeId = refreshed.challengeId;
+                            officialOtpState.phoneE164 = refreshed.phoneE164 || officialOtpState.phoneE164;
+                            officialOtpState.maskedPhone = refreshed.maskedPhone || officialOtpState.maskedPhone;
+                        }
+                    } else if (officialOtpState.flowType === 'directory') {
+                        const refreshed = await verifyDirectoryPasswordForOtp({
+                            institutionId: INSTITUTION_ID,
+                            username: verifiedUser.loginId,
+                            password: officialOtpState.cachedPassword
+                        });
+                        if (refreshed?.challengeId) {
+                            officialOtpState.challengeId = refreshed.challengeId;
+                            officialOtpState.phoneE164 = refreshed.phoneE164 || officialOtpState.phoneE164;
+                            officialOtpState.maskedPhone = refreshed.maskedPhone || officialOtpState.maskedPhone;
                         }
                     }
-                    return;
                 }
 
-                if (!isRootGatewayMode && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
+                const verifier = await ensureRecaptchaVerifier();
+                const confirmationResult = await signInWithPhoneNumber(auth, officialOtpState.phoneE164, verifier);
+                officialOtpState.confirmationResult = confirmationResult;
+
+                const otpNameEl = document.getElementById('official-otp-name');
+                const otpPhoneEl = document.getElementById('official-otp-phone-meta');
+                if (otpNameEl) otpNameEl.textContent = verifiedUser?.displayName || 'Two-Step Verification';
+                if (otpPhoneEl) otpPhoneEl.textContent = `OTP sent to ${officialOtpState.maskedPhone || officialOtpState.phoneE164}`;
+
+                hideAllLoginPanels();
+                setLoginStepState(3, { totalSteps: 3, labels: ['Account', 'Password', 'OTP'] });
+                document.getElementById('official-step-3')?.classList.remove('hidden');
+
+                const otpInput = document.getElementById('official-otp-input');
+                if (otpInput) {
+                    otpInput.value = '';
+                    setTimeout(() => otpInput.focus(), 50);
+                }
+                startOtpResendTimer('official', 60);
+            } catch (err) {
+                console.error('Official SMS OTP error:', err);
+                resetRecaptchaVerifier();
+                showLoginMessage(formatPhoneAuthError(err, 'Failed to send SMS OTP. Please try again.'));
+                if (isResend && resendBtn) {
+                    resendBtn.disabled = false;
+                    resendBtn.textContent = 'Resend OTP';
+                }
+                throw err;
+            } finally {
+                if (isResend && resendBtn && !otpResendTimers.official) {
+                    resendBtn.textContent = 'Resend OTP';
+                }
+            }
+        };
+
+        const handleUniversalLoginSubmit = async () => {
+            if (!verifiedUser) {
+                setLoginMode('official');
+                return;
+            }
+
+            const passInput = document.getElementById('login-password');
+            const enteredPassword = (passInput?.value || '').trim();
+            if (!enteredPassword) {
+                showLoginMessage('Please enter your password.');
+                passInput?.focus();
+                return;
+            }
+
+            const isCompanyOwner = verifiedUser.type === 'company_owner';
+            const defaultBtnHtml = isCompanyOwner ? SIGN_IN_BTN_HTML : SEND_OFFICIAL_OTP_BTN_HTML;
+            const btn = document.getElementById('btn-login-submit');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>${isCompanyOwner ? 'Authenticating...' : 'Verifying & Sending OTP...'}</span>`;
+            }
+            showLoginMessage('');
+
+            try {
+                if (!isRootGatewayMode && !isCompanyOwner && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
                     showLoginMessage('An official account is already logged in. Please log out first.');
                     if (btn) {
                         btn.disabled = false;
-                        btn.innerHTML = SIGN_IN_BTN_HTML;
+                        btn.innerHTML = defaultBtnHtml;
                     }
                     return;
                 }
 
-                // Clear prior session before authenticating Official / Admin / Company Owner / Directory
-                await window.AppSession?.clearAll();
-                const enteredPassword = enteredPass.trim();
-
-                // A. Directory User Login (Tenant Portal only)
-                if (verifiedUser.type === 'directory' && !isRootGatewayMode) {
-                    const userLogin = String(verifiedUser.loginId || '').toLowerCase().trim();
-                    const directoryLogin = await resolveDirectoryLogin(userLogin, enteredPassword);
-                    if (directoryLogin?.entry) {
-                        if (!auth.currentUser) {
-                            try { await signInAnonymously(auth); } catch (_) {}
-                        }
-                        const access = directoryLogin.access || {};
-                        const entry = directoryLogin.entry;
-                        const rawName = String(entry?.values?.name || entry?.values?.Name || entry?.authMeta?.usernameRaw || userLogin || 'User');
-                        const dirRoleTitle = String(entry?.values?.role || entry?.role || 'Category User');
-                        const dirAccess = {
-                            ...access,
-                            worksheet: true,
-                            userKey: userLogin,
-                            loginId: userLogin,
-                            entryId: entry.id,
-                            categoryId: entry.categoryId || '',
-                            name: rawName,
-                            role: dirRoleTitle,
-                            type: 'Category User',
-                            source: 'directory',
-                            requiresEmailAuth: false
-                        };
-                        window.AppSession?.startStaff(rawName, userLogin, dirAccess);
-                        const activeProject = window.AppSession?.getActiveProjectId?.() || '';
-                        localStorage.setItem('official_portal_session_v1', JSON.stringify({
-                            ...(activeProject ? { projectId: activeProject } : {}),
-                            institutionId: INSTITUTION_ID,
-                            id: entry.id,
-                            name: rawName,
-                            username: userLogin,
-                            email: '',
-                            role: dirRoleTitle,
-                            type: 'Category User',
-                            categoryId: entry.categoryId || '',
-                            canCollect: dirAccess.collection === true,
-                            canAccessWorksheet: true,
-                            source: 'directory',
-                            access: dirAccess
-                        }));
-                        window.location.href = getPageUrl('official.html');
-                        return;
-                    }
-                    showLoginMessage('Incorrect password. Please check and try again.');
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = SIGN_IN_BTN_HTML;
-                    }
-                    return;
-                }
-
-                // B. Custom Username Authentication (Institution Super Admin & Staff via Cloud Function Custom Token)
-                if (verifiedUser.type === 'custom_auth') {
-                    const { userCred, profile } = await signInWithCustomUsernameAndPassword(auth, {
-                        username: verifiedUser.loginId,
-                        password: enteredPassword,
-                        institutionId: isRootGatewayMode ? '' : INSTITUTION_ID
-                    });
-
-                    const effectiveInstId = String(profile.institutionId || verifiedUser.targetInstitutionId || INSTITUTION_ID || '').trim().toLowerCase();
-                    if (!effectiveInstId) {
-                        try { await signOut(auth); } catch (_) {}
-                        showLoginMessage('Account is not linked to an active institution.');
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.innerHTML = SIGN_IN_BTN_HTML;
-                        }
-                        return;
-                    }
-
-                    const effectiveBasePath = `institutions/${effectiveInstId}`;
-                    const buildTargetUrl = (page = 'official.html') => (
-                        window.AppSession?.buildPageUrl?.(page, effectiveInstId) || `/${effectiveInstId}/${page.replace(/\.html$/i, '')}`
-                    );
-                    const displayUser = String(profile.displayUsername || profile.username || verifiedUser.loginId || '').trim();
-                    const normUser = String(profile.username || displayUser).trim().toLowerCase();
-
-                    if (profile.role === 'super_admin') {
-                        window.AppSession?.startAdmin({
-                            name: profile.displayName || verifiedUser.displayName || 'Super Admin',
-                            email: displayUser,
-                            institutionId: effectiveInstId
-                        });
-                        window.location.href = buildTargetUrl('official.html');
-                        return;
-                    }
-
-                    // Staff custom auth session: read live permissions from institutions/{slug}/staffAccess/{uid}
-                    let activeCollector = { ...(profile.access || {}) };
-                    try {
-                        const accessSnap = await getDoc(doc(db, `${effectiveBasePath}/staffAccess`, userCred.user.uid));
-                        if (accessSnap.exists()) {
-                            activeCollector = { ...activeCollector, ...accessSnap.data() };
-                        }
-                    } catch (_) {}
-
-                    if (activeCollector.isActive === false) {
-                        try { await signOut(auth); } catch (_) {}
-                        showLoginMessage('Your staff account is currently inactive. Please contact your administrator.');
-                        if (btn) {
-                            btn.disabled = false;
-                            btn.innerHTML = SIGN_IN_BTN_HTML;
-                        }
-                        return;
-                    }
-
-                    const dutyClasses = Array.isArray(activeCollector.dutyClasses) && activeCollector.dutyClasses.length
-                        ? activeCollector.dutyClasses.filter(Boolean)
-                        : [];
-                    const staffName = activeCollector.name || profile.displayName || verifiedUser.displayName || displayUser;
-                    const staffId = profile.staffId || activeCollector.staffId || '';
-                    const staffAccess = {
-                        uid: userCred.user.uid,
-                        username: normUser,
-                        displayUsername: displayUser,
-                        collection: activeCollector.canCollect === true,
-                        worksheet: activeCollector.canAccessWorksheet === true,
-                        result: activeCollector.canManageResults === true,
-                        attendance: activeCollector.canAccessAttendance === true,
-                        academicPlan: activeCollector.canAccessAcademicPlan === true,
-                        studentActivity: activeCollector.canAccessActivity === true,
-                        classroomEvaluation: activeCollector.canAccessEvaluation === true,
-                        evaluation: activeCollector.canAccessEvaluation === true,
-                        admin: activeCollector.canAccessAdmin === true,
-                        canAccessAdmin: activeCollector.canAccessAdmin === true,
-                        actLikeSuperAdmin: activeCollector.actLikeSuperAdmin === true || activeCollector.canAccessAdmin === true,
-                        dutyClasses,
-                        staffId,
-                        name: staffName,
-                        phone: activeCollector.phone || '',
-                        role: activeCollector.role || activeCollector.type || 'Staff',
-                        type: activeCollector.type || 'Staff',
-                        photo: activeCollector.photo || '',
-                        source: 'staff',
-                        userKey: normUser,
-                        loginId: displayUser,
-                        requiresEmailAuth: true
-                    };
-                    window.AppSession?.startStaff(staffName, displayUser, staffAccess, effectiveInstId);
-
-                    const activeProject = window.AppSession?.getActiveProjectId?.() || '';
-                    localStorage.setItem('official_portal_session_v1', JSON.stringify({
-                        ...(activeProject ? { projectId: activeProject } : {}),
-                        institutionId: effectiveInstId,
-                        id: staffId,
-                        uid: userCred.user.uid,
-                        name: staffName,
-                        username: displayUser,
-                        email: displayUser,
-                        phone: activeCollector.phone || '',
-                        role: activeCollector.role || activeCollector.type || 'Staff',
-                        type: activeCollector.type || 'Staff',
-                        photo: activeCollector.photo || '',
-                        dutyClasses,
-                        canAccessAdmin: staffAccess.canAccessAdmin,
-                        actLikeSuperAdmin: staffAccess.actLikeSuperAdmin,
-                        canCollect: staffAccess.collection,
-                        canAccessWorksheet: staffAccess.worksheet,
-                        canManageResults: staffAccess.result,
-                        canAccessAttendance: staffAccess.attendance,
-                        canAccessAcademicPlan: staffAccess.academicPlan,
-                        canAccessActivity: staffAccess.studentActivity,
-                        canAccessEvaluation: staffAccess.evaluation,
-                        source: 'staff',
-                        access: staffAccess
-                    }));
-                    window.location.href = buildTargetUrl('official.html');
-                    return;
-                }
-
-                // C. Company Owner Login (Standard Firebase Email/Password)
-                if (verifiedUser.type === 'company_owner') {
+                // A. Company Owner Login (Standard Firebase Email/Password — No OTP)
+                if (isCompanyOwner) {
+                    await window.AppSession?.clearAll?.();
                     const loginEmail = String(verifiedUser.loginEmail || verifiedUser.loginId || '').trim().toLowerCase();
                     let userCred = null;
                     try {
@@ -2627,21 +3032,291 @@ let isRootGatewayMode = false;
                     return;
                 }
 
-                showLoginMessage('Unsupported login state. Please verify your username again.');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = SIGN_IN_BTN_HTML;
+                // B. Directory User 2FA Step 1 (Server Password Verification -> SMS OTP)
+                if (verifiedUser.type === 'directory' && !isRootGatewayMode) {
+                    const challenge = await verifyDirectoryPasswordForOtp({
+                        institutionId: INSTITUTION_ID,
+                        username: verifiedUser.loginId,
+                        password: enteredPassword
+                    });
+                    if (!challenge?.challengeId || !challenge?.phoneE164) {
+                        throw new Error('Unable to initiate OTP verification for this directory account.');
+                    }
+                    officialOtpState = {
+                        challengeId: challenge.challengeId,
+                        phoneE164: challenge.phoneE164,
+                        maskedPhone: challenge.maskedPhone || challenge.phoneE164,
+                        confirmationResult: null,
+                        cachedPassword: enteredPassword,
+                        flowType: 'directory'
+                    };
+                    await dispatchOfficialSmsOtp({ isResend: false });
+                    return;
                 }
+
+                // C. Custom Auth (Super Admin & Staff) 2FA Step 1 (Server Password Verification -> SMS OTP)
+                if (verifiedUser.type === 'custom_auth') {
+                    const challenge = await verifyOfficialPasswordForOtp({
+                        username: verifiedUser.loginId,
+                        password: enteredPassword,
+                        institutionId: isRootGatewayMode ? '' : INSTITUTION_ID
+                    });
+                    if (!challenge?.challengeId || !challenge?.phoneE164) {
+                        throw new Error('Unable to initiate OTP verification. Ensure a registered mobile number is saved on this account.');
+                    }
+                    officialOtpState = {
+                        challengeId: challenge.challengeId,
+                        phoneE164: challenge.phoneE164,
+                        maskedPhone: challenge.maskedPhone || challenge.phoneE164,
+                        confirmationResult: null,
+                        cachedPassword: enteredPassword,
+                        flowType: 'custom_auth'
+                    };
+                    await dispatchOfficialSmsOtp({ isResend: false });
+                    return;
+                }
+
+                showLoginMessage('Unsupported login state. Please verify your username again.');
             } catch (err) {
-                console.error('Universal login error:', err);
+                console.error('Official login step-2 error:', err);
                 showLoginMessage(err?.message || 'Invalid username or password.');
+            } finally {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = SIGN_IN_BTN_HTML;
+                    btn.innerHTML = defaultBtnHtml;
                 }
             }
         };
 
+        const handleOfficialVerifyOtp = async () => {
+            const otpInput = document.getElementById('official-otp-input');
+            const code = String(otpInput?.value || '').replace(/\D/g, '').trim();
+            if (code.length !== 6) {
+                showLoginMessage('Please enter the 6-digit OTP sent to your registered mobile.');
+                otpInput?.focus();
+                return;
+            }
+            if (!officialOtpState.confirmationResult || !officialOtpState.challengeId) {
+                showLoginMessage('OTP verification session expired. Please request a new OTP.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-official-verify-otp');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>Verifying OTP...</span>';
+            }
+            showLoginMessage('');
+
+            try {
+                const phoneCred = await officialOtpState.confirmationResult.confirm(code);
+                const phoneIdToken = await phoneCred.user.getIdToken(true);
+
+                // Clear prior client session right before finalizing official session
+                await window.AppSession?.clearAll?.();
+
+                // Directory User 2FA completion
+                if (officialOtpState.flowType === 'directory') {
+                    const completeRes = await completeDirectoryOtpLogin({
+                        challengeId: officialOtpState.challengeId,
+                        phoneIdToken
+                    });
+                    const profile = completeRes?.profile || {};
+                    const userLogin = String(profile.username || verifiedUser?.loginId || '').toLowerCase().trim();
+                    const rawName = String(profile.displayName || verifiedUser?.displayName || userLogin || 'User');
+                    const dirRoleTitle = String(profile.roleTitle || verifiedUser?.meta || 'Category User');
+                    const access = profile.access || {};
+                    const dirAccess = {
+                        ...access,
+                        worksheet: true,
+                        userKey: userLogin,
+                        loginId: userLogin,
+                        entryId: profile.entryId || verifiedUser?.data?.id || '',
+                        categoryId: profile.categoryId || verifiedUser?.data?.categoryId || '',
+                        name: rawName,
+                        role: dirRoleTitle,
+                        type: 'Category User',
+                        source: 'directory',
+                        requiresEmailAuth: false
+                    };
+                    stopOtpTimers();
+                    officialOtpState.cachedPassword = '';
+                    window.AppSession?.startStaff?.(rawName, userLogin, dirAccess);
+                    const activeProject = window.AppSession?.getActiveProjectId?.() || '';
+                    localStorage.setItem('official_portal_session_v1', JSON.stringify({
+                        ...(activeProject ? { projectId: activeProject } : {}),
+                        institutionId: INSTITUTION_ID,
+                        id: dirAccess.entryId,
+                        name: rawName,
+                        username: userLogin,
+                        email: '',
+                        phone: profile.phone || '',
+                        role: dirRoleTitle,
+                        type: 'Category User',
+                        categoryId: dirAccess.categoryId,
+                        canCollect: dirAccess.collection === true,
+                        canAccessWorksheet: true,
+                        source: 'directory',
+                        access: dirAccess
+                    }));
+                    window.location.href = getPageUrl('official.html');
+                    return;
+                }
+
+                // Custom Auth (Super Admin & Staff) 2FA completion -> exchanges Phone Token for Official Custom Token
+                const { userCred, profile } = await completeOfficialOtpLoginAndSignIn(auth, {
+                    challengeId: officialOtpState.challengeId,
+                    phoneIdToken
+                });
+
+                const effectiveInstId = String(profile.institutionId || verifiedUser?.targetInstitutionId || INSTITUTION_ID || '').trim().toLowerCase();
+                if (!effectiveInstId) {
+                    try { await signOut(auth); } catch (_) {}
+                    showLoginMessage('Account is not linked to an active institution.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = VERIFY_OTP_BTN_HTML;
+                    }
+                    return;
+                }
+
+                const effectiveBasePath = `institutions/${effectiveInstId}`;
+                const buildTargetUrl = (page = 'official.html') => (
+                    window.AppSession?.buildPageUrl?.(page, effectiveInstId) || `/${effectiveInstId}/${page.replace(/\.html$/i, '')}`
+                );
+                const displayUser = String(profile.displayUsername || profile.username || verifiedUser?.loginId || '').trim();
+                const normUser = String(profile.username || displayUser).trim().toLowerCase();
+
+                stopOtpTimers();
+                officialOtpState.cachedPassword = '';
+
+                if (profile.role === 'super_admin') {
+                    window.AppSession?.startAdmin?.({
+                        name: profile.displayName || verifiedUser?.displayName || 'Super Admin',
+                        email: displayUser,
+                        institutionId: effectiveInstId
+                    });
+                    window.location.href = buildTargetUrl('official.html');
+                    return;
+                }
+
+                // Staff custom auth session: read live permissions from institutions/{slug}/staffAccess/{uid}
+                let activeCollector = { ...(profile.access || {}) };
+                try {
+                    const accessSnap = await getDoc(doc(db, `${effectiveBasePath}/staffAccess`, userCred.user.uid));
+                    if (accessSnap.exists()) {
+                        activeCollector = { ...activeCollector, ...accessSnap.data() };
+                    }
+                } catch (_) {}
+
+                if (activeCollector.isActive === false) {
+                    try { await signOut(auth); } catch (_) {}
+                    showLoginMessage('Your staff account is currently inactive. Please contact your administrator.');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = VERIFY_OTP_BTN_HTML;
+                    }
+                    return;
+                }
+
+                const dutyClasses = Array.isArray(activeCollector.dutyClasses) && activeCollector.dutyClasses.length
+                    ? activeCollector.dutyClasses.filter(Boolean)
+                    : [];
+                const staffName = activeCollector.name || profile.displayName || verifiedUser?.displayName || displayUser;
+                const staffId = profile.staffId || activeCollector.staffId || '';
+                const staffAccess = {
+                    uid: userCred.user.uid,
+                    username: normUser,
+                    displayUsername: displayUser,
+                    collection: activeCollector.canCollect === true,
+                    worksheet: activeCollector.canAccessWorksheet === true,
+                    result: activeCollector.canManageResults === true,
+                    attendance: activeCollector.canAccessAttendance === true,
+                    academicPlan: activeCollector.canAccessAcademicPlan === true,
+                    studentActivity: activeCollector.canAccessActivity === true,
+                    classroomEvaluation: activeCollector.canAccessEvaluation === true,
+                    evaluation: activeCollector.canAccessEvaluation === true,
+                    admin: activeCollector.canAccessAdmin === true,
+                    canAccessAdmin: activeCollector.canAccessAdmin === true,
+                    actLikeSuperAdmin: activeCollector.actLikeSuperAdmin === true || activeCollector.canAccessAdmin === true,
+                    dutyClasses,
+                    staffId,
+                    name: staffName,
+                    phone: activeCollector.phone || '',
+                    role: activeCollector.role || activeCollector.type || 'Staff',
+                    type: activeCollector.type || 'Staff',
+                    photo: activeCollector.photo || '',
+                    source: 'staff',
+                    userKey: normUser,
+                    loginId: displayUser,
+                    requiresEmailAuth: true
+                };
+                window.AppSession?.startStaff?.(staffName, displayUser, staffAccess, effectiveInstId);
+
+                const activeProject = window.AppSession?.getActiveProjectId?.() || '';
+                localStorage.setItem('official_portal_session_v1', JSON.stringify({
+                    ...(activeProject ? { projectId: activeProject } : {}),
+                    institutionId: effectiveInstId,
+                    id: staffId,
+                    uid: userCred.user.uid,
+                    name: staffName,
+                    username: displayUser,
+                    email: displayUser,
+                    phone: activeCollector.phone || '',
+                    role: activeCollector.role || activeCollector.type || 'Staff',
+                    type: activeCollector.type || 'Staff',
+                    photo: activeCollector.photo || '',
+                    dutyClasses,
+                    canAccessAdmin: staffAccess.canAccessAdmin,
+                    actLikeSuperAdmin: staffAccess.actLikeSuperAdmin,
+                    canCollect: staffAccess.collection,
+                    canAccessWorksheet: staffAccess.worksheet,
+                    canManageResults: staffAccess.result,
+                    canAccessAttendance: staffAccess.attendance,
+                    canAccessAcademicPlan: staffAccess.academicPlan,
+                    canAccessActivity: staffAccess.studentActivity,
+                    canAccessEvaluation: staffAccess.evaluation,
+                    source: 'staff',
+                    access: staffAccess
+                }));
+                window.location.href = buildTargetUrl('official.html');
+            } catch (err) {
+                console.error('Official OTP verify error:', err);
+                showLoginMessage(formatPhoneAuthError(err, 'OTP verification failed. Please check the code and try again.'));
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = VERIFY_OTP_BTN_HTML;
+                }
+            }
+        };
+
+        // Wire Student OTP listeners
+        document.getElementById('btn-student-verify-phone')?.addEventListener('click', handleStudentVerifyPhone);
+        document.getElementById('student-login-phone')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleStudentVerifyPhone();
+            }
+        });
+        document.getElementById('student-login-phone')?.addEventListener('input', (e) => {
+            const clean = e.target.value.replace(/[^\d+\-\s()]/g, '').slice(0, 15);
+            if (e.target.value !== clean) e.target.value = clean;
+        });
+        document.getElementById('btn-student-send-otp')?.addEventListener('click', () => sendStudentSmsOtp({ isResend: false }));
+        document.getElementById('btn-student-resend-otp')?.addEventListener('click', () => sendStudentSmsOtp({ isResend: true }));
+        document.getElementById('btn-student-verify-otp')?.addEventListener('click', handleStudentVerifyOtp);
+        document.getElementById('student-otp-input')?.addEventListener('input', (e) => {
+            const digits = e.target.value.replace(/\D/g, '').slice(0, 6);
+            if (e.target.value !== digits) e.target.value = digits;
+        });
+        document.getElementById('student-otp-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleStudentVerifyOtp();
+            }
+        });
+
+        // Wire Official 2FA listeners
         document.getElementById('btn-verify-user')?.addEventListener('click', verifyUniversalIdentifier);
         document.getElementById('login-username')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
@@ -2654,6 +3329,20 @@ let isRootGatewayMode = false;
             if (e.key === 'Enter') {
                 e.preventDefault();
                 handleUniversalLoginSubmit();
+            }
+        });
+        document.getElementById('btn-official-resend-otp')?.addEventListener('click', () => {
+            dispatchOfficialSmsOtp({ isResend: true }).catch(() => {});
+        });
+        document.getElementById('btn-official-verify-otp')?.addEventListener('click', handleOfficialVerifyOtp);
+        document.getElementById('official-otp-input')?.addEventListener('input', (e) => {
+            const digits = e.target.value.replace(/\D/g, '').slice(0, 6);
+            if (e.target.value !== digits) e.target.value = digits;
+        });
+        document.getElementById('official-otp-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleOfficialVerifyOtp();
             }
         });
 
@@ -2669,14 +3358,24 @@ let isRootGatewayMode = false;
             window.openLogin();
             showLoginMessage(sessionNotice);
         }
-        if (new URLSearchParams(window.location.search).get('addStudent') === '1') {
+        const urlSearchParams = new URLSearchParams(window.location.search);
+        if (urlSearchParams.get('addStudent') === '1') {
             if (window.AppSession?.hasCompanySession?.()) {
                 window.location.href = '/company';
             } else if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
                 window.location.href = getPageUrl('official.html');
             } else {
                 history.replaceState(null, '', window.location.pathname);
-                openStudentLoginModal();
+                openStudentLoginModal({ mode: 'student', addStudent: true });
+            }
+        } else if (urlSearchParams.get('login') === 'official') {
+            if (window.AppSession?.hasCompanySession?.()) {
+                window.location.href = '/company';
+            } else if (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.()) {
+                window.location.href = getPageUrl('official.html');
+            } else {
+                history.replaceState(null, '', window.location.pathname);
+                openStudentLoginModal({ mode: 'official' });
             }
         }
 

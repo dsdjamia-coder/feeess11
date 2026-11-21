@@ -3,7 +3,6 @@ import { db, auth } from '../../config/firebase-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyCachedInstitutionLogo, escapeHtml, rememberInstitutionLogo, sanitizeUrl } from '../shared/app-common.js';
 import { appLog } from '../shared/logger.js';
 import { showToast } from '../shared/toaster.js';
-import { signInWithCustomUsernameAndPassword } from '../shared/custom-auth-service.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 import { collection, doc, getDoc, getDocs } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
@@ -991,92 +990,8 @@ const showApp = () => {
 };
 
 const tryLogin = async () => {
-  if (!authReady) return showMsg('Initializing authentication... please try again.');
-  const username = String(document.getElementById('official-username').value || '').trim();
-  const password = String(document.getElementById('official-password').value || '').trim();
-  if (!username || !password) return showMsg('Username, password required');
-  showMsg('');
-  const uname = username.toLowerCase();
-  const passHash = await hashCredentialValue(password);
-  let session = null;
-
-  let customAuthResult = null;
-  try {
-    customAuthResult = await signInWithCustomUsernameAndPassword(auth, {
-      username,
-      password,
-      institutionId: INSTITUTION_ID
-    });
-  } catch (_error) {}
-
-  if (customAuthResult?.userCred?.user) {
-    const profile = customAuthResult.profile || {};
-    const displayUser = String(profile.displayUsername || profile.username || username).trim();
-    if (profile.role === 'super_admin') {
-      session = {
-        name: profile.displayName || 'Super Admin',
-        username: displayUser,
-        type: 'Admin',
-        source: 'firebase',
-        photo: '/assets/images/logo.png'
-      };
-    } else if (profile.role === 'staff') {
-      let staffData = {};
-      if (profile.staffId) {
-        try {
-          const staffSnap = await getDoc(doc(db, `${BASE_PATH}/staff`, profile.staffId));
-          if (staffSnap.exists()) staffData = staffSnap.data() || {};
-        } catch (_err) {}
-      }
-      session = {
-        ...staffData,
-        id: profile.staffId || staffData.id || '',
-        uid: customAuthResult.userCred.user.uid,
-        name: staffData.name || profile.displayName || 'Staff',
-        username: displayUser,
-        type: staffData.type || 'Staff',
-        source: 'staff',
-        photo: staffData.photo || ''
-      };
-    }
-  }
-
-  if (!session) {
-    const authConfigSnap = await getDoc(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig'));
-    const authConfig = authConfigSnap.exists() ? { categories: {}, ...(authConfigSnap.data() || {}) } : { categories: {} };
-    const dirSnap = await getDocs(collection(db, `${BASE_PATH}/publicDirectory`));
-    let directoryUser = null;
-    for (const entry of dirSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))) {
-      const meta = entry.authMeta || {};
-      const categoryAuth = authConfig?.categories?.[entry.categoryId] || {};
-      const usernameField = String(categoryAuth.usernameField || '').trim();
-      const passwordField = String(categoryAuth.passwordField || '').trim();
-      const values = entry.values || {};
-      const configuredUsername = usernameField ? String(values[usernameField] || '').toLowerCase() : '';
-      const configuredPasswordRaw = passwordField ? String(values[passwordField] || '').trim() : '';
-      const configuredPasswordHash = configuredPasswordRaw ? await hashCredentialValue(configuredPasswordRaw) : '';
-      const userMatch = [
-        String(meta.username || '').toLowerCase(),
-        configuredUsername
-      ].includes(uname);
-      const passMatch = [
-        String(meta.passwordHash || '') === passHash,
-        configuredPasswordRaw === password,
-        configuredPasswordHash === passHash
-      ].some(Boolean);
-      if (userMatch && passMatch) {
-        directoryUser = entry;
-        break;
-      }
-    }
-    if (directoryUser) session = { id: directoryUser.id, ...(directoryUser.values || {}), name: String(directoryUser.values?.name || 'Directory User'), username, type: 'Category User', source: 'directory', categoryId: directoryUser.categoryId, photo: String(directoryUser.values?.photo || directoryUser.values?.image || '') };
-  }
-
-  if (!session) return showMsg('Invalid credentials / access denied');
-  userSession = session;
-  await loadData();
-  localStorage.setItem(OFFICIAL_SESSION_KEY, JSON.stringify(userSession));
-  showApp();
+  showMsg('Two-step SMS OTP verification is required. Redirecting to the portal login...');
+  window.location.replace(getPageUrl('index.html?login=official'));
 };
 
 const waitForFirebaseAuthUser = () => {

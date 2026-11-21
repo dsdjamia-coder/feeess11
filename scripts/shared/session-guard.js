@@ -456,19 +456,23 @@
         if (message) sessionStorage.setItem(FLASH_KEY, message);
     };
 
-    const clearClientData = async () => {
+    const clearClientData = async ({ clearRememberedStudents = false } = {}) => {
         try {
             const preserve = {};
-            const savedStudentAccounts = localStorage.getItem(STUDENT_ACCOUNTS_KEY);
-            if (savedStudentAccounts) preserve[STUDENT_ACCOUNTS_KEY] = savedStudentAccounts;
-            const savedRemembered = localStorage.getItem(REMEMBERED_ACCOUNTS_KEY);
-            if (savedRemembered) preserve[REMEMBERED_ACCOUNTS_KEY] = savedRemembered;
-            const savedDismissed = localStorage.getItem(DISMISSED_GROUP_STUDENTS_KEY);
-            if (savedDismissed) preserve[DISMISSED_GROUP_STUDENTS_KEY] = savedDismissed;
+            if (!clearRememberedStudents) {
+                const savedStudentAccounts = localStorage.getItem(STUDENT_ACCOUNTS_KEY);
+                if (savedStudentAccounts) preserve[STUDENT_ACCOUNTS_KEY] = savedStudentAccounts;
+                const savedRemembered = localStorage.getItem(REMEMBERED_ACCOUNTS_KEY);
+                if (savedRemembered) preserve[REMEMBERED_ACCOUNTS_KEY] = savedRemembered;
+                const savedDismissed = localStorage.getItem(DISMISSED_GROUP_STUDENTS_KEY);
+                if (savedDismissed) preserve[DISMISSED_GROUP_STUDENTS_KEY] = savedDismissed;
+            }
             const savedProject = localStorage.getItem(ACTIVE_PROJECT_KEY);
             if (savedProject) preserve[ACTIVE_PROJECT_KEY] = savedProject;
             const savedInst = localStorage.getItem(ACTIVE_INSTITUTION_KEY);
             if (savedInst) preserve[ACTIVE_INSTITUTION_KEY] = savedInst;
+            const savedLastInst = localStorage.getItem(LAST_INSTITUTION_KEY);
+            if (savedLastInst) preserve[LAST_INSTITUTION_KEY] = savedLastInst;
             localStorage.clear();
             Object.entries(preserve).forEach(([key, value]) => localStorage.setItem(key, value));
         } catch (error) {
@@ -487,9 +491,12 @@
 
     const clearAll = async (options = {}) => {
         [STAFF_STATE_KEY, ADMIN_STATE_KEY, STUDENT_STATE_KEY, COMPANY_STATE_KEY, OFFICIAL_SESSION_KEY].forEach(removeKey);
+        if (options.clearRememberedStudents) {
+            [STUDENT_ACCOUNTS_KEY, REMEMBERED_ACCOUNTS_KEY, DISMISSED_GROUP_STUDENTS_KEY].forEach(removeKey);
+        }
         setCurrentRole('');
         if (options.purgeClientData) {
-            await clearClientData();
+            await clearClientData({ clearRememberedStudents: options.clearRememberedStudents === true });
         }
         if (options.redirectUrl) {
             window.location.href = buildPageUrl(options.redirectUrl);
@@ -672,7 +679,7 @@
             } catch (err) {
                 console.warn('Firebase sign out failed:', err);
             }
-            await clearAll({ purgeClientData: true });
+            await clearAll({ purgeClientData: true, clearRememberedStudents: true });
             const redirectUrl = options.redirectUrl !== undefined ? options.redirectUrl : 'index.html?public=1';
             if (redirectUrl) {
                 window.location.href = wasCompany ? `/${String(redirectUrl).replace(/^\/+/, '')}` : buildPageUrl(redirectUrl);

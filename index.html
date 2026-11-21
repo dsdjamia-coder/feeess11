@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app https://www.google.com https://www.recaptcha.net wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net;">
     <meta name="referrer" content="no-referrer">
     <title>Institution Manage</title>
     <meta name="description" content="Multi-institution management and administrative platform for academic institutions.">
@@ -1750,7 +1750,7 @@
     <!-- Login Modal -->
     <div id="login-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <div class="modal-box login-modal-card">
-            <button type="button" id="btn-close-login-modal" class="modal-close-btn login-modal-close" aria-label="Close login modal" onclick="document.getElementById('login-modal').style.display='none'">
+            <button type="button" id="btn-close-login-modal" class="modal-close-btn login-modal-close" aria-label="Close login modal">
                 <i class="fas fa-xmark" aria-hidden="true"></i>
             </button>
 
@@ -1765,27 +1765,151 @@
                 <p id="login-institution-name" class="login-modal-subheading">Institution</p>
             </div>
 
-            <div class="login-stepper" aria-label="Login progress">
+            <!-- Login Mode Switcher (Student vs Official) -->
+            <div id="login-mode-tabs" class="login-mode-tabs" role="tablist" aria-label="Select portal login type">
+                <button type="button" id="login-tab-student" class="login-mode-tab is-active" role="tab" aria-selected="true" data-login-mode="student">
+                    <i class="fas fa-user-graduate" aria-hidden="true"></i>
+                    <span>Student</span>
+                </button>
+                <button type="button" id="login-tab-official" class="login-mode-tab" role="tab" aria-selected="false" data-login-mode="official">
+                    <i class="fas fa-user-shield" aria-hidden="true"></i>
+                    <span>Official</span>
+                </button>
+            </div>
+
+            <!-- 3-Step Progress Indicator -->
+            <div id="login-stepper" class="login-stepper" aria-label="Login progress">
                 <div id="login-progress-step-1" class="login-step-item is-active" aria-current="step">
                     <span class="login-step-dot" id="login-step-dot-1">1</span>
-                    <span class="login-step-label">Verify Account</span>
+                    <span class="login-step-label" id="login-step-label-1">Mobile</span>
                 </div>
-                <div id="login-progress-line" class="login-step-connector" aria-hidden="true"></div>
+                <div id="login-progress-line-1" class="login-step-connector" aria-hidden="true"></div>
                 <div id="login-progress-step-2" class="login-step-item">
                     <span class="login-step-dot" id="login-step-dot-2">2</span>
-                    <span class="login-step-label">Sign In</span>
+                    <span class="login-step-label" id="login-step-label-2">Confirm</span>
+                </div>
+                <div id="login-progress-line-2" class="login-step-connector" aria-hidden="true"></div>
+                <div id="login-progress-step-3" class="login-step-item">
+                    <span class="login-step-dot" id="login-step-dot-3">3</span>
+                    <span class="login-step-label" id="login-step-label-3">OTP</span>
                 </div>
             </div>
 
-            <!-- Step 1: Identifier Input -->
-            <div id="login-step-1" class="login-step-panel">
+            <!-- ================= STUDENT OTP LOGIN FLOW ================= -->
+            <!-- Student Step 1: Enter Mobile Number -->
+            <div id="student-step-1" class="login-step-panel">
                 <div class="login-field-group">
-                    <label for="login-username" class="login-field-label">Username, Admission No, or Email</label>
+                    <label for="student-login-phone" class="login-field-label">Registered Mobile Number</label>
+                    <div class="login-phone-row">
+                        <select id="student-country-code" class="login-country-select" aria-label="Country code" data-native-select="true">
+                            <option value="+91" selected>+91</option>
+                            <option value="+971">+971</option>
+                            <option value="+966">+966</option>
+                            <option value="+974">+974</option>
+                            <option value="+965">+965</option>
+                            <option value="+968">+968</option>
+                            <option value="+973">+973</option>
+                            <option value="+1">+1</option>
+                            <option value="+44">+44</option>
+                        </select>
+                        <div class="login-input-group login-phone-input-wrap">
+                            <i class="fas fa-mobile-screen-button login-input-leading" aria-hidden="true"></i>
+                            <input type="tel" id="student-login-phone" maxlength="15" inputmode="numeric" class="login-field-input login-tabular-input" placeholder="Enter 10-digit mobile number" autocomplete="tel-national">
+                        </div>
+                    </div>
+                    <p class="login-field-hint">Enter the parent or student mobile number registered with the institution.</p>
+                </div>
+                <button type="button" id="btn-student-verify-phone" class="login-primary-btn">
+                    <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                    <span>Verify Mobile</span>
+                </button>
+            </div>
+
+            <!-- Student Step 2: Masked Student Preview & Send OTP -->
+            <div id="student-step-2" class="login-step-panel hidden">
+                <div class="login-verified-card">
+                    <div class="login-verified-identity">
+                        <div class="login-verified-avatar" aria-hidden="true">
+                            <i class="fas fa-mobile-screen-button"></i>
+                        </div>
+                        <div class="login-verified-text">
+                            <div id="student-preview-phone" class="login-verified-name login-tabular-text">+91 98****3210</div>
+                            <div id="student-preview-summary" class="login-verified-meta">1 student linked</div>
+                        </div>
+                    </div>
+                    <button type="button" id="btn-student-change-phone" class="login-change-btn">
+                        <i class="fas fa-pen" aria-hidden="true"></i>
+                        <span>Change</span>
+                    </button>
+                </div>
+
+                <div class="login-field-group">
+                    <div class="login-field-label">Linked Student Preview</div>
+                    <div id="student-preview-list" class="login-preview-list"></div>
+                    <p class="login-field-hint">Full student profiles unlock after verifying the SMS OTP sent to your mobile.</p>
+                </div>
+
+                <button type="button" id="btn-student-send-otp" class="login-primary-btn">
+                    <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                    <span>Send OTP</span>
+                </button>
+            </div>
+
+            <!-- Student Step 3: Enter 6-Digit SMS OTP -->
+            <div id="student-step-3" class="login-step-panel hidden">
+                <div class="login-verified-card">
+                    <div class="login-verified-identity">
+                        <div class="login-verified-avatar" aria-hidden="true">
+                            <i class="fas fa-message"></i>
+                        </div>
+                        <div class="login-verified-text">
+                            <div class="login-verified-name">SMS OTP Sent</div>
+                            <div id="student-otp-phone-meta" class="login-verified-meta login-tabular-text">Code sent to +91 98****3210</div>
+                        </div>
+                    </div>
+                    <button type="button" id="btn-student-otp-change" class="login-change-btn">
+                        <i class="fas fa-pen" aria-hidden="true"></i>
+                        <span>Change</span>
+                    </button>
+                </div>
+
+                <div class="login-field-group">
+                    <label for="student-otp-input" class="login-field-label">Enter 6-Digit OTP</label>
+                    <div class="login-input-group">
+                        <i class="fas fa-shield-halved login-input-leading" aria-hidden="true"></i>
+                        <input type="text" id="student-otp-input" maxlength="6" inputmode="numeric" pattern="[0-9]*" class="login-field-input login-otp-input" placeholder="000000" autocomplete="one-time-code">
+                    </div>
+                    <div class="login-otp-footer">
+                        <span id="student-otp-timer-text" class="login-otp-timer"></span>
+                        <button type="button" id="btn-student-resend-otp" class="login-link-btn" disabled>Resend OTP</button>
+                    </div>
+                </div>
+
+                <button type="button" id="btn-student-verify-otp" class="login-primary-btn">
+                    <i class="fas fa-check-circle" aria-hidden="true"></i>
+                    <span>Verify &amp; Sign In</span>
+                </button>
+            </div>
+
+            <!-- Student Step 3B: Sibling Selection (Shown after OTP when >1 student matches) -->
+            <div id="student-step-select" class="login-step-panel hidden">
+                <div class="login-field-group">
+                    <div class="login-field-label">Select Student Profile</div>
+                    <p class="login-field-hint">OTP verified. Choose a student to open their dashboard — all linked siblings will also be available in your account switcher.</p>
+                </div>
+                <div id="student-verified-list" class="login-verified-student-list"></div>
+            </div>
+
+            <!-- ================= OFFICIAL 2FA LOGIN FLOW ================= -->
+            <!-- Official Step 1: Username or Email -->
+            <div id="official-step-1" class="login-step-panel hidden">
+                <div class="login-field-group">
+                    <label for="login-username" class="login-field-label">Username or Company Email</label>
                     <div class="login-input-group">
                         <i class="fas fa-user login-input-leading" aria-hidden="true"></i>
-                        <input type="text" id="login-username" maxlength="60" class="login-field-input" placeholder="e.g., 1045, username, or email" autocomplete="username">
+                        <input type="text" id="login-username" maxlength="60" class="login-field-input" placeholder="e.g., staff_username or admin_id" autocomplete="username">
                     </div>
-                    <p class="login-field-hint">Use your admission number, staff username, or admin email to continue.</p>
+                    <p class="login-field-hint">For Staff, Management, Institution Admin, and Company Console accounts.</p>
                 </div>
                 <button type="button" id="btn-verify-user" class="login-primary-btn">
                     <i class="fas fa-arrow-right" aria-hidden="true"></i>
@@ -1793,8 +1917,8 @@
                 </button>
             </div>
 
-            <!-- Step 2: Confirmed Profile & Password (Initially Hidden) -->
-            <div id="login-step-2" class="login-step-panel hidden">
+            <!-- Official Step 2: Confirmed Profile & Password -->
+            <div id="official-step-2" class="login-step-panel hidden">
                 <div class="login-verified-card">
                     <div class="login-verified-identity">
                         <div class="login-verified-avatar" aria-hidden="true">
@@ -1802,7 +1926,8 @@
                         </div>
                         <div class="login-verified-text">
                             <div id="verified-user-name" class="login-verified-name">User Name</div>
-                            <div id="verified-user-meta" class="login-verified-meta">Student • Class 5</div>
+                            <div id="verified-user-meta" class="login-verified-meta">Staff Member</div>
+                            <div id="verified-user-phone-meta" class="login-verified-phone-meta hidden"></div>
                         </div>
                     </div>
                     <button type="button" id="btn-change-user" class="login-change-btn">
@@ -1820,14 +1945,53 @@
                             <i id="toggle-universal-pass-icon" class="fas fa-eye" aria-hidden="true"></i>
                         </button>
                     </div>
-                    <p id="login-password-hint" class="login-field-hint">Enter your credentials to continue.</p>
+                    <p id="login-password-hint" class="login-field-hint">After verifying your password, an SMS OTP will be sent to your registered mobile.</p>
                 </div>
 
                 <button type="button" id="btn-login-submit" class="login-primary-btn">
                     <i class="fas fa-shield-halved" aria-hidden="true"></i>
-                    <span>Sign In Securely</span>
+                    <span>Verify &amp; Send OTP</span>
                 </button>
             </div>
+
+            <!-- Official Step 3: Enter 6-Digit SMS OTP -->
+            <div id="official-step-3" class="login-step-panel hidden">
+                <div class="login-verified-card">
+                    <div class="login-verified-identity">
+                        <div class="login-verified-avatar" aria-hidden="true">
+                            <i class="fas fa-shield-halved"></i>
+                        </div>
+                        <div class="login-verified-text">
+                            <div id="official-otp-name" class="login-verified-name">Two-Step Verification</div>
+                            <div id="official-otp-phone-meta" class="login-verified-meta login-tabular-text">OTP sent to +91 ******3210</div>
+                        </div>
+                    </div>
+                    <button type="button" id="btn-official-otp-back" class="login-change-btn">
+                        <i class="fas fa-arrow-left" aria-hidden="true"></i>
+                        <span>Back</span>
+                    </button>
+                </div>
+
+                <div class="login-field-group">
+                    <label for="official-otp-input" class="login-field-label">Enter 6-Digit OTP</label>
+                    <div class="login-input-group">
+                        <i class="fas fa-key login-input-leading" aria-hidden="true"></i>
+                        <input type="text" id="official-otp-input" maxlength="6" inputmode="numeric" pattern="[0-9]*" class="login-field-input login-otp-input" placeholder="000000" autocomplete="one-time-code">
+                    </div>
+                    <div class="login-otp-footer">
+                        <span id="official-otp-timer-text" class="login-otp-timer"></span>
+                        <button type="button" id="btn-official-resend-otp" class="login-link-btn" disabled>Resend OTP</button>
+                    </div>
+                </div>
+
+                <button type="button" id="btn-official-verify-otp" class="login-primary-btn">
+                    <i class="fas fa-check-circle" aria-hidden="true"></i>
+                    <span>Verify &amp; Sign In</span>
+                </button>
+            </div>
+
+            <!-- Invisible Firebase Phone Auth reCAPTCHA Anchor -->
+            <div id="firebase-recaptcha-container" class="login-recaptcha-anchor" aria-hidden="true"></div>
 
             <div id="login-msg" class="auth-alert login-alert" role="alert" aria-live="polite">
                 <i class="fas fa-circle-exclamation login-alert-icon" aria-hidden="true"></i>

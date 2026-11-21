@@ -54,6 +54,7 @@ import {
 } from '../shared/site-footer.js';
 import {
   buildSuperAdminUid,
+  normalizePhoneToE164Client,
   upsertInstitutionSuperAdminCredential,
   validateCustomUsername
 } from '../shared/custom-auth-service.js';
@@ -862,6 +863,9 @@ const loadInstitutions = async () => {
           if (authData.displayUsername || authData.loginDisplay) {
             inst.adminLoginDisplay = authData.displayUsername || authData.loginDisplay;
           }
+          if (authData.phone || authData.phoneE164) {
+            inst.adminPhone = authData.phone || authData.phoneE164;
+          }
           if (authData.authMode) inst.authMode = authData.authMode;
         }
       } catch (e) {
@@ -922,6 +926,11 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
       || inst.adminUsername
       || (isInternalStaffEmail(inst.adminEmail || '') ? extractInternalUsername(inst.adminEmail || '') : (inst.adminEmail || ''));
     document.getElementById('inst-admin-email').value = displayLogin;
+    const adminPhoneInput = document.getElementById('inst-admin-phone');
+    if (adminPhoneInput) {
+      adminPhoneInput.value = inst.adminPhone || inst.phone || '';
+      adminPhoneInput.required = false;
+    }
 
     if (passInput) {
       passInput.disabled = false;
@@ -960,6 +969,11 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
     document.getElementById('inst-expiry-date').value = addMonthsToDateStr(todayStr, 12);
     document.getElementById('inst-is-lifetime').checked = false;
     linkExistingWrap?.classList.add('hidden');
+    const adminPhoneInput = document.getElementById('inst-admin-phone');
+    if (adminPhoneInput) {
+      adminPhoneInput.value = '';
+      adminPhoneInput.required = true;
+    }
     if (passInput) {
       passInput.disabled = false;
       passInput.required = true;
@@ -1004,6 +1018,7 @@ const saveInstitutionData = async ({
   phone,
   adminName,
   rawAdminLogin,
+  adminPhone = '',
   adminPassword,
   planName,
   isLifetime,
@@ -1054,6 +1069,17 @@ const saveInstitutionData = async ({
     return false;
   }
 
+  const effectiveAdminPhoneRaw = String(adminPhone || '').trim();
+  const normalizedAdminPhoneE164 = effectiveAdminPhoneRaw ? normalizePhoneToE164Client(effectiveAdminPhoneRaw) : '';
+  if (mode === 'create' && !normalizedAdminPhoneE164) {
+    showErrorInBox(errorBoxId, 'Please enter a valid Super Admin Mobile Number (for OTP 2FA).');
+    return false;
+  }
+  if (effectiveAdminPhoneRaw && !normalizedAdminPhoneE164) {
+    showErrorInBox(errorBoxId, 'Super Admin Mobile Number format is invalid. Use 10 digits or +91XXXXXXXXXX.');
+    return false;
+  }
+
   const saveBtn = document.getElementById(submitBtnId);
   const originalHtml = saveBtn ? saveBtn.innerHTML : '';
   if (saveBtn) {
@@ -1071,16 +1097,18 @@ const saveInstitutionData = async ({
       }
     }
 
-    // 1. Provision or update Super Admin custom username & scrypt-hashed password via Cloud Function
+    // 1. Provision or update Super Admin custom username, OTP phone & scrypt-hashed password via Cloud Function
     const credRes = await upsertInstitutionSuperAdminCredential({
       mode,
       slug,
       institutionName: name,
       adminName,
       username: adminLoginDisplay,
-      password: adminPassword || ''
+      password: adminPassword || '',
+      phone: normalizedAdminPhoneE164 || effectiveAdminPhoneRaw
     });
     const adminUid = credRes?.uid || buildSuperAdminUid(slug);
+    const savedAdminPhone = credRes?.phoneE164 || normalizedAdminPhoneE164 || effectiveAdminPhoneRaw;
 
     // 2. Persist institution metadata & public config (never storing plaintext passwords)
     const batch = writeBatch(db);
@@ -1091,6 +1119,7 @@ const saveInstitutionData = async ({
         place,
         phone,
         adminName,
+        adminPhone: savedAdminPhone,
         adminUid,
         adminUsername,
         adminLoginDisplay,
@@ -1115,6 +1144,7 @@ const saveInstitutionData = async ({
         place,
         phone,
         adminName,
+        ...(savedAdminPhone ? { adminPhone: savedAdminPhone } : {}),
         adminUid,
         adminUsername,
         adminLoginDisplay,
@@ -1142,7 +1172,8 @@ const saveInstitutionData = async ({
         uid: adminUid,
         name: adminName,
         username: adminUsername,
-        displayUsername: adminLoginDisplay
+        displayUsername: adminLoginDisplay,
+        ...(savedAdminPhone ? { phone: savedAdminPhone } : {})
       },
       updatedAt: serverTimestamp()
     }, { merge: true });
@@ -1187,6 +1218,7 @@ const handleInstitutionSubmit = async (e) => {
     phone: String(document.getElementById('inst-phone').value || '').trim(),
     adminName: String(document.getElementById('inst-admin-name').value || '').trim() || 'Master Admin',
     rawAdminLogin: String(document.getElementById('inst-admin-email').value || '').trim(),
+    adminPhone: String(document.getElementById('inst-admin-phone')?.value || '').trim(),
     adminPassword: String(document.getElementById('inst-admin-password').value || '').trim(),
     planName: String(document.getElementById('inst-plan-name').value || 'Standard').trim(),
     isLifetime: document.getElementById('inst-is-lifetime')?.checked === true,
@@ -1218,6 +1250,7 @@ const handleAddInstPageSubmit = async (e) => {
     phone: String(document.getElementById('add-inst-phone').value || '').trim(),
     adminName: String(document.getElementById('add-inst-admin-name').value || '').trim() || 'Master Admin',
     rawAdminLogin: String(document.getElementById('add-inst-admin-email').value || '').trim(),
+    adminPhone: String(document.getElementById('add-inst-admin-phone')?.value || '').trim(),
     adminPassword: String(document.getElementById('add-inst-admin-password').value || '').trim(),
     planName: String(document.getElementById('add-inst-plan-name').value || 'Standard').trim(),
     isLifetime,

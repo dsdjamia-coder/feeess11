@@ -10,7 +10,9 @@ import {
     validateCustomUsername,
     manageStaffCredential,
     changeOwnPassword,
-    loginWithCustomUsername,
+    updateOwnOtpPhone,
+    verifyOwnPassword,
+    normalizePhoneToE164Client,
     buildStaffUid,
     getAuthClaims
 } from '../shared/custom-auth-service.js';
@@ -2903,14 +2905,23 @@ const renderAdminRoleList = () => {
         activeToggle.checked = true;
         activeToggle.disabled = true;
     }
+    const primaryAdmin = adminAccounts[0] || null;
+    const adminOtpPhoneInput = document.getElementById('admin-cred-otp-phone');
+    if (adminOtpPhoneInput && !adminOtpPhoneInput.value && primaryAdmin?.phone) {
+        adminOtpPhoneInput.value = primaryAdmin.phone;
+    }
     listEl.innerHTML = adminAccounts.length ? adminAccounts.map((account) => {
         const meta = getRoleMeta(account.role);
+        const otpPhoneBadge = account.phone
+            ? `<div class="text-xs text-emerald-700 font-semibold mt-1.5 flex items-center gap-1.5"><i class="fas fa-mobile-screen-button"></i><span>OTP Mobile: ${escapeHtml(account.phone)}</span></div>`
+            : `<div class="text-xs text-amber-700 font-semibold mt-1.5 flex items-center gap-1.5"><i class="fas fa-triangle-exclamation"></i><span>No OTP mobile registered yet</span></div>`;
         return `
             <div class="border border-gray-200 rounded-xl p-4 bg-gray-50/70">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
                         <div class="font-bold text-gray-900">${escapeHtml(account.name || account.email)}</div>
                         <div class="text-sm text-gray-500 break-all">${escapeHtml(account.email)}</div>
+                        ${otpPhoneBadge}
                         <div class="mt-2 inline-flex items-center gap-2 text-xs font-bold px-2.5 py-1 rounded-full border ${meta.badgeClass}">${meta.label}</div>
                         <div class="text-xs text-gray-400 mt-2">Updated: ${escapeHtml(formatDateTime(account.updatedAt))}</div>
                     </div>
@@ -5267,6 +5278,11 @@ const extractAndValidateStaffForm = (prefix = 'st') => {
         alert('Login Password must be at least 6 characters.');
         return null;
     }
+    const rawStaffPhone = String(values.phone || '').trim();
+    if ((validatedUsername || hasAnyPortalAccess) && !normalizePhoneToE164Client(rawStaffPhone)) {
+        alert('Please enter a valid Mobile Number (e.g. 10 digits or +91XXXXXXXXXX) for staff SMS OTP 2FA login.');
+        return null;
+    }
 
     return {
         type,
@@ -5370,6 +5386,7 @@ document.getElementById('add-staff-btn').addEventListener('click', async () => {
                 staffId: staffRecord.id,
                 username: staffRecord.displayUsername || staffRecord.username,
                 password: initialAuthPass,
+                phone: staffRecord.phone || '',
                 displayName: staffRecord.name,
                 isActive: staffRecord.isActive !== false,
                 access: buildStaffAccessFlagsPayload(staffRecord)
@@ -5926,6 +5943,7 @@ document.getElementById('edit-staff-update').onclick = async () => {
                 staffId: editingStaffId,
                 username: mergedRecord.displayUsername || mergedRecord.username,
                 password: newInitialPassword,
+                phone: mergedRecord.phone || '',
                 displayName: mergedRecord.name,
                 isActive: mergedRecord.isActive !== false,
                 access: buildStaffAccessFlagsPayload(mergedRecord)
@@ -5980,10 +5998,14 @@ window.resetStaffCredentials = (id) => {
     }
 
     const emailInput = document.getElementById('staff-cred-email');
+    const phoneInput = document.getElementById('staff-cred-phone');
     const passInput = document.getElementById('staff-cred-password');
     if (emailInput) {
         const rawSaved = staffRecord.displayUsername || staffRecord.username || staffRecord.email || '';
         emailInput.value = isInternalStaffEmail(rawSaved) ? extractInternalUsername(rawSaved) : rawSaved;
+    }
+    if (phoneInput) {
+        phoneInput.value = staffRecord.phone || '';
     }
     if (passInput) {
         passInput.value = '';
@@ -6031,11 +6053,18 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
     if (!staffRecord) return;
 
     const rawInput = (document.getElementById('staff-cred-email')?.value || '').trim();
+    const rawPhone = (document.getElementById('staff-cred-phone')?.value || '').trim();
     const rawPassword = (document.getElementById('staff-cred-password')?.value || '').trim();
 
     const usernameCheck = validateCustomUsername(rawInput);
     if (!usernameCheck.valid) {
         alert(usernameCheck.error);
+        return;
+    }
+
+    const normalizedPhoneE164 = normalizePhoneToE164Client(rawPhone);
+    if (!normalizedPhoneE164) {
+        alert('Please enter a valid Registered Mobile Number (e.g. 10 digits or +91XXXXXXXXXX) for SMS OTP verification.');
         return;
     }
 
@@ -6063,6 +6092,7 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
             staffId,
             username: usernameCheck.displayUsername,
             password: rawPassword,
+            phone: rawPhone,
             displayName: staffRecord.name || '',
             isActive: staffRecord.isActive !== false,
             access: buildStaffAccessFlagsPayload(staffRecord)
@@ -6071,20 +6101,26 @@ document.getElementById('staff-cred-save-btn')?.addEventListener('click', async 
         staffRecord.username = usernameCheck.username;
         staffRecord.displayUsername = usernameCheck.displayUsername;
         staffRecord.email = usernameCheck.displayUsername;
+        staffRecord.phone = rawPhone;
         staffRecord.authUid = credRes?.uid || buildStaffUid(INSTITUTION_ID, staffId);
         delete staffRecord.password;
+
+        await updateDoc(doc(db, `${BASE_PATH}/staff`, staffId), {
+            phone: rawPhone,
+            updatedAt: Date.now()
+        }).catch(() => {});
 
         await logAuditEvent({
             category: 'security',
             action: 'staff.credentials.rotate',
             entityType: 'staff',
             entityId: staffId,
-            message: `Login credentials updated for ${staffRecord.name || usernameCheck.displayUsername}`
+            message: `Login credentials and OTP mobile updated for ${staffRecord.name || usernameCheck.displayUsername}`
         });
 
         closeStaffCredentialsModal();
         renderStaffList();
-        showToast?.('Staff login credentials saved securely!', 'success');
+        showToast?.('Staff login credentials and OTP mobile saved securely!', 'success');
     } catch (err) {
         console.error('Failed to save staff credentials:', err);
         alert('Failed to save credentials: ' + (err.message || 'Please check your network connection.'));
@@ -17015,6 +17051,59 @@ document.getElementById('update-admin-credentials-btn')?.addEventListener('click
         alert(`Credential update failed: ${error?.message || 'Please verify current password and try again.'}`);
     }
 });
+document.getElementById('update-admin-otp-phone-btn')?.addEventListener('click', async () => {
+    if (!requirePermission('security.manage')) return;
+    const phoneInput = document.getElementById('admin-cred-otp-phone');
+    const passInput = document.getElementById('admin-cred-otp-current-pass');
+    const rawPhone = String(phoneInput?.value || '').trim();
+    const currentPassword = String(passInput?.value || '').trim();
+    const phoneE164 = normalizePhoneToE164Client(rawPhone);
+
+    if (!phoneE164) {
+        return alert('Please enter a valid mobile number (e.g. 10 digits or +91XXXXXXXXXX).');
+    }
+    if (!currentPassword) {
+        return alert('Please enter your current Super Admin password to update the OTP mobile number.');
+    }
+
+    const authUser = auth.currentUser;
+    if (!authUser) return alert('Authenticated Super Admin account not found. Please log in again.');
+    const claims = await getAuthClaims(authUser);
+    if (!claims.customAuth || claims.role !== 'super_admin') {
+        return alert('Only the institution Super Admin can update their own OTP mobile number here. Company Owners can update it from the Company Console.');
+    }
+
+    if (!confirm(`Update Super Admin 2FA OTP mobile number to ${phoneE164}?`)) return;
+
+    const btn = document.getElementById('update-admin-otp-phone-btn');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin text-[11px]"></i><span>Saving...</span>';
+    }
+
+    try {
+        const res = await updateOwnOtpPhone({ currentPassword, phone: phoneE164 });
+        if (passInput) passInput.value = '';
+        await logAuditEvent({
+            category: 'security',
+            action: 'admin.otp_phone.update',
+            entityType: 'admin',
+            entityId: claims.displayUsername || claims.username || authUser.uid,
+            message: `Super Admin OTP mobile updated (${res?.maskedPhone || phoneE164}).`
+        });
+        showToast?.('Super Admin OTP mobile number updated successfully!', 'success');
+        alert(`Super Admin OTP mobile number saved (${res?.maskedPhone || phoneE164}).`);
+    } catch (error) {
+        console.error('Failed to update Super Admin OTP mobile:', error);
+        alert(`OTP mobile update failed: ${error?.message || 'Please check your current password and try again.'}`);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml || '<i class="fas fa-mobile-screen-button text-[11px]"></i><span>Save OTP Mobile Number</span>';
+        }
+    }
+});
 document.getElementById('clean-legacy-passwords-btn')?.addEventListener('click', async () => {
     if (!requirePermission('security.manage')) return;
     if (!confirm('Remove all legacy plaintext password fields from Firestore (staff, staffAccess, and settings/adminAuth)? Users will continue signing in via Firebase Authentication.')) return;
@@ -18000,9 +18089,7 @@ document.getElementById('purge-confirm-execute-btn')?.addEventListener('click', 
 
     try {
         if (authClaims.customAuth) {
-            const verifyUsername = authClaims.username || currentAdminEmail;
-            if (!verifyUsername) throw new Error('Unable to identify current username.');
-            await loginWithCustomUsername({ username: verifyUsername, password: pwd, institutionId: INSTITUTION_ID });
+            await verifyOwnPassword({ currentPassword: pwd });
         } else {
             const credential = EmailAuthProvider.credential(authUser.email, pwd);
             await reauthenticateWithCredential(authUser, credential);
@@ -18837,6 +18924,7 @@ onAuthStateChanged(auth, async (user) => {
         adminAccounts = [{
             name: adminDocData.name || 'Master Admin',
             email: primaryDisplayId,
+            phone: adminDocData.phone || adminDocData.phoneE164 || '',
             role: 'super_admin',
             isActive: adminDocData.isActive !== false,
             createdAt: adminDocData.createdAt || new Date().toISOString(),
@@ -18861,6 +18949,7 @@ onAuthStateChanged(auth, async (user) => {
             adminAccounts = [{
                 name: adminData.name || 'Master Admin',
                 email: liveDisplayId,
+                phone: adminData.phone || adminData.phoneE164 || '',
                 role: 'super_admin',
                 isActive: adminData.isActive !== false,
                 createdAt: adminData.createdAt || new Date().toISOString(),

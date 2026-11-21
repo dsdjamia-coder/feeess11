@@ -3192,6 +3192,232 @@ body:not(.worksheet-fullscreen-mode) .worksheet-sticky-header {
     flex-shrink: 0;
 }
 
+/* Login Mode Switcher (Student | Official) */
+#login-modal .login-mode-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 4px;
+    margin-bottom: 16px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+}
+
+#login-modal .login-mode-tabs.hidden {
+    display: none;
+}
+
+#login-modal .login-mode-tab {
+    min-height: 40px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: #475569;
+    font-size: 13px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#login-modal .login-mode-tab:hover:not(.is-active) {
+    color: #0f172a;
+}
+
+#login-modal .login-mode-tab.is-active {
+    background: #ffffff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+#login-modal .login-mode-tab:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #2563eb;
+}
+
+/* Phone Input + Country Code */
+#login-modal .login-phone-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+
+#login-modal .login-country-select {
+    width: 82px;
+    height: 46px;
+    padding: 0 8px;
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #0f172a;
+    outline: none;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#login-modal .login-country-select:focus {
+    background: #ffffff;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+#login-modal .login-phone-input-wrap {
+    flex: 1;
+    min-width: 0;
+}
+
+#login-modal .login-tabular-input,
+#login-modal .login-tabular-text {
+    font-variant-numeric: tabular-nums;
+}
+
+/* 6-Digit OTP Input & Resend Footer */
+#login-modal .login-otp-input {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.32em;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+}
+
+#login-modal .login-otp-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 2px;
+}
+
+#login-modal .login-otp-timer {
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+
+#login-modal .login-link-btn {
+    border: none;
+    background: transparent;
+    padding: 4px 2px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #2563eb;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#login-modal .login-link-btn:hover:not(:disabled) {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+#login-modal .login-link-btn:disabled {
+    color: #94a3b8;
+    cursor: not-allowed;
+    text-decoration: none;
+}
+
+/* Masked Student Preview List & Verified Sibling Picker */
+#login-modal .login-preview-list,
+#login-modal .login-verified-student-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 210px;
+    overflow-y: auto;
+}
+
+#login-modal .login-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 11px;
+}
+
+#login-modal .login-preview-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #2563eb;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+#login-modal .login-preview-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+#login-modal .login-preview-meta {
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748b;
+    line-height: 1.3;
+}
+
+#login-modal .login-sibling-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 11px 13px;
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#login-modal .login-sibling-btn:hover {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+#login-modal .login-sibling-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
+}
+
+#login-modal .login-verified-phone-meta {
+    margin-top: 2px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #1e40af;
+    font-variant-numeric: tabular-nums;
+}
+
+#login-modal .login-verified-phone-meta.is-missing {
+    color: #b91c1c;
+}
+
+#login-modal .login-recaptcha-anchor {
+    margin-top: 8px;
+    display: flex;
+    justify-content: center;
+}
+
 @media (max-width: 480px) {
     #login-modal {
         padding: 12px;
@@ -3202,7 +3428,11 @@ body:not(.worksheet-fullscreen-mode) .worksheet-sticky-header {
     }
     #login-modal .login-stepper {
         padding: 9px 10px;
-        gap: 8px;
+        gap: 6px;
+    }
+    #login-modal .login-step-item {
+        font-size: 11px;
+        gap: 5px;
     }
 }
 
@@ -3211,6 +3441,8 @@ body:not(.worksheet-fullscreen-mode) .worksheet-sticky-header {
     #login-modal .login-primary-btn,
     #login-modal .login-field-input,
     #login-modal .login-change-btn,
+    #login-modal .login-mode-tab,
+    #login-modal .login-sibling-btn,
     #login-modal .login-step-item,
     #login-modal .login-step-dot,
     #login-modal .login-step-connector {

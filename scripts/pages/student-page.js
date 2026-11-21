@@ -193,10 +193,14 @@ registerServiceWorker();
         };
         bindCopyButtons();
 
-        const confirmLogout = () => confirm('Are you sure you want to log out?');
+        const confirmLogout = () => confirm('Are you sure you want to log out? You will need OTP verification to sign in again.');
         async function logoutStudent({ skipConfirm = false } = {}) {
             if(!skipConfirm && !confirmLogout()) return;
-            window.AppSession?.logoutStudent(window.AppSession?.getStudentId?.(), { removeAccount: false });
+            if (window.AppSession?.signOut) {
+                await window.AppSession.signOut(auth, { redirectUrl: 'index.html?public=1' });
+                return;
+            }
+            window.AppSession?.logoutStudent(window.AppSession?.getStudentId?.(), { removeAccount: true });
             window.location.href = getPageUrl('index.html?public=1');
         }
         window.logoutStudent = logoutStudent;
@@ -420,7 +424,7 @@ registerServiceWorker();
         accountSwitcher?.addEventListener('click', (e) => {
             if (e.target === accountSwitcher) closeAccountSwitcher();
         });
-        accountList?.addEventListener('click', (e) => {
+        accountList?.addEventListener('click', async (e) => {
             const switchBtn = e.target.closest('.account-switch-btn');
             const removeBtn = e.target.closest('.account-remove-btn');
             if (switchBtn) {
@@ -430,13 +434,27 @@ registerServiceWorker();
                 if (!confirm('Are you sure you want to log out of this account?')) return;
                 const activeId = window.AppSession?.getStudentId?.() || '';
                 window.AppSession?.logoutStudent(removeBtn.dataset.id, { removeAccount: true });
-                if (activeId === removeBtn.dataset.id) window.location.href = getPageUrl('index.html?public=1');
-                else renderAccountSwitcher();
+                const remaining = window.AppSession?.getStudentAccounts?.() || [];
+                if (activeId === removeBtn.dataset.id) {
+                    if (remaining.length > 0) {
+                        switchToStudentAccount(remaining[0].studentId);
+                    } else if (window.AppSession?.signOut) {
+                        await window.AppSession.signOut(auth, { redirectUrl: 'index.html?public=1' });
+                    } else {
+                        window.location.href = getPageUrl('index.html?public=1');
+                    }
+                } else {
+                    renderAccountSwitcher();
+                }
             }
         });
-        document.getElementById('account-switcher-logout-btn')?.addEventListener('click', () => {
-            if (!confirm('Are you sure you want to log out of all accounts?')) return;
+        document.getElementById('account-switcher-logout-btn')?.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to log out of all accounts? You will need OTP verification to sign in again.')) return;
             closeAccountSwitcher();
+            if (window.AppSession?.signOut) {
+                await window.AppSession.signOut(auth, { redirectUrl: 'index.html?public=1' });
+                return;
+            }
             const accounts = window.AppSession?.getStudentAccounts?.() || [];
             accounts.forEach((acc) => {
                 window.AppSession?.logoutStudent(acc.studentId, { removeAccount: true });

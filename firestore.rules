@@ -412,6 +412,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Server-only OTP verification challenges & rate-limit buckets.
+    // Strictly inaccessible to all client SDKs; accessed ONLY via Firebase Admin SDK in Cloud Functions.
+    match /otpChallenges/{challengeId} {
+      allow read, write: if false;
+    }
+
+    match /otpRateLimits/{bucketKey} {
+      allow read, write: if false;
+    }
+
     match /globalUsers/{loginKey} {
       allow get: if true;
       allow list: if isCompanyOwner();

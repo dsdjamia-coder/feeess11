@@ -2254,6 +2254,33 @@
                                 </button>
                             </div>
                         </div>
+
+                        <!-- Super Admin OTP Mobile Number (2FA) -->
+                        <div class="border-t border-slate-100 pt-3 space-y-2.5">
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                    <i class="fas fa-mobile-screen-button text-emerald-600 text-[11px]"></i>
+                                    Super Admin OTP Mobile Number (2FA)
+                                </h4>
+                                <p class="text-[11px] text-slate-500 mt-0.5">SMS OTP verification codes are sent to this number when signing in on a new device or after logout.</p>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1" for="admin-cred-otp-phone">Registered Mobile Number <span class="text-red-500">*</span></label>
+                                    <input type="tel" id="admin-cred-otp-phone" maxlength="20" class="w-full py-1.5 px-2.5 text-xs border border-slate-300 rounded-md bg-white text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500" placeholder="e.g. +91 9876543210">
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1" for="admin-cred-otp-current-pass">Current Password <span class="text-red-500">*</span></label>
+                                    <input type="password" id="admin-cred-otp-current-pass" maxlength="64" class="w-full py-1.5 px-2.5 text-xs border border-slate-300 rounded-md bg-white text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500" placeholder="Confirm current password">
+                                </div>
+                            </div>
+                            <div class="pt-1 flex justify-end">
+                                <button type="button" id="update-admin-otp-phone-btn" class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-1.5 px-4 rounded-lg text-xs shadow-2xs transition inline-flex items-center gap-1.5 cursor-pointer">
+                                    <i class="fas fa-mobile-screen-button text-[11px]"></i>
+                                    <span>Save OTP Mobile Number</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Column 2: Session Monitor Card -->
@@ -3483,6 +3510,13 @@
                     </div>
                 </div>
                 <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="staff-cred-phone">
+                        <i class="fas fa-mobile-screen-button text-emerald-600 mr-1"></i> Registered Mobile Number (for OTP 2FA) <span class="text-red-500">*</span>
+                    </label>
+                    <input type="tel" id="staff-cred-phone" maxlength="20" class="w-full p-2.5 border rounded-lg text-sm bg-white font-mono focus:ring-2 focus:ring-emerald-500" placeholder="e.g. +91 9876543210 or 10-digit mobile" autocomplete="tel">
+                    <p class="text-[11px] text-gray-500 mt-1">Required for staff SMS OTP verification on first-time or new-device login.</p>
+                </div>
+                <div>
                     <label class="block text-xs font-bold text-slate-700 mb-1">
                         <i class="fas fa-lock text-violet-600 mr-1"></i> Login Password
                     </label>
@@ -3492,7 +3526,7 @@
                             <i class="fas fa-eye" id="staff-cred-eye-icon"></i>
                         </button>
                     </div>
-                    <p class="text-[11px] text-gray-500 mt-1">Passwords are encrypted on the server and never saved in plain text. Leave password blank to rename only the username.</p>
+                    <p class="text-[11px] text-gray-500 mt-1">Passwords are encrypted on the server and never saved in plain text. Leave password blank to update only username or mobile number.</p>
                 </div>
             </div>
             <div class="flex flex-wrap justify-between items-center gap-2 pt-4 border-t mt-5">

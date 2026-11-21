@@ -18,12 +18,18 @@ const adminAuth = getAuth(app);
 const db = getFirestore(app, 'default');
 
 const AUTH_CREDENTIALS_COLLECTION = 'authCredentials';
+const OTP_CHALLENGES_COLLECTION = 'otpChallenges';
+const OTP_RATE_LIMITS_COLLECTION = 'otpRateLimits';
 const INSTITUTIONS_COLLECTION = 'institutions';
 const COMPANY_COLLECTION = 'company';
 const COMPANY_CONFIG_DOC_ID = 'config';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+const OTP_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const OTP_AUTH_FRESHNESS_SEC = 10 * 60; // 10 minutes max age for verified Phone ID token
+const OTP_RATE_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const OTP_RATE_MAX_REQUESTS = 5;
 
 // --- Helpers ---
 
@@ -32,6 +38,98 @@ const normalizeInstitutionSlug = (raw = '') => {
   if (!clean || !/^[a-z0-9][a-z0-9-_]{0,63}$/.test(clean)) return '';
   return clean;
 };
+
+const normalizePhoneDigits = (raw = '') => String(raw || '').replace(/\D/g, '');
+
+const normalizeCountryCode = (raw = '+91') => {
+  const digits = String(raw || '+91').replace(/\D/g, '');
+  if (!digits || digits.length > 4) return '+91';
+  return `+${digits}`;
+};
+
+const normalizePhoneToE164 = (raw = '', defaultCountryCode = '+91') => {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  const cc = normalizeCountryCode(defaultCountryCode);
+
+  if (trimmed.startsWith('+')) {
+    const digits = normalizePhoneDigits(trimmed);
+    if (digits.length < 8 || digits.length > 15) return '';
+    return `+${digits}`;
+  }
+
+  let digits = normalizePhoneDigits(trimmed);
+  if (!digits) return '';
+
+  // Strip international 00 prefix if entered
+  if (digits.startsWith('00') && digits.length >= 10 && digits.length <= 17) {
+    digits = digits.slice(2);
+    return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : '';
+  }
+
+  // Strip single leading 0 on local 11-digit Indian numbers (e.g., 09876543210)
+  if (digits.length === 11 && digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+
+  // Standard 10-digit local number -> prepend country code
+  if (digits.length === 10) {
+    return `${cc}${digits}`;
+  }
+
+  // Already includes country code without '+' (e.g., 919876543210)
+  if (digits.length >= 11 && digits.length <= 15) {
+    return `+${digits}`;
+  }
+
+  return '';
+};
+
+const phonesMatch = (rawA = '', rawB = '') => {
+  const dA = normalizePhoneDigits(rawA);
+  const dB = normalizePhoneDigits(rawB);
+  if (!dA || !dB) return false;
+  if (dA === dB) return true;
+  if (dA.length >= 10 && dB.length >= 10) {
+    return dA.slice(-10) === dB.slice(-10);
+  }
+  return false;
+};
+
+const maskPhoneDisplay = (e164 = '') => {
+  const clean = String(e164 || '').trim();
+  if (!clean) return '';
+  const digits = normalizePhoneDigits(clean);
+  if (digits.length < 6) return '******';
+  const last4 = digits.slice(-4);
+  if (clean.startsWith('+91') && digits.length === 12) {
+    return `+91 ${digits.slice(2, 4)}****${last4}`;
+  }
+  const prefix = clean.startsWith('+') ? `+${digits.slice(0, Math.min(3, digits.length - 4))} ` : '';
+  return `${prefix}******${last4}`;
+};
+
+const maskStudentName = (rawName = '') => {
+  const clean = String(rawName || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return 'St****';
+  const parts = clean.split(' ').filter(Boolean);
+  const maskToken = (token, isFirst) => {
+    if (token.length <= 1) return token;
+    if (!isFirst) {
+      return `${token[0]}.`;
+    }
+    if (token.length <= 3) {
+      return `${token[0]}${'*'.repeat(Math.max(2, token.length - 1))}`;
+    }
+    return `${token.slice(0, 2)}${'*'.repeat(Math.min(5, Math.max(2, token.length - 3)))}${token.slice(-1)}`;
+  };
+  return parts
+    .slice(0, 3)
+    .map((p, idx) => maskToken(p, idx === 0))
+    .join(' ');
+};
+
+const sha256Hex = (value = '') => crypto.createHash('sha256').update(String(value), 'utf8').digest('hex');
 
 const validateAndNormalizeUsername = (raw = '') => {
   const displayUsername = String(raw || '').trim();
@@ -48,7 +146,7 @@ const validateAndNormalizeUsername = (raw = '') => {
     throw new HttpsError('invalid-argument', 'Username contains invalid control characters.');
   }
   const username = displayUsername.toLowerCase();
-  const keyHash = crypto.createHash('sha256').update(username, 'utf8').digest('hex');
+  const keyHash = sha256Hex(username);
   return { displayUsername, username, keyHash };
 };
 
@@ -76,6 +174,181 @@ const verifyPasswordScrypt = (password, salt, expectedHashHex) => {
 
 const buildSuperAdminUid = (slug) => `sa_${slug}`;
 const buildStaffUid = (slug, staffId) => `st_${slug}_${staffId}`;
+
+const enforceOtpRateLimit = async (bucketKey = '') => {
+  const keyHash = sha256Hex(String(bucketKey || 'default').toLowerCase());
+  const ref = db.collection(OTP_RATE_LIMITS_COLLECTION).doc(keyHash);
+  const nowMs = Date.now();
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? (snap.data() || {}) : {};
+    const existingTimestamps = Array.isArray(data.timestamps)
+      ? data.timestamps.map(Number).filter((ts) => Number.isFinite(ts) && (nowMs - ts) < OTP_RATE_WINDOW_MS)
+      : [];
+
+    if (existingTimestamps.length >= OTP_RATE_MAX_REQUESTS) {
+      const oldest = Math.min(...existingTimestamps);
+      const waitMins = Math.max(1, Math.ceil((OTP_RATE_WINDOW_MS - (nowMs - oldest)) / 60000));
+      throw new HttpsError(
+        'resource-exhausted',
+        `Too many OTP requests. Please wait ${waitMins} minute${waitMins === 1 ? '' : 's'} before trying again.`
+      );
+    }
+
+    existingTimestamps.push(nowMs);
+    tx.set(ref, {
+      timestamps: existingTimestamps,
+      updatedAtMs: nowMs
+    });
+  });
+};
+
+const createOtpChallenge = async (payload = {}) => {
+  const challengeId = crypto.randomBytes(24).toString('hex');
+  const nowMs = Date.now();
+  await db.collection(OTP_CHALLENGES_COLLECTION).doc(challengeId).set({
+    ...payload,
+    used: false,
+    createdAtMs: nowMs,
+    expiresAtMs: nowMs + OTP_CHALLENGE_TTL_MS
+  });
+  return challengeId;
+};
+
+const verifyPhoneAuthToken = async (phoneIdToken = '', expectedPhoneE164 = '') => {
+  const rawToken = String(phoneIdToken || '').trim();
+  if (!rawToken) {
+    throw new HttpsError('unauthenticated', 'Verified phone OTP token is required.');
+  }
+
+  let decoded = null;
+  try {
+    decoded = await adminAuth.verifyIdToken(rawToken);
+  } catch (err) {
+    console.warn('[verifyPhoneAuthToken] Token verification failed:', err?.message || err);
+    throw new HttpsError('unauthenticated', 'OTP verification token is invalid or expired. Please request a new OTP.');
+  }
+
+  const provider = String(decoded?.firebase?.sign_in_provider || '').toLowerCase();
+  if (provider !== 'phone') {
+    throw new HttpsError('permission-denied', 'Phone SMS OTP authentication is required.');
+  }
+
+  const verifiedPhone = String(decoded.phone_number || '').trim();
+  if (!verifiedPhone) {
+    throw new HttpsError('unauthenticated', 'Verified phone number missing from OTP token.');
+  }
+
+  const authTimeSec = Number(decoded.auth_time || 0);
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(authTimeSec) || (nowSec - authTimeSec) > OTP_AUTH_FRESHNESS_SEC) {
+    throw new HttpsError('unauthenticated', 'OTP session has expired. Please verify a fresh OTP code.');
+  }
+
+  if (expectedPhoneE164 && !phonesMatch(verifiedPhone, expectedPhoneE164)) {
+    throw new HttpsError('permission-denied', 'Verified phone number does not match the registered phone number for this account.');
+  }
+
+  return {
+    phoneUid: String(decoded.uid || ''),
+    phoneE164: verifiedPhone,
+    authTimeSec
+  };
+};
+
+const consumeOtpChallenge = async (challengeId = '', expectedType = 'official') => {
+  const cleanId = String(challengeId || '').trim();
+  if (!cleanId || cleanId.length < 16 || cleanId.length > 128) {
+    throw new HttpsError('invalid-argument', 'Valid OTP verification session is required.');
+  }
+
+  const ref = db.collection(OTP_CHALLENGES_COLLECTION).doc(cleanId);
+  const nowMs = Date.now();
+  let challengeData = null;
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      throw new HttpsError('not-found', 'OTP verification session expired or not found. Please start again.');
+    }
+    const data = snap.data() || {};
+    if (data.type !== expectedType) {
+      throw new HttpsError('permission-denied', 'Invalid OTP verification challenge type.');
+    }
+    if (data.used === true) {
+      throw new HttpsError('failed-precondition', 'This OTP verification session has already been used. Please sign in again.');
+    }
+    if (Number(data.expiresAtMs || 0) < nowMs) {
+      tx.delete(ref);
+      throw new HttpsError('deadline-exceeded', 'OTP verification session timed out. Please verify your password and request a new OTP.');
+    }
+    challengeData = data;
+    tx.set(ref, { used: true, consumedAtMs: nowMs }, { merge: true });
+  });
+
+  return challengeData;
+};
+
+const resolveOfficialPhoneE164 = async (cred = {}, slug = '') => {
+  const candidates = [cred.phoneE164, cred.phone];
+  const role = cred.role === 'super_admin' ? 'super_admin' : 'staff';
+  const staffId = String(cred.staffId || '').trim();
+  const uid = String(cred.uid || (role === 'super_admin' ? buildSuperAdminUid(slug) : buildStaffUid(slug, staffId)));
+
+  for (const cand of candidates) {
+    const e164 = normalizePhoneToE164(cand);
+    if (e164) return e164;
+  }
+
+  if (!slug) return '';
+
+  if (role === 'super_admin') {
+    const [adminSnap, instSnap, configSnap] = await Promise.all([
+      db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/adminAuth`).get().catch(() => null),
+      db.collection(INSTITUTIONS_COLLECTION).doc(slug).get().catch(() => null),
+      db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/config`).get().catch(() => null)
+    ]);
+    const adminData = adminSnap?.exists ? (adminSnap.data() || {}) : {};
+    const instData = instSnap?.exists ? (instSnap.data() || {}) : {};
+    const configData = configSnap?.exists ? (configSnap.data() || {}) : {};
+
+    const fallbacks = [
+      adminData.phoneE164,
+      adminData.phone,
+      instData.adminPhoneE164,
+      instData.adminPhone,
+      instData.phone,
+      configData.contactPhone,
+      configData.phone
+    ];
+    for (const val of fallbacks) {
+      const e164 = normalizePhoneToE164(val);
+      if (e164) return e164;
+    }
+    return '';
+  }
+
+  const [accessSnap, staffSnap] = await Promise.all([
+    uid ? db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/staffAccess/${uid}`).get().catch(() => null) : Promise.resolve(null),
+    staffId ? db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/staff/${staffId}`).get().catch(() => null) : Promise.resolve(null)
+  ]);
+  const accessData = accessSnap?.exists ? (accessSnap.data() || {}) : {};
+  const staffData = staffSnap?.exists ? (staffSnap.data() || {}) : {};
+
+  const staffFallbacks = [
+    accessData.phoneE164,
+    accessData.phone,
+    staffData.phoneE164,
+    staffData.phone,
+    staffData.mobile
+  ];
+  for (const val of staffFallbacks) {
+    const e164 = normalizePhoneToE164(val);
+    if (e164) return e164;
+  }
+  return '';
+};
 
 const isCompanyOwnerAuth = async (authCtx) => {
   if (!authCtx || !authCtx.token) return false;
@@ -148,6 +421,68 @@ const checkInstitutionOperationalStatus = async (slug) => {
   };
 };
 
+const isStudentActiveRecord = (st = {}) => {
+  if (!st || typeof st !== 'object') return false;
+  if (st.isActive === false) return false;
+  const statusNorm = String(st.status || '').trim().toLowerCase();
+  if (statusNorm === 'inactive' || statusNorm === 'discontinued' || statusNorm === 'tc' || statusNorm === 'left') {
+    return false;
+  }
+  return true;
+};
+
+const extractStudentPhoneCandidates = (st = {}) => {
+  const prof = (st.profile && typeof st.profile === 'object') ? st.profile : {};
+  const list = [
+    st.mobile,
+    st.phone,
+    st.motherMobile,
+    prof.mobile,
+    prof.phone,
+    prof.motherMobile
+  ];
+  if (Array.isArray(st.phones)) list.push(...st.phones);
+  return list.filter(Boolean);
+};
+
+const findMatchingStudentsByPhone = async (slug, targetPhoneE164) => {
+  const studentsSnap = await db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/students`).get();
+  const matched = [];
+  studentsSnap.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    if (!isStudentActiveRecord(data)) return;
+    const candidates = extractStudentPhoneCandidates(data);
+    if (candidates.some((cand) => phonesMatch(cand, targetPhoneE164))) {
+      const prof = (data.profile && typeof data.profile === 'object') ? data.profile : {};
+      matched.push({
+        studentId: docSnap.id,
+        name: String(data.name || prof.name || 'Student').trim(),
+        class: String(data.class || prof.class || '').trim(),
+        adm: String(data.adm || data.admissionNo || prof.adm || '').trim(),
+        photo: String(data.photo || prof.photo || '').trim()
+      });
+    }
+  });
+  matched.sort((a, b) => a.name.localeCompare(b.name));
+  return matched;
+};
+
+const mintOfficialCustomToken = async (uid, customClaims) => {
+  try {
+    return await adminAuth.createCustomToken(uid, customClaims);
+  } catch (tokenErr) {
+    console.error('[mintOfficialCustomToken] createCustomToken failed:', tokenErr);
+    const errText = String(tokenErr?.message || tokenErr || '');
+    if (/signBlob|iamcredentials|permission|denied|token creator/i.test(errText)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Custom token signing permission is missing on the Cloud Functions runtime service account. Grant "Service Account Token Creator" to the Compute Engine default service account and enable the IAM Service Account Credentials API.'
+      );
+    }
+    throw new HttpsError('internal', `Failed to generate authentication token: ${errText.slice(0, 180)}`);
+  }
+};
+
 // =========================================================================
 // 1. PUBLIC STEP-1 LOOKUP: verifyLoginIdentifier
 // =========================================================================
@@ -160,7 +495,7 @@ exports.verifyLoginIdentifier = onCall({ cors: true }, async (request) => {
   }
 
   const normalized = rawUsername.toLowerCase();
-  const keyHash = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+  const keyHash = sha256Hex(normalized);
   const credSnap = await db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash).get();
 
   if (!credSnap.exists) {
@@ -183,11 +518,16 @@ exports.verifyLoginIdentifier = onCall({ cors: true }, async (request) => {
       displayUsername: String(cred.displayUsername || cred.username || rawUsername),
       role: String(cred.role || 'staff'),
       institutionId: credInst,
-      institutionName: String(cred.institutionName || credInst)
+      institutionName: String(cred.institutionName || credInst),
+      hasPhone: false,
+      maskedPhone: ''
     };
   }
 
-  const instStatus = credInst ? await checkInstitutionOperationalStatus(credInst) : { active: true, expired: false, name: '' };
+  const [instStatus, resolvedPhoneE164] = await Promise.all([
+    credInst ? checkInstitutionOperationalStatus(credInst) : Promise.resolve({ active: true, expired: false, name: '' }),
+    resolveOfficialPhoneE164(cred, credInst)
+  ]);
 
   return {
     found: true,
@@ -199,14 +539,16 @@ exports.verifyLoginIdentifier = onCall({ cors: true }, async (request) => {
     institutionId: credInst,
     institutionName: instStatus.name || String(cred.institutionName || credInst),
     institutionActive: instStatus.active,
-    institutionExpired: instStatus.expired
+    institutionExpired: instStatus.expired,
+    hasPhone: Boolean(resolvedPhoneE164),
+    maskedPhone: resolvedPhoneE164 ? maskPhoneDisplay(resolvedPhoneE164) : ''
   };
 });
 
 // =========================================================================
-// 2. PUBLIC STEP-2 AUTH: loginWithCustomUsername
+// 2A. OFFICIAL 2FA STEP-2: verifyOfficialPasswordForOtp
 // =========================================================================
-exports.loginWithCustomUsername = onCall({ cors: true }, async (request) => {
+exports.verifyOfficialPasswordForOtp = onCall({ cors: true }, async (request) => {
   const rawUsername = String(request.data?.username || '').trim();
   const rawPassword = String(request.data?.password || '');
   const requestedInst = normalizeInstitutionSlug(request.data?.institutionId || '');
@@ -219,7 +561,7 @@ exports.loginWithCustomUsername = onCall({ cors: true }, async (request) => {
   }
 
   const normalized = rawUsername.toLowerCase();
-  const keyHash = crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+  const keyHash = sha256Hex(normalized);
   const credRef = db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash);
   const credSnap = await credRef.get();
 
@@ -264,7 +606,6 @@ exports.loginWithCustomUsername = onCall({ cors: true }, async (request) => {
     throw new HttpsError('permission-denied', 'This account has been deactivated. Contact your administrator.');
   }
 
-  // Check institution active/expiry status
   const instStatus = credInst ? await checkInstitutionOperationalStatus(credInst) : { active: true, expired: false, name: '', pauseReason: '' };
   if (!instStatus.active) {
     throw new HttpsError(
@@ -275,21 +616,7 @@ exports.loginWithCustomUsername = onCall({ cors: true }, async (request) => {
     );
   }
   if (instStatus.expired) {
-    throw new HttpsError(
-      'permission-denied',
-      'Institution subscription has expired. Please renew to continue.'
-    );
-  }
-
-  // Reset failed attempt counters on success
-  if (Number(cred.failedAttempts || 0) > 0 || Number(cred.lockUntilMs || 0) > 0) {
-    await credRef.set({
-      failedAttempts: 0,
-      lockUntilMs: 0,
-      lastLoginAt: new Date().toISOString()
-    }, { merge: true }).catch(() => {});
-  } else {
-    await credRef.set({ lastLoginAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+    throw new HttpsError('permission-denied', 'Institution subscription has expired. Please renew to continue.');
   }
 
   const role = cred.role === 'super_admin' ? 'super_admin' : 'staff';
@@ -297,48 +624,138 @@ exports.loginWithCustomUsername = onCall({ cors: true }, async (request) => {
   const uid = String(cred.uid || (role === 'super_admin' ? buildSuperAdminUid(credInst) : buildStaffUid(credInst, staffId)));
   const displayUsername = String(cred.displayUsername || cred.username || rawUsername);
 
-  // Verify live institution authorization doc
-  let liveAccess = null;
+  // Verify live institution authorization doc before sending OTP
   let liveDisplayName = String(cred.displayName || displayUsername);
   if (role === 'super_admin') {
     const adminSnap = await db.doc(`${INSTITUTIONS_COLLECTION}/${credInst}/settings/adminAuth`).get();
     if (!adminSnap.exists || adminSnap.data()?.isActive === false) {
       throw new HttpsError('permission-denied', 'Super Admin access is not active for this institution.');
     }
-    const adminData = adminSnap.data() || {};
-    liveDisplayName = String(adminData.name || cred.displayName || 'Super Admin');
+    liveDisplayName = String(adminSnap.data()?.name || cred.displayName || 'Super Admin');
+  } else {
+    const accessSnap = await db.doc(`${INSTITUTIONS_COLLECTION}/${credInst}/staffAccess/${uid}`).get();
+    if (!accessSnap.exists || accessSnap.data()?.isActive === false) {
+      throw new HttpsError('permission-denied', 'Staff account is inactive or has no portal access.');
+    }
+    liveDisplayName = String(accessSnap.data()?.name || cred.displayName || displayUsername);
+  }
+
+  const phoneE164 = await resolveOfficialPhoneE164(cred, credInst);
+  if (!phoneE164) {
+    throw new HttpsError(
+      'failed-precondition',
+      role === 'super_admin'
+        ? 'No mobile number is registered for this Super Admin account. Please contact the Company Console administrator to add a mobile number for OTP verification.'
+        : 'No mobile number is registered for this Staff account. Please contact your institution administrator to add a valid mobile number for OTP verification.'
+    );
+  }
+
+  // Enforce SMS abuse protection rate limit
+  await enforceOtpRateLimit(`official:${credInst}:${uid}:${phoneE164}`);
+
+  // Reset failed password attempts on verified password
+  if (Number(cred.failedAttempts || 0) > 0 || Number(cred.lockUntilMs || 0) > 0) {
+    await credRef.set({ failedAttempts: 0, lockUntilMs: 0 }, { merge: true }).catch(() => {});
+  }
+
+  const challengeId = await createOtpChallenge({
+    type: 'official',
+    keyHash,
+    uid,
+    role,
+    staffId,
+    username: normalized,
+    displayUsername,
+    displayName: liveDisplayName,
+    institutionId: credInst,
+    institutionName: instStatus.name || String(cred.institutionName || credInst),
+    expectedPhoneE164: phoneE164
+  });
+
+  return {
+    requiresOtp: true,
+    challengeId,
+    phoneE164,
+    maskedPhone: maskPhoneDisplay(phoneE164),
+    role,
+    displayName: liveDisplayName,
+    institutionId: credInst,
+    institutionName: instStatus.name || String(cred.institutionName || credInst)
+  };
+});
+
+// =========================================================================
+// 2B. OFFICIAL 2FA STEP-3: completeOfficialOtpLogin
+// =========================================================================
+exports.completeOfficialOtpLogin = onCall({ cors: true }, async (request) => {
+  const challengeId = String(request.data?.challengeId || '').trim();
+  const phoneIdToken = String(request.data?.phoneIdToken || '').trim();
+
+  if (!challengeId || !phoneIdToken) {
+    throw new HttpsError('invalid-argument', 'OTP verification session and phone token are required.');
+  }
+
+  // Verify phone ID token first before consuming challenge (so wrong/expired token doesn't waste challenge unnecessarily)
+  const challengeSnap = await db.collection(OTP_CHALLENGES_COLLECTION).doc(challengeId).get();
+  if (!challengeSnap.exists) {
+    throw new HttpsError('not-found', 'OTP verification session expired. Please verify your password again.');
+  }
+  const previewChallenge = challengeSnap.data() || {};
+  await verifyPhoneAuthToken(phoneIdToken, previewChallenge.expectedPhoneE164);
+
+  // Atomically consume one-time challenge
+  const challenge = await consumeOtpChallenge(challengeId, 'official');
+
+  const credInst = normalizeInstitutionSlug(challenge.institutionId || '');
+  const role = challenge.role === 'super_admin' ? 'super_admin' : 'staff';
+  const uid = String(challenge.uid || '');
+  const staffId = String(challenge.staffId || '');
+  const username = String(challenge.username || '');
+  const displayUsername = String(challenge.displayUsername || username);
+
+  // Re-verify live operational status and authorization
+  const instStatus = credInst ? await checkInstitutionOperationalStatus(credInst) : { active: true, expired: false, name: '', pauseReason: '' };
+  if (!instStatus.active) {
+    throw new HttpsError('permission-denied', 'Institution access is currently paused.');
+  }
+  if (instStatus.expired) {
+    throw new HttpsError('permission-denied', 'Institution subscription has expired.');
+  }
+
+  let liveAccess = null;
+  let liveDisplayName = String(challenge.displayName || displayUsername);
+  if (role === 'super_admin') {
+    const adminSnap = await db.doc(`${INSTITUTIONS_COLLECTION}/${credInst}/settings/adminAuth`).get();
+    if (!adminSnap.exists || adminSnap.data()?.isActive === false) {
+      throw new HttpsError('permission-denied', 'Super Admin access is not active for this institution.');
+    }
+    liveDisplayName = String(adminSnap.data()?.name || liveDisplayName);
   } else {
     const accessSnap = await db.doc(`${INSTITUTIONS_COLLECTION}/${credInst}/staffAccess/${uid}`).get();
     if (!accessSnap.exists || accessSnap.data()?.isActive === false) {
       throw new HttpsError('permission-denied', 'Staff account is inactive or has no portal access.');
     }
     liveAccess = accessSnap.data() || {};
-    liveDisplayName = String(liveAccess.name || cred.displayName || displayUsername);
+    liveDisplayName = String(liveAccess.name || liveDisplayName);
   }
 
-  const customClaims = {
+  if (challenge.keyHash) {
+    await db.collection(AUTH_CREDENTIALS_COLLECTION).doc(challenge.keyHash).set({
+      lastLoginAt: new Date().toISOString(),
+      lastOtpVerifiedAt: new Date().toISOString(),
+      phoneE164: challenge.expectedPhoneE164
+    }, { merge: true }).catch(() => {});
+  }
+
+  const customToken = await mintOfficialCustomToken(uid, {
     customAuth: true,
     role,
     institutionId: credInst,
     staffId,
-    username: normalized,
-    displayUsername
-  };
-
-  let customToken = '';
-  try {
-    customToken = await adminAuth.createCustomToken(uid, customClaims);
-  } catch (tokenErr) {
-    console.error('[loginWithCustomUsername] createCustomToken failed:', tokenErr);
-    const errText = String(tokenErr?.message || tokenErr || '');
-    if (/signBlob|iamcredentials|permission|denied|token creator/i.test(errText)) {
-      throw new HttpsError(
-        'failed-precondition',
-        'Custom token signing permission is missing on the Cloud Functions runtime service account. Grant "Service Account Token Creator" to the Compute Engine default service account and enable the IAM Service Account Credentials API.'
-      );
-    }
-    throw new HttpsError('internal', `Failed to generate authentication token: ${errText.slice(0, 180)}`);
-  }
+    username,
+    displayUsername,
+    phoneVerified: true
+  });
 
   return {
     customToken,
@@ -346,18 +763,264 @@ exports.loginWithCustomUsername = onCall({ cors: true }, async (request) => {
       uid,
       role,
       institutionId: credInst,
-      institutionName: instStatus.name || String(cred.institutionName || credInst),
+      institutionName: instStatus.name || String(challenge.institutionName || credInst),
       staffId,
-      username: normalized,
+      username,
       displayUsername,
       displayName: liveDisplayName,
+      phone: challenge.expectedPhoneE164,
       access: liveAccess
     }
   };
 });
 
 // =========================================================================
-// 3. PROTECTED (COMPANY OWNER ONLY): upsertInstitutionSuperAdminCredential
+// 2C. LEGACY ENDPOINT HARDENING: loginWithCustomUsername
+// =========================================================================
+exports.loginWithCustomUsername = onCall({ cors: true }, async () => {
+  throw new HttpsError(
+    'failed-precondition',
+    'Direct password-only login has been replaced by 2-Step Phone OTP Verification. Please refresh the page and sign in with OTP.'
+  );
+});
+
+// =========================================================================
+// 3A. DIRECTORY / MANAGEMENT USER 2FA: verifyDirectoryPasswordForOtp
+// =========================================================================
+exports.verifyDirectoryPasswordForOtp = onCall({ cors: true }, async (request) => {
+  const slug = normalizeInstitutionSlug(request.data?.institutionId || '');
+  const rawUsername = String(request.data?.username || '').trim().toLowerCase();
+  const rawPassword = String(request.data?.password || '').trim();
+
+  if (!slug || !rawUsername || !rawPassword) {
+    throw new HttpsError('invalid-argument', 'Institution, username, and password are required.');
+  }
+
+  const instStatus = await checkInstitutionOperationalStatus(slug);
+  if (!instStatus.active) {
+    throw new HttpsError('permission-denied', 'Institution access is currently paused.');
+  }
+  if (instStatus.expired) {
+    throw new HttpsError('permission-denied', 'Institution subscription has expired.');
+  }
+
+  const [dirSnap, authConfSnap, accessSnap] = await Promise.all([
+    db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/publicDirectory`).get(),
+    db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/categoryAuthConfig`).get(),
+    db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/pageAccess`).get()
+  ]);
+
+  const categoryAuthConfig = authConfSnap.exists ? (authConfSnap.data()?.categories || {}) : {};
+  const pageAccessData = accessSnap.exists ? (accessSnap.data() || {}) : {};
+  const passwordHash = sha256Hex(rawPassword);
+
+  let matchedEntry = null;
+  let matchedAccess = null;
+
+  dirSnap.forEach((docSnap) => {
+    if (matchedEntry) return;
+    const entry = { id: docSnap.id, ...(docSnap.data() || {}) };
+    if (!entry.categoryId) return;
+    const authConf = categoryAuthConfig[entry.categoryId] || {};
+    if (authConf.enabled !== true) return;
+    const authMeta = (entry.authMeta && typeof entry.authMeta === 'object') ? entry.authMeta : {};
+    if (String(authMeta.username || '').trim().toLowerCase() !== rawUsername) return;
+    if (String(authMeta.passwordHash || '').trim() !== passwordHash) return;
+
+    const override = pageAccessData?.overrides?.[entry.id] || {};
+    if (override.blocked === true) {
+      matchedEntry = { blocked: true };
+      return;
+    }
+    const catAccess = pageAccessData?.categories?.[entry.categoryId] || {};
+    matchedEntry = entry;
+    matchedAccess = {
+      collection: (override.collection === true) || (override.collection !== false && catAccess.collection === true),
+      student: (override.student === true) || (override.student !== false && catAccess.student === true),
+      worksheet: true,
+      source: 'directory',
+      categoryId: entry.categoryId,
+      entryId: entry.id
+    };
+  });
+
+  if (!matchedEntry) {
+    throw new HttpsError('unauthenticated', 'Incorrect username or password.');
+  }
+  if (matchedEntry.blocked) {
+    throw new HttpsError('permission-denied', 'Your portal access has been blocked by the administrator.');
+  }
+
+  const values = (matchedEntry.values && typeof matchedEntry.values === 'object') ? matchedEntry.values : {};
+  const rawPhone = values.phone || values.mobile || values.contact || matchedEntry.phone || '';
+  const phoneE164 = normalizePhoneToE164(rawPhone);
+  if (!phoneE164) {
+    throw new HttpsError(
+      'failed-precondition',
+      'No mobile number is registered for this directory account. Please ask your institution administrator to add your mobile number for OTP verification.'
+    );
+  }
+
+  await enforceOtpRateLimit(`directory:${slug}:${matchedEntry.id}:${phoneE164}`);
+
+  const displayName = String(matchedEntry.name || values.name || values.Name || matchedEntry.authMeta?.usernameRaw || rawUsername).trim();
+  const roleTitle = String(values.role || matchedEntry.role || 'Category User').trim();
+
+  const challengeId = await createOtpChallenge({
+    type: 'directory',
+    institutionId: slug,
+    entryId: matchedEntry.id,
+    categoryId: matchedEntry.categoryId || '',
+    username: rawUsername,
+    displayName,
+    roleTitle,
+    access: matchedAccess,
+    expectedPhoneE164: phoneE164
+  });
+
+  return {
+    requiresOtp: true,
+    challengeId,
+    phoneE164,
+    maskedPhone: maskPhoneDisplay(phoneE164),
+    displayName,
+    roleTitle
+  };
+});
+
+// =========================================================================
+// 3B. DIRECTORY / MANAGEMENT USER 2FA: completeDirectoryOtpLogin
+// =========================================================================
+exports.completeDirectoryOtpLogin = onCall({ cors: true }, async (request) => {
+  const challengeId = String(request.data?.challengeId || '').trim();
+  const phoneIdToken = String(request.data?.phoneIdToken || '').trim();
+
+  if (!challengeId || !phoneIdToken) {
+    throw new HttpsError('invalid-argument', 'OTP verification session and phone token are required.');
+  }
+
+  const challengeSnap = await db.collection(OTP_CHALLENGES_COLLECTION).doc(challengeId).get();
+  if (!challengeSnap.exists) {
+    throw new HttpsError('not-found', 'OTP verification session expired. Please verify your password again.');
+  }
+  const preview = challengeSnap.data() || {};
+  await verifyPhoneAuthToken(phoneIdToken, preview.expectedPhoneE164);
+
+  const challenge = await consumeOtpChallenge(challengeId, 'directory');
+
+  return {
+    ok: true,
+    profile: {
+      institutionId: challenge.institutionId,
+      entryId: challenge.entryId,
+      categoryId: challenge.categoryId,
+      username: challenge.username,
+      displayName: challenge.displayName,
+      roleTitle: challenge.roleTitle,
+      phone: challenge.expectedPhoneE164,
+      access: challenge.access || {}
+    }
+  };
+});
+
+// =========================================================================
+// 4A. STUDENT OTP STEP-1: lookupStudentsByPhone (Masked Preview Only)
+// =========================================================================
+exports.lookupStudentsByPhone = onCall({ cors: true }, async (request) => {
+  const slug = normalizeInstitutionSlug(request.data?.institutionId || '');
+  const rawPhone = String(request.data?.phone || '').trim();
+  const countryCode = normalizeCountryCode(request.data?.countryCode || '+91');
+
+  if (!slug) {
+    throw new HttpsError('invalid-argument', 'Valid institution ID is required.');
+  }
+
+  const phoneE164 = normalizePhoneToE164(rawPhone, countryCode);
+  if (!phoneE164) {
+    throw new HttpsError('invalid-argument', 'Please enter a valid mobile number.');
+  }
+
+  const instStatus = await checkInstitutionOperationalStatus(slug);
+  if (!instStatus.active) {
+    throw new HttpsError(
+      'permission-denied',
+      instStatus.pauseReason
+        ? `Institution access is paused: ${instStatus.pauseReason}`
+        : 'Institution access is currently paused.'
+    );
+  }
+  if (instStatus.expired) {
+    throw new HttpsError('permission-denied', 'Institution subscription has expired.');
+  }
+
+  await enforceOtpRateLimit(`student-lookup:${slug}:${phoneE164}`);
+
+  const matched = await findMatchingStudentsByPhone(slug, phoneE164);
+  if (!matched.length) {
+    return {
+      found: false,
+      count: 0,
+      phoneE164,
+      maskedPhone: maskPhoneDisplay(phoneE164),
+      students: []
+    };
+  }
+
+  // Strictly return ONLY masked name and class before OTP verification
+  const maskedPreviews = matched.map((st) => ({
+    maskedName: maskStudentName(st.name),
+    classLabel: st.class ? `Class ${st.class}` : 'Student'
+  }));
+
+  return {
+    found: true,
+    count: matched.length,
+    phoneE164,
+    maskedPhone: maskPhoneDisplay(phoneE164),
+    students: maskedPreviews
+  };
+});
+
+// =========================================================================
+// 4B. STUDENT OTP STEP-3: completeStudentOtpLogin (Verified Full Profiles)
+// =========================================================================
+exports.completeStudentOtpLogin = onCall({ cors: true }, async (request) => {
+  const slug = normalizeInstitutionSlug(request.data?.institutionId || '');
+  const phoneIdToken = String(request.data?.phoneIdToken || '').trim();
+
+  if (!slug || !phoneIdToken) {
+    throw new HttpsError('invalid-argument', 'Institution and verified OTP token are required.');
+  }
+
+  const instStatus = await checkInstitutionOperationalStatus(slug);
+  if (!instStatus.active) {
+    throw new HttpsError('permission-denied', 'Institution access is currently paused.');
+  }
+  if (instStatus.expired) {
+    throw new HttpsError('permission-denied', 'Institution subscription has expired.');
+  }
+
+  const verified = await verifyPhoneAuthToken(phoneIdToken);
+  const matched = await findMatchingStudentsByPhone(slug, verified.phoneE164);
+
+  if (!matched.length) {
+    throw new HttpsError(
+      'not-found',
+      'No active student record is linked to this verified mobile number.'
+    );
+  }
+
+  return {
+    ok: true,
+    institutionId: slug,
+    verifiedPhoneE164: verified.phoneE164,
+    maskedPhone: maskPhoneDisplay(verified.phoneE164),
+    students: matched
+  };
+});
+
+// =========================================================================
+// 5. PROTECTED (COMPANY OWNER ONLY): upsertInstitutionSuperAdminCredential
 // =========================================================================
 exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (request) => {
   if (!(await isCompanyOwnerAuth(request.auth))) {
@@ -371,6 +1034,12 @@ exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (re
 
   const { displayUsername, username, keyHash } = validateAndNormalizeUsername(request.data?.username || '');
   const rawPassword = String(request.data?.password || '');
+  const rawPhone = String(request.data?.phone || '').trim();
+  const normalizedPhoneE164 = rawPhone ? normalizePhoneToE164(rawPhone) : '';
+  if (rawPhone && !normalizedPhoneE164) {
+    throw new HttpsError('invalid-argument', 'Please enter a valid Super Admin mobile number (e.g., 10 digits or +91XXXXXXXXXX).');
+  }
+
   const adminName = String(request.data?.adminName || 'Master Admin').trim().slice(0, 120) || 'Master Admin';
   const institutionName = String(request.data?.institutionName || slug).trim().slice(0, 140) || slug;
   const isCreate = request.data?.mode === 'create';
@@ -386,6 +1055,9 @@ exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (re
   const newPasswordHashObj = rawPassword ? hashPasswordScrypt(rawPassword) : null;
   const adminAuthRef = db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/adminAuth`);
   const newCredRef = db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash);
+
+  let savedPhone = '';
+  let savedPhoneE164 = '';
 
   await db.runTransaction(async (tx) => {
     const existingAdminSnap = await tx.get(adminAuthRef);
@@ -422,6 +1094,11 @@ exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (re
       throw new HttpsError('invalid-argument', 'A password (at least 6 characters) is required for this Super Admin account.');
     }
 
+    savedPhoneE164 = normalizedPhoneE164
+      || String(existingOldCred?.phoneE164 || existingAdmin.phoneE164 || '').trim()
+      || normalizePhoneToE164(existingAdmin.phone || '');
+    savedPhone = rawPhone || String(existingOldCred?.phone || existingAdmin.phone || savedPhoneE164 || '').trim();
+
     const nowIso = new Date().toISOString();
     tx.set(newCredRef, {
       keyHash,
@@ -435,6 +1112,8 @@ exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (re
       institutionName,
       staffId: '',
       displayName: adminName,
+      phone: savedPhone,
+      phoneE164: savedPhoneE164,
       isActive: true,
       failedAttempts: 0,
       lockUntilMs: 0,
@@ -453,6 +1132,8 @@ exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (re
       displayUsername,
       loginDisplay: displayUsername,
       name: adminName,
+      phone: savedPhone,
+      phoneE164: savedPhoneE164,
       credentialKeyHash: keyHash,
       isActive: true,
       authMode: 'custom_token',
@@ -467,6 +1148,7 @@ exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (re
           name: adminName,
           username,
           displayUsername,
+          phone: savedPhone,
           role: 'super_admin',
           isActive: true
         }
@@ -480,12 +1162,14 @@ exports.upsertInstitutionSuperAdminCredential = onCall({ cors: true }, async (re
     uid,
     username,
     displayUsername,
+    phone: savedPhone,
+    phoneE164: savedPhoneE164,
     keyHash
   };
 });
 
 // =========================================================================
-// 4. PROTECTED (ADMIN / STAFF MANAGER / COMPANY OWNER): manageStaffCredential
+// 6. PROTECTED (ADMIN / STAFF MANAGER / COMPANY OWNER): manageStaffCredential
 // =========================================================================
 exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
   const slug = normalizeInstitutionSlug(request.data?.institutionId || '');
@@ -559,6 +1243,12 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
   // Default action: 'upsert'
   const { displayUsername, username, keyHash } = validateAndNormalizeUsername(request.data?.username || '');
   const rawPassword = String(request.data?.password || '');
+  const rawPhone = String(request.data?.phone || request.data?.access?.phone || '').trim();
+  const normalizedPhoneE164 = rawPhone ? normalizePhoneToE164(rawPhone) : '';
+  if (rawPhone && !normalizedPhoneE164) {
+    throw new HttpsError('invalid-argument', 'Please enter a valid mobile number for staff OTP verification.');
+  }
+
   const displayName = String(request.data?.displayName || displayUsername).trim().slice(0, 120) || displayUsername;
   const isActive = request.data?.isActive !== false;
   const accessPayload = (request.data?.access && typeof request.data.access === 'object') ? request.data.access : null;
@@ -572,11 +1262,16 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
   const newPasswordHashObj = rawPassword ? hashPasswordScrypt(rawPassword) : null;
   const newCredRef = db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash);
 
+  let finalPhone = '';
+  let finalPhoneE164 = '';
+
   await db.runTransaction(async (tx) => {
     const staffSnap = await tx.get(staffRef);
     const accessSnap = await tx.get(staffAccessRef);
+    const staffData = staffSnap.exists ? (staffSnap.data() || {}) : {};
+    const accessData = accessSnap.exists ? (accessSnap.data() || {}) : {};
     const oldKeyHash = String(
-      staffSnap.data()?.credentialKeyHash || accessSnap.data()?.credentialKeyHash || ''
+      staffData.credentialKeyHash || accessData.credentialKeyHash || ''
     ).trim();
 
     let existingOldCred = null;
@@ -609,6 +1304,10 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
       throw new HttpsError('invalid-argument', 'Password (at least 6 characters) is required when creating staff login.');
     }
 
+    finalPhoneE164 = normalizedPhoneE164
+      || normalizePhoneToE164(staffData.phone || accessData.phone || existingOldCred?.phoneE164 || existingOldCred?.phone || '');
+    finalPhone = rawPhone || String(staffData.phone || accessData.phone || existingOldCred?.phone || finalPhoneE164 || '').trim();
+
     const nowIso = new Date().toISOString();
     tx.set(newCredRef, {
       keyHash,
@@ -622,6 +1321,8 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
       institutionName,
       staffId,
       displayName,
+      phone: finalPhone,
+      phoneE164: finalPhoneE164,
       isActive,
       failedAttempts: 0,
       lockUntilMs: 0,
@@ -640,6 +1341,7 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
         username,
         displayUsername,
         loginDisplay: displayUsername,
+        ...(finalPhone ? { phone: finalPhone, phoneE164: finalPhoneE164 } : {}),
         credentialKeyHash: keyHash,
         password: FieldValue.delete(),
         updatedAt: nowIso
@@ -647,7 +1349,7 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
     }
 
     const mergedAccess = {
-      ...(accessSnap.exists ? (accessSnap.data() || {}) : {}),
+      ...accessData,
       ...(accessPayload || {}),
       uid,
       staffId,
@@ -655,6 +1357,7 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
       displayUsername,
       loginId: username,
       userKey: uid,
+      ...(finalPhone ? { phone: finalPhone, phoneE164: finalPhoneE164 } : {}),
       credentialKeyHash: keyHash,
       name: displayName,
       isActive,
@@ -669,12 +1372,14 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
     uid,
     username,
     displayUsername,
+    phone: finalPhone,
+    phoneE164: finalPhoneE164,
     keyHash
   };
 });
 
 // =========================================================================
-// 5. PROTECTED (SELF-SERVICE): changeOwnPassword
+// 7. PROTECTED (SELF-SERVICE): changeOwnPassword
 // =========================================================================
 exports.changeOwnPassword = onCall({ cors: true }, async (request) => {
   const authCtx = request.auth;
@@ -696,7 +1401,7 @@ exports.changeOwnPassword = onCall({ cors: true }, async (request) => {
     throw new HttpsError('failed-precondition', 'Unable to resolve username for current session.');
   }
 
-  const keyHash = crypto.createHash('sha256').update(username, 'utf8').digest('hex');
+  const keyHash = sha256Hex(username);
   const credRef = db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash);
   const credSnap = await credRef.get();
 
@@ -722,7 +1427,101 @@ exports.changeOwnPassword = onCall({ cors: true }, async (request) => {
 });
 
 // =========================================================================
-// 6. PROTECTED (COMPANY OWNER ONLY): syncCompanyOwnerClaims
+// 8. PROTECTED (SELF-SERVICE SUPER ADMIN): updateOwnOtpPhone
+// =========================================================================
+exports.updateOwnOtpPhone = onCall({ cors: true }, async (request) => {
+  const authCtx = request.auth;
+  if (!authCtx || !authCtx.uid || authCtx.token?.customAuth !== true || authCtx.token?.role !== 'super_admin') {
+    throw new HttpsError('permission-denied', 'Only signed-in Institution Super Admins can update their OTP mobile number here.');
+  }
+
+  const currentPassword = String(request.data?.currentPassword || '');
+  const rawPhone = String(request.data?.phone || '').trim();
+  const phoneE164 = normalizePhoneToE164(rawPhone);
+
+  if (!currentPassword) {
+    throw new HttpsError('invalid-argument', 'Current password is required to update OTP mobile number.');
+  }
+  if (!phoneE164) {
+    throw new HttpsError('invalid-argument', 'Please enter a valid mobile number (e.g. 10 digits or +91XXXXXXXXXX).');
+  }
+
+  const slug = normalizeInstitutionSlug(authCtx.token.institutionId || '');
+  const username = String(authCtx.token.username || '').trim().toLowerCase();
+  if (!slug || !username) {
+    throw new HttpsError('failed-precondition', 'Unable to resolve institution Super Admin identity.');
+  }
+
+  const keyHash = sha256Hex(username);
+  const credRef = db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash);
+  const credSnap = await credRef.get();
+  if (!credSnap.exists || credSnap.data()?.uid !== authCtx.uid) {
+    throw new HttpsError('not-found', 'Super Admin credential record not found.');
+  }
+
+  const cred = credSnap.data() || {};
+  if (!verifyPasswordScrypt(currentPassword, cred.passwordSalt, cred.passwordHash)) {
+    throw new HttpsError('permission-denied', 'Current password is incorrect.');
+  }
+
+  const nowIso = new Date().toISOString();
+  await Promise.all([
+    credRef.set({ phone: rawPhone, phoneE164, updatedAt: nowIso }, { merge: true }),
+    db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/adminAuth`).set({
+      phone: rawPhone,
+      phoneE164,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true }),
+    db.collection(INSTITUTIONS_COLLECTION).doc(slug).set({
+      adminPhone: rawPhone,
+      adminPhoneE164: phoneE164,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true })
+  ]);
+
+  return {
+    ok: true,
+    phone: rawPhone,
+    phoneE164,
+    maskedPhone: maskPhoneDisplay(phoneE164)
+  };
+});
+
+// =========================================================================
+// 8C. PROTECTED (AUTHENTICATED CUSTOM-AUTH USER): verifyOwnPassword
+// =========================================================================
+exports.verifyOwnPassword = onCall({ cors: true }, async (request) => {
+  const authCtx = request.auth;
+  if (!authCtx || !authCtx.uid || authCtx.token?.customAuth !== true) {
+    throw new HttpsError('unauthenticated', 'Authenticated custom account session is required.');
+  }
+
+  const currentPassword = String(request.data?.currentPassword || '');
+  if (!currentPassword) {
+    throw new HttpsError('invalid-argument', 'Current password is required.');
+  }
+
+  const username = String(authCtx.token.username || '').trim().toLowerCase();
+  if (!username) {
+    throw new HttpsError('failed-precondition', 'Unable to resolve account username from session token.');
+  }
+
+  const keyHash = sha256Hex(username);
+  const credSnap = await db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash).get();
+  if (!credSnap.exists || credSnap.data()?.uid !== authCtx.uid) {
+    throw new HttpsError('not-found', 'Credential record not found.');
+  }
+
+  const cred = credSnap.data() || {};
+  if (!verifyPasswordScrypt(currentPassword, cred.passwordSalt, cred.passwordHash)) {
+    throw new HttpsError('permission-denied', 'Invalid password.');
+  }
+
+  return { ok: true };
+});
+
+// =========================================================================
+// 9. PROTECTED (COMPANY OWNER ONLY): syncCompanyOwnerClaims
 // =========================================================================
 exports.syncCompanyOwnerClaims = onCall({ cors: true }, async (request) => {
   const authCtx = request.auth;
@@ -755,4 +1554,3 @@ exports.syncCompanyOwnerClaims = onCall({ cors: true }, async (request) => {
     email: String(authCtx.token.email || '').trim().toLowerCase()
   };
 });
-
