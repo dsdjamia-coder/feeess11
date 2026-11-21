@@ -8,14 +8,41 @@ import {
 
 let deferredPrompt = null;
 let promptListenersInitialized = false;
+let relatedAppInstalled = false;
 const registeredPortals = new Map();
 const registeredTriggers = new Map();
+const INSTALLED_FLAG_KEY = 'app_pwa_installed_v1';
+
+const getPersistedInstalledFlag = () => {
+    try {
+        return localStorage.getItem(INSTALLED_FLAG_KEY) === 'true';
+    } catch (_err) {
+        return false;
+    }
+};
+
+const setPersistedInstalledFlag = (installed) => {
+    try {
+        if (installed) {
+            localStorage.setItem(INSTALLED_FLAG_KEY, 'true');
+        } else {
+            localStorage.removeItem(INSTALLED_FLAG_KEY);
+        }
+    } catch (_err) {}
+};
 
 export const isAppStandalone = () => {
     if (typeof window === 'undefined') return false;
-    return window.matchMedia('(display-mode: standalone)').matches ||
+    const displayStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches ||
+           window.matchMedia?.('(display-mode: window-controls-overlay)')?.matches ||
+           window.matchMedia?.('(display-mode: minimal-ui)')?.matches ||
            window.navigator.standalone === true ||
            document.referrer.includes('android-app://');
+    return Boolean(displayStandalone);
+};
+
+export const isAppInstalled = () => {
+    return isAppStandalone() || relatedAppInstalled || getPersistedInstalledFlag();
 };
 
 export const detectInstallPlatform = () => {
@@ -128,17 +155,41 @@ export const initPwaPromptListener = () => {
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferredPrompt = e;
+        // Browser only fires beforeinstallprompt when the PWA is not currently installed
+        relatedAppInstalled = false;
+        setPersistedInstalledFlag(false);
         syncAllInstallStates();
     });
 
     window.addEventListener('appinstalled', () => {
         deferredPrompt = null;
+        relatedAppInstalled = true;
+        setPersistedInstalledFlag(true);
         clearPromptDismissed();
         hideInstallModal();
         const guideModal = document.getElementById('pwa-device-guide-modal');
         if (guideModal) guideModal.remove();
         syncAllInstallStates();
     });
+
+    if (typeof window !== 'undefined' && window.matchMedia) {
+        try {
+            const standaloneMedia = window.matchMedia('(display-mode: standalone)');
+            if (typeof standaloneMedia.addEventListener === 'function') {
+                standaloneMedia.addEventListener('change', () => syncAllInstallStates());
+            }
+        } catch (_err) {}
+    }
+
+    if (typeof navigator !== 'undefined' && typeof navigator.getInstalledRelatedApps === 'function') {
+        navigator.getInstalledRelatedApps().then((apps) => {
+            if (Array.isArray(apps) && apps.length > 0) {
+                relatedAppInstalled = true;
+                setPersistedInstalledFlag(true);
+                syncAllInstallStates();
+            }
+        }).catch(() => {});
+    }
 };
 
 const ensureInstallModal = () => {
@@ -344,12 +395,16 @@ export const showDeviceInstallGuide = (preferredTab = '') => {
 };
 
 export const promptInstall = async ({ preferredTab = '', openGuideOnFallback = true } = {}) => {
-    if (isAppStandalone()) return false;
+    if (isAppInstalled()) return false;
     if (deferredPrompt) {
         try {
             deferredPrompt.prompt();
             const { outcome } = await deferredPrompt.userChoice;
             deferredPrompt = null;
+            if (outcome === 'accepted') {
+                relatedAppInstalled = true;
+                setPersistedInstalledFlag(true);
+            }
             syncAllInstallStates();
             return outcome === 'accepted';
         } catch (_err) {
@@ -411,7 +466,7 @@ const showInstallModal = (config) => {
 };
 
 const showMenuInstallButton = (config) => {
-    if (isAppStandalone()) return;
+    if (isAppInstalled()) return;
     const menuItem = document.getElementById(config.menuItemId);
     if (menuItem) {
         menuItem.classList.remove('hidden');
@@ -426,7 +481,7 @@ const hideMenuInstallButton = (config) => {
 };
 
 const updatePortalInstallState = (config) => {
-    if (isAppStandalone()) {
+    if (isAppInstalled()) {
         hideInstallModal();
         hideMenuInstallButton(config);
         return;
@@ -436,7 +491,7 @@ const updatePortalInstallState = (config) => {
 };
 
 const updateTriggerInstallState = (config) => {
-    const standalone = isAppStandalone();
+    const standalone = isAppInstalled();
     const platform = detectInstallPlatform();
     const canPromptNatively = Boolean(deferredPrompt);
 
@@ -522,7 +577,7 @@ export const registerInstallTrigger = ({
             btn.dataset.defaultInstallLabel = labelEl.textContent.trim();
         }
         btn.addEventListener('click', async () => {
-            if (isAppStandalone()) return;
+            if (isAppInstalled()) return;
             if (typeof config.onBeforeTrigger === 'function') {
                 config.onBeforeTrigger(btn);
             }
@@ -553,13 +608,13 @@ export const registerPortalForPwa = (portalKey, { menuItemId, menuBtnId }) => {
 
     return {
         showPopupIfEligible: () => {
-            if (isAppStandalone()) return;
+            if (isAppInstalled()) return;
             if (isPromptDismissedThisSession()) {
                 showMenuInstallButton(config);
                 return;
             }
             setTimeout(() => {
-                if (!isAppStandalone() && !isPromptDismissedThisSession()) {
+                if (!isAppInstalled() && !isPromptDismissedThisSession()) {
                     showInstallModal(config);
                 }
             }, 600);

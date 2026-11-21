@@ -65,13 +65,20 @@
                 <p id="header-subtitle" class="hidden"><span id="header-regno"></span> <span id="header-sep" class="mx-1 hidden">|</span> <span id="header-place"></span></p>
             </div>
 
-            <!-- Hamburger Icon Animated -->
-            <button class="mobile-toggle" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" type="button">
-                <div class="menu-icon-wrapper">
-                    <i class="fas fa-bars icon-bars"></i>
-                    <i class="fas fa-times icon-close"></i>
-                </div>
-            </button>
+            <div class="header-right-actions">
+                <button type="button" class="header-install-btn hidden" id="header-btn-install" aria-label="Install App" title="Install App">
+                    <i class="fas fa-download" aria-hidden="true"></i>
+                    <span class="header-install-label" data-install-btn-label>Install App</span>
+                </button>
+
+                <!-- Hamburger Icon Animated -->
+                <button class="mobile-toggle" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" type="button">
+                    <div class="menu-icon-wrapper">
+                        <i class="fas fa-bars icon-bars"></i>
+                        <i class="fas fa-times icon-close"></i>
+                    </div>
+                </button>
+            </div>
             
             <ul class="nav-menu" aria-label="Primary navigation">
                 <li><a href="#" onclick="window.scrollTo(0,0)" class="nav-link">Home</a></li>
@@ -81,7 +88,6 @@
                 <li id="nav-dynamic-directory-links" class="hidden"></li>
                 <li id="nav-notices-link" class="hidden"><a href="#notices" class="nav-link" onclick="smoothScrollTo(event, 'notices-container')">Notices</a></li>
                 <li id="nav-gallery-link" class="hidden"><a href="#gallery" class="nav-link" onclick="smoothScrollTo(event, 'gallery-container')">Gallery</a></li>
-                <li id="public-install-menu-item" class="hidden"><button type="button" id="public-install-menu-btn" class="install-btn-nav"><i class="fas fa-download" aria-hidden="true"></i> <span data-install-btn-label>Install App</span></button></li>
                 <li><button onclick="window.openLogin()" class="login-btn-nav"><i class="fas fa-sign-in-alt mr-1"></i> Login</button></li>
             </ul>
         </div>
@@ -114,9 +120,6 @@
                 <a href="#gallery" class="compact-btn hidden" id="hero-btn-gallery" onclick="smoothScrollTo(event, 'gallery-container')">
                     <i class="fas fa-images icon-gallery"></i> Gallery
                 </a>
-                <button type="button" class="compact-btn hidden" id="hero-btn-install">
-                    <i class="fas fa-download text-blue-600" aria-hidden="true"></i> <span data-install-btn-label>Install App</span>
-                </button>
             </div>
         </div>
 

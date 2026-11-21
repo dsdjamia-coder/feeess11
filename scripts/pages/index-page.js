@@ -1406,11 +1406,11 @@ let isRootGatewayMode = false;
                 return;
             }
 
-            // Tenant public page PWA install controls (menu + hero button only, no auto-popup)
+            // Tenant public page PWA install control (header button left of hamburger menu, hidden when installed)
             registerInstallTrigger({
                 key: 'tenant-public',
-                buttonIds: ['public-install-menu-btn', 'hero-btn-install'],
-                containerIds: ['public-install-menu-item'],
+                buttonIds: ['header-btn-install'],
+                containerIds: [],
                 hideWhenStandalone: true,
                 onBeforeTrigger: () => setMobileMenuState(false)
             });

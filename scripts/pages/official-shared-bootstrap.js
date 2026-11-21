@@ -1026,6 +1026,11 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       return String(value);
     };
     const SENSITIVE_PROFILE_KEYS = new Set(['id', 'staffid', 'uid', 'loginid', 'password', 'passwordhash', 'password_hash', 'username', 'user_name', 'usernameraw', 'username_raw', 'authmeta', 'source']);
+    const isInternalSyntheticEmail = (value = '') => {
+      const clean = String(value || '').trim().toLowerCase();
+      if (!clean) return false;
+      return clean.endsWith('@school.internal') || /@[a-z0-9.-]+\.internal$/i.test(clean);
+    };
     const isSensitiveProfileField = (key = '', label = '', { allowEmail = false } = {}) => {
       const parts = [key, label].map((item) => String(item || '').toLowerCase().replace(/[\s.-]+/g, '_'));
       return parts.some((part) => {
@@ -1038,7 +1043,11 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       });
     };
     const renderEntriesGrid = (entries = []) => {
-      const visibleEntries = entries.filter((entry) => entry && !isSensitiveProfileField(entry.key, entry.label) && valueToDisplay(entry.value) !== '');
+      const visibleEntries = entries.filter((entry) => {
+        if (!entry || isSensitiveProfileField(entry.key, entry.label)) return false;
+        const displayVal = valueToDisplay(entry.value);
+        return displayVal !== '' && !isInternalSyntheticEmail(displayVal);
+      });
       if (!visibleEntries.length) return '<div class="text-sm text-slate-500">No details available.</div>';
       return `<div class="details-grid">${visibleEntries.map((entry) => `<div class="detail-item"><div class="detail-label">${escapeHtml(entry.label || toLabel(entry.key))}</div><div class="detail-value">${escapeHtml(valueToDisplay(entry.value))}</div></div>`).join('')}</div>`;
     };
@@ -3925,7 +3934,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       const pushEntry = (key, label, value) => {
         if (value === undefined || value === null) return;
         const formatted = String(valueToDisplay(value)).trim();
-        if (!formatted || formatted === '--') return;
+        if (!formatted || formatted === '--' || isInternalSyntheticEmail(formatted)) return;
         entries.push({ key, label, value: formatted });
         seenKeys.add(key);
       };
@@ -3939,8 +3948,11 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       pushEntry('role', 'Role / Designation', staff.role || staff.designation || customFieldsObj.role || customValsObj.role || staff.type);
       pushEntry('type', 'Staff Category', cat?.name || staff.type);
       pushEntry('phone', 'Phone Number', staff.phone || staff.mobile || customFieldsObj.phone || customValsObj.phone);
-      if (includeEmail && (staff.email || customFieldsObj.email || customValsObj.email)) {
-        pushEntry('email', 'Email Address', staff.email || customFieldsObj.email || customValsObj.email);
+      const staffEmailCandidate = [staff.email, customFieldsObj.email, customValsObj.email]
+        .map((val) => String(val || '').trim())
+        .find((val) => val && !isInternalSyntheticEmail(val));
+      if (includeEmail && staffEmailCandidate) {
+        pushEntry('email', 'Email Address', staffEmailCandidate);
       } else {
         seenKeys.add('email');
       }
@@ -4005,7 +4017,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         if (isSensitiveProfileField(f.key, f.label, { allowEmail: includeEmail })) return;
         const val = entry?.values?.[f.key];
         const formatted = String(valueToDisplay(val)).trim();
-        if (formatted && formatted !== '--') {
+        if (formatted && formatted !== '--' && !isInternalSyntheticEmail(formatted)) {
           result.push({ key: f.key, label: f.label || toLabel(f.key), value: formatted });
           usedKeys.add(f.key);
         }
@@ -4013,7 +4025,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       Object.entries(entry?.values || {}).forEach(([k, v]) => {
         if (usedKeys.has(k) || isSensitiveProfileField(k, k, { allowEmail: includeEmail })) return;
         const formatted = String(valueToDisplay(v)).trim();
-        if (formatted && formatted !== '--') {
+        if (formatted && formatted !== '--' && !isInternalSyntheticEmail(formatted)) {
           result.push({ key: k, label: toLabel(k), value: formatted });
         }
       });
@@ -4570,9 +4582,11 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         const staffRecord = findMatchedStaffRecord() || profile;
         rawEntries = getStaffProfileEntries(staffRecord, { includeEmail: true });
       } else {
-        const adminEmail = String(profile.email || userSession?.email || institutionConfig?.adminProfile?.email || '').trim();
+        const adminEmail = [profile.email, userSession?.email, institutionConfig?.adminProfile?.email]
+          .map((val) => String(val || '').trim())
+          .find((val) => val && val !== 'admin' && !isInternalSyntheticEmail(val)) || '';
         const adminPhone = String(profile.phone || institutionConfig?.adminProfile?.phone || '').trim();
-        if (adminEmail && adminEmail !== 'admin') rawEntries.push({ key: 'email', label: 'Email Address', value: adminEmail });
+        if (adminEmail) rawEntries.push({ key: 'email', label: 'Email Address', value: adminEmail });
         if (adminPhone) rawEntries.push({ key: 'phone', label: 'Phone Number', value: adminPhone });
       }
 
@@ -4580,7 +4594,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         if (!entry || headerHiddenKeys.has(entry.key)) return false;
         if (isSensitiveProfileField(entry.key, entry.label, { allowEmail: true })) return false;
         const val = String(valueToDisplay(entry.value)).trim();
-        return Boolean(val && val !== '--');
+        return Boolean(val && val !== '--' && !isInternalSyntheticEmail(val));
       });
 
       const perms = evaluateModulePermissions();

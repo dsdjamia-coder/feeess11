@@ -76,6 +76,7 @@
     const ACTIVE_INSTITUTION_KEY = 'app_active_institution_id';
     const LAST_INSTITUTION_KEY = 'app_last_institution_id';
     const OFFICIAL_SESSION_KEY = 'official_portal_session_v1';
+    const PWA_INSTALLED_KEY = 'app_pwa_installed_v1';
 
     const now = () => Date.now();
 
@@ -112,12 +113,31 @@
             ? (sanitizeInstitutionSlug(overrideInstitutionId) || 'school')
             : CURRENT_INSTITUTION_ID;
         if (targetInst === 'school') {
+            const normalizedRootPage = pagePart.replace(/\/+$/, '').replace(/\.html$/i, '');
+            if (!normalizedRootPage || normalizedRootPage.toLowerCase() === 'index') {
+                return `/${suffixPart}`;
+            }
             return `/${cleaned}`;
         }
-        if (pagePart.toLowerCase().startsWith(`${targetInst}/`)) {
-            return `/${pagePart}${suffixPart}`;
+        const lowerInst = targetInst.toLowerCase();
+        const rawSegments = pagePart.replace(/\/+$/, '').split('/').filter(Boolean);
+        // Defensively collapse any accidentally duplicated leading institution slug (e.g. /slug/slug -> /slug)
+        while (rawSegments.length >= 2 && rawSegments[0].toLowerCase() === lowerInst && rawSegments[1].toLowerCase() === lowerInst) {
+            rawSegments.shift();
         }
-        const normalizedPage = pagePart.replace(/\.html$/i, '');
+        const normalizedPath = rawSegments.join('/');
+        const lowerPath = normalizedPath.toLowerCase();
+        if (lowerPath === lowerInst || lowerPath === `${lowerInst}/index` || lowerPath === `${lowerInst}/index.html`) {
+            return `/${targetInst}${suffixPart}`;
+        }
+        if (lowerPath.startsWith(`${lowerInst}/`)) {
+            const subPath = normalizedPath.slice(lowerInst.length + 1).replace(/\.html$/i, '');
+            if (!subPath || subPath.toLowerCase() === 'index') {
+                return `/${targetInst}${suffixPart}`;
+            }
+            return `/${targetInst}/${subPath}${suffixPart}`;
+        }
+        const normalizedPage = normalizedPath.replace(/\.html$/i, '');
         if (!normalizedPage || normalizedPage.toLowerCase() === 'index') {
             return `/${targetInst}${suffixPart}`;
         }
@@ -473,6 +493,8 @@
             if (savedInst) preserve[ACTIVE_INSTITUTION_KEY] = savedInst;
             const savedLastInst = localStorage.getItem(LAST_INSTITUTION_KEY);
             if (savedLastInst) preserve[LAST_INSTITUTION_KEY] = savedLastInst;
+            const savedPwaInstalled = localStorage.getItem(PWA_INSTALLED_KEY);
+            if (savedPwaInstalled) preserve[PWA_INSTALLED_KEY] = savedPwaInstalled;
             localStorage.clear();
             Object.entries(preserve).forEach(([key, value]) => localStorage.setItem(key, value));
         } catch (error) {
@@ -489,7 +511,23 @@
         }
     };
 
+    const resolveLogoutInstitutionId = () => {
+        if (CURRENT_INSTITUTION_ID && CURRENT_INSTITUTION_ID !== 'school') {
+            return CURRENT_INSTITUTION_ID;
+        }
+        const remembered = getLastInstitutionId();
+        if (remembered && remembered !== 'school') {
+            return remembered;
+        }
+        try {
+            const activeStored = sanitizeInstitutionSlug(localStorage.getItem(ACTIVE_INSTITUTION_KEY) || '');
+            if (activeStored && activeStored !== 'school') return activeStored;
+        } catch (_) {}
+        return 'school';
+    };
+
     const clearAll = async (options = {}) => {
+        const redirectInstId = resolveLogoutInstitutionId();
         [STAFF_STATE_KEY, ADMIN_STATE_KEY, STUDENT_STATE_KEY, COMPANY_STATE_KEY, OFFICIAL_SESSION_KEY].forEach(removeKey);
         if (options.clearRememberedStudents) {
             [STUDENT_ACCOUNTS_KEY, REMEMBERED_ACCOUNTS_KEY, DISMISSED_GROUP_STUDENTS_KEY].forEach(removeKey);
@@ -499,7 +537,7 @@
             await clearClientData({ clearRememberedStudents: options.clearRememberedStudents === true });
         }
         if (options.redirectUrl) {
-            window.location.href = buildPageUrl(options.redirectUrl);
+            window.location.href = buildPageUrl(options.redirectUrl, redirectInstId);
         }
     };
 
@@ -670,6 +708,7 @@
         clearAll,
         async signOut(authInstance, options = {}) {
             const wasCompany = getRole() === 'company' || hasCompanySession();
+            const logoutInstitutionId = wasCompany ? 'school' : resolveLogoutInstitutionId();
             try {
                 if (authInstance && typeof authInstance.signOut === 'function') {
                     await authInstance.signOut();
@@ -682,7 +721,9 @@
             await clearAll({ purgeClientData: true, clearRememberedStudents: true });
             const redirectUrl = options.redirectUrl !== undefined ? options.redirectUrl : 'index.html?public=1';
             if (redirectUrl) {
-                window.location.href = wasCompany ? `/${String(redirectUrl).replace(/^\/+/, '')}` : buildPageUrl(redirectUrl);
+                window.location.href = wasCompany
+                    ? buildPageUrl(redirectUrl, 'school')
+                    : buildPageUrl(redirectUrl, logoutInstitutionId);
             }
         },
         async revokeCurrentAccount(options = {}) {
