@@ -44,6 +44,15 @@ import {
   openPremiumPlansModal
 } from '../shared/premium-plans-modal.js';
 import {
+  DEFAULT_FOOTER_CONFIG,
+  DEFAULT_LEGAL_DOCS,
+  invalidateCompanyFooterCache,
+  mountUnifiedFooter,
+  normalizeFooterConfig,
+  normalizeLegalDocs,
+  openLegalInfoModal
+} from '../shared/site-footer.js';
+import {
   buildSuperAdminUid,
   upsertInstitutionSuperAdminCredential,
   validateCustomUsername
@@ -101,6 +110,11 @@ const COMPANY_VIEWS = {
     elId: 'view-screenshots',
     title: 'Platform Screenshots',
     subtitle: 'Upload up to 5 showcase screenshots per module for the Root Public Gateway preview.'
+  },
+  'footer-legal': {
+    elId: 'view-footer-legal',
+    title: 'Footer & Legal',
+    subtitle: 'Configure unified platform footer branding, copyright, and Terms, Privacy, and Security modal policies.'
   }
 };
 
@@ -112,6 +126,8 @@ let pendingPauseTarget = null;
 let verifiedCompanyOwnerEmail = '';
 let activeCompanyView = 'dashboard';
 let catalogState = normalizePublicCatalog({});
+let legalDraftState = normalizeLegalDocs({});
+let activeLegalTabKey = 'terms';
 let platformShowcasesMap = new Map();
 const showcaseBusyPages = new Set();
 
@@ -1327,14 +1343,64 @@ const readContactFromInputs = () => ({
   whatsappMessage: String(document.getElementById('contact-whatsapp-msg')?.value || '').trim()
 });
 
-const collectCatalogDraft = () => normalizePublicCatalog({
-  offerBanner: readOfferBannerFromInputs(),
-  plans: catalogState.plans || [],
-  contact: readContactFromInputs()
+const readFooterFromInputs = () => normalizeFooterConfig({
+  brandName: String(document.getElementById('footer-brand-name')?.value || '').trim(),
+  tagline: String(document.getElementById('footer-brand-tagline')?.value || '').trim(),
+  copyrightText: String(document.getElementById('footer-copyright-text')?.value || '').trim(),
+  creditName: String(document.getElementById('footer-credit-name')?.value || '').trim(),
+  creditUrl: String(document.getElementById('footer-credit-url')?.value || '').trim(),
+  showCredit: document.getElementById('footer-show-credit')?.checked === true
 });
+
+const syncActiveLegalTabToDraft = () => {
+  const titleEl = document.getElementById('legal-doc-title');
+  const updatedEl = document.getElementById('legal-doc-updated');
+  const contentEl = document.getElementById('legal-doc-content');
+  if (!titleEl || !contentEl) return;
+  legalDraftState[activeLegalTabKey] = {
+    title: String(titleEl.value || '').trim() || DEFAULT_LEGAL_DOCS[activeLegalTabKey].title,
+    updatedAtLabel: String(updatedEl?.value || '').trim() || DEFAULT_LEGAL_DOCS[activeLegalTabKey].updatedAtLabel,
+    content: String(contentEl.value || '').trim() || DEFAULT_LEGAL_DOCS[activeLegalTabKey].content
+  };
+};
+
+const renderActiveLegalTabInputs = (tabKey = activeLegalTabKey) => {
+  const validKey = ['terms', 'privacy', 'security'].includes(tabKey) ? tabKey : 'terms';
+  activeLegalTabKey = validKey;
+  const docItem = legalDraftState[validKey] || DEFAULT_LEGAL_DOCS[validKey];
+
+  const titleEl = document.getElementById('legal-doc-title');
+  const updatedEl = document.getElementById('legal-doc-updated');
+  const contentEl = document.getElementById('legal-doc-content');
+  if (titleEl) titleEl.value = docItem.title || '';
+  if (updatedEl) updatedEl.value = docItem.updatedAtLabel || '';
+  if (contentEl) contentEl.value = docItem.content || '';
+
+  document.querySelectorAll('[data-company-legal-tab]').forEach((btn) => {
+    const isActive = btn.getAttribute('data-company-legal-tab') === validKey;
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    btn.className = isActive
+      ? 'px-3.5 py-2 rounded-lg text-xs font-extrabold bg-white text-slate-900 shadow-2xs cursor-pointer border-none inline-flex items-center gap-1.5'
+      : 'px-3.5 py-2 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer border-none bg-transparent inline-flex items-center gap-1.5';
+  });
+};
+
+const collectCatalogDraft = () => {
+  syncActiveLegalTabToDraft();
+  return normalizePublicCatalog({
+    offerBanner: readOfferBannerFromInputs(),
+    plans: catalogState.plans || [],
+    contact: readContactFromInputs(),
+    footer: readFooterFromInputs(),
+    legal: normalizeLegalDocs(legalDraftState)
+  });
+};
 
 const populateCatalogInputs = (catalog) => {
   const { offerBanner, contact } = catalog;
+  const footerCfg = normalizeFooterConfig(catalog?.footer);
+  legalDraftState = normalizeLegalDocs(catalog?.legal);
+
   const offerEnabled = document.getElementById('catalog-offer-enabled');
   const offerBadge = document.getElementById('catalog-offer-badge');
   const offerHeadline = document.getElementById('catalog-offer-headline');
@@ -1357,6 +1423,16 @@ const populateCatalogInputs = (catalog) => {
   setVal('contact-website', contact?.website || '');
   setVal('contact-support-note', contact?.supportNote || '');
   setVal('contact-whatsapp-msg', contact?.whatsappMessage || '');
+
+  setVal('footer-brand-name', footerCfg.brandName);
+  setVal('footer-brand-tagline', footerCfg.tagline);
+  setVal('footer-copyright-text', footerCfg.copyrightText);
+  setVal('footer-credit-name', footerCfg.creditName);
+  setVal('footer-credit-url', footerCfg.creditUrl);
+  const showCreditEl = document.getElementById('footer-show-credit');
+  if (showCreditEl) showCreditEl.checked = Boolean(footerCfg.showCredit);
+
+  renderActiveLegalTabInputs(activeLegalTabKey);
 };
 
 const persistPublicCatalog = async (nextCatalog, toastMsg = 'Saved plans and contact catalog!') => {
@@ -1368,12 +1444,17 @@ const persistPublicCatalog = async (nextCatalog, toastMsg = 'Saved plans and con
       displayOrder: idx + 1
     })),
     contact: normalized.contact,
+    footer: normalizeFooterConfig(normalized.footer || catalogState.footer),
+    legal: normalizeLegalDocs(normalized.legal || legalDraftState),
     updatedAt: serverTimestamp(),
     updatedBy: verifiedCompanyOwnerEmail || 'company'
   };
   await setDoc(doc(db, COMPANY_COLLECTION, COMPANY_PUBLIC_CATALOG_DOC_ID), payload, { merge: true });
   catalogState = normalizePublicCatalog(payload);
+  legalDraftState = normalizeLegalDocs(payload.legal);
   invalidatePublicCatalogCache();
+  invalidateCompanyFooterCache();
+  mountUnifiedFooter({ mode: 'compact' });
   renderPlansGrid();
   renderDashboardOverview();
   showToast(toastMsg);
@@ -2506,6 +2587,70 @@ const bindEvents = () => {
       await persistPublicCatalog(collectCatalogDraft(), 'Saved Company Contact Details!');
     } catch (err) {
       showToast(`Failed to save contact details: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+      }
+    }
+  });
+
+  // Footer & Legal CMS events
+  document.querySelectorAll('[data-company-legal-tab]').forEach((tabBtn) => {
+    tabBtn.addEventListener('click', () => {
+      syncActiveLegalTabToDraft();
+      renderActiveLegalTabInputs(tabBtn.getAttribute('data-company-legal-tab') || 'terms');
+    });
+  });
+
+  document.getElementById('btn-reset-footer-defaults')?.addEventListener('click', () => {
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val || '';
+    };
+    setVal('footer-brand-name', DEFAULT_FOOTER_CONFIG.brandName);
+    setVal('footer-brand-tagline', DEFAULT_FOOTER_CONFIG.tagline);
+    setVal('footer-copyright-text', DEFAULT_FOOTER_CONFIG.copyrightText);
+    setVal('footer-credit-name', DEFAULT_FOOTER_CONFIG.creditName);
+    setVal('footer-credit-url', DEFAULT_FOOTER_CONFIG.creditUrl);
+    const showCreditEl = document.getElementById('footer-show-credit');
+    if (showCreditEl) showCreditEl.checked = Boolean(DEFAULT_FOOTER_CONFIG.showCredit);
+    showToast('Restored default footer fields. Click Save to publish.', 'info');
+  });
+
+  document.getElementById('btn-reset-active-legal-doc')?.addEventListener('click', () => {
+    const def = DEFAULT_LEGAL_DOCS[activeLegalTabKey] || DEFAULT_LEGAL_DOCS.terms;
+    legalDraftState[activeLegalTabKey] = { ...def };
+    renderActiveLegalTabInputs(activeLegalTabKey);
+    showToast(`Restored default ${def.title}. Click Save to publish.`, 'info');
+  });
+
+  document.getElementById('btn-preview-active-legal-doc')?.addEventListener('click', () => {
+    const draft = collectCatalogDraft();
+    openLegalInfoModal(activeLegalTabKey, draft);
+  });
+
+  document.getElementById('btn-preview-legal-contact')?.addEventListener('click', () => {
+    const draft = collectCatalogDraft();
+    openLegalInfoModal('contact', draft);
+  });
+
+  document.getElementById('btn-jump-contact-from-legal')?.addEventListener('click', () => {
+    setActiveCompanyView('contact');
+  });
+
+  document.getElementById('company-footer-legal-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-footer-legal');
+    const orig = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+    }
+    try {
+      await persistPublicCatalog(collectCatalogDraft(), 'Saved Unified Footer & Legal Settings!');
+    } catch (err) {
+      showToast(`Failed to save footer & legal settings: ${err.message}`, 'error');
     } finally {
       if (btn) {
         btn.disabled = false;

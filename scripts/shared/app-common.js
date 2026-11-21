@@ -11,6 +11,7 @@ import {
     extractInternalUsername
 } from '../../config/app-config.js';
 import { openPremiumPlansModal } from './premium-plans-modal.js';
+import { mountUnifiedFooter, openLegalInfoModal } from './site-footer.js';
 
 export {
     BASE_PATH,
@@ -21,7 +22,9 @@ export {
     buildInternalStaffEmail,
     isInternalStaffEmail,
     extractInternalUsername,
-    openPremiumPlansModal
+    openPremiumPlansModal,
+    mountUnifiedFooter,
+    openLegalInfoModal
 };
 export const formatCurrency = (value = 0) => {
     const num = Number(value || 0);
@@ -990,8 +993,18 @@ export const renderVersionInfo = (options = {}) => {
         prefix = 'Version'
     } = options;
 
-    setText(versionId, `${prefix}: ${APP_VERSION}`);
-    setText(updatedId, `Last Updated: ${LAST_UPDATED}`);
+    const versionText = `${prefix}: ${APP_VERSION}`;
+    const updatedText = `Last Updated: ${LAST_UPDATED}`;
+    setText(versionId, versionText);
+    setText(updatedId, updatedText);
+    if (typeof document !== 'undefined') {
+        document.querySelectorAll('[data-footer-version]').forEach((el) => {
+            el.textContent = versionText;
+        });
+        document.querySelectorAll('[data-footer-updated]').forEach((el) => {
+            el.textContent = updatedText;
+        });
+    }
 };
 
 export const applyInstitutionBranding = (conf = {}, options = {}) => {
@@ -2185,3 +2198,19 @@ export const ensureTenantStatusAndAccess = async ({
 
     return result;
 };
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const initUnifiedFooterAuto = () => {
+        try {
+            mountUnifiedFooter();
+        } catch (err) {
+            console.warn('Unified footer mount notice:', err);
+        }
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initUnifiedFooterAuto, { once: true });
+    } else {
+        setTimeout(initUnifiedFooterAuto, 0);
+    }
+}
+

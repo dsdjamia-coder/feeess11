@@ -2,9 +2,8 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { db, auth } from '../../config/firebase-config.js';
     import { ADMIN_AUTH_DOC_ID, INSTITUTION_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
-    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, ensureTenantStatusAndAccess, escapeHtml, openPremiumPlansModal, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, ensureTenantStatusAndAccess, escapeHtml, openPremiumPlansModal, registerServiceWorker, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
     import { InteractiveCropper } from '../shared/image-cropper.js';
-    import { registerPortalForPwa } from '../shared/pwa-install.js';
     import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
     import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
 
@@ -1279,13 +1278,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     };
 
     const isWorksheetPage = window.location.pathname.toLowerCase().includes('worksheet') || document.body.dataset.pageType === 'worksheet';
-    let officialPwa = null;
-    if (!isWorksheetPage) {
-      officialPwa = registerPortalForPwa('official', {
-        menuItemId: 'official-install-menu-item',
-        menuBtnId: 'official-install-btn'
-      });
-    }
+    registerServiceWorker();
 
     const setTab = (tab = 'dashboard') => {
       if (tab === 'alumni' && isStaffClassRestricted()) {
@@ -8700,7 +8693,6 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             openMyProfileModal();
           });
         }
-        officialPwa?.showPopupIfEligible();
       }
 
       const pendingFlash = window.AppSession?.consumeFlash?.();

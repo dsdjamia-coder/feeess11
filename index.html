@@ -27,19 +27,18 @@
         (function() {
             try {
                 const params = new URLSearchParams(window.location.search);
-                const isExplicitPublic = params.get('public') === '1' || params.get('view') === 'public';
+                const isExplicitPublic = params.get('public') === '1' || params.get('view') === 'public' || params.get('view') === 'company';
                 const isAddStudent = params.get('addStudent') === '1';
                 const isForceNewLogin = params.get('login') === 'new';
                 const pathSegments = String(window.location.pathname || '').split('/').filter(Boolean);
                 const isRootGatewayPath = (pathSegments.length === 0 || pathSegments[0] === 'index' || pathSegments[0] === 'index.html')
                     && (!window.AppSession?.getInstitutionId || window.AppSession.getInstitutionId() === 'school');
-                if (!isExplicitPublic && !isAddStudent && !isForceNewLogin && window.AppSession) {
-                    if (isRootGatewayPath && window.AppSession.hasCompanySession?.()) {
+                if (!isExplicitPublic && !isAddStudent && !isForceNewLogin && window.AppSession && isRootGatewayPath) {
+                    const lastInst = window.AppSession.getLastInstitutionId?.() || '';
+                    if (window.AppSession.getRole?.() === 'company' && window.AppSession.hasCompanySession?.()) {
                         window.location.replace('/company');
-                    } else if (!isRootGatewayPath && window.AppSession.hasStudentSession?.()) {
-                        window.location.replace(window.AppSession.buildPageUrl?.('student.html') || '/student.html');
-                    } else if (!isRootGatewayPath && (window.AppSession.hasStaffSession?.() || window.AppSession.hasAdminSession?.())) {
-                        window.location.replace(window.AppSession.buildPageUrl?.('official.html') || '/official.html');
+                    } else if (lastInst) {
+                        window.location.replace('/' + encodeURIComponent(lastInst));
                     }
                 }
             } catch (_err) {}

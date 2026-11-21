@@ -129,6 +129,12 @@
           </span>
           <span id="sidebar-screenshots-count" class="sidebar-count-pill text-[11px] font-extrabold tabular-nums text-slate-500">0</span>
         </button>
+        <button type="button" data-company-view="footer-legal" title="Footer & Legal" class="company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left">
+          <span class="company-nav-inner inline-flex items-center gap-3 min-w-0">
+            <i class="fas fa-scale-balanced w-5 text-center text-sm shrink-0 text-blue-600"></i>
+            <span class="sidebar-text truncate">Footer &amp; Legal</span>
+          </span>
+        </button>
       </nav>
 
       <div class="p-2.5 border-t border-slate-200 bg-slate-50/70 space-y-2 shrink-0">
@@ -621,6 +627,123 @@
 
           <!-- 11 Platform Page Cards Grid -->
           <div id="company-screenshots-grid" class="grid grid-cols-1 xl:grid-cols-2 gap-4"></div>
+        </section>
+
+        <!-- VIEW 7: UNIFIED FOOTER & LEGAL POLICIES MANAGER -->
+        <section id="view-footer-legal" class="company-view hidden space-y-5">
+          <form id="company-footer-legal-form" class="space-y-5">
+            <!-- Card 1: Unified Footer Brand & Copyright -->
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+              <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-base font-extrabold text-slate-900">Unified Footer Brand &amp; Copyright</h3>
+                  <p class="text-xs text-slate-500">Controls the Company Platform footer bar displayed consistently across every portal and public page.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" id="btn-reset-footer-defaults" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5">
+                    <i class="fas fa-rotate-left text-[11px]"></i>
+                    <span>Reset Defaults</span>
+                  </button>
+                  <button type="button" id="btn-preview-legal-contact" class="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5">
+                    <i class="fas fa-eye text-[11px]"></i>
+                    <span>Preview Contact Modal</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="footer-brand-name">Platform / Company Name</label>
+                  <input type="text" id="footer-brand-name" maxlength="80" placeholder="Institution Manage" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="footer-brand-tagline">Platform Tagline</label>
+                  <input type="text" id="footer-brand-tagline" maxlength="120" placeholder="Academic & Financial Management Platform" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="footer-copyright-text">Company Copyright Line</label>
+                  <input type="text" id="footer-copyright-text" maxlength="140" placeholder="© Institution Manage. All Rights Reserved." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+                </div>
+                <div class="sm:col-span-2 pt-1">
+                  <label class="inline-flex items-center gap-2.5 cursor-pointer select-none">
+                    <input type="checkbox" id="footer-show-credit" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                    <span class="text-xs font-bold text-slate-700">Display Developer Credit in Footer</span>
+                  </label>
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="footer-credit-name">Developer / Credit Name</label>
+                  <input type="text" id="footer-credit-name" maxlength="80" placeholder="HADI MAHIRI FAIZY" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="footer-credit-url">Developer Link URL (Optional)</label>
+                  <input type="text" id="footer-credit-url" maxlength="200" placeholder="https://..." class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 2: Terms, Privacy & Security Modal Content -->
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+              <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-base font-extrabold text-slate-900">Terms, Privacy &amp; Security Modals</h3>
+                  <p class="text-xs text-slate-500">Customize the English policy documents opened from the footer on every page. Use <code>## Heading</code> for section titles and <code>- Item</code> for bullet points.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button type="button" id="btn-reset-active-legal-doc" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5">
+                    <i class="fas fa-rotate-left text-[11px]"></i>
+                    <span>Reset Policy</span>
+                  </button>
+                  <button type="button" id="btn-preview-active-legal-doc" class="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5">
+                    <i class="fas fa-eye text-[11px]"></i>
+                    <span>Preview Modal</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="p-5 sm:p-6 space-y-4">
+                <div class="inline-flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200" role="tablist" aria-label="Legal policy tabs">
+                  <button type="button" role="tab" data-company-legal-tab="terms" class="px-3.5 py-2 rounded-lg text-xs font-extrabold bg-white text-slate-900 shadow-2xs cursor-pointer border-none inline-flex items-center gap-1.5">
+                    <i class="fas fa-file-contract text-[11px]"></i>
+                    <span>Terms of Service</span>
+                  </button>
+                  <button type="button" role="tab" data-company-legal-tab="privacy" class="px-3.5 py-2 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer border-none bg-transparent inline-flex items-center gap-1.5">
+                    <i class="fas fa-user-shield text-[11px]"></i>
+                    <span>Privacy Policy</span>
+                  </button>
+                  <button type="button" role="tab" data-company-legal-tab="security" class="px-3.5 py-2 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer border-none bg-transparent inline-flex items-center gap-1.5">
+                    <i class="fas fa-shield-halved text-[11px]"></i>
+                    <span>Security</span>
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs sm:text-sm">
+                  <div class="sm:col-span-2">
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="legal-doc-title">Document Title</label>
+                    <input type="text" id="legal-doc-title" maxlength="100" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="legal-doc-updated">Effective / Status Label</label>
+                    <input type="text" id="legal-doc-updated" maxlength="60" placeholder="Effective 2026" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-medium outline-none">
+                  </div>
+                  <div class="sm:col-span-3">
+                    <label class="block text-xs font-bold text-slate-700 mb-1" for="legal-doc-content">Document Content (English)</label>
+                    <textarea id="legal-doc-content" rows="12" maxlength="12000" class="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:border-indigo-500 text-xs sm:text-sm font-mono leading-relaxed outline-none resize-y"></textarea>
+                  </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                  <p class="text-xs text-slate-500">
+                    Need to update phone, email, or WhatsApp in the Contact modal?
+                    <button type="button" id="btn-jump-contact-from-legal" class="text-blue-600 hover:text-blue-700 font-bold underline bg-transparent border-none p-0 cursor-pointer">Open Contact Details</button>
+                  </p>
+                  <button type="submit" id="btn-save-footer-legal" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-2">
+                    <i class="fas fa-save"></i>
+                    <span>Save Footer &amp; Legal Settings</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
         </section>
 
       </main>

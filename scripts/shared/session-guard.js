@@ -74,6 +74,7 @@
     const FLASH_KEY = 'app_session_flash';
     const ACTIVE_PROJECT_KEY = 'app_active_firebase_project_id';
     const ACTIVE_INSTITUTION_KEY = 'app_active_institution_id';
+    const LAST_INSTITUTION_KEY = 'app_last_institution_id';
     const OFFICIAL_SESSION_KEY = 'official_portal_session_v1';
 
     const now = () => Date.now();
@@ -154,6 +155,57 @@
         if (ignoreInstitution) return true;
         const recordInst = String(record.institutionId || 'school').trim().toLowerCase();
         return recordInst === CURRENT_INSTITUTION_ID;
+    };
+
+    const rememberLastInstitution = (institutionId = '') => {
+        const cleanSlug = sanitizeInstitutionSlug(institutionId);
+        if (!cleanSlug || cleanSlug === 'school') return '';
+        try {
+            const activeProject = getActiveProjectId();
+            writeJson(LAST_INSTITUTION_KEY, {
+                institutionId: cleanSlug,
+                ...(activeProject ? { projectId: activeProject } : {}),
+                updatedAt: now()
+            });
+        } catch (_) {}
+        return cleanSlug;
+    };
+
+    const clearLastInstitution = () => {
+        try { removeKey(LAST_INSTITUTION_KEY); } catch (_) {}
+    };
+
+    const getLastInstitutionId = () => {
+        const activeProject = getActiveProjectId();
+        const stored = readJson(LAST_INSTITUTION_KEY);
+        if (stored && typeof stored === 'object') {
+            const slug = sanitizeInstitutionSlug(stored.institutionId || '');
+            if (slug && slug !== 'school' && (!activeProject || !stored.projectId || stored.projectId === activeProject)) {
+                return slug;
+            }
+        }
+        // Fallback for existing logged-in users before LAST_INSTITUTION_KEY was stored
+        const candidates = [
+            readJson(ADMIN_STATE_KEY),
+            readJson(STAFF_STATE_KEY),
+            readJson(STUDENT_STATE_KEY)
+        ];
+        for (const rec of candidates) {
+            if (!rec || typeof rec !== 'object') continue;
+            if (activeProject && rec.projectId && rec.projectId !== activeProject) continue;
+            const slug = sanitizeInstitutionSlug(rec.institutionId || '');
+            if (slug && slug !== 'school') return slug;
+        }
+        const remembered = readJson(REMEMBERED_ACCOUNTS_KEY);
+        if (Array.isArray(remembered)) {
+            for (const acc of remembered) {
+                if (!acc || typeof acc !== 'object') continue;
+                if (activeProject && acc.projectId && acc.projectId !== activeProject) continue;
+                const slug = sanitizeInstitutionSlug(acc.institutionId || '');
+                if (slug && slug !== 'school') return slug;
+            }
+        }
+        return '';
     };
 
     const setCurrentRole = (role = '') => {
@@ -602,6 +654,9 @@
         SESSION_IDLE_MAX_AGE_MS: DEFAULT_SESSION_IDLE_MAX_AGE_MS,
         SESSION_POLICY: ROLE_SESSION_POLICY,
         getInstitutionId,
+        getLastInstitutionId,
+        rememberLastInstitution,
+        clearLastInstitution,
         buildPageUrl,
         getActiveProjectId,
         syncFirebaseProject,
@@ -766,6 +821,7 @@
             if (!studentId) return;
             undismissGroupStudent(studentId);
             writeJson(STUDENT_STATE_KEY, buildState({ studentId, role: 'student' }));
+            rememberLastInstitution(CURRENT_INSTITUTION_ID);
             registerRememberedAccount({
                 id: studentId,
                 role: 'student',
@@ -849,6 +905,7 @@
                 profile,
                 access: access && typeof access === 'object' ? access : null
             }));
+            rememberLastInstitution(targetInst);
             setCurrentRole('staff');
         },
         getStaffAccess() {
@@ -996,6 +1053,7 @@
                 : CURRENT_INSTITUTION_ID;
             try { localStorage.setItem(ACTIVE_INSTITUTION_KEY, targetInst); } catch (_) {}
             writeJson(ADMIN_STATE_KEY, buildState({ institutionId: targetInst, role: 'admin', name, email }));
+            rememberLastInstitution(targetInst);
             setCurrentRole('admin');
         },
         getRememberedAccounts() {

@@ -110,6 +110,9 @@ export const normalizePublicCatalog = (raw = {}) => {
     })
     .sort((a, b) => a.displayOrder - b.displayOrder);
 
+  const footer = raw?.footer && typeof raw.footer === 'object' ? raw.footer : null;
+  const legal = raw?.legal && typeof raw.legal === 'object' ? raw.legal : null;
+
   return {
     offerBanner: {
       enabled: Boolean(offer.enabled),
@@ -127,7 +130,9 @@ export const normalizePublicCatalog = (raw = {}) => {
       email: String(contact.email || '').trim(),
       website: String(contact.website || '').trim(),
       supportNote: String(contact.supportNote || '').trim()
-    }
+    },
+    ...(footer ? { footer } : {}),
+    ...(legal ? { legal } : {})
   };
 };
 

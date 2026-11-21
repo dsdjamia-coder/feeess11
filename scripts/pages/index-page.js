@@ -20,6 +20,7 @@ import {
     ensureTenantStatusAndAccess,
     escapeHtml,
     hardenExternalLinks,
+    mountUnifiedFooter,
     normalizePhone,
     openPremiumPlansModal,
     renderVersionInfo,
@@ -322,14 +323,22 @@ let isRootGatewayMode = false;
                     window.location.href = '/company';
                     return;
                 }
+
+                const params = new URLSearchParams(window.location.search);
+                const forceAdd = params.get('addStudent') === '1' || params.get('login') === 'new';
+
                 // Official accounts (Admin / Staff) strictly enforce single-session access
-                if (!isRootGatewayMode && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
+                if (!isRootGatewayMode && !forceAdd && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
                     window.location.href = getPageUrl('official.html');
                     return;
                 }
 
-                const params = new URLSearchParams(window.location.search);
-                const forceAdd = params.get('addStudent') === '1' || params.get('login') === 'new';
+                // Active Student session opens Student Portal directly when clicking Login
+                if (!isRootGatewayMode && !forceAdd && window.AppSession?.hasStudentSession?.()) {
+                    window.location.href = getPageUrl('student.html');
+                    return;
+                }
+
                 if (forceAdd || isRootGatewayMode) {
                     openStudentLoginModal();
                     return;
@@ -909,6 +918,7 @@ let isRootGatewayMode = false;
             }
 
             syncDynamicPwaBranding();
+            mountUnifiedFooter({ mode: 'root-gateway' });
             registerInstallTrigger({
                 key: 'root-gateway',
                 buttonIds: ['btn-gateway-hero-install', 'btn-gateway-section-install'],

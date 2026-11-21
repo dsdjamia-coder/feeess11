@@ -2,7 +2,6 @@ import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/f
 import { doc, getDoc, getDocFromCache, collection, query, where, getDocs, onSnapshot, setDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, isUpcomingAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
-import { registerPortalForPwa } from '../shared/pwa-install.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
 
@@ -55,10 +54,7 @@ setTimeout(() => {
     }
 }, 2500);
 
-const studentPwa = registerPortalForPwa('student', {
-    menuItemId: 'student-install-menu-item',
-    menuBtnId: 'student-install-btn'
-});
+registerServiceWorker();
 
         hardenExternalLinks();
         enableSmartSelectWindowing(document, { visibleCount: 6 });
@@ -5247,7 +5243,7 @@ const studentPwa = registerPortalForPwa('student', {
 
             // 1. Sync Desktop Navigation Menu & Reorder items in DOM
             const navMenu = document.querySelector('.nav-menu');
-            const installItem = document.getElementById('student-install-menu-item');
+            const publicHomeItem = document.getElementById('student-nav-publichome');
 
             PORTAL_TABS_REGISTRY.forEach((tab) => {
                 const navEl = document.getElementById(tab.navId);
@@ -5263,8 +5259,8 @@ const studentPwa = registerPortalForPwa('student', {
                     if (tab) {
                         const navEl = document.getElementById(tab.navId);
                         if (navEl) {
-                            if (installItem) {
-                                navMenu.insertBefore(navEl, installItem);
+                            if (publicHomeItem) {
+                                navMenu.insertBefore(navEl, publicHomeItem);
                             } else {
                                 navMenu.appendChild(navEl);
                             }
@@ -7445,7 +7441,6 @@ const studentPwa = registerPortalForPwa('student', {
                         setTimeout(() => {
                             loader.style.display = 'none';
                             maybeShowStartupNotificationPrompt();
-                            studentPwa.showPopupIfEligible();
                         }, 200);
                     }
                 };
