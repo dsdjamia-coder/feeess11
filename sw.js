@@ -1,4 +1,4 @@
-const CACHE_NAME = 'institution-manage-v3-05-07';
+const CACHE_NAME = 'institution-manage-v3-05-08';
 const IMAGE_CACHE_NAME = 'institution-manage-images-v2';
 const ASSETS_TO_CACHE = [
   '/',

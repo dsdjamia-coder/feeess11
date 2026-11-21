@@ -11,7 +11,11 @@
     <meta property="og:description" content="Fee management and administrative system for academic institutions.">
     
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Institution Manage">
     <link rel="icon" type="image/png" href="/assets/images/logo.png">
     <link rel="apple-touch-icon" href="/assets/images/apple-touch-icon.png">
 
@@ -78,6 +82,7 @@
                 <li id="nav-dynamic-directory-links" class="hidden"></li>
                 <li id="nav-notices-link" class="hidden"><a href="#notices" class="nav-link" onclick="smoothScrollTo(event, 'notices-container')">Notices</a></li>
                 <li id="nav-gallery-link" class="hidden"><a href="#gallery" class="nav-link" onclick="smoothScrollTo(event, 'gallery-container')">Gallery</a></li>
+                <li id="public-install-menu-item" class="hidden"><button type="button" id="public-install-menu-btn" class="install-btn-nav"><i class="fas fa-download" aria-hidden="true"></i> <span data-install-btn-label>Install App</span></button></li>
                 <li><button onclick="window.openLogin()" class="login-btn-nav"><i class="fas fa-sign-in-alt mr-1"></i> Login</button></li>
             </ul>
         </div>
@@ -110,6 +115,9 @@
                 <a href="#gallery" class="compact-btn hidden" id="hero-btn-gallery" onclick="smoothScrollTo(event, 'gallery-container')">
                     <i class="fas fa-images icon-gallery"></i> Gallery
                 </a>
+                <button type="button" class="compact-btn hidden" id="hero-btn-install">
+                    <i class="fas fa-download text-blue-600" aria-hidden="true"></i> <span data-install-btn-label>Install App</span>
+                </button>
             </div>
         </div>
 
@@ -135,6 +143,7 @@
                     <a href="#product-demo" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Live Preview</a>
                     <a href="#product-modules" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Portals &amp; Modules</a>
                     <a href="#product-architecture" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Architecture</a>
+                    <a href="#product-download" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Download App</a>
                 </div>
 
                 <div class="flex items-center gap-2.5 shrink-0">
@@ -164,15 +173,35 @@
                             </p>
                         </div>
 
-                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
-                            <button type="button" onclick="window.openLogin()" class="px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-extrabold shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2.5 whitespace-nowrap shrink-0">
-                                <i class="fas fa-lock text-xs opacity-90" aria-hidden="true"></i>
-                                <span>Login to Account</span>
-                            </button>
-                            <a href="#product-demo" class="px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-extrabold transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                                <i class="fas fa-desktop text-blue-600 text-xs" aria-hidden="true"></i>
-                                <span>View Interactive Demo</span>
-                            </a>
+                        <div class="space-y-3.5 pt-1">
+                            <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
+                                <button type="button" onclick="window.openLogin()" class="px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-extrabold shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2.5 whitespace-nowrap shrink-0">
+                                    <i class="fas fa-lock text-xs opacity-90" aria-hidden="true"></i>
+                                    <span>Login to Account</span>
+                                </button>
+                                <button type="button" id="btn-gateway-hero-install" class="px-5 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-extrabold shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
+                                    <i class="fas fa-download text-xs text-blue-300" aria-hidden="true"></i>
+                                    <span data-install-btn-label>Download App</span>
+                                </button>
+                                <a href="#product-demo" class="px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-extrabold transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
+                                    <i class="fas fa-desktop text-blue-600 text-xs" aria-hidden="true"></i>
+                                    <span>View Interactive Demo</span>
+                                </a>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-semibold text-slate-500">
+                                <span class="inline-flex items-center gap-1.5 text-slate-700 font-bold">
+                                    <i class="fas fa-circle-check text-emerald-600 text-[11px]" aria-hidden="true"></i>
+                                    <span>Installable App on All Devices:</span>
+                                </span>
+                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fa-brands fa-android text-emerald-600" aria-hidden="true"></i><span>Android</span></span>
+                                <span aria-hidden="true" class="text-slate-300">·</span>
+                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fa-brands fa-apple text-slate-800" aria-hidden="true"></i><span>iPhone &amp; iPad</span></span>
+                                <span aria-hidden="true" class="text-slate-300">·</span>
+                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fa-brands fa-windows text-blue-600" aria-hidden="true"></i><span>Windows</span></span>
+                                <span aria-hidden="true" class="text-slate-300">·</span>
+                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fas fa-laptop text-slate-600" aria-hidden="true"></i><span>macOS &amp; Linux</span></span>
+                            </div>
                         </div>
                     </div>
 
@@ -1476,6 +1505,125 @@
             </div>
         </section>
 
+        <!-- Dedicated Multi-Device App Download Section -->
+        <section id="product-download" class="bg-white py-12 sm:py-20 border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+                    <!-- Left Column: Company App Identity & Primary Download Controls -->
+                    <div class="lg:col-span-5 space-y-5">
+                        <div class="flex items-center gap-3.5">
+                            <div class="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200 p-2 flex items-center justify-center shadow-xs shrink-0">
+                                <img src="/assets/images/pwa-192x192.png" alt="Institution Manage App Icon" class="w-full h-full object-contain rounded-xl" referrerpolicy="no-referrer">
+                            </div>
+                            <div>
+                                <div class="text-xs font-extrabold text-blue-600">Official Progressive Web App</div>
+                                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
+                                    Download App for Any Device
+                                </h2>
+                            </div>
+                        </div>
+
+                        <p class="text-xs sm:text-base text-slate-600 leading-relaxed">
+                            Install Institution Manage directly to your home screen or desktop for instant launch, full-screen performance, and automatic cloud updates — with zero App Store download required.
+                        </p>
+
+                        <div class="text-xs font-semibold text-slate-700 flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5">
+                            <i class="fas fa-mobile-screen-button text-blue-600 mt-0.5 shrink-0" aria-hidden="true"></i>
+                            <span id="gateway-install-status-text">Supported on Android, iPhone, iPad, Windows, macOS &amp; Linux.</span>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
+                            <button type="button" id="btn-gateway-section-install" class="px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-extrabold shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
+                                <i class="fas fa-download text-xs" aria-hidden="true"></i>
+                                <span data-install-btn-label>Install App Now</span>
+                            </button>
+                            <button type="button" id="btn-gateway-install-guide" class="px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-extrabold transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
+                                <i class="fas fa-list-check text-blue-600 text-xs" aria-hidden="true"></i>
+                                <span>View Install Steps</span>
+                            </button>
+                        </div>
+
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            Institutions, staff, and students can also install directly from their institution public page, Official Portal, or Student Portal with the same official app icon.
+                        </p>
+                    </div>
+
+                    <!-- Right Column: 4-Platform Compatibility Grid -->
+                    <div class="lg:col-span-7">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <button type="button" data-install-guide-tab="android" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
+                                <div class="flex items-center justify-between gap-3 mb-3">
+                                    <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200/70 flex items-center justify-center shrink-0">
+                                        <i class="fa-brands fa-android text-xl" aria-hidden="true"></i>
+                                    </div>
+                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
+                                        <span>Steps</span>
+                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
+                                    </span>
+                                </div>
+                                <h3 class="text-base font-extrabold text-slate-900 mb-1">Android Phones &amp; Tablets</h3>
+                                <div class="text-xs font-semibold text-emerald-700 mb-1.5">Chrome · Edge · Samsung Internet</div>
+                                <p class="text-xs text-slate-600 leading-relaxed">
+                                    One-tap native installation directly to your Android home screen and app drawer.
+                                </p>
+                            </button>
+
+                            <button type="button" data-install-guide-tab="ios" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
+                                <div class="flex items-center justify-between gap-3 mb-3">
+                                    <div class="w-11 h-11 rounded-xl bg-slate-100 text-slate-900 border border-slate-200 flex items-center justify-center shrink-0">
+                                        <i class="fa-brands fa-apple text-xl" aria-hidden="true"></i>
+                                    </div>
+                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
+                                        <span>Steps</span>
+                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
+                                    </span>
+                                </div>
+                                <h3 class="text-base font-extrabold text-slate-900 mb-1">iPhone &amp; iPad (iOS)</h3>
+                                <div class="text-xs font-semibold text-slate-700 mb-1.5">Safari · Add to Home Screen</div>
+                                <p class="text-xs text-slate-600 leading-relaxed">
+                                    Tap Share in Safari and choose Add to Home Screen for full-screen standalone access.
+                                </p>
+                            </button>
+
+                            <button type="button" data-install-guide-tab="desktop" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
+                                <div class="flex items-center justify-between gap-3 mb-3">
+                                    <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200/70 flex items-center justify-center shrink-0">
+                                        <i class="fa-brands fa-windows text-xl" aria-hidden="true"></i>
+                                    </div>
+                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
+                                        <span>Steps</span>
+                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
+                                    </span>
+                                </div>
+                                <h3 class="text-base font-extrabold text-slate-900 mb-1">Windows PC</h3>
+                                <div class="text-xs font-semibold text-blue-700 mb-1.5">Chrome · Microsoft Edge</div>
+                                <p class="text-xs text-slate-600 leading-relaxed">
+                                    Install as a dedicated desktop application with Start Menu and Taskbar pin support.
+                                </p>
+                            </button>
+
+                            <button type="button" data-install-guide-tab="desktop" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
+                                <div class="flex items-center justify-between gap-3 mb-3">
+                                    <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200/70 flex items-center justify-center shrink-0">
+                                        <i class="fas fa-laptop text-lg" aria-hidden="true"></i>
+                                    </div>
+                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
+                                        <span>Steps</span>
+                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
+                                    </span>
+                                </div>
+                                <h3 class="text-base font-extrabold text-slate-900 mb-1">macOS &amp; Linux</h3>
+                                <div class="text-xs font-semibold text-indigo-700 mb-1.5">Chrome · Edge · Brave · Safari</div>
+                                <p class="text-xs text-slate-600 leading-relaxed">
+                                    Runs cleanly in its own native window and launches directly from your Dock or App launcher.
+                                </p>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Bottom Action Section -->
         <section class="bg-white py-10 sm:py-16 border-b border-slate-200">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1516,6 +1664,8 @@
                     <a href="#product-demo" class="hover:text-slate-900 font-semibold">Live Preview</a>
                     <span aria-hidden="true">·</span>
                     <a href="#product-modules" class="hover:text-slate-900 font-semibold">Modules</a>
+                    <span aria-hidden="true">·</span>
+                    <a href="#product-download" class="hover:text-slate-900 font-semibold">Download App</a>
                     <span aria-hidden="true">·</span>
                     <span>© Institution Manage. All Rights Reserved.</span>
                 </div>

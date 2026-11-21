@@ -22,11 +22,16 @@ import {
     hardenExternalLinks,
     normalizePhone,
     openPremiumPlansModal,
-    registerServiceWorker,
     renderVersionInfo,
     sanitizePhone,
-    sanitizeUrl
+    sanitizeUrl,
+    syncDynamicPwaBranding
 } from '../shared/app-common.js';
+import {
+    initPwaPromptListener,
+    registerInstallTrigger,
+    showDeviceInstallGuide
+} from '../shared/pwa-install.js';
 import {
     verifyLoginIdentifier,
     signInWithCustomUsernameAndPassword
@@ -515,7 +520,7 @@ let isRootGatewayMode = false;
         }
         window.addEventListener('resize', fitHeroTitle);
 
-        registerServiceWorker();
+        initPwaPromptListener();
         let allStudents = [], selectedLoginStudent = null;
         let allStaffCategories = [];
         let directoryCategories = [];
@@ -902,6 +907,31 @@ let isRootGatewayMode = false;
                     setTimeout(() => slugInput?.focus(), 250);
                 });
             }
+
+            syncDynamicPwaBranding();
+            registerInstallTrigger({
+                key: 'root-gateway',
+                buttonIds: ['btn-gateway-hero-install', 'btn-gateway-section-install'],
+                statusTextIds: ['gateway-install-status-text'],
+                hideWhenStandalone: false
+            });
+
+            const gatewayGuideBtn = document.getElementById('btn-gateway-install-guide');
+            if (gatewayGuideBtn && !gatewayGuideBtn.dataset.boundGuide) {
+                gatewayGuideBtn.dataset.boundGuide = 'true';
+                gatewayGuideBtn.addEventListener('click', () => {
+                    showDeviceInstallGuide();
+                });
+            }
+
+            document.querySelectorAll('[data-install-guide-tab]').forEach((cardBtn) => {
+                if (cardBtn.dataset.boundGuideCard) return;
+                cardBtn.dataset.boundGuideCard = 'true';
+                cardBtn.addEventListener('click', () => {
+                    const preferredTab = cardBtn.getAttribute('data-install-guide-tab') || '';
+                    showDeviceInstallGuide(preferredTab);
+                });
+            });
 
             const filterButtons = Array.from(document.querySelectorAll('[data-module-filter]'));
             const moduleCards = Array.from(document.querySelectorAll('#gateway-modules-grid [data-module-category]'));
@@ -1354,6 +1384,15 @@ let isRootGatewayMode = false;
                 activateRootGatewayMode();
                 return;
             }
+
+            // Tenant public page PWA install controls (menu + hero button only, no auto-popup)
+            registerInstallTrigger({
+                key: 'tenant-public',
+                buttonIds: ['public-install-menu-btn', 'hero-btn-install'],
+                containerIds: ['public-install-menu-item'],
+                hideWhenStandalone: true,
+                onBeforeTrigger: () => setMobileMenuState(false)
+            });
 
             // 1. Institution Config snapshot (Public)
             onSnapshot(doc(db, `${BASE_PATH}/settings`, 'config'), snap => {

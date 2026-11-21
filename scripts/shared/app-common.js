@@ -226,7 +226,6 @@ export const rememberInstitutionName = (name = '') => {
 };
 
 let lastDynamicPwaSignature = '';
-const generatedIconCache = new Map();
 
 const buildCondensedShortName = (fullName = '') => {
     const clean = String(fullName || '').trim();
@@ -241,74 +240,6 @@ const buildCondensedShortName = (fullName = '') => {
     }
     return clean.slice(0, 12).trim();
 };
-
-const renderSquarePngIconsFromLogo = (logoSrc = '') => new Promise((resolve) => {
-    const cleanSrc = normalizeLogoUrl(logoSrc);
-    if (!cleanSrc || cleanSrc === DEFAULT_LOGO_URL || cleanSrc.endsWith('/assets/images/logo.png')) {
-        resolve(null);
-        return;
-    }
-    if (generatedIconCache.has(cleanSrc)) {
-        resolve(generatedIconCache.get(cleanSrc));
-        return;
-    }
-    try {
-        const img = new Image();
-        if (!cleanSrc.startsWith('data:')) {
-            img.crossOrigin = 'anonymous';
-        }
-        img.onload = () => {
-            try {
-                const buildSize = (size, padRatio = 0.06, fillBg = '#ffffff') => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = size;
-                    canvas.height = size;
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) return '';
-                    if (fillBg) {
-                        ctx.fillStyle = fillBg;
-                        ctx.fillRect(0, 0, size, size);
-                    }
-                    const pad = Math.round(size * padRatio);
-                    const avail = size - pad * 2;
-                    const natW = img.naturalWidth || img.width || size;
-                    const natH = img.naturalHeight || img.height || size;
-                    const scale = Math.min(avail / natW, avail / natH);
-                    const drawW = Math.round(natW * scale);
-                    const drawH = Math.round(natH * scale);
-                    const dx = Math.round((size - drawW) / 2);
-                    const dy = Math.round((size - drawH) / 2);
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(img, dx, dy, drawW, drawH);
-                    return canvas.toDataURL('image/png');
-                };
-
-                const icon192 = buildSize(192, 0.06, '#ffffff');
-                const icon512 = buildSize(512, 0.06, '#ffffff');
-                const iconMaskable512 = buildSize(512, 0.14, '#ffffff');
-                const iconApple180 = buildSize(180, 0.08, '#ffffff');
-
-                if (icon192 && icon512) {
-                    const pack = {
-                        icon192,
-                        icon512,
-                        iconMaskable512: iconMaskable512 || icon512,
-                        iconApple180: iconApple180 || icon192
-                    };
-                    generatedIconCache.set(cleanSrc, pack);
-                    resolve(pack);
-                    return;
-                }
-            } catch (_canvasErr) {}
-            resolve(null);
-        };
-        img.onerror = () => resolve(null);
-        img.src = cleanSrc;
-    } catch (_err) {
-        resolve(null);
-    }
-});
 
 export const syncDynamicPwaBranding = async ({ name = '', logoUrl = '' } = {}) => {
     if (typeof document === 'undefined' || typeof window === 'undefined') return;
@@ -343,71 +274,72 @@ export const syncDynamicPwaBranding = async ({ name = '', logoUrl = '' } = {}) =
         appleTitleMeta.setAttribute('content', resolvedName);
     }
 
-    document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((linkEl) => {
-        if (linkEl.getAttribute('href') !== resolvedLogo) {
-            linkEl.setAttribute('href', resolvedLogo);
+    // Always use company asset icon for installed PWA home-screen icons (iOS, Android, Desktop)
+    document.querySelectorAll('link[rel="apple-touch-icon"]').forEach((linkEl) => {
+        if (linkEl.getAttribute('href') !== DEFAULT_APPLE_TOUCH_ICON) {
+            linkEl.setAttribute('href', DEFAULT_APPLE_TOUCH_ICON);
         }
     });
 
-    const customPack = (!isRoot && resolvedLogo !== DEFAULT_LOGO_URL)
-        ? await renderSquarePngIconsFromLogo(resolvedLogo)
-        : null;
-
-    const appleIconHref = customPack?.iconApple180 || DEFAULT_APPLE_TOUCH_ICON;
-    document.querySelectorAll('link[rel="apple-touch-icon"]').forEach((linkEl) => {
-        if (linkEl.getAttribute('href') !== appleIconHref) {
-            linkEl.setAttribute('href', appleIconHref);
+    // Keep browser tab favicon aligned with company icon so desktop shortcut fallbacks also use company branding
+    document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((linkEl) => {
+        if (linkEl.getAttribute('href') !== DEFAULT_LOGO_URL) {
+            linkEl.setAttribute('href', DEFAULT_LOGO_URL);
         }
     });
 
     const origin = window.location.origin;
     const toAbs = (url) => (url.startsWith('data:') || url.startsWith('http')) ? url : `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
 
-    const manifestObj = {
-        id: `${origin}${startPath}`,
-        name: resolvedName,
-        short_name: shortName,
-        description: isRoot
-            ? 'Institution Manage - Multi-Institution Management Platform'
-            : `${resolvedName} - Official Portal & Learning Management App`,
-        start_url: `${origin}${startPath}`,
-        scope: `${origin}${startPath}`,
-        display: 'standalone',
-        background_color: '#f8fafc',
-        theme_color: '#2563eb',
-        icons: [
-            {
-                src: toAbs(customPack?.icon192 || DEFAULT_PWA_ICON_192),
-                sizes: '192x192',
-                type: 'image/png',
-                purpose: 'any'
-            },
-            {
-                src: toAbs(customPack?.icon512 || DEFAULT_PWA_ICON_512),
-                sizes: '512x512',
-                type: 'image/png',
-                purpose: 'any'
-            },
-            {
-                src: toAbs(customPack?.iconMaskable512 || DEFAULT_PWA_ICON_MASKABLE_512),
-                sizes: '512x512',
-                type: 'image/png',
-                purpose: 'maskable'
-            }
-        ]
-    };
-
     try {
-        const manifestJson = JSON.stringify(manifestObj);
-        const manifestDataUrl = `data:application/manifest+json;charset=utf-8,${encodeURIComponent(manifestJson)}`;
         let manifestLink = document.querySelector('link[rel="manifest"]');
         if (!manifestLink && document.head) {
             manifestLink = document.createElement('link');
             manifestLink.setAttribute('rel', 'manifest');
             document.head.appendChild(manifestLink);
         }
+
         if (manifestLink) {
-            manifestLink.setAttribute('href', manifestDataUrl);
+            if (isRoot) {
+                if (manifestLink.getAttribute('href') !== '/manifest.json') {
+                    manifestLink.setAttribute('href', '/manifest.json');
+                }
+            } else {
+                const manifestObj = {
+                    id: `${origin}${startPath}`,
+                    name: resolvedName,
+                    short_name: shortName,
+                    description: `${resolvedName} - Official Portal & Learning Management App`,
+                    start_url: `${origin}${startPath}`,
+                    scope: `${origin}${startPath}`,
+                    display: 'standalone',
+                    background_color: '#f8fafc',
+                    theme_color: '#2563eb',
+                    icons: [
+                        {
+                            src: toAbs(DEFAULT_PWA_ICON_192),
+                            sizes: '192x192',
+                            type: 'image/png',
+                            purpose: 'any'
+                        },
+                        {
+                            src: toAbs(DEFAULT_PWA_ICON_512),
+                            sizes: '512x512',
+                            type: 'image/png',
+                            purpose: 'any'
+                        },
+                        {
+                            src: toAbs(DEFAULT_PWA_ICON_MASKABLE_512),
+                            sizes: '512x512',
+                            type: 'image/png',
+                            purpose: 'maskable'
+                        }
+                    ]
+                };
+                const manifestJson = JSON.stringify(manifestObj);
+                const manifestDataUrl = `data:application/manifest+json;charset=utf-8,${encodeURIComponent(manifestJson)}`;
+                manifestLink.setAttribute('href', manifestDataUrl);
+            }
         }
     } catch (_err) {}
 
@@ -417,6 +349,7 @@ export const syncDynamicPwaBranding = async ({ name = '', logoUrl = '' } = {}) =
                 name: resolvedName,
                 shortName,
                 logoUrl: resolvedLogo,
+                iconUrl: DEFAULT_PWA_ICON_192,
                 isRoot
             }
         }));
@@ -435,6 +368,7 @@ export const getActivePwaBranding = () => {
         name,
         shortName: isRoot ? 'InstManage' : buildCondensedShortName(name),
         logoUrl,
+        iconUrl: DEFAULT_PWA_ICON_192,
         isRoot
     };
 };
