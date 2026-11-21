@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app https://www.google.com https://www.recaptcha.net wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://www.recaptcha.net https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app https://www.google.com https://www.recaptcha.net wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net;">
     <meta name="referrer" content="no-referrer">
     <title>Institution Manage</title>
     <meta name="description" content="Multi-institution management and administrative platform for academic institutions.">
@@ -132,1544 +132,835 @@
     </section>
 
     <div class="hidden bg-white text-slate-900 min-h-screen" id="root-gateway-container">
-        <!-- Sticky Top Navigation Bar (3-Zone Contract) -->
+        <!-- Sticky Top Navigation Bar -->
         <nav class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200" aria-label="Platform navigation">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4 sm:gap-8">
-                <a href="/" class="flex items-center gap-2.5 text-base sm:text-lg font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0">
-                    <img src="/assets/images/logo.png" alt="Institution Manage" class="w-8 h-8 object-contain rounded-lg" referrerpolicy="no-referrer">
+            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-2 sm:gap-6">
+                <a href="/" class="flex items-center gap-2 text-sm sm:text-base font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0">
+                    <img src="/assets/images/logo.png" alt="Institution Manage" class="w-7 h-7 object-contain rounded-lg" referrerpolicy="no-referrer">
                     <span>Institution Manage</span>
                 </a>
 
-                <div class="hidden md:flex items-center gap-7 text-sm font-semibold text-slate-600">
-                    <a href="#product-overview" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Overview</a>
-                    <a href="#product-demo" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Live Preview</a>
-                    <a href="#product-modules" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Portals &amp; Modules</a>
-                    <a href="#product-architecture" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Architecture</a>
-                    <a href="#product-download" class="hover:text-blue-600 transition-colors whitespace-nowrap shrink-0">Download App</a>
+                <div class="hidden md:flex items-center gap-6 text-xs font-bold text-slate-600">
+                    <a href="#product-overview" class="hover:text-blue-600 transition-colors whitespace-nowrap">Overview</a>
+                    <a href="#product-modules" class="hover:text-blue-600 transition-colors whitespace-nowrap">Modules</a>
+                    <a href="#product-architecture" class="hover:text-blue-600 transition-colors whitespace-nowrap">Architecture</a>
+                    <a href="#product-download" class="hover:text-blue-600 transition-colors whitespace-nowrap">Download App</a>
                 </div>
 
-                <div class="flex items-center gap-2.5 shrink-0">
-                    <button type="button" onclick="window.openLogin()" class="px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs sm:text-sm font-extrabold shadow-xs ring-1 ring-blue-700/10 transition-all cursor-pointer inline-flex items-center gap-2 whitespace-nowrap shrink-0">
-                        <i class="fas fa-arrow-right-to-bracket text-xs" aria-hidden="true"></i>
+                <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    <a href="#product-download" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <i class="fas fa-download text-[11px] text-blue-600" aria-hidden="true"></i>
+                        <span>App</span>
+                    </a>
+                    <button type="button" onclick="window.openLogin()" class="px-3 py-1.5 sm:px-3.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-extrabold shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <i class="fas fa-arrow-right-to-bracket text-[11px]" aria-hidden="true"></i>
                         <span>Login</span>
                     </button>
                 </div>
             </div>
         </nav>
 
-        <!-- Hero & Institution Portal Launcher Section -->
-        <section id="product-overview" class="bg-white pt-8 pb-12 sm:pt-14 sm:pb-20 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-stretch">
-                    <!-- Left Column: Product Value Proposition -->
-                    <div class="lg:col-span-7 flex flex-col justify-between">
+        <!-- Hero & Direct Institution Portal Launcher -->
+        <section id="product-overview" class="bg-white pt-5 pb-7 sm:pt-10 sm:pb-12 border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-stretch">
+                    <!-- Left Column: Concise Value Proposition & Compact Inline Actions -->
+                    <div class="lg:col-span-7 flex flex-col justify-between gap-4">
                         <div>
-                            <div class="text-xs font-extrabold text-blue-600 tracking-wide mb-3">
-                                Complete Cloud ERP for Schools, Colleges &amp; Academies
+                            <div class="text-[11px] sm:text-xs font-extrabold text-blue-600 tracking-wide mb-2">
+                                Cloud ERP for Schools, Colleges &amp; Academies
                             </div>
-                            <h1 class="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-[1.14] mb-4 sm:mb-5" style="text-wrap: balance;">
-                                Smart Academic, Financial &amp; Institutional Management in One Unified Platform.
+                            <h1 class="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-[1.16] mb-3" style="text-wrap: balance;">
+                                Smart Academic, Financial &amp; Institutional Management in One Platform.
                             </h1>
-                            <p class="text-sm sm:text-lg text-slate-600 leading-relaxed max-w-2xl mb-6 sm:mb-8">
-                                Manage student admissions, instant fee receipts, live accounting ledgers, examination progress reports, daily attendance, syllabus tracking, and parent self-service with dedicated institutional web portals.
+                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
+                                Manage admissions, instant fee receipts, live ledgers, exam rank cards, daily attendance, academic plans, and parent self-service with dedicated institutional web portals.
                             </p>
                         </div>
 
-                        <div class="space-y-3.5 pt-1">
-                            <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
-                                <button type="button" onclick="window.openLogin()" class="px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-extrabold shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2.5 whitespace-nowrap shrink-0">
-                                    <i class="fas fa-lock text-xs opacity-90" aria-hidden="true"></i>
-                                    <span>Login to Account</span>
+                        <div class="space-y-2.5">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="window.openLogin()" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fas fa-lock text-[11px] opacity-90" aria-hidden="true"></i>
+                                    <span>Login</span>
                                 </button>
-                                <button type="button" id="btn-gateway-hero-install" class="px-5 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-extrabold shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                                    <i class="fas fa-download text-xs text-blue-300" aria-hidden="true"></i>
+                                <button type="button" id="btn-gateway-hero-install" class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fas fa-download text-[11px] text-blue-300" aria-hidden="true"></i>
                                     <span data-install-btn-label>Download App</span>
                                 </button>
-                                <a href="#product-demo" class="px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-extrabold transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                                    <i class="fas fa-desktop text-blue-600 text-xs" aria-hidden="true"></i>
-                                    <span>View Interactive Demo</span>
+                                <a href="#product-modules" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fas fa-th-large text-[11px] text-blue-600" aria-hidden="true"></i>
+                                    <span>Modules (11)</span>
                                 </a>
                             </div>
 
-                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-semibold text-slate-500">
-                                <span class="inline-flex items-center gap-1.5 text-slate-700 font-bold">
-                                    <i class="fas fa-circle-check text-emerald-600 text-[11px]" aria-hidden="true"></i>
-                                    <span>Installable App on All Devices:</span>
-                                </span>
-                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fa-brands fa-android text-emerald-600" aria-hidden="true"></i><span>Android</span></span>
+                            <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] font-semibold text-slate-500">
+                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fa-brands fa-android text-emerald-600" aria-hidden="true"></i><span>Android</span></span>
                                 <span aria-hidden="true" class="text-slate-300">·</span>
-                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fa-brands fa-apple text-slate-800" aria-hidden="true"></i><span>iPhone &amp; iPad</span></span>
+                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fa-brands fa-apple text-slate-800" aria-hidden="true"></i><span>iOS</span></span>
                                 <span aria-hidden="true" class="text-slate-300">·</span>
-                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fa-brands fa-windows text-blue-600" aria-hidden="true"></i><span>Windows</span></span>
+                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fa-brands fa-windows text-blue-600" aria-hidden="true"></i><span>Windows</span></span>
                                 <span aria-hidden="true" class="text-slate-300">·</span>
-                                <span class="inline-flex items-center gap-1.5 text-slate-700"><i class="fas fa-laptop text-slate-600" aria-hidden="true"></i><span>macOS &amp; Linux</span></span>
+                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fas fa-laptop text-slate-600" aria-hidden="true"></i><span>Mac &amp; Linux</span></span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Right Column: Streamlined Open Your Institution Portal Card -->
+                    <!-- Right Column: Compact Open Your Institution Portal Card -->
                     <div id="portal-launcher-section" class="lg:col-span-5 flex">
-                        <div class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between">
+                        <div class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3.5">
                             <div>
-                                <div class="flex items-center gap-2.5 mb-3">
-                                    <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
-                                        <i class="fas fa-building-columns text-sm" aria-hidden="true"></i>
+                                <div class="flex items-center gap-2.5 mb-2.5">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                                        <i class="fas fa-building-columns text-xs" aria-hidden="true"></i>
                                     </div>
-                                    <div>
-                                        <div class="text-[11px] font-bold text-blue-600">Direct Institution Portal</div>
-                                        <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 leading-tight">
+                                    <div class="min-w-0">
+                                        <div class="text-[10px] font-extrabold text-blue-600 uppercase tracking-wide">Direct Institution Portal</div>
+                                        <h2 class="text-sm sm:text-base font-extrabold text-slate-900 leading-tight">
                                             Open Your Institution Portal
                                         </h2>
                                     </div>
                                 </div>
 
-                                <p class="text-xs sm:text-sm text-slate-600 leading-relaxed mb-5">
-                                    Enter your institution code below to directly open its dedicated website, student portal, or official staff workspace.
+                                <p class="text-[11px] sm:text-xs text-slate-600 leading-relaxed mb-3">
+                                    Enter your institution code to open its public homepage, student portal, or staff workspace.
                                 </p>
 
-                                <label for="gateway-slug-input" class="block text-xs font-extrabold text-slate-700 mb-2">
-                                    Institution Web Address
+                                <label for="gateway-slug-input" class="block text-[11px] font-extrabold text-slate-700 mb-1.5">
+                                    Institution Code
                                 </label>
-                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mb-2">
-                                    <div class="flex items-center flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-3 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 min-h-[46px]">
-                                        <span class="text-xs font-mono font-semibold text-slate-400 mr-1 select-none truncate max-w-[140px] sm:max-w-[165px]" id="gateway-origin-prefix">/</span>
-                                        <input type="text" id="gateway-slug-input" maxlength="64" placeholder="institution-code" class="w-full bg-transparent border-0 outline-none text-sm font-bold text-slate-900" autocomplete="off">
+                                <div class="flex items-center gap-2">
+                                    <div class="flex items-center flex-1 min-w-0 bg-white border border-slate-300 rounded-xl px-2.5 py-2 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
+                                        <span class="text-[11px] font-mono font-semibold text-slate-400 mr-1 select-none truncate max-w-[100px] sm:max-w-[140px]" id="gateway-origin-prefix">/</span>
+                                        <input type="text" id="gateway-slug-input" maxlength="64" placeholder="institution-code" class="w-full min-w-0 bg-transparent border-0 outline-none text-xs sm:text-sm font-bold text-slate-900" autocomplete="off">
                                     </div>
-                                    <button type="button" id="btn-gateway-open-slug" class="px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-extrabold transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0 min-h-[46px]">
-                                        <span>Open Portal</span>
-                                        <i class="fas fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                                    <button type="button" id="btn-gateway-open-slug" class="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                                        <span>Open</span>
+                                        <i class="fas fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
                                     </button>
                                 </div>
-                                <div id="gateway-slug-msg" class="text-xs font-bold text-rose-600 hidden mt-2"></div>
+                                <div id="gateway-slug-msg" class="text-[11px] font-bold text-rose-600 hidden mt-1.5"></div>
                             </div>
 
-                            <div class="pt-4 mt-5 border-t border-slate-200/80 grid grid-cols-3 gap-2 text-center">
-                                <div class="bg-white border border-slate-200/80 rounded-xl py-2 px-2">
-                                    <div class="text-xs font-extrabold text-slate-800">Admin &amp; Staff</div>
-                                    <div class="text-[10px] text-slate-500 mt-0.5">Role Workspace</div>
+                            <div class="pt-3 border-t border-slate-200/80 grid grid-cols-3 gap-1.5 text-center">
+                                <div class="bg-white border border-slate-200/80 rounded-lg py-1.5 px-1.5">
+                                    <div class="text-[11px] font-extrabold text-slate-800">Admin &amp; Staff</div>
+                                    <div class="text-[10px] text-slate-500">Role Hub</div>
                                 </div>
-                                <div class="bg-white border border-slate-200/80 rounded-xl py-2 px-2">
-                                    <div class="text-xs font-extrabold text-slate-800">Fee &amp; Ledger</div>
-                                    <div class="text-[10px] text-slate-500 mt-0.5">Live Receipts</div>
+                                <div class="bg-white border border-slate-200/80 rounded-lg py-1.5 px-1.5">
+                                    <div class="text-[11px] font-extrabold text-slate-800">Fee &amp; Ledger</div>
+                                    <div class="text-[10px] text-slate-500">Live Receipts</div>
                                 </div>
-                                <div class="bg-white border border-slate-200/80 rounded-xl py-2 px-2">
-                                    <div class="text-xs font-extrabold text-slate-800">Students</div>
-                                    <div class="text-[10px] text-slate-500 mt-0.5">24/7 Self-Service</div>
+                                <div class="bg-white border border-slate-200/80 rounded-lg py-1.5 px-1.5">
+                                    <div class="text-[11px] font-extrabold text-slate-800">Students</div>
+                                    <div class="text-[10px] text-slate-500">Self-Service</div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Full-Width 4-Column Quantitative Platform Metrics Row -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mt-10 sm:mt-14 pt-8 sm:pt-10 border-t border-slate-200">
-                    <div class="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
-                        <div class="text-xl sm:text-3xl font-extrabold text-blue-600 tabular-nums">10 Workspaces</div>
-                        <div class="text-xs text-slate-600 font-medium mt-1">Integrated modules for administration, finance, academics &amp; students</div>
+                <!-- Compact 4-Column Platform Metrics Strip -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 mt-6 sm:mt-8 pt-5 sm:pt-7 border-t border-slate-200">
+                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
+                        <div class="text-base sm:text-xl font-extrabold text-blue-600 tabular-nums">11 Workspaces</div>
+                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Admin, finance, academics &amp; student self-service</div>
                     </div>
-                    <div class="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
-                        <div class="text-xl sm:text-3xl font-extrabold text-emerald-600 tabular-nums">100% Isolated</div>
-                        <div class="text-xs text-slate-600 font-medium mt-1">Dedicated institutional portal address and strict database security</div>
+                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
+                        <div class="text-base sm:text-xl font-extrabold text-emerald-600 tabular-nums">100% Isolated</div>
+                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Dedicated web address &amp; strict tenant security</div>
                     </div>
-                    <div class="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
-                        <div class="text-xl sm:text-3xl font-extrabold text-indigo-600 tabular-nums">Instant Sync</div>
-                        <div class="text-xs text-slate-600 font-medium mt-1">Real-time fee receipts, day-book ledgers &amp; attendance registers</div>
+                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
+                        <div class="text-base sm:text-xl font-extrabold text-indigo-600 tabular-nums">Instant Sync</div>
+                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Real-time fee receipts, ledgers &amp; attendance</div>
                     </div>
-                    <div class="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
-                        <div class="text-xl sm:text-3xl font-extrabold text-amber-600 tabular-nums">Mobile Ready</div>
-                        <div class="text-xs text-slate-600 font-medium mt-1">Responsive experience across phones, tablets, desktops &amp; printers</div>
+                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
+                        <div class="text-base sm:text-xl font-extrabold text-amber-600 tabular-nums">Mobile Ready</div>
+                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Built for phones, tablets, desktops &amp; printers</div>
                     </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Interactive Live Platform Demonstration Section (All 11 Platform Pages) -->
-        <section id="product-demo" class="bg-slate-50 py-12 sm:py-20 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="space-y-6 mb-8">
-                    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-                        <div>
-                            <div class="text-xs font-extrabold text-blue-600 mb-2">Interactive Workspace Preview · 11 Modules</div>
-                            <h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight" style="text-wrap: balance;">
-                                See How Your Institution Operates Inside the Platform
-                            </h2>
-                            <p class="text-xs sm:text-base text-slate-600 mt-2 max-w-3xl">
-                                Select any of the 11 platform modules below to inspect live workflows—from your public website and admin controls to fee collection, student self-service, exams, attendance, academic planning, worksheets, activities, and classroom evaluation.
-                            </p>
-                        </div>
-                        <div class="hidden sm:flex items-center gap-1.5 shrink-0">
-                            <button type="button" id="demo-tabs-scroll-left" class="w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer transition" aria-label="Scroll module tabs left" title="Scroll left">
-                                <i class="fas fa-chevron-left text-xs" aria-hidden="true"></i>
-                            </button>
-                            <button type="button" id="demo-tabs-scroll-right" class="w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer transition" aria-label="Scroll module tabs right" title="Scroll right">
-                                <i class="fas fa-chevron-right text-xs" aria-hidden="true"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Interactive 11-Page Demo Switcher Tabs (Touch Scrollable on Mobile) -->
-                    <div id="demo-tablist-scroller" class="flex items-center gap-1.5 p-1.5 bg-white border border-slate-200 rounded-xl overflow-x-auto max-w-full scroll-smooth" role="tablist" aria-label="Interactive platform preview tabs">
-                        <button type="button" role="tab" aria-selected="true" data-demo-tab="public" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg bg-blue-600 text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-globe text-[11px]" aria-hidden="true"></i>
-                            <span>Public Website</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="admin" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-sliders text-[11px]" aria-hidden="true"></i>
-                            <span>Admin Dashboard</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="official" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-compass text-[11px]" aria-hidden="true"></i>
-                            <span>Official Hub</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="collection" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-receipt text-[11px]" aria-hidden="true"></i>
-                            <span>Fee &amp; Receipt</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="student" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-user-graduate text-[11px]" aria-hidden="true"></i>
-                            <span>Student Portal</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="result" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-award text-[11px]" aria-hidden="true"></i>
-                            <span>Exam &amp; Rank Card</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="attendance" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-calendar-check text-[11px]" aria-hidden="true"></i>
-                            <span>Daily Attendance</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="academicPlan" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-book-open-reader text-[11px]" aria-hidden="true"></i>
-                            <span>Academic Plan</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="worksheet" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-file-lines text-[11px]" aria-hidden="true"></i>
-                            <span>Worksheets</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="studentActivity" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-medal text-[11px]" aria-hidden="true"></i>
-                            <span>Activity &amp; Merit</span>
-                        </button>
-                        <button type="button" role="tab" aria-selected="false" data-demo-tab="classroomEvaluation" class="px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5">
-                            <i class="fas fa-clipboard-check text-[11px]" aria-hidden="true"></i>
-                            <span>Classroom Evaluation</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 11 Interactive Demo Preview Panels -->
-                <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-8">
-
-                    <!-- Panel 1: Public Website (public) -->
-                    <div data-demo-panel="public" class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-blue-700">
-                                <i class="fas fa-globe" aria-hidden="true"></i>
-                                <span>Dedicated Institution Web Portal</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Branded Institution Homepage, Notices, Gallery &amp; Faculty
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Every institution receives its own dedicated web address showcasing custom branding, live student and teacher counters, public notice boards, photo galleries, and faculty directories—connected directly to unified portal login.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-blue-600" aria-hidden="true"></i>
-                                    <span>Custom institution logo, registration details &amp; live counters</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-blue-600" aria-hidden="true"></i>
-                                    <span>Instant public notice board, photo gallery &amp; teacher profiles</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-blue-600" aria-hidden="true"></i>
-                                    <span>Single smart login entry for Admin, Staff &amp; Parents</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lg:col-span-7" data-demo-showcase="public">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm">
-                                            <i class="fas fa-graduation-cap" aria-hidden="true"></i>
-                                        </div>
-                                        <div>
-                                            <div class="text-sm font-extrabold text-slate-900">Al-Huda Public Academy</div>
-                                            <div class="text-[11px] text-slate-500 font-mono">Reg. #EDU-2048 · Malappuram, Kerala</div>
-                                        </div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-blue-700">Live Public Portal</span>
-                                </div>
-
-                                <div class="grid grid-cols-3 gap-3 my-4">
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[11px] text-slate-500">Enrolled Students</div>
-                                        <div class="text-lg font-extrabold text-blue-600 tabular-nums mt-0.5">642</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[11px] text-slate-500">Faculty Members</div>
-                                        <div class="text-lg font-extrabold text-emerald-600 tabular-nums mt-0.5">34</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[11px] text-slate-500">Active Classes</div>
-                                        <div class="text-lg font-extrabold text-indigo-600 tabular-nums mt-0.5">18</div>
-                                    </div>
-                                </div>
-
-                                <div class="space-y-2 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
-                                        <div class="min-w-0">
-                                            <div class="font-extrabold text-slate-900 truncate">Annual Sports &amp; Cultural Meet Schedule</div>
-                                            <div class="text-[11px] text-slate-500">Public Notice · Published 2 hours ago</div>
-                                        </div>
-                                        <span class="font-bold text-blue-600 shrink-0">Notice</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
-                                        <div class="min-w-0">
-                                            <div class="font-extrabold text-slate-900 truncate">Admission Open for Academic Year 2026-27</div>
-                                            <div class="text-[11px] text-slate-500">Faculty Directory &amp; Photo Gallery Active</div>
-                                        </div>
-                                        <span class="font-bold text-emerald-700 shrink-0">Open</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 2: Admin Dashboard (admin) -->
-                    <div data-demo-panel="admin" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-indigo-700">
-                                <i class="fas fa-sliders" aria-hidden="true"></i>
-                                <span>Institutional Governance &amp; Access Control</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Master Admin Dashboard for Admissions, Promotions &amp; Staff
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Centrally control student enrollment, annual class promotions, granular staff permissions, academic year lifecycles, fee head definitions, and public website CMS content from one structured console.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-indigo-600" aria-hidden="true"></i>
-                                    <span>Bulk student admissions, Excel import &amp; class promotions</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-indigo-600" aria-hidden="true"></i>
-                                    <span>Role-based staff credentials &amp; module-level access toggles</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-indigo-600" aria-hidden="true"></i>
-                                    <span>Academic year switching, concessions &amp; full audit trails</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lg:col-span-7" data-demo-showcase="admin">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">MASTER ADMIN CONSOLE</div>
-                                        <div class="text-[11px] text-slate-500 tabular-nums">Active Session: 2026-27 · Role-Based Governance</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-indigo-700">Super Admin</span>
-                                </div>
-
-                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 my-4 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[10px] text-slate-500">Active Students</div>
-                                        <div class="text-base font-extrabold text-slate-900 tabular-nums mt-0.5">642</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[10px] text-slate-500">Staff Accounts</div>
-                                        <div class="text-base font-extrabold text-indigo-600 tabular-nums mt-0.5">28</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[10px] text-slate-500">Fee Heads</div>
-                                        <div class="text-base font-extrabold text-emerald-600 tabular-nums mt-0.5">6 Active</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[10px] text-slate-500">Pending Approvals</div>
-                                        <div class="text-base font-extrabold text-amber-600 tabular-nums mt-0.5">4</div>
-                                    </div>
-                                </div>
-
-                                <div class="space-y-2 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <span class="font-bold text-slate-800">Staff Access Matrix · Collectors &amp; Class Teachers</span>
-                                        <span class="font-extrabold text-emerald-700">Synced</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <span class="font-bold text-slate-800">Annual Class Promotion Engine (2025-26 → 2026-27)</span>
-                                        <span class="font-extrabold text-indigo-700">Ready</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 3: Official Hub (official) -->
-                    <div data-demo-panel="official" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-sky-700">
-                                <i class="fas fa-compass" aria-hidden="true"></i>
-                                <span>Central Staff &amp; Administrator Workspace</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Role-Aware Official Hub Connecting Every Department
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Teachers, cashiers, and administrators log into a single command dashboard that automatically displays only the operational modules, duty classes, and student insights authorized for their role.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-sky-600" aria-hidden="true"></i>
-                                    <span>One-tap launcher for assigned operational workspaces</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-sky-600" aria-hidden="true"></i>
-                                    <span>Live student strength, gender breakdown &amp; class overview</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-sky-600" aria-hidden="true"></i>
-                                    <span>Integrated staff profile, duty classes &amp; quick notifications</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lg:col-span-7" data-demo-showcase="official">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">OFFICIAL COMMAND PORTAL</div>
-                                        <div class="text-[11px] text-slate-500">Signed in: Rashid P. · Senior Teacher (Class 9-A)</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-sky-700">6 Modules Active</span>
-                                </div>
-
-                                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 my-4 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="font-extrabold text-slate-900">Fee Collection</div>
-                                        <div class="text-[10px] text-emerald-700 font-semibold mt-0.5">Cashier Access</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="font-extrabold text-slate-900">Attendance</div>
-                                        <div class="text-[10px] text-amber-700 font-semibold mt-0.5">Class 9-A Duty</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="font-extrabold text-slate-900">Exam &amp; Results</div>
-                                        <div class="text-[10px] text-violet-700 font-semibold mt-0.5">Mark Entry Open</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="font-extrabold text-slate-900">Academic Plan</div>
-                                        <div class="text-[10px] text-teal-700 font-semibold mt-0.5">Syllabus Sync</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="font-extrabold text-slate-900">Worksheets</div>
-                                        <div class="text-[10px] text-cyan-700 font-semibold mt-0.5">Registers &amp; PDFs</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="font-extrabold text-slate-900">Evaluation</div>
-                                        <div class="text-[10px] text-slate-600 font-semibold mt-0.5">Class Audits</div>
-                                    </div>
-                                </div>
-
-                                <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                                    <span>Single Sign-On Session Protection</span>
-                                    <span class="font-bold text-slate-800">Role Enforced</span>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 4: Fee Collection & Instant Receipt (collection) -->
-                    <div data-demo-panel="collection" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-emerald-700">
-                                <i class="fas fa-circle-check" aria-hidden="true"></i>
-                                <span>Live Cashier &amp; Financial Ledger Workflow</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Instant Multi-Head Fee Collection &amp; Digital Receipts
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Cashiers and administrators can search any student by Admission Number or Name, collect partial or full installments across multiple fee heads, and generate thermal/A4 receipts or WhatsApp payment confirmations immediately.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-emerald-600" aria-hidden="true"></i>
-                                    <span>Automated balance calculation &amp; arrears tracking</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-emerald-600" aria-hidden="true"></i>
-                                    <span>Master Ledger, Day-Book &amp; Income/Expense balancing</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-emerald-600" aria-hidden="true"></i>
-                                    <span>One-click Excel import &amp; class-wise financial statements</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="lg:col-span-7" data-demo-showcase="collection">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">OFFICIAL FEE RECEIPT PREVIEW</div>
-                                        <div class="text-[11px] text-slate-500 font-mono tabular-nums">Receipt #RCP-2026-0842 · Academic Year 2026-27</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
-                                        <i class="fas fa-check-circle mr-1" aria-hidden="true"></i>Paid &amp; Verified
-                                    </span>
-                                </div>
-
-                                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 py-4 border-b border-slate-200 text-xs">
-                                    <div>
-                                        <div class="text-slate-500">Student Name</div>
-                                        <div class="font-extrabold text-slate-900 mt-0.5">Muhammed Irfan</div>
-                                    </div>
-                                    <div>
-                                        <div class="text-slate-500">Admission No &amp; Class</div>
-                                        <div class="font-extrabold text-slate-900 mt-0.5 tabular-nums">ADM-1048 · Class 9-A</div>
-                                    </div>
-                                    <div class="col-span-2 sm:col-span-1">
-                                        <div class="text-slate-500">Payment Mode</div>
-                                        <div class="font-extrabold text-slate-900 mt-0.5">Cash / UPI Verified</div>
-                                    </div>
-                                </div>
-
-                                <div class="py-3 space-y-2 text-xs sm:text-sm">
-                                    <div class="flex items-center justify-between py-1.5 border-b border-slate-200/70">
-                                        <span class="font-semibold text-slate-700">Term 1 Tuition Fee</span>
-                                        <span class="font-extrabold text-slate-900 tabular-nums">₹4,500</span>
-                                    </div>
-                                    <div class="flex items-center justify-between py-1.5 border-b border-slate-200/70">
-                                        <span class="font-semibold text-slate-700">Examination &amp; Assessment Fee</span>
-                                        <span class="font-extrabold text-slate-900 tabular-nums">₹600</span>
-                                    </div>
-                                    <div class="flex items-center justify-between py-1.5">
-                                        <span class="font-semibold text-slate-700">Library &amp; Digital Resource Fee</span>
-                                        <span class="font-extrabold text-slate-900 tabular-nums">₹400</span>
-                                    </div>
-                                </div>
-
-                                <div class="mt-2 pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                                    <div>
-                                        <div class="text-[11px] text-slate-500">Remaining Term Balance</div>
-                                        <div class="text-xs font-extrabold text-emerald-700 tabular-nums">₹0 (No Pending Dues)</div>
-                                    </div>
-                                    <div class="text-right">
-                                        <div class="text-[11px] text-slate-500">Total Collected</div>
-                                        <div class="text-lg sm:text-xl font-extrabold text-slate-900 tabular-nums">₹5,500</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 5: Student & Parent Portal (student) -->
-                    <div data-demo-panel="student" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-blue-700">
-                                <i class="fas fa-mobile-screen-button" aria-hidden="true"></i>
-                                <span>24/7 Student &amp; Parent Mobile Self-Service</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Transparent Fee Statements, Attendance &amp; Sibling Switching
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Parents can sign in using the student's Admission Number and registered mobile number to check live fee dues, download official receipts, review attendance, and switch between multiple children in one tap.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-blue-600" aria-hidden="true"></i>
-                                    <span>Instant digital receipt download &amp; payment history</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-blue-600" aria-hidden="true"></i>
-                                    <span>One-tap family sibling account switcher</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-blue-600" aria-hidden="true"></i>
-                                    <span>Live attendance percentage, exam results &amp; school notices</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="lg:col-span-7" data-demo-showcase="student">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm">
-                                            FA
-                                        </div>
-                                        <div>
-                                            <div class="text-sm font-extrabold text-slate-900">Fathima Amina</div>
-                                            <div class="text-xs text-slate-500 tabular-nums">Class 8-B · Admission #1124</div>
-                                        </div>
-                                    </div>
-                                    <div class="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
-                                        <i class="fas fa-users mr-1" aria-hidden="true"></i>2 Sibling Accounts Linked
-                                    </div>
-                                </div>
-
-                                <div class="grid grid-cols-3 gap-3 my-4">
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[11px] text-slate-500">Attendance</div>
-                                        <div class="text-base sm:text-lg font-extrabold text-emerald-600 tabular-nums mt-0.5">96.4%</div>
-                                        <div class="text-[10px] text-slate-500 tabular-nums">162 / 168 Days</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[11px] text-slate-500">Fee Status</div>
-                                        <div class="text-base sm:text-lg font-extrabold text-slate-900 tabular-nums mt-0.5">₹0 Due</div>
-                                        <div class="text-[10px] text-emerald-600 font-bold">Up to Date</div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3">
-                                        <div class="text-[11px] text-slate-500">Latest Exam</div>
-                                        <div class="text-base sm:text-lg font-extrabold text-indigo-600 tabular-nums mt-0.5">94.0%</div>
-                                        <div class="text-[10px] text-slate-500">Grade A+ · Passed</div>
-                                    </div>
-                                </div>
-
-                                <div class="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs">
-                                    <div>
-                                        <div class="font-extrabold text-slate-900">Latest Payment: Term 2 Fee Installment</div>
-                                        <div class="text-slate-500 tabular-nums mt-0.5">Receipt #RCP-2026-0790 · Paid ₹3,200</div>
-                                    </div>
-                                    <span class="font-extrabold text-blue-600 whitespace-nowrap">
-                                        <i class="fas fa-file-arrow-down mr-1" aria-hidden="true"></i>Receipt Ready
-                                    </span>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 6: Examination & Progress Card (result) -->
-                    <div data-demo-panel="result" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-indigo-700">
-                                <i class="fas fa-chart-simple" aria-hidden="true"></i>
-                                <span>Automated Grading &amp; Rank Analytics</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Comprehensive Examination &amp; Progress Card Engine
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Configure term exams, enter subject-wise marks per class, and let the platform automatically compute totals, percentages, grades, pass/fail status, and class toppers.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-indigo-600" aria-hidden="true"></i>
-                                    <span>Custom maximum marks &amp; minimum pass thresholds</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-indigo-600" aria-hidden="true"></i>
-                                    <span>Automated class rank &amp; subject-wise performance analysis</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-indigo-600" aria-hidden="true"></i>
-                                    <span>Instant student portal publishing &amp; printable marklists</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="lg:col-span-7" data-demo-showcase="result">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">ANNUAL EXAMINATION REPORT CARD</div>
-                                        <div class="text-[11px] text-slate-500 tabular-nums">Class 10-A · Academic Assessment Summary</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg tabular-nums">
-                                        Class Rank #2 · 92.8%
-                                    </span>
-                                </div>
-
-                                <div class="divide-y divide-slate-200/80 text-xs sm:text-sm my-2">
-                                    <div class="grid grid-cols-12 py-2 font-bold text-slate-500 text-[11px]">
-                                        <div class="col-span-6">Subject</div>
-                                        <div class="col-span-3 text-right">Marks</div>
-                                        <div class="col-span-3 text-right">Grade</div>
-                                    </div>
-                                    <div class="grid grid-cols-12 py-2 items-center">
-                                        <div class="col-span-6 font-semibold text-slate-800">Mathematics &amp; Logic</div>
-                                        <div class="col-span-3 text-right font-extrabold text-slate-900 tabular-nums">96 / 100</div>
-                                        <div class="col-span-3 text-right font-extrabold text-emerald-600">A+</div>
-                                    </div>
-                                    <div class="grid grid-cols-12 py-2 items-center">
-                                        <div class="col-span-6 font-semibold text-slate-800">Science &amp; Technology</div>
-                                        <div class="col-span-3 text-right font-extrabold text-slate-900 tabular-nums">94 / 100</div>
-                                        <div class="col-span-3 text-right font-extrabold text-emerald-600">A+</div>
-                                    </div>
-                                    <div class="grid grid-cols-12 py-2 items-center">
-                                        <div class="col-span-6 font-semibold text-slate-800">English Language</div>
-                                        <div class="col-span-3 text-right font-extrabold text-slate-900 tabular-nums">91 / 100</div>
-                                        <div class="col-span-3 text-right font-extrabold text-emerald-600">A+</div>
-                                    </div>
-                                    <div class="grid grid-cols-12 py-2 items-center">
-                                        <div class="col-span-6 font-semibold text-slate-800">Social Studies &amp; History</div>
-                                        <div class="col-span-3 text-right font-extrabold text-slate-900 tabular-nums">89 / 100</div>
-                                        <div class="col-span-3 text-right font-extrabold text-blue-600">A</div>
-                                    </div>
-                                </div>
-
-                                <div class="pt-3 border-t border-slate-200 flex items-center justify-between text-xs sm:text-sm">
-                                    <span class="font-bold text-slate-600">Result Status: <strong class="text-emerald-700">PASSED WITH DISTINCTION</strong></span>
-                                    <span class="font-extrabold text-slate-900 tabular-nums">Total: 464 / 500</span>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 7: Daily Attendance (attendance) -->
-                    <div data-demo-panel="attendance" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-amber-700">
-                                <i class="fas fa-user-check" aria-hidden="true"></i>
-                                <span>Class-Teacher Roll Call &amp; Monthly Analytics</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Rapid Mobile Roll Call &amp; Monthly Attendance Analytics
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Class teachers mark daily attendance from their phone in seconds. The system immediately updates student attendance percentages and flags absentees for parent follow-up.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-amber-600" aria-hidden="true"></i>
-                                    <span>One-tap Present / Absent / Leave toggle per student</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-amber-600" aria-hidden="true"></i>
-                                    <span>Class-duty permission enforcement for assigned teachers</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-amber-600" aria-hidden="true"></i>
-                                    <span>Monthly register summary &amp; holiday calendar management</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="lg:col-span-7" data-demo-showcase="attendance">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">DAILY ATTENDANCE REGISTER · CLASS 10-A</div>
-                                        <div class="text-[11px] text-slate-500 tabular-nums">Morning Session · 40 Enrolled Students</div>
-                                    </div>
-                                    <div class="text-xs font-extrabold text-emerald-700 tabular-nums">
-                                        38 Present · 2 Absent (95.0%)
-                                    </div>
-                                </div>
-
-                                <div class="space-y-2.5 my-4 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <div>
-                                            <span class="font-mono font-bold text-slate-400 mr-2 tabular-nums">#01</span>
-                                            <span class="font-extrabold text-slate-900">Abinav Krishna</span>
-                                            <span class="text-slate-400 ml-2 tabular-nums">ADM-1021</span>
-                                        </div>
-                                        <span class="font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">Present</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <div>
-                                            <span class="font-mono font-bold text-slate-400 mr-2 tabular-nums">#02</span>
-                                            <span class="font-extrabold text-slate-900">Ayisha Neha</span>
-                                            <span class="text-slate-400 ml-2 tabular-nums">ADM-1022</span>
-                                        </div>
-                                        <span class="font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">Present</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <div>
-                                            <span class="font-mono font-bold text-slate-400 mr-2 tabular-nums">#03</span>
-                                            <span class="font-extrabold text-slate-900">Salmanul Faris</span>
-                                            <span class="text-slate-400 ml-2 tabular-nums">ADM-1025</span>
-                                        </div>
-                                        <span class="font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">Absent · Notified</span>
-                                    </div>
-                                </div>
-
-                                <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                                    <span>Synced with Student &amp; Official Portals</span>
-                                    <span class="font-bold text-slate-800">Verified by Class Teacher</span>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 8: Academic Plan (academicPlan) -->
-                    <div data-demo-panel="academicPlan" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-teal-700">
-                                <i class="fas fa-book-open-reader" aria-hidden="true"></i>
-                                <span>Curriculum &amp; Timetable Orchestration</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Syllabus Milestones, Daily Teaching Logs &amp; Master Timetables
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Structure annual teaching plans per class and subject, track daily syllabus coverage with teacher sign-offs, and publish conflict-free weekly class and examination timetables.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-teal-600" aria-hidden="true"></i>
-                                    <span>Class-wise master timetables &amp; exam schedule builder</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-teal-600" aria-hidden="true"></i>
-                                    <span>Chapter-by-chapter syllabus completion tracking</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-teal-600" aria-hidden="true"></i>
-                                    <span>Daily lesson logs visible to academic coordinators</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lg:col-span-7" data-demo-showcase="academicPlan">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">ACADEMIC YEAR PLAN &amp; SYLLABUS TRACKER</div>
-                                        <div class="text-[11px] text-slate-500 tabular-nums">Class 9-A · Term 2 Curriculum Progress</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-teal-700 tabular-nums">82% On Schedule</span>
-                                </div>
-
-                                <div class="space-y-3 my-4 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
-                                        <div class="flex items-center justify-between">
-                                            <span class="font-extrabold text-slate-900">Mathematics · Units 1–8</span>
-                                            <span class="font-extrabold text-teal-700 tabular-nums">88%</span>
-                                        </div>
-                                        <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-                                            <div class="h-full bg-teal-600 rounded-full" style="width: 88%;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
-                                        <div class="flex items-center justify-between">
-                                            <span class="font-extrabold text-slate-900">General Science · Practicals &amp; Theory</span>
-                                            <span class="font-extrabold text-blue-700 tabular-nums">80%</span>
-                                        </div>
-                                        <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-                                            <div class="h-full bg-blue-600 rounded-full" style="width: 80%;"></div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-                                        <div>
-                                            <div class="font-extrabold text-slate-900">Weekly Master Timetable · Monday</div>
-                                            <div class="text-[11px] text-slate-500 mt-0.5">P1 Math · P2 Science · P3 English · P4 History</div>
-                                        </div>
-                                        <span class="font-bold text-slate-700">6 Periods</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 9: Worksheets (worksheet) -->
-                    <div data-demo-panel="worksheet" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-cyan-700">
-                                <i class="fas fa-file-lines" aria-hidden="true"></i>
-                                <span>Custom Registers, Printable Sheets &amp; Exports</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Digital Student Registers, Custom Sheets &amp; Study Resources
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Generate print-ready class rosters, attendance sheets, exam seating charts, student ID card batches, and custom multi-column worksheets synced automatically with your live student master directory.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-cyan-600" aria-hidden="true"></i>
-                                    <span>Custom column builder for checklists &amp; field registers</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-cyan-600" aria-hidden="true"></i>
-                                    <span>Clean A4 PDF printing and instant Excel spreadsheet export</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-cyan-600" aria-hidden="true"></i>
-                                    <span>Student ID cards &amp; Transfer Certificate templates</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lg:col-span-7" data-demo-showcase="worksheet">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">CUSTOM WORKSHEET &amp; REGISTER GENERATOR</div>
-                                        <div class="text-[11px] text-slate-500">Class 8-A · Uniform &amp; Textbook Distribution Sheet</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-cyan-700">PDF / Excel Ready</span>
-                                </div>
-
-                                <div class="bg-white border border-slate-200 rounded-xl overflow-hidden my-4 text-xs">
-                                    <div class="grid grid-cols-12 bg-slate-100/80 px-3 py-2 font-bold text-slate-600 text-[11px]">
-                                        <div class="col-span-2">Adm #</div>
-                                        <div class="col-span-5">Student Name</div>
-                                        <div class="col-span-2 text-center">Books</div>
-                                        <div class="col-span-3 text-right">Signature</div>
-                                    </div>
-                                    <div class="divide-y divide-slate-200/80">
-                                        <div class="grid grid-cols-12 px-3 py-2 items-center">
-                                            <div class="col-span-2 font-mono font-bold text-slate-500 tabular-nums">1082</div>
-                                            <div class="col-span-5 font-extrabold text-slate-900">Anas Muhammed</div>
-                                            <div class="col-span-2 text-center font-bold text-emerald-700">Issued</div>
-                                            <div class="col-span-3 text-right text-slate-400">Signed</div>
-                                        </div>
-                                        <div class="grid grid-cols-12 px-3 py-2 items-center">
-                                            <div class="col-span-2 font-mono font-bold text-slate-500 tabular-nums">1083</div>
-                                            <div class="col-span-5 font-extrabold text-slate-900">Hana Mariyam</div>
-                                            <div class="col-span-2 text-center font-bold text-emerald-700">Issued</div>
-                                            <div class="col-span-3 text-right text-slate-400">Signed</div>
-                                        </div>
-                                        <div class="grid grid-cols-12 px-3 py-2 items-center">
-                                            <div class="col-span-2 font-mono font-bold text-slate-500 tabular-nums">1084</div>
-                                            <div class="col-span-5 font-extrabold text-slate-900">Zayan Ahmed</div>
-                                            <div class="col-span-2 text-center font-bold text-amber-700">Pending</div>
-                                            <div class="col-span-3 text-right text-slate-400">—</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                                    <span>Auto-populated from Active Student Roster</span>
-                                    <span class="font-bold text-slate-800">A4 Portrait / Landscape</span>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 10: Student Activity & Merit (studentActivity) -->
-                    <div data-demo-panel="studentActivity" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-rose-700">
-                                <i class="fas fa-medal" aria-hidden="true"></i>
-                                <span>Co-Curricular Logs, Tasks &amp; Merit Rewards</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Student Activity Tracking, Competitions &amp; Merit Badges
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Recognize holistic student development by recording daily positive habits, Ibadah &amp; task completions, arts or sports competitions, bonus merit points, and custom achievement badges.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-rose-600" aria-hidden="true"></i>
-                                    <span>Daily habit, task completion &amp; co-curricular activity logs</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-rose-600" aria-hidden="true"></i>
-                                    <span>Automated merit point leaderboards &amp; custom badges</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-rose-600" aria-hidden="true"></i>
-                                    <span>Visible directly inside each student's family portal</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lg:col-span-7" data-demo-showcase="studentActivity">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">ACTIVITY &amp; MERIT LEADERBOARD</div>
-                                        <div class="text-[11px] text-slate-500">Monthly Co-Curricular &amp; Habit Points · Class 7-A</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-rose-700">12 Badges Awarded</span>
-                                </div>
-
-                                <div class="space-y-2.5 my-4 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <div>
-                                            <span class="font-extrabold text-slate-900">1. Nida Fathima</span>
-                                            <div class="text-[11px] text-slate-500">Debate First Prize · 100% Weekly Tasks</div>
-                                        </div>
-                                        <span class="font-extrabold text-amber-700 tabular-nums">485 pts</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <div>
-                                            <span class="font-extrabold text-slate-900">2. Rayan Sidheeq</span>
-                                            <div class="text-[11px] text-slate-500">Science Quiz Winner · Star Reader Badge</div>
-                                        </div>
-                                        <span class="font-extrabold text-indigo-700 tabular-nums">440 pts</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                                        <div>
-                                            <span class="font-extrabold text-slate-900">3. Mariya Sherin</span>
-                                            <div class="text-[11px] text-slate-500">Community Service · Punctuality Merit</div>
-                                        </div>
-                                        <span class="font-extrabold text-emerald-700 tabular-nums">415 pts</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
-                    <!-- Panel 11: Classroom Evaluation (classroomEvaluation) -->
-                    <div data-demo-panel="classroomEvaluation" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center">
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="inline-flex items-center gap-2 text-xs font-extrabold text-slate-700">
-                                <i class="fas fa-clipboard-check" aria-hidden="true"></i>
-                                <span>Inspection Rubrics &amp; Class Quality Audits</span>
-                            </div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                                Structured Classroom Evaluation &amp; Behaviour Monitoring
-                            </h3>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Standardize classroom quality reviews with configurable evaluation rubrics, record daily discipline or homework observations, track follow-up impositions, and review class-wide quality trends over time.
-                            </p>
-                            <div class="space-y-2.5 pt-2 text-xs sm:text-sm text-slate-700 font-semibold">
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-slate-700" aria-hidden="true"></i>
-                                    <span>Custom inspection criteria &amp; weighted scoring rubrics</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-slate-700" aria-hidden="true"></i>
-                                    <span>Student behaviour logs &amp; follow-up imposition tracking</span>
-                                </div>
-                                <div class="flex items-center gap-2.5">
-                                    <i class="fas fa-check text-slate-700" aria-hidden="true"></i>
-                                    <span>Term-wise audit reports for principals &amp; coordinators</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="lg:col-span-7" data-demo-showcase="classroomEvaluation">
-                            <div data-showcase-fallback class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6">
-                                <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
-                                    <div>
-                                        <div class="text-xs font-extrabold text-slate-900">CLASSROOM QUALITY AUDIT · CLASS 9-B</div>
-                                        <div class="text-[11px] text-slate-500">Weekly Academic Coordinator Review</div>
-                                    </div>
-                                    <span class="text-xs font-extrabold text-emerald-700 tabular-nums">Score: 92 / 100</span>
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-2.5 my-4 text-xs">
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-                                        <span class="font-semibold text-slate-700">Discipline &amp; Uniform</span>
-                                        <span class="font-extrabold text-emerald-700 tabular-nums">24 / 25</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-                                        <span class="font-semibold text-slate-700">Homework Compliance</span>
-                                        <span class="font-extrabold text-blue-700 tabular-nums">22 / 25</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-                                        <span class="font-semibold text-slate-700">Class Participation</span>
-                                        <span class="font-extrabold text-indigo-700 tabular-nums">23 / 25</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between">
-                                        <span class="font-semibold text-slate-700">Cleanliness &amp; Order</span>
-                                        <span class="font-extrabold text-emerald-700 tabular-nums">23 / 25</span>
-                                    </div>
-                                </div>
-
-                                <div class="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                                    <span>Follow-up Impositions: 1 Pending · 5 Resolved</span>
-                                    <span class="font-bold text-slate-800">Grade A Audit</span>
-                                </div>
-                            </div>
-                            <div data-showcase-media class="hidden"></div>
-                        </div>
-                    </div>
-
                 </div>
             </div>
         </section>
 
-        <!-- Comprehensive 10-Portal & Module Specification Section (Zero /page Route Labels) -->
-        <section id="product-modules" class="bg-white py-12 sm:py-20 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 sm:mb-10">
+        <!-- Unified Compact 11-Module Preview & Specification Grid -->
+        <section id="product-modules" class="bg-slate-50 py-8 sm:py-14 border-b border-slate-200">
+            <span id="product-demo" class="block scroll-mt-16" aria-hidden="true"></span>
+            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
+                <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-5 sm:mb-7">
                     <div>
-                        <div class="text-xs font-extrabold text-blue-600 mb-2">Complete 10-Module Platform Suite</div>
-                        <h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight" style="text-wrap: balance;">
-                            Dedicated Workspaces for Every Department
+                        <div class="text-[11px] font-extrabold text-blue-600 uppercase tracking-wide mb-1">Unified Platform Modules · Live Previews</div>
+                        <h2 class="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight" style="text-wrap: balance;">
+                            Every Institutional Workspace in One Clean View
                         </h2>
-                        <p class="text-xs sm:text-base text-slate-600 mt-2 max-w-2xl">
-                            Enable the exact combination of modules your institution requires—from administration and fee accounting to classroom evaluation and student learning.
+                        <p class="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
+                            Tap any screenshot or video preview to expand full screen. Filter by department below.
                         </p>
                     </div>
 
-                    <!-- Interactive Module Filter Controls -->
-                    <div class="flex items-center gap-1 p-1.5 bg-slate-100 rounded-xl overflow-x-auto max-w-full shrink-0" role="tablist" aria-label="Filter platform modules">
-                        <button type="button" data-module-filter="all" class="px-3.5 py-2 text-xs font-extrabold rounded-lg bg-white text-slate-900 shadow-2xs transition-colors cursor-pointer whitespace-nowrap shrink-0">
-                            All Modules (10)
+                    <!-- Compact Category Filter Controls -->
+                    <div class="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl overflow-x-auto max-w-full shrink-0" role="tablist" aria-label="Filter platform modules">
+                        <button type="button" data-module-filter="all" class="px-2.5 py-1.5 text-[11px] font-extrabold rounded-lg bg-white text-slate-900 shadow-2xs transition-colors cursor-pointer whitespace-nowrap">
+                            All (11)
                         </button>
-                        <button type="button" data-module-filter="admin-finance" class="px-3.5 py-2 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap shrink-0">
+                        <button type="button" data-module-filter="admin-finance" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap">
                             Admin &amp; Finance (3)
                         </button>
-                        <button type="button" data-module-filter="academics" class="px-3.5 py-2 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap shrink-0">
+                        <button type="button" data-module-filter="academics" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap">
                             Academics (5)
                         </button>
-                        <button type="button" data-module-filter="student-public" class="px-3.5 py-2 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap shrink-0">
-                            Student &amp; Learning (2)
+                        <button type="button" data-module-filter="student-public" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap">
+                            Student &amp; Public (3)
                         </button>
                     </div>
                 </div>
 
-                <!-- 10 Color-Accented Modules Grid (No /page paths) -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6" id="gateway-modules-grid">
-                    <!-- 01. Official Portal -->
-                    <article data-module-category="admin-finance" class="lg:col-span-2 bg-slate-50 border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-compass text-base" aria-hidden="true"></i>
+                <!-- Unified Vertical Card Grid (Mobile & Desktop) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-5" id="gateway-modules-grid">
+
+                    <!-- 01. Public Website -->
+                    <article data-module-category="student-public" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-globe text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-blue-600 font-bold tabular-nums">01 · Central Command Hub</div>
-                                    <h3 class="text-base sm:text-xl font-extrabold text-slate-900">
-                                        Official Staff &amp; Administrator Portal
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-blue-600 tabular-nums">01 · Dedicated Web Portal</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Public Institution Website</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                The unified entry workspace for administrators, teachers, and authorized staff. Displays live student demographics, active academic year controls, institutional directories, and a role-aware launcher that opens every assigned operational module.
+
+                            <div data-demo-showcase="public">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <span class="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center text-[10px] shrink-0"><i class="fas fa-graduation-cap" aria-hidden="true"></i></span>
+                                            <div class="min-w-0">
+                                                <div class="text-[11px] font-extrabold text-slate-900 truncate">Al-Huda Public Academy</div>
+                                                <div class="text-[9px] text-slate-500 font-mono truncate">Reg. #EDU-2048 · Live Portal</div>
+                                            </div>
+                                        </div>
+                                        <span class="text-[9px] font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">Public</span>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-1.5 my-1.5">
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center">
+                                            <div class="text-xs font-extrabold text-blue-600 tabular-nums">642</div>
+                                            <div class="text-[9px] text-slate-500">Students</div>
+                                        </div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center">
+                                            <div class="text-xs font-extrabold text-emerald-600 tabular-nums">34</div>
+                                            <div class="text-[9px] text-slate-500">Faculty</div>
+                                        </div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center">
+                                            <div class="text-xs font-extrabold text-indigo-600 tabular-nums">18</div>
+                                            <div class="text-[9px] text-slate-500">Classes</div>
+                                        </div>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5 flex items-center justify-between text-[10px]">
+                                        <span class="font-bold text-slate-800 truncate">Admissions Open 2026-27</span>
+                                        <span class="font-extrabold text-emerald-700 shrink-0 ml-2">Notice</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Custom-branded institution homepage with live student counters, public notices, gallery, faculty showcase, and unified portal login.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-200 text-xs text-slate-600 font-semibold flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <span>Role-Based Workspace</span>
-                            <span aria-hidden="true">·</span>
-                            <span>Live Demographic KPIs</span>
-                            <span aria-hidden="true">·</span>
-                            <span>Staff &amp; Directory Profiles</span>
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Custom Branding · Notices · Gallery · Faculty
                         </div>
                     </article>
 
-                    <!-- 02. Admin Panel -->
-                    <article data-module-category="admin-finance" class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-sliders text-base" aria-hidden="true"></i>
+                    <!-- 02. Master Admin Panel -->
+                    <article data-module-category="admin-finance" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-sliders text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-indigo-600 font-bold tabular-nums">02 · Institutional Governance</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Master Admin Panel
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-indigo-600 tabular-nums">02 · Institutional Governance</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Master Admin Panel</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Complete governance over student admissions, class promotions, staff credentials, granular module permissions, fee structures, public website notices/gallery, and academic year settings.
+
+                            <div data-demo-showcase="admin">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900">ADMIN CONSOLE · 2026-27</span>
+                                        <span class="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">Super Admin</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-1.5 my-1.5">
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                            <div class="text-[9px] text-slate-500">Staff Accounts</div>
+                                            <div class="text-xs font-extrabold text-indigo-600 tabular-nums">28 Active</div>
+                                        </div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                            <div class="text-[9px] text-slate-500">Fee Heads</div>
+                                            <div class="text-xs font-extrabold text-emerald-600 tabular-nums">6 Configured</div>
+                                        </div>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5 flex items-center justify-between text-[10px]">
+                                        <span class="font-bold text-slate-800 truncate">Class Promotion &amp; Role Matrix</span>
+                                        <span class="font-extrabold text-emerald-700 shrink-0 ml-2">Synced</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Control admissions, annual class promotions, staff permissions, academic years, fee structures, and public website CMS content.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold">
-                            Admissions · Staff Access · Fee Setup · Website CMS
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Admissions · Staff Roles · Promotions · CMS
                         </div>
                     </article>
 
-                    <!-- 03. Fee Collection & Finance -->
-                    <article data-module-category="admin-finance" class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-file-invoice-dollar text-base" aria-hidden="true"></i>
+                    <!-- 03. Official Staff Hub -->
+                    <article data-module-category="admin-finance" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-compass text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-emerald-600 font-bold tabular-nums">03 · Cashier &amp; Accounting Suite</div>
-                                    <h3 class="text-base sm:text-xl font-extrabold text-slate-900">
-                                        Fee Collection &amp; Financial Ledger
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-sky-700 tabular-nums">03 · Central Command Hub</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Official Staff &amp; Admin Hub</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Engineered for high-speed fee counters and transparent accounting. Supports multi-head fee billing, instant thermal and A4 receipt printing, WhatsApp receipt sharing, bulk Excel ledger import/export, income and expense day-books, and class-wise arrears tracking.
+
+                            <div data-demo-showcase="official">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900 truncate">OFFICIAL HUB · CLASS 9-A</span>
+                                        <span class="text-[9px] font-extrabold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0">6 Modules</span>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-1.5 my-1.5 text-[9px] font-extrabold text-slate-800">
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Fee Desk</div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Attendance</div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Results</div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Syllabus</div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Worksheets</div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Audits</div>
+                                    </div>
+                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                        <span>Role-Aware Launcher</span>
+                                        <span class="font-extrabold text-slate-800">SSO Protected</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Unified workspace for teachers, cashiers, and admins showing only their authorized modules, duty classes, and live student insights.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <span>Instant Digital Receipts</span>
-                            <span aria-hidden="true">·</span>
-                            <span>Master Ledger &amp; Day-Book</span>
-                            <span aria-hidden="true">·</span>
-                            <span>Bulk Excel Import/Export</span>
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Role Launcher · Live KPIs · Staff Profiles
                         </div>
                     </article>
 
-                    <!-- 04. Student & Parent Portal -->
-                    <article data-module-category="student-public" class="bg-slate-50 border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-user-graduate text-base" aria-hidden="true"></i>
+                    <!-- 04. Fee Collection & Financial Ledger -->
+                    <article data-module-category="admin-finance" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-file-invoice-dollar text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-amber-700 font-bold tabular-nums">04 · Family Self-Service</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Student &amp; Parent Portal
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-emerald-700 tabular-nums">04 · Cashier &amp; Accounting</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Fee Collection &amp; Ledger</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Provides students and parents 24/7 mobile access to live fee balances, itemized payment history, downloadable receipts, attendance summaries, exam report cards, and sibling account switching.
+
+                            <div data-demo-showcase="collection">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900 font-mono">RCP-2026-0842</span>
+                                        <span class="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Paid</span>
+                                    </div>
+                                    <div class="space-y-1 text-[10px] my-1">
+                                        <div class="flex justify-between"><span class="text-slate-600">Term 1 Tuition Fee</span><span class="font-extrabold text-slate-900 tabular-nums">₹4,500</span></div>
+                                        <div class="flex justify-between"><span class="text-slate-600">Exam &amp; Resource Fee</span><span class="font-extrabold text-slate-900 tabular-nums">₹1,000</span></div>
+                                    </div>
+                                    <div class="pt-1.5 border-t border-slate-200 flex items-center justify-between text-[10px]">
+                                        <span class="font-bold text-emerald-700">Balance: ₹0</span>
+                                        <span class="font-extrabold text-slate-900 tabular-nums">Total ₹5,500</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                High-speed multi-head fee billing with instant thermal/A4 receipts, WhatsApp confirmations, day-book ledgers, and Excel export.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-200 text-xs text-slate-600 font-semibold">
-                            Fee Statements · Digital Receipts · Sibling Switcher
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Instant Receipts · Day-Book · Arrears · Excel
                         </div>
                     </article>
 
-                    <!-- 05. Examination & Results -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-award text-base" aria-hidden="true"></i>
+                    <!-- 05. Student & Parent Portal -->
+                    <article data-module-category="student-public" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-user-graduate text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-violet-600 font-bold tabular-nums">05 · Assessment Engine</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Examination &amp; Result Portal
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-amber-700 tabular-nums">05 · Family Self-Service</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Student &amp; Parent Portal</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Manage term examinations, configure subject maximums and pass marks, record class-wise scores, compute automated grades and ranks, and publish student progress reports.
+
+                            <div data-demo-showcase="student">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <div class="text-[10px] font-extrabold text-slate-900 truncate">Fathima Amina · Class 8-B</div>
+                                        <span class="text-[9px] font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">2 Siblings</span>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-1.5 my-1.5 text-center">
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                            <div class="text-xs font-extrabold text-emerald-600 tabular-nums">96.4%</div>
+                                            <div class="text-[9px] text-slate-500">Attendance</div>
+                                        </div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                            <div class="text-xs font-extrabold text-slate-900 tabular-nums">₹0</div>
+                                            <div class="text-[9px] text-slate-500">Fee Due</div>
+                                        </div>
+                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                            <div class="text-xs font-extrabold text-indigo-600 tabular-nums">A+</div>
+                                            <div class="text-[9px] text-slate-500">Exam Grade</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-[10px] font-bold text-blue-600 flex items-center justify-between">
+                                        <span class="text-slate-600 truncate">Term 2 Receipt #0790</span>
+                                        <span class="shrink-0">Download PDF</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                24/7 parent mobile access to live fee balances, downloadable receipts, attendance summaries, exam report cards, and sibling switching.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold">
-                            Subject Mark Entry · Rank Analytics · Report Cards
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Fee Statements · Receipts · Sibling Switcher
                         </div>
                     </article>
 
-                    <!-- 06. Smart Attendance -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-calendar-check text-base" aria-hidden="true"></i>
+                    <!-- 06. Examination & Result Portal -->
+                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-award text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-teal-600 font-bold tabular-nums">06 · Daily Register</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Attendance Management
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-violet-700 tabular-nums">06 · Assessment Engine</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Exam &amp; Progress Cards</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Fast mobile-friendly daily attendance marking for class teachers, working-day calendars, absentee follow-up lists, and monthly percentage summaries per student.
+
+                            <div data-demo-showcase="result">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900">ANNUAL REPORT · 10-A</span>
+                                        <span class="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded tabular-nums">Rank #2 · 92.8%</span>
+                                    </div>
+                                    <div class="space-y-1 text-[10px] my-1">
+                                        <div class="flex justify-between"><span class="text-slate-700">Mathematics</span><span class="font-extrabold text-slate-900 tabular-nums">96/100 · <span class="text-emerald-600">A+</span></span></div>
+                                        <div class="flex justify-between"><span class="text-slate-700">Science</span><span class="font-extrabold text-slate-900 tabular-nums">94/100 · <span class="text-emerald-600">A+</span></span></div>
+                                        <div class="flex justify-between"><span class="text-slate-700">English</span><span class="font-extrabold text-slate-900 tabular-nums">91/100 · <span class="text-emerald-600">A+</span></span></div>
+                                    </div>
+                                    <div class="pt-1.5 border-t border-slate-200 flex items-center justify-between text-[10px]">
+                                        <span class="font-extrabold text-emerald-700">Distinction</span>
+                                        <span class="font-extrabold text-slate-900 tabular-nums">464 / 500</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Configure term exams, enter subject-wise marks, auto-compute ranks and grades, and publish printable progress cards instantly.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold">
-                            One-Tap Roll Call · Monthly Analytics · Duty Access
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Mark Entry · Auto Ranks · Printable Cards
                         </div>
                     </article>
 
-                    <!-- 07. Academic Plan -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-cyan-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-book-open-reader text-base" aria-hidden="true"></i>
+                    <!-- 07. Daily Attendance -->
+                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-calendar-check text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-cyan-700 font-bold tabular-nums">07 · Curriculum &amp; Syllabus</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Academic Plan &amp; Syllabus
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-teal-700 tabular-nums">07 · Daily Register</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Smart Attendance</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Structure annual and term-wise lesson plans, assign subjects to faculty, monitor chapter completion percentages, and keep instruction aligned across divisions.
+
+                            <div data-demo-showcase="attendance">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900">CLASS 10-A ROLL CALL</span>
+                                        <span class="text-[9px] font-extrabold text-emerald-700 tabular-nums">38/40 (95%)</span>
+                                    </div>
+                                    <div class="space-y-1 text-[10px] my-1">
+                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">#01 Abinav Krishna</span><span class="font-extrabold text-emerald-700">Present</span></div>
+                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">#03 Salmanul Faris</span><span class="font-extrabold text-rose-700">Absent</span></div>
+                                    </div>
+                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                        <span>Duty Teacher Verified</span>
+                                        <span class="font-bold text-slate-800">Live Sync</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                One-tap mobile roll call for class teachers with holiday calendars, absentee follow-up lists, and monthly attendance analytics.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold">
-                            Syllabus Milestones · Lesson Tracking · Faculty Plans
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            One-Tap Roll Call · Monthly Reports · Duty Lock
                         </div>
                     </article>
 
-                    <!-- 08. Student Activity -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-medal text-base" aria-hidden="true"></i>
+                    <!-- 08. Academic Plan & Syllabus -->
+                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-book-open-reader text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-rose-600 font-bold tabular-nums">08 · Co-Curricular Records</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Student Activity &amp; Merit Log
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-cyan-700 tabular-nums">08 · Curriculum &amp; Timetable</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Academic Plan &amp; Syllabus</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Track student participation in arts, sports, clubs, and academic competitions alongside behavioral evaluations and merit point leaderboards.
+
+                            <div data-demo-showcase="academicPlan">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900">SYLLABUS · CLASS 9-A</span>
+                                        <span class="text-[9px] font-extrabold text-teal-700 tabular-nums">82% On Track</span>
+                                    </div>
+                                    <div class="space-y-2 my-1">
+                                        <div>
+                                            <div class="flex justify-between text-[10px] font-bold text-slate-700 mb-0.5"><span>Mathematics Units 1–8</span><span class="tabular-nums text-teal-700">88%</span></div>
+                                            <div class="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-teal-600 rounded-full" style="width: 88%;"></div></div>
+                                        </div>
+                                        <div>
+                                            <div class="flex justify-between text-[10px] font-bold text-slate-700 mb-0.5"><span>General Science</span><span class="tabular-nums text-blue-700">80%</span></div>
+                                            <div class="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-blue-600 rounded-full" style="width: 80%;"></div></div>
+                                        </div>
+                                    </div>
+                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                        <span>Weekly Master Timetable</span>
+                                        <span class="font-bold text-slate-800">6 Periods</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Structure term teaching plans, track chapter completion percentages, log daily classes, and publish conflict-free timetables.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold">
-                            Merit Points · Competition Logs · Holistic Profiles
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Syllabus Milestones · Teaching Logs · Timetables
                         </div>
                     </article>
 
-                    <!-- 09. Classroom Evaluation -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-clipboard-check text-base" aria-hidden="true"></i>
+                    <!-- 09. Worksheets & Registers -->
+                    <article data-module-category="student-public" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-orange-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-file-lines text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-sky-700 font-bold tabular-nums">09 · Quality Assurance</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Classroom Evaluation
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-orange-700 tabular-nums">09 · Print &amp; Study Hub</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Worksheets &amp; Registers</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Conduct structured classroom inspections, grade instructional delivery and discipline rubrics, and generate comparative quality reports across classes.
+
+                            <div data-demo-showcase="worksheet">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900">CUSTOM REGISTER · 8-A</span>
+                                        <span class="text-[9px] font-extrabold text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded">PDF / Excel</span>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 text-[10px] my-1">
+                                        <div class="px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1082 · Anas Muhammed</span><span class="font-extrabold text-emerald-700">Issued</span></div>
+                                        <div class="px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1084 · Zayan Ahmed</span><span class="font-extrabold text-amber-700">Pending</span></div>
+                                    </div>
+                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                        <span>Auto-Synced Roster</span>
+                                        <span class="font-bold text-slate-800">A4 Print Ready</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Generate custom multi-column student registers, printable checklists, ID card batches, and class-wise study sheets in PDF or Excel.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold">
-                            Observation Rubrics · Class Audits · Quality Reports
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Custom Columns · A4 PDF · Excel · ID Cards
                         </div>
                     </article>
 
-                    <!-- 10. Digital Worksheet -->
-                    <article data-module-category="student-public" class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-11 h-11 rounded-xl bg-orange-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-file-lines text-base" aria-hidden="true"></i>
+                    <!-- 10. Student Activity & Merit Log -->
+                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-medal text-sm" aria-hidden="true"></i>
                                 </div>
-                                <div>
-                                    <div class="text-xs text-orange-600 font-bold tabular-nums">10 · Learning Materials</div>
-                                    <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                                        Digital Worksheets &amp; Study Hub
-                                    </h3>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-rose-700 tabular-nums">10 · Co-Curricular Records</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Student Activity &amp; Merit</h3>
                                 </div>
                             </div>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                Create, organize, and distribute class-wise worksheets, practice questions, and study resources directly to students and faculty.
+
+                            <div data-demo-showcase="studentActivity">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900">MERIT LEADERBOARD · 7-A</span>
+                                        <span class="text-[9px] font-extrabold text-rose-700">12 Badges</span>
+                                    </div>
+                                    <div class="space-y-1 text-[10px] my-1">
+                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1. Nida Fathima</span><span class="font-extrabold text-amber-700 tabular-nums">485 pts</span></div>
+                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">2. Rayan Sidheeq</span><span class="font-extrabold text-indigo-700 tabular-nums">440 pts</span></div>
+                                    </div>
+                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                        <span>Habits &amp; Competitions</span>
+                                        <span class="font-bold text-slate-800">Parent Visible</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Record daily habits, Ibadah &amp; task completions, arts or sports achievements, bonus merit points, and digital student badges.
                             </p>
                         </div>
-                        <div class="pt-3.5 border-t border-slate-100 text-xs text-slate-600 font-semibold">
-                            Class Assignments · Study Resources · Digital Access
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Merit Points · Badges · Competition Logs
                         </div>
                     </article>
+
+                    <!-- 11. Classroom Evaluation -->
+                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
+                        <div class="space-y-2.5">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-9 h-9 rounded-xl bg-slate-800 text-white flex items-center justify-center shrink-0">
+                                    <i class="fas fa-clipboard-check text-sm" aria-hidden="true"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] font-bold text-slate-600 tabular-nums">11 · Quality Assurance</div>
+                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Classroom Evaluation</h3>
+                                </div>
+                            </div>
+
+                            <div data-demo-showcase="classroomEvaluation">
+                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                        <span class="text-[10px] font-extrabold text-slate-900">QUALITY AUDIT · 9-B</span>
+                                        <span class="text-[9px] font-extrabold text-emerald-700 tabular-nums">92 / 100</span>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-1.5 text-[10px] my-1">
+                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="text-slate-600">Discipline</span><span class="font-extrabold text-emerald-700 tabular-nums">24/25</span></div>
+                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="text-slate-600">Homework</span><span class="font-extrabold text-blue-700 tabular-nums">22/25</span></div>
+                                    </div>
+                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                        <span>Impositions: 1 Pending</span>
+                                        <span class="font-bold text-slate-800">Grade A</span>
+                                    </div>
+                                </div>
+                                <div data-showcase-media class="hidden"></div>
+                            </div>
+
+                            <p class="text-xs text-slate-600 leading-relaxed">
+                                Run structured classroom audits with weighted rubrics, discipline &amp; homework logs, follow-up impositions, and term quality reports.
+                            </p>
+                        </div>
+                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
+                            Scoring Rubrics · Audits · Behaviour Logs
+                        </div>
+                    </article>
+
                 </div>
             </div>
         </section>
 
-        <!-- Architecture, Security & Governance Section -->
-        <section id="product-architecture" class="bg-slate-50 py-12 sm:py-20 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="max-w-3xl mb-8 sm:mb-10">
-                    <div class="text-xs font-extrabold text-blue-600 mb-2">Enterprise Architecture &amp; Security</div>
-                    <h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight" style="text-wrap: balance;">
-                        Engineered for Speed, Multi-Role Security &amp; Institutional Scale
+        <!-- Compact Architecture & Security Section -->
+        <section id="product-architecture" class="bg-white py-8 sm:py-12 border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
+                <div class="mb-5">
+                    <div class="text-[11px] font-extrabold text-blue-600 uppercase tracking-wide mb-1">Enterprise Architecture</div>
+                    <h2 class="text-lg sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                        Fast, Isolated &amp; Role-Protected by Design
                     </h2>
-                    <p class="text-xs sm:text-base text-slate-600 mt-2">
-                        Every institution operates within an isolated cloud environment backed by strict server-side security rules and role-verified sessions.
-                    </p>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6">
-                    <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
-                        <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3.5">
-                            <i class="fas fa-globe text-base" aria-hidden="true"></i>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5">
+                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                        <div class="flex items-center gap-2.5 mb-2">
+                            <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                                <i class="fas fa-globe text-xs" aria-hidden="true"></i>
+                            </div>
+                            <h3 class="text-sm font-extrabold text-slate-900">Dedicated Web Portals</h3>
                         </div>
-                        <div class="text-xs font-bold text-slate-500 mb-1 tabular-nums">01 · Dedicated Web Presence</div>
-                        <h3 class="text-base font-extrabold text-slate-900 mb-2">Branded Institution Web Portals</h3>
-                        <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                            Each registered institution receives its own dedicated web address, public homepage, custom logo, faculty showcase, notice board, photo gallery, and live student counter.
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Isolated web address, logo, faculty showcase, notice board, and live counters for each registered institution.
                         </p>
                     </div>
-                    <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
-                        <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3.5">
-                            <i class="fas fa-user-shield text-base" aria-hidden="true"></i>
+                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                        <div class="flex items-center gap-2.5 mb-2">
+                            <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                                <i class="fas fa-user-shield text-xs" aria-hidden="true"></i>
+                            </div>
+                            <h3 class="text-sm font-extrabold text-slate-900">Granular Role Security</h3>
                         </div>
-                        <div class="text-xs font-bold text-slate-500 mb-1 tabular-nums">02 · Granular Access Control</div>
-                        <h3 class="text-base font-extrabold text-slate-900 mb-2">Strict Role &amp; Module Permissions</h3>
-                        <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                            Assign exact module permissions and class-teacher duties per staff member. Financial ledgers, exam marks, and administrative settings remain strictly protected.
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Server-enforced security rules, OTP verification, and exact module permissions per staff member and class teacher.
                         </p>
                     </div>
-                    <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
-                        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3.5">
-                            <i class="fas fa-print text-base" aria-hidden="true"></i>
+                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                        <div class="flex items-center gap-2.5 mb-2">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                                <i class="fas fa-print text-xs" aria-hidden="true"></i>
+                            </div>
+                            <h3 class="text-sm font-extrabold text-slate-900">Instant PDF &amp; Excel</h3>
                         </div>
-                        <div class="text-xs font-bold text-slate-500 mb-1 tabular-nums">03 · Instant Reports &amp; Backups</div>
-                        <h3 class="text-base font-extrabold text-slate-900 mb-2">Print-Ready PDF &amp; Excel Workflows</h3>
-                        <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                            Generate thermal or A4 fee receipts, class-wise collection statements, attendance sheets, and exam mark lists with full Excel/CSV export support.
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            Thermal and A4 receipts, class collection statements, attendance registers, and exam marklists ready to print or export.
                         </p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Dedicated Multi-Device App Download Section -->
-        <section id="product-download" class="bg-white py-12 sm:py-20 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-                    <!-- Left Column: Company App Identity & Primary Download Controls -->
-                    <div class="lg:col-span-5 space-y-5">
-                        <div class="flex items-center gap-3.5">
-                            <div class="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200 p-2 flex items-center justify-center shadow-xs shrink-0">
-                                <img src="/assets/images/pwa-192x192.png" alt="Institution Manage App Icon" class="w-full h-full object-contain rounded-xl" referrerpolicy="no-referrer">
+        <!-- Compact Single-Row Multi-Device App Download Section -->
+        <section id="product-download" class="bg-slate-50 py-8 sm:py-12 border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
+                <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 space-y-4 shadow-2xs">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 p-1.5 flex items-center justify-center shrink-0">
+                                <img src="/assets/images/pwa-192x192.png" alt="Institution Manage App Icon" class="w-full h-full object-contain rounded-lg" referrerpolicy="no-referrer">
                             </div>
-                            <div>
-                                <div class="text-xs font-extrabold text-blue-600">Official Progressive Web App</div>
-                                <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-extrabold text-blue-600 uppercase tracking-wide">Official Web App (PWA)</div>
+                                <h2 class="text-base sm:text-xl font-extrabold text-slate-900 leading-tight">
                                     Download App for Any Device
                                 </h2>
+                                <p class="text-[11px] sm:text-xs text-slate-600 mt-0.5">
+                                    Instant home screen &amp; desktop launch — no App Store download required.
+                                </p>
                             </div>
                         </div>
 
-                        <p class="text-xs sm:text-base text-slate-600 leading-relaxed">
-                            Install Institution Manage directly to your home screen or desktop for instant launch, full-screen performance, and automatic cloud updates — with zero App Store download required.
-                        </p>
-
-                        <div class="text-xs font-semibold text-slate-700 flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5">
-                            <i class="fas fa-mobile-screen-button text-blue-600 mt-0.5 shrink-0" aria-hidden="true"></i>
-                            <span id="gateway-install-status-text">Supported on Android, iPhone, iPad, Windows, macOS &amp; Linux.</span>
-                        </div>
-
-                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
-                            <button type="button" id="btn-gateway-section-install" class="px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-extrabold shadow-sm transition-all cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                                <i class="fas fa-download text-xs" aria-hidden="true"></i>
-                                <span data-install-btn-label>Install App Now</span>
+                        <div class="flex flex-wrap items-center gap-2 shrink-0">
+                            <button type="button" id="btn-gateway-section-install" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                                <i class="fas fa-download text-[11px]" aria-hidden="true"></i>
+                                <span data-install-btn-label>Install App</span>
                             </button>
-                            <button type="button" id="btn-gateway-install-guide" class="px-5 py-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-extrabold transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                                <i class="fas fa-list-check text-blue-600 text-xs" aria-hidden="true"></i>
-                                <span>View Install Steps</span>
+                            <button type="button" id="btn-gateway-install-guide" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                                <i class="fas fa-list-check text-[11px] text-blue-600" aria-hidden="true"></i>
+                                <span>Steps</span>
                             </button>
                         </div>
-
-                        <p class="text-xs text-slate-500 leading-relaxed">
-                            Institutions, staff, and students can also install directly from their institution public page, Official Portal, or Student Portal with the same official app icon.
-                        </p>
                     </div>
 
-                    <!-- Right Column: 4-Platform Compatibility Grid -->
-                    <div class="lg:col-span-7">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <button type="button" data-install-guide-tab="android" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
-                                <div class="flex items-center justify-between gap-3 mb-3">
-                                    <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200/70 flex items-center justify-center shrink-0">
-                                        <i class="fa-brands fa-android text-xl" aria-hidden="true"></i>
-                                    </div>
-                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
-                                        <span>Steps</span>
-                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
-                                    </span>
-                                </div>
-                                <h3 class="text-base font-extrabold text-slate-900 mb-1">Android Phones &amp; Tablets</h3>
-                                <div class="text-xs font-semibold text-emerald-700 mb-1.5">Chrome · Edge · Samsung Internet</div>
-                                <p class="text-xs text-slate-600 leading-relaxed">
-                                    One-tap native installation directly to your Android home screen and app drawer.
-                                </p>
-                            </button>
+                    <div class="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2">
+                        <i class="fas fa-mobile-screen-button text-blue-600 shrink-0" aria-hidden="true"></i>
+                        <span id="gateway-install-status-text">Supported on Android, iPhone, iPad, Windows, macOS &amp; Linux.</span>
+                    </div>
 
-                            <button type="button" data-install-guide-tab="ios" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
-                                <div class="flex items-center justify-between gap-3 mb-3">
-                                    <div class="w-11 h-11 rounded-xl bg-slate-100 text-slate-900 border border-slate-200 flex items-center justify-center shrink-0">
-                                        <i class="fa-brands fa-apple text-xl" aria-hidden="true"></i>
-                                    </div>
-                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
-                                        <span>Steps</span>
-                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
-                                    </span>
-                                </div>
-                                <h3 class="text-base font-extrabold text-slate-900 mb-1">iPhone &amp; iPad (iOS)</h3>
-                                <div class="text-xs font-semibold text-slate-700 mb-1.5">Safari · Add to Home Screen</div>
-                                <p class="text-xs text-slate-600 leading-relaxed">
-                                    Tap Share in Safari and choose Add to Home Screen for full-screen standalone access.
-                                </p>
-                            </button>
+                    <!-- All 4 Devices in One Single Horizontal Row -->
+                    <div class="grid grid-cols-4 gap-1.5 sm:gap-3">
+                        <button type="button" data-install-guide-tab="android" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
+                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200/70 flex items-center justify-center">
+                                <i class="fa-brands fa-android text-base sm:text-lg" aria-hidden="true"></i>
+                            </div>
+                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">Android</span>
+                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">Chrome · Edge</span>
+                        </button>
 
-                            <button type="button" data-install-guide-tab="desktop" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
-                                <div class="flex items-center justify-between gap-3 mb-3">
-                                    <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 border border-blue-200/70 flex items-center justify-center shrink-0">
-                                        <i class="fa-brands fa-windows text-xl" aria-hidden="true"></i>
-                                    </div>
-                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
-                                        <span>Steps</span>
-                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
-                                    </span>
-                                </div>
-                                <h3 class="text-base font-extrabold text-slate-900 mb-1">Windows PC</h3>
-                                <div class="text-xs font-semibold text-blue-700 mb-1.5">Chrome · Microsoft Edge</div>
-                                <p class="text-xs text-slate-600 leading-relaxed">
-                                    Install as a dedicated desktop application with Start Menu and Taskbar pin support.
-                                </p>
-                            </button>
+                        <button type="button" data-install-guide-tab="ios" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
+                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-100 text-slate-900 border border-slate-200 flex items-center justify-center">
+                                <i class="fa-brands fa-apple text-base sm:text-lg" aria-hidden="true"></i>
+                            </div>
+                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">iPhone</span>
+                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">Safari · iPadOS</span>
+                        </button>
 
-                            <button type="button" data-install-guide-tab="desktop" class="text-left bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-2xl p-5 transition-all cursor-pointer group">
-                                <div class="flex items-center justify-between gap-3 mb-3">
-                                    <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200/70 flex items-center justify-center shrink-0">
-                                        <i class="fas fa-laptop text-lg" aria-hidden="true"></i>
-                                    </div>
-                                    <span class="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
-                                        <span>Steps</span>
-                                        <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
-                                    </span>
-                                </div>
-                                <h3 class="text-base font-extrabold text-slate-900 mb-1">macOS &amp; Linux</h3>
-                                <div class="text-xs font-semibold text-indigo-700 mb-1.5">Chrome · Edge · Brave · Safari</div>
-                                <p class="text-xs text-slate-600 leading-relaxed">
-                                    Runs cleanly in its own native window and launches directly from your Dock or App launcher.
-                                </p>
-                            </button>
-                        </div>
+                        <button type="button" data-install-guide-tab="desktop" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
+                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-200/70 flex items-center justify-center">
+                                <i class="fa-brands fa-windows text-base sm:text-lg" aria-hidden="true"></i>
+                            </div>
+                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">Windows</span>
+                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">Chrome · Edge</span>
+                        </button>
+
+                        <button type="button" data-install-guide-tab="desktop" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
+                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200/70 flex items-center justify-center">
+                                <i class="fas fa-laptop text-sm sm:text-base" aria-hidden="true"></i>
+                            </div>
+                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">Mac / PC</span>
+                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">macOS · Linux</span>
+                        </button>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Bottom Action Section -->
-        <section class="bg-white py-10 sm:py-16 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <!-- Compact Bottom Action Strip -->
+        <section class="bg-white py-7 sm:py-10 border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
+                <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5">
                     <div>
-                        <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 mb-1">
-                            Ready to Open Your Workspace?
-                        </h2>
-                        <p class="text-xs sm:text-sm text-slate-600">
-                            Enter your institution code to open your portal or sign in with your account credentials.
-                        </p>
+                        <h2 class="text-base sm:text-lg font-extrabold text-slate-900">Ready to Open Your Workspace?</h2>
+                        <p class="text-xs text-slate-600 mt-0.5">Open your institution portal directly or sign in with your account.</p>
                     </div>
-                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto shrink-0">
-                        <button type="button" id="btn-bottom-focus-slug" class="px-5 py-3 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 text-xs sm:text-sm font-extrabold transition-colors cursor-pointer whitespace-nowrap shrink-0 text-center">
-                            Open Institution Portal
+                    <div class="flex flex-wrap items-center gap-2 shrink-0">
+                        <button type="button" id="btn-bottom-focus-slug" class="px-3.5 py-2 rounded-lg bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <i class="fas fa-building-columns text-[11px] text-slate-600" aria-hidden="true"></i>
+                            <span>Open Portal</span>
                         </button>
-                        <button type="button" onclick="window.openLogin()" class="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-extrabold shadow-xs transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap shrink-0">
-                            <i class="fas fa-arrow-right-to-bracket text-xs" aria-hidden="true"></i>
-                            <span>Login to Account</span>
+                        <button type="button" onclick="window.openLogin()" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-2xs transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <i class="fas fa-arrow-right-to-bracket text-[11px]" aria-hidden="true"></i>
+                            <span>Login</span>
                         </button>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Clean Product Footer -->
-        <footer class="bg-white py-8">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 text-center sm:text-left">
-                <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 font-bold text-slate-800">
-                    <img src="/assets/images/logo.png" alt="Logo" class="w-5 h-5 object-contain rounded" referrerpolicy="no-referrer">
+        <!-- Compact Product Footer -->
+        <footer class="bg-white py-5">
+            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-[11px] text-slate-500 text-center sm:text-left">
+                <div class="flex items-center gap-2 font-bold text-slate-800">
+                    <img src="/assets/images/logo.png" alt="Logo" class="w-4 h-4 object-contain rounded" referrerpolicy="no-referrer">
                     <span>Institution Manage</span>
-                    <span aria-hidden="true">·</span>
-                    <span class="font-normal text-slate-500">Academic &amp; Financial Management Platform</span>
                 </div>
-                <div class="flex flex-wrap items-center justify-center gap-4">
+                <div class="flex flex-wrap items-center justify-center gap-3">
                     <a href="#product-overview" class="hover:text-slate-900 font-semibold">Overview</a>
-                    <span aria-hidden="true">·</span>
-                    <a href="#product-demo" class="hover:text-slate-900 font-semibold">Live Preview</a>
-                    <span aria-hidden="true">·</span>
                     <a href="#product-modules" class="hover:text-slate-900 font-semibold">Modules</a>
-                    <span aria-hidden="true">·</span>
-                    <a href="#product-download" class="hover:text-slate-900 font-semibold">Download App</a>
-                    <span aria-hidden="true">·</span>
-                    <span>© Institution Manage. All Rights Reserved.</span>
+                    <a href="#product-download" class="hover:text-slate-900 font-semibold">App</a>
+                    <span>© Institution Manage</span>
                 </div>
             </div>
         </footer>
@@ -2081,8 +1372,9 @@
                 </button>
 
                 <img id="showcase-lightbox-img" src="" alt="Full-size platform screenshot" class="max-w-full max-h-[72vh] object-contain rounded-lg shadow-lg" referrerpolicy="no-referrer">
+                <video id="showcase-lightbox-video" controls playsinline class="hidden max-w-full max-h-[72vh] rounded-lg shadow-lg bg-black"></video>
 
-                <button type="button" id="showcase-lightbox-next" class="hidden absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white/95 hover:bg-white text-slate-900 shadow-lg flex items-center justify-center cursor-pointer transition" aria-label="Next screenshot">
+                <button type="button" id="showcase-lightbox-next" class="hidden absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-10 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white/95 hover:bg-white text-slate-900 shadow-lg flex items-center justify-center cursor-pointer transition" aria-label="Next media item">
                     <i class="fas fa-chevron-right text-sm" aria-hidden="true"></i>
                 </button>
             </div>

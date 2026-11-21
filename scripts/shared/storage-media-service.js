@@ -299,6 +299,390 @@ export const uploadImageToStorage = async (source, pathPrefix, options = {}) => 
   };
 };
 
+export const SHOWCASE_VIDEO_DIRECT_LIMIT_BYTES = 15 * 1024 * 1024;
+export const SHOWCASE_VIDEO_STORAGE_MAX_BYTES = 20 * 1024 * 1024;
+export const SHOWCASE_VIDEO_INPUT_MAX_BYTES = 60 * 1024 * 1024;
+
+const ALLOWED_VIDEO_MIME_REGEX = /^video\/(mp4|webm|quicktime)$/i;
+
+const getVideoExtensionFromMime = (mime = '', fallbackName = '') => {
+  const lowerMime = String(mime || '').toLowerCase();
+  if (lowerMime.includes('webm')) return 'webm';
+  if (lowerMime.includes('quicktime')) return 'mov';
+  if (lowerMime.includes('mp4')) return 'mp4';
+  const extMatch = String(fallbackName || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (extMatch && ['mp4', 'webm', 'mov'].includes(extMatch[1])) return extMatch[1];
+  return 'mp4';
+};
+
+/**
+ * Extracts a crisp poster thumbnail (WebP/JPEG <= 120 KB) from a local video File/Blob.
+ * @param {File|Blob} videoFile
+ * @returns {Promise<{ blob: Blob, contentType: string, extension: string, width: number, height: number }>}
+ */
+export const extractVideoPosterBlob = async (videoFile) => {
+  if (!(videoFile instanceof Blob)) {
+    throw new Error('Invalid video file for thumbnail extraction.');
+  }
+
+  const objectUrl = URL.createObjectURL(videoFile);
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.src = objectUrl;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => reject(new Error('Timed out while reading video metadata.')), 15000);
+      video.onloadeddata = () => {
+        clearTimeout(timeoutId);
+        resolve();
+      };
+      video.onerror = () => {
+        clearTimeout(timeoutId);
+        reject(new Error('Unable to decode video file in this browser.'));
+      };
+    });
+
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    const seekTarget = duration > 0.6 ? Math.min(0.5, duration * 0.15) : 0;
+    if (seekTarget > 0) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 2500);
+        video.onseeked = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        try {
+          video.currentTime = seekTarget;
+        } catch (_) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    }
+
+    const srcW = video.videoWidth || 1280;
+    const srcH = video.videoHeight || 720;
+    const maxDim = 960;
+    const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(2, Math.round(srcW * scale));
+    canvas.height = Math.max(2, Math.round(srcH * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas unavailable for video poster generation.');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    return await compressImageToBlob(canvas, {
+      maxKb: 120,
+      maxDim: 960,
+      preserveAlpha: false
+    });
+  } finally {
+    try {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    } catch (_) {}
+    try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+  }
+};
+
+/**
+ * Compresses large videos (> 15 MB, up to 60 MB) in-browser to 720p (~2.5 Mbps)
+ * using Canvas + MediaRecorder while preserving sharpness.
+ * @param {File|Blob} videoFile
+ * @param {(percent: number) => void} [onProgress]
+ * @returns {Promise<{ blob: Blob, contentType: string, extension: string }>}
+ */
+export const compressVideoTo720pBlob = async (videoFile, onProgress = null) => {
+  if (typeof MediaRecorder === 'undefined') {
+    throw new Error('This browser does not support automatic video compression. Please upload an MP4 or WebM video under 15 MB.');
+  }
+
+  const candidateTypes = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+    'video/mp4'
+  ];
+  const chosenMime = candidateTypes.find((t) => {
+    try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; }
+  });
+  if (!chosenMime) {
+    throw new Error('No supported video encoder found in this browser. Please upload an MP4/WebM clip under 15 MB.');
+  }
+
+  const objectUrl = URL.createObjectURL(videoFile);
+  const video = document.createElement('video');
+  video.playsInline = true;
+  video.preload = 'auto';
+  video.muted = true;
+  video.src = objectUrl;
+
+  let rafId = 0;
+  let audioCtx = null;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => reject(new Error('Timed out loading video for compression.')), 20000);
+      video.onloadedmetadata = () => {
+        clearTimeout(timeoutId);
+        resolve();
+      };
+      video.onerror = () => {
+        clearTimeout(timeoutId);
+        reject(new Error('Unable to read video file for compression.'));
+      };
+    });
+
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    if (duration > 180) {
+      throw new Error('Video is longer than 3 minutes. Please trim it or upload an MP4/WebM file under 15 MB.');
+    }
+
+    const srcW = video.videoWidth || 1280;
+    const srcH = video.videoHeight || 720;
+    const maxHeight = 720;
+    const maxWidth = 1280;
+    const scale = Math.min(1, maxWidth / srcW, maxHeight / srcH);
+    // Keep even dimensions for video codec compatibility
+    const targetW = Math.max(2, Math.floor((srcW * scale) / 2) * 2);
+    const targetH = Math.max(2, Math.floor((srcH * scale) / 2) * 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas unavailable for video compression.');
+
+    const canvasStream = canvas.captureStream(30);
+    const tracks = [...canvasStream.getVideoTracks()];
+
+    // Preserve audio track when browser supports captureStream on video element
+    try {
+      const rawCapture = typeof video.captureStream === 'function'
+        ? video.captureStream()
+        : (typeof video.mozCaptureStream === 'function' ? video.mozCaptureStream() : null);
+      if (rawCapture) {
+        rawCapture.getAudioTracks().forEach((t) => tracks.push(t));
+      }
+    } catch (_) {}
+
+    const combinedStream = new MediaStream(tracks);
+    // Target crisp ~2.4 Mbps for 720p, or scale down dynamically if duration is longer so output fits under 19 MB
+    const budgetBps = duration > 0
+      ? Math.floor(((18 * 1024 * 1024 * 8) / duration) * 0.85)
+      : 2400000;
+    const videoBitsPerSecond = Math.max(700000, Math.min(2500000, budgetBps));
+
+    const chunks = [];
+    const recorder = new MediaRecorder(combinedStream, {
+      mimeType: chosenMime,
+      videoBitsPerSecond
+    });
+
+    const recordedPromise = new Promise((resolve, reject) => {
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+      };
+      recorder.onerror = (ev) => {
+        reject(ev?.error || new Error('Video compression failed.'));
+      };
+      recorder.onstop = () => {
+        const baseMime = chosenMime.split(';')[0] || 'video/webm';
+        resolve(new Blob(chunks, { type: baseMime }));
+      };
+    });
+
+    const drawFrame = () => {
+      if (video.paused || video.ended) return;
+      ctx.drawImage(video, 0, 0, targetW, targetH);
+      if (typeof onProgress === 'function' && duration > 0) {
+        const pct = Math.min(99, Math.round((video.currentTime / duration) * 100));
+        try { onProgress(pct); } catch (_) {}
+      }
+      rafId = requestAnimationFrame(drawFrame);
+    };
+
+    recorder.start(250);
+    await video.play();
+    drawFrame();
+
+    await new Promise((resolve, reject) => {
+      const safetyMs = Math.max(30000, Math.ceil((duration || 60) * 1400) + 15000);
+      const timer = setTimeout(() => {
+        try { video.pause(); } catch (_) {}
+        reject(new Error('Video compression timed out. Please upload a clip under 15 MB.'));
+      }, safetyMs);
+      video.onended = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      video.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error('Playback error during video compression.'));
+      };
+    });
+
+    if (rafId) cancelAnimationFrame(rafId);
+    if (recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    const compressedBlob = await recordedPromise;
+    if (typeof onProgress === 'function') {
+      try { onProgress(100); } catch (_) {}
+    }
+
+    if (!compressedBlob || compressedBlob.size === 0) {
+      throw new Error('Video compression produced an empty file. Please upload a clip under 15 MB.');
+    }
+    if (compressedBlob.size > SHOWCASE_VIDEO_STORAGE_MAX_BYTES) {
+      throw new Error('Compressed video still exceeds the 20 MB storage limit. Please trim the video or export in 720p MP4.');
+    }
+
+    const baseType = compressedBlob.type || (chosenMime.startsWith('video/mp4') ? 'video/mp4' : 'video/webm');
+    return {
+      blob: compressedBlob,
+      contentType: baseType,
+      extension: baseType.includes('mp4') ? 'mp4' : 'webm'
+    };
+  } finally {
+    if (rafId) cancelAnimationFrame(rafId);
+    if (audioCtx) {
+      try { await audioCtx.close(); } catch (_) {}
+    }
+    try {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    } catch (_) {}
+    try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+  }
+};
+
+/**
+ * Uploads a Platform Showcase video to Firebase Storage with hybrid quality preservation:
+ * - Always extracts & uploads a crisp WebP poster thumbnail (<= 120 KB) for fast page loads.
+ * - Videos <= 15 MB upload directly at 100% original HD quality.
+ * - Videos > 15 MB (up to 60 MB) auto-compress in-browser to 720p (~2.5 Mbps) before upload.
+ *
+ * @param {File} file
+ * @param {string} pathPrefix e.g. `company/showcases/${pageKey}`
+ * @param {{
+ *   fileNamePrefix?: string,
+ *   onStageProgress?: (stage: 'poster' | 'compressing' | 'uploading', percent: number) => void
+ * }} [options]
+ */
+export const uploadShowcaseVideoToStorage = async (file, pathPrefix, options = {}) => {
+  const cleanPrefix = sanitizePathSegment(pathPrefix);
+  if (!cleanPrefix) {
+    throw new Error('Invalid Firebase Storage path prefix.');
+  }
+  if (!(file instanceof Blob)) {
+    throw new Error('No video file selected.');
+  }
+  const rawMime = String(file.type || '').toLowerCase().trim();
+  const isAllowedMime = ALLOWED_VIDEO_MIME_REGEX.test(rawMime)
+    || /\.(mp4|webm|mov)$/i.test(String(file.name || ''));
+  if (!isAllowedMime) {
+    throw new Error(`"${file.name || 'File'}" is not a supported video format. Use MP4, WebM, or MOV.`);
+  }
+  if (file.size > SHOWCASE_VIDEO_INPUT_MAX_BYTES) {
+    throw new Error(`"${file.name}" exceeds the 60 MB maximum video size limit.`);
+  }
+
+  const filePrefix = sanitizeFilePrefix(options.fileNamePrefix || 'video');
+  const notify = typeof options.onStageProgress === 'function' ? options.onStageProgress : null;
+
+  // Step 1: Extract & upload crisp poster thumbnail (<= 120 KB)
+  let posterUrl = '';
+  let posterPath = '';
+  try {
+    if (notify) notify('poster', 10);
+    const posterCompressed = await extractVideoPosterBlob(file);
+    const posterUpload = await uploadImageToStorage(posterCompressed.blob, cleanPrefix, {
+      maxKb: 120,
+      maxDim: 960,
+      fileNamePrefix: `${filePrefix}_poster`,
+      skipCompression: true
+    });
+    posterUrl = posterUpload.url;
+    posterPath = posterUpload.path;
+    if (notify) notify('poster', 100);
+  } catch (posterErr) {
+    console.warn('[VideoUpload] Poster extraction skipped:', posterErr?.message || posterErr);
+  }
+
+  // Step 2: Hybrid direct HD upload (<= 15 MB) or 720p compression (> 15 MB)
+  let uploadBlob = file;
+  let contentType = ALLOWED_VIDEO_MIME_REGEX.test(rawMime) ? rawMime : 'video/mp4';
+  let extension = getVideoExtensionFromMime(contentType, file.name);
+  let wasCompressed = false;
+
+  try {
+    if (file.size > SHOWCASE_VIDEO_DIRECT_LIMIT_BYTES) {
+      if (notify) notify('compressing', 0);
+      const compressed = await compressVideoTo720pBlob(file, (pct) => {
+        if (notify) notify('compressing', pct);
+      });
+      uploadBlob = compressed.blob;
+      contentType = compressed.contentType;
+      extension = compressed.extension;
+      wasCompressed = true;
+    }
+
+    if (uploadBlob.size > SHOWCASE_VIDEO_STORAGE_MAX_BYTES) {
+      throw new Error('Video exceeds the 20 MB Firebase Storage limit.');
+    }
+
+    // Step 3: Upload video blob to Firebase Storage
+    if (notify) notify('uploading', 0);
+    const uniqueToken = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const fullPath = `${cleanPrefix}/${filePrefix}_vid_${uniqueToken}.${extension}`;
+    const storageRef = ref(storage, fullPath);
+
+    await new Promise((resolve, reject) => {
+      const task = uploadBytesResumable(storageRef, uploadBlob, {
+        contentType,
+        cacheControl: 'public, max-age=31536000, immutable'
+      });
+      task.on(
+        'state_changed',
+        (snapshot) => {
+          if (notify && snapshot.totalBytes > 0) {
+            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            try { notify('uploading', pct); } catch (_) {}
+          }
+        },
+        (err) => reject(err),
+        () => resolve()
+      );
+    });
+
+    const url = await getDownloadURL(storageRef);
+    return {
+      url,
+      posterUrl,
+      path: fullPath,
+      posterPath,
+      sizeBytes: uploadBlob.size,
+      contentType,
+      extension,
+      mediaType: 'video',
+      compressed: wasCompressed
+    };
+  } catch (err) {
+    if (posterUrl) {
+      deleteStorageUrlIfManaged(posterUrl);
+    }
+    throw err;
+  }
+};
+
 /**
  * Checks whether a URL belongs to this app's configured Firebase Storage bucket.
  * Safely returns false for legacy Base64 `data:image/...` strings and external URLs.

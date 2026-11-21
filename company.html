@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self' https://*.googleapis.com https://*.firebasestorage.app https://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self' https://*.firebaseapp.com;">
   <meta name="referrer" content="no-referrer">
   <title>Institution Manage - Company Portal</title>
 
@@ -65,12 +65,12 @@
   </div>
 
   <!-- Toast Banner -->
-  <div id="company-toast" class="hidden fixed bottom-5 right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5"></div>
+  <div id="company-toast" class="hidden fixed bottom-20 md:bottom-5 right-4 md:right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5"></div>
 
   <div id="company-shell" class="hidden min-h-screen flex flex-row">
 
-    <!-- Persistent Expandable / Collapsible Side Menu Bar -->
-    <aside id="company-sidebar" data-collapsed="false" class="sticky top-0 h-screen z-40 bg-white border-r border-slate-200 flex flex-col transition-all duration-200 shrink-0 select-none">
+    <!-- Persistent Expandable / Collapsible Side Menu Bar (Desktop md+ only; mobile uses Bottom Navigation) -->
+    <aside id="company-sidebar" data-collapsed="false" class="hidden md:flex sticky top-0 h-screen z-40 bg-white border-r border-slate-200 flex-col transition-all duration-200 shrink-0 select-none">
       <div class="sidebar-brand-row h-16 px-3.5 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
           <div class="w-9 h-9 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-xs shrink-0" title="Institution Manage — Company Console">
@@ -158,9 +158,12 @@
     <!-- Main Workspace Column -->
     <div class="flex-1 min-w-0 flex flex-col">
       <!-- Top Bar -->
-      <header class="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 shrink-0">
-        <div class="flex items-center gap-3 min-w-0">
-          <button type="button" id="btn-open-company-sidebar" class="w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center cursor-pointer shrink-0 transition" title="Expand / Collapse Sidebar" aria-label="Expand or Collapse Navigation Sidebar">
+      <header class="sticky top-0 z-30 h-14 sm:h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3.5 sm:px-6 lg:px-8 flex items-center justify-between gap-3 shrink-0">
+        <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div class="md:hidden w-8 h-8 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shrink-0">
+            <img src="/assets/images/logo.png" alt="Institution Manage" class="w-full h-full object-contain rounded-lg" referrerpolicy="no-referrer">
+          </div>
+          <button type="button" id="btn-open-company-sidebar" class="hidden md:flex w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 items-center justify-center cursor-pointer shrink-0 transition" title="Expand / Collapse Sidebar" aria-label="Expand or Collapse Navigation Sidebar">
             <i id="company-sidebar-toggle-icon" class="fas fa-bars"></i>
           </button>
           <div class="min-w-0">
@@ -169,17 +172,33 @@
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
-          <button type="button" id="btn-header-preview-plans" class="px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-extrabold transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+          <button type="button" id="btn-header-preview-plans" class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-extrabold transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap" title="Preview Plans Modal">
             <i class="fas fa-crown text-amber-600"></i>
             <span class="hidden sm:inline">Preview Plans Modal</span>
           </button>
         </div>
       </header>
 
-      <main id="company-main" class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main id="company-main" class="flex-1 w-full max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 pt-5 pb-24 md:py-6 space-y-6">
 
         <!-- VIEW 1: DASHBOARD -->
-        <section id="view-dashboard" class="company-view space-y-6">
+        <section id="view-dashboard" class="company-view space-y-5 sm:space-y-6">
+          <!-- Company Owner OTP Security Reminder (shown only when otpPhone is not set in company/config) -->
+          <div id="dash-otp-setup-banner" class="hidden rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-start gap-3 min-w-0">
+              <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                <i class="fas fa-shield-halved text-sm"></i>
+              </div>
+              <div class="min-w-0">
+                <h3 class="text-xs sm:text-sm font-extrabold text-amber-950">Enable Company Owner 2-Step SMS OTP Security</h3>
+                <p class="text-[11px] sm:text-xs text-amber-800 mt-0.5 leading-snug">Add your verified mobile number in Contact &amp; OTP Security so every Company Console login requires SMS OTP verification.</p>
+              </div>
+            </div>
+            <button type="button" data-jump-view="contact" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-extrabold cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 transition">
+              <i class="fas fa-mobile-screen-button text-[11px]"></i>
+              <span>Set OTP Mobile</span>
+            </button>
+          </div>
           <!-- KPI Cards -->
           <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div class="bg-white border border-slate-200 rounded-2xl p-4">
@@ -523,8 +542,41 @@
           </div>
         </section>
 
-        <!-- VIEW 5: CONTACT DETAILS -->
-        <section id="view-contact" class="company-view hidden">
+        <!-- VIEW 5: CONTACT DETAILS & OWNER OTP SECURITY -->
+        <section id="view-contact" class="company-view hidden space-y-5">
+          <!-- Company Owner 2-Step SMS OTP Security Card -->
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden max-w-4xl">
+            <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <i class="fas fa-shield-halved text-sm"></i>
+                </span>
+                <div class="min-w-0">
+                  <h3 class="text-sm sm:text-base font-extrabold text-slate-900">Company Owner 2-Step SMS OTP Security</h3>
+                  <p class="text-[11px] sm:text-xs text-slate-500">Saved directly in Firestore (<code>company/config.otpPhone</code>). Required on every new Company Console login once configured.</p>
+                </div>
+              </div>
+              <span id="company-otp-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 whitespace-nowrap">Not Configured</span>
+            </div>
+
+            <form id="company-otp-security-form" class="p-5 sm:p-6 space-y-4 text-xs sm:text-sm">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-bold text-slate-700 mb-1" for="company-otp-phone-input">Verified Owner OTP Mobile Number (E.164 or 10-digit)</label>
+                  <input type="tel" id="company-otp-phone-input" maxlength="20" placeholder="e.g. +919876543210" autocomplete="tel" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+                  <p class="text-[11px] text-slate-500 mt-1">Leave blank only if you want to temporarily disable OTP. Once saved, login requires Password + 6-digit SMS OTP.</p>
+                </div>
+                <div class="flex sm:justify-end">
+                  <button type="submit" id="btn-save-company-otp-phone" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap transition">
+                    <i class="fas fa-key text-[11px]"></i>
+                    <span>Save OTP Number</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <!-- Public Support & Upgrade Contact Channels -->
           <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden max-w-4xl">
             <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -585,15 +637,15 @@
           </div>
         </section>
 
-        <!-- VIEW 6: PLATFORM SCREENSHOTS MANAGER -->
+        <!-- VIEW 6: PLATFORM SCREENSHOTS & VIDEOS MANAGER -->
         <section id="view-screenshots" class="company-view hidden space-y-5">
           <!-- Summary & Toolbar Card -->
           <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4">
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
               <div>
-                <h3 class="text-base font-extrabold text-slate-900">Platform Page Screenshots</h3>
+                <h3 class="text-base font-extrabold text-slate-900">Platform Screenshots &amp; Videos</h3>
                 <p class="text-xs text-slate-500 mt-0.5">
-                  Upload up to 5 screenshots per module (auto-compressed for fast loading) or add an external HTTPS image URL. Modules with 0 screenshots automatically display the built-in interactive preview card on the Root Public Gateway.
+                  Upload up to 5 images or videos per module. Images auto-compress to WebP/JPEG; videos up to 15 MB upload at full HD clarity, larger clips (up to 60 MB) auto-compress to 720p with an instant poster thumbnail.
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2 shrink-0">
@@ -612,7 +664,7 @@
               <div class="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-slate-600 font-semibold tabular-nums">
                 <span>Modules Configured: <strong id="screenshots-configured-count" class="text-slate-900 font-extrabold">0 / 11</strong></span>
                 <span aria-hidden="true" class="text-slate-300">·</span>
-                <span>Total Screenshots: <strong id="screenshots-total-count" class="text-indigo-700 font-extrabold">0 / 55</strong></span>
+                <span>Total Media: <strong id="screenshots-total-count" class="text-indigo-700 font-extrabold">0 / 55</strong></span>
               </div>
 
               <div class="flex flex-wrap items-center gap-2">
@@ -622,7 +674,7 @@
                 </div>
                 <select id="screenshots-status-filter" data-native-select="true" class="px-3 py-1.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-bold text-slate-700 outline-none">
                   <option value="all">All 11 Modules</option>
-                  <option value="configured">With Screenshots</option>
+                  <option value="configured">With Media</option>
                   <option value="fallback">Using Default Preview</option>
                 </select>
               </div>
@@ -1037,20 +1089,86 @@
     </div>
   </div>
 
-  <!-- Screenshot Full-Size Lightbox Modal -->
+  <!-- Mobile Bottom Navigation Bar (< 768px) -->
+  <nav id="company-mobile-bottom-nav" class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-1.5 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(15,23,42,0.06)]" aria-label="Company Mobile Navigation">
+    <div class="grid grid-cols-5 gap-1 max-w-md mx-auto">
+      <button type="button" data-company-view="dashboard" class="company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 cursor-pointer transition">
+        <i class="fas fa-chart-pie text-sm"></i>
+        <span>Home</span>
+      </button>
+      <button type="button" data-company-view="institutions" class="company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 cursor-pointer transition">
+        <i class="fas fa-building-columns text-sm"></i>
+        <span>Portals</span>
+      </button>
+      <button type="button" data-company-view="add-institution" class="company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 cursor-pointer transition">
+        <i class="fas fa-plus-circle text-sm"></i>
+        <span>Add</span>
+      </button>
+      <button type="button" data-company-view="screenshots" class="company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 cursor-pointer transition">
+        <i class="fas fa-photo-film text-sm"></i>
+        <span>Media</span>
+      </button>
+      <button type="button" id="btn-company-mobile-more" class="company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 cursor-pointer transition" aria-haspopup="dialog" aria-expanded="false">
+        <i class="fas fa-ellipsis text-sm"></i>
+        <span>More</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Mobile More Bottom Sheet (< 768px) -->
+  <div id="company-mobile-more-sheet" class="md:hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs hidden items-end justify-center" role="dialog" aria-modal="true" aria-label="More Company Console Options">
+    <div class="w-full max-w-lg bg-white rounded-t-3xl border-t border-slate-200 p-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl space-y-3">
+      <div class="flex items-center justify-between px-1 pb-2 border-b border-slate-100">
+        <div>
+          <h3 class="text-sm font-extrabold text-slate-900">Console Menu</h3>
+          <p id="company-mobile-owner-email" class="text-[11px] font-medium text-slate-500 truncate">Company Owner</p>
+        </div>
+        <button type="button" id="btn-close-company-mobile-more" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer" aria-label="Close menu">
+          <i class="fas fa-times text-xs"></i>
+        </button>
+      </div>
+      <div class="grid grid-cols-1 gap-1.5">
+        <button type="button" data-company-view="plans" class="company-more-nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer text-left">
+          <span class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0"><i class="fas fa-crown"></i></span>
+          <span>Premium Plans &amp; Offers</span>
+        </button>
+        <button type="button" data-company-view="contact" class="company-more-nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer text-left">
+          <span class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><i class="fas fa-shield-halved"></i></span>
+          <span>Contact &amp; OTP Security</span>
+        </button>
+        <button type="button" data-company-view="footer-legal" class="company-more-nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer text-left">
+          <span class="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0"><i class="fas fa-scale-balanced"></i></span>
+          <span>Footer &amp; Legal</span>
+        </button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+        <a href="/?public=1" class="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center justify-center gap-1.5">
+          <i class="fas fa-globe"></i>
+          <span>Public Home</span>
+        </a>
+        <button type="button" id="btn-company-mobile-signout" class="px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold cursor-pointer inline-flex items-center justify-center gap-1.5">
+          <i class="fas fa-right-from-bracket"></i>
+          <span>Sign Out</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screenshot / Video Full-Size Lightbox Modal -->
   <div id="screenshot-preview-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-xs z-[10060] hidden items-center justify-center p-4">
     <div class="relative max-w-5xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl border border-slate-200">
       <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
         <div class="min-w-0">
-          <h3 id="screenshot-preview-title" class="text-sm font-extrabold text-slate-900 truncate">Screenshot Preview</h3>
+          <h3 id="screenshot-preview-title" class="text-sm font-extrabold text-slate-900 truncate">Media Preview</h3>
           <p id="screenshot-preview-meta" class="text-[11px] font-semibold text-slate-500 truncate tabular-nums">--</p>
         </div>
         <button type="button" id="btn-close-screenshot-preview" class="w-8 h-8 rounded-lg hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer shrink-0" aria-label="Close preview">
           <i class="fas fa-times"></i>
         </button>
       </div>
-      <div class="bg-slate-100 flex items-center justify-center p-3 sm:p-5 max-h-[80vh]">
+      <div class="bg-slate-900 flex items-center justify-center p-3 sm:p-5 max-h-[80vh]">
         <img id="screenshot-preview-img" src="" alt="Platform screenshot preview" class="max-w-full max-h-[72vh] object-contain rounded-lg shadow-sm" referrerpolicy="no-referrer">
+        <video id="screenshot-preview-video" controls playsinline class="hidden max-w-full max-h-[72vh] rounded-lg shadow-sm bg-black"></video>
       </div>
     </div>
   </div>

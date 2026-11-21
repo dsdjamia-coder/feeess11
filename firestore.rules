@@ -366,9 +366,11 @@ service cloud.firestore {
 
     function isValidShowcaseImageItem(item) {
       return item is map
-        && item.keys().hasOnly(['id', 'url', 'caption', 'updatedAt'])
+        && item.keys().hasOnly(['id', 'url', 'caption', 'updatedAt', 'mediaType', 'posterUrl'])
         && item.id is string && item.id.size() >= 1 && item.id.size() <= 80
         && item.url is string && item.url.size() >= 8 && item.url.size() <= 240000
+        && (!('mediaType' in item) || (item.mediaType is string && (item.mediaType == 'image' || item.mediaType == 'video')))
+        && (!('posterUrl' in item) || (item.posterUrl is string && item.posterUrl.size() <= 2048))
         && (!('caption' in item) || (item.caption is string && item.caption.size() <= 160))
         && (!('updatedAt' in item) || item.updatedAt is string || item.updatedAt is number || item.updatedAt is timestamp);
     }

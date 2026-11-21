@@ -61,7 +61,8 @@ import {
 import {
   MEDIA_PRESETS,
   deleteStorageUrlIfManaged,
-  uploadImageToStorage
+  uploadImageToStorage,
+  uploadShowcaseVideoToStorage
 } from '../shared/storage-media-service.js';
 
 registerServiceWorker();
@@ -104,13 +105,13 @@ const COMPANY_VIEWS = {
   },
   contact: {
     elId: 'view-contact',
-    title: 'Contact Details',
-    subtitle: 'Manage WhatsApp, Instagram, phone, email, and support links shown in popups.'
+    title: 'Contact & OTP Security',
+    subtitle: 'Manage Company Owner 2-Step SMS OTP mobile and public WhatsApp/call support channels.'
   },
   screenshots: {
     elId: 'view-screenshots',
-    title: 'Platform Screenshots',
-    subtitle: 'Upload up to 5 showcase screenshots per module for the Root Public Gateway preview.'
+    title: 'Platform Screenshots & Videos',
+    subtitle: 'Upload up to 5 showcase images or HD videos per module for the Root Public Gateway.'
   },
   'footer-legal': {
     elId: 'view-footer-legal',
@@ -131,6 +132,7 @@ let legalDraftState = normalizeLegalDocs({});
 let activeLegalTabKey = 'terms';
 let platformShowcasesMap = new Map();
 const showcaseBusyPages = new Set();
+const showcaseBusyStatusMap = new Map();
 
 const showToast = (message, tone = 'success') => {
   const el = document.getElementById('company-toast');
@@ -140,7 +142,7 @@ const showToast = (message, tone = 'success') => {
     error: 'bg-rose-900 text-rose-50 border-rose-700',
     info: 'bg-slate-900 text-slate-50 border-slate-700'
   };
-  el.className = `fixed bottom-5 right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5 ${tones[tone] || tones.info}`;
+  el.className = `fixed bottom-20 md:bottom-5 right-4 md:right-5 z-[11000] max-w-sm rounded-2xl px-4 py-3 shadow-2xl border text-xs font-bold flex items-center gap-2.5 ${tones[tone] || tones.info}`;
   el.innerHTML = `<i class="fas ${tone === 'error' ? 'fa-circle-exclamation' : tone === 'info' ? 'fa-circle-info' : 'fa-circle-check'}"></i><span>${escapeHtml(message)}</span>`;
   el.classList.remove('hidden');
   clearTimeout(el._hideTimer);
@@ -273,6 +275,28 @@ const getSavedCompanyView = () => {
   }
 };
 
+const MORE_SHEET_VIEWS = new Set(['plans', 'contact', 'footer-legal']);
+
+const closeCompanyMobileMoreSheet = () => {
+  const sheet = document.getElementById('company-mobile-more-sheet');
+  const trigger = document.getElementById('btn-company-mobile-more');
+  if (sheet) {
+    sheet.classList.add('hidden');
+    sheet.classList.remove('flex');
+  }
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+};
+
+const openCompanyMobileMoreSheet = () => {
+  const sheet = document.getElementById('company-mobile-more-sheet');
+  const trigger = document.getElementById('btn-company-mobile-more');
+  if (sheet) {
+    sheet.classList.remove('hidden');
+    sheet.classList.add('flex');
+  }
+  if (trigger) trigger.setAttribute('aria-expanded', 'true');
+};
+
 const setActiveCompanyView = (viewKey = 'dashboard') => {
   const targetKey = COMPANY_VIEWS[viewKey] ? viewKey : 'dashboard';
   activeCompanyView = targetKey;
@@ -294,10 +318,33 @@ const setActiveCompanyView = (viewKey = 'dashboard') => {
       : 'company-nav-btn w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer text-left text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-transparent';
   });
 
+  // Sync mobile bottom navigation active state
+  document.querySelectorAll('.company-bottom-nav-btn[data-company-view]').forEach((btn) => {
+    const isActive = btn.dataset.companyView === targetKey;
+    btn.className = isActive
+      ? 'company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-extrabold text-indigo-700 bg-indigo-50 cursor-pointer transition'
+      : 'company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer transition';
+  });
+  const moreBtn = document.getElementById('btn-company-mobile-more');
+  if (moreBtn) {
+    const moreActive = MORE_SHEET_VIEWS.has(targetKey);
+    moreBtn.className = moreActive
+      ? 'company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-extrabold text-indigo-700 bg-indigo-50 cursor-pointer transition'
+      : 'company-bottom-nav-btn flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-xl text-[10px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer transition';
+  }
+  document.querySelectorAll('.company-more-nav-btn[data-company-view]').forEach((btn) => {
+    const isActive = btn.dataset.companyView === targetKey;
+    btn.className = isActive
+      ? 'company-more-nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 cursor-pointer text-left'
+      : 'company-more-nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 border border-transparent cursor-pointer text-left';
+  });
+  closeCompanyMobileMoreSheet();
+
   const titleEl = document.getElementById('company-view-title');
   const subtitleEl = document.getElementById('company-view-subtitle');
   if (titleEl) titleEl.textContent = meta.title;
   if (subtitleEl) subtitleEl.textContent = meta.subtitle;
+  window.scrollTo({ top: 0, behavior: 'instant' });
 };
 
 const updateSlugPreviewFor = (inputId, previewId) => {
@@ -1830,6 +1877,19 @@ const isSafeShowcaseImageUrl = (rawUrl = '') => {
   }
 };
 
+const isLikelyVideoUrl = (rawUrl = '') => {
+  const clean = String(rawUrl || '').trim().toLowerCase();
+  if (!clean) return false;
+  try {
+    const parsed = new URL(clean);
+    return /\.(mp4|webm|mov)(\?|$)/i.test(parsed.pathname)
+      || clean.includes('_vid_')
+      || parsed.searchParams.get('alt') === 'media' && /\.(mp4|webm|mov)/i.test(decodeURIComponent(parsed.pathname));
+  } catch (_) {
+    return /\.(mp4|webm|mov)(\?|$)/i.test(clean);
+  }
+};
+
 const normalizeShowcaseImages = (rawImages = []) => {
   if (!Array.isArray(rawImages)) return [];
   const normalized = [];
@@ -1839,10 +1899,15 @@ const normalizeShowcaseImages = (rawImages = []) => {
     if (!isSafeShowcaseImageUrl(url)) continue;
     const id = String(item.id || `shot_${Date.now()}_${normalized.length}`).trim().slice(0, 80);
     const caption = String(item.caption || '').trim().slice(0, 160);
+    const mediaType = item.mediaType === 'video' || (!item.mediaType && isLikelyVideoUrl(url)) ? 'video' : 'image';
+    const rawPoster = String(item.posterUrl || '').trim();
+    const posterUrl = rawPoster && rawPoster.length <= 2048 && isSafeShowcaseImageUrl(rawPoster) ? rawPoster : '';
     const updatedAt = typeof item.updatedAt === 'string' && item.updatedAt
       ? item.updatedAt
       : new Date().toISOString();
-    normalized.push({ id, url, caption, updatedAt });
+    const entry = { id, url, mediaType, caption, updatedAt };
+    if (posterUrl) entry.posterUrl = posterUrl;
+    normalized.push(entry);
     if (normalized.length >= MAX_SHOWCASE_IMAGES_PER_PAGE) break;
   }
   return normalized;
@@ -1942,23 +2007,42 @@ const updateShowcaseCountersUI = () => {
 
   if (sidebarBadge) sidebarBadge.textContent = String(totalImages);
   if (dashSummary) {
-    dashSummary.textContent = `${totalImages} screenshot${totalImages === 1 ? '' : 's'} across ${configuredPages} / ${PLATFORM_SHOWCASE_PAGES.length} modules`;
+    dashSummary.textContent = `${totalImages} media item${totalImages === 1 ? '' : 's'} across ${configuredPages} / ${PLATFORM_SHOWCASE_PAGES.length} modules`;
   }
   if (configuredEl) configuredEl.textContent = `${configuredPages} / ${PLATFORM_SHOWCASE_PAGES.length}`;
   if (totalEl) totalEl.textContent = `${totalImages} / ${PLATFORM_SHOWCASE_PAGES.length * MAX_SHOWCASE_IMAGES_PER_PAGE}`;
 };
 
-const openScreenshotPreviewModal = (title = 'Screenshot Preview', url = '', meta = '') => {
+const openScreenshotPreviewModal = (title = 'Media Preview', url = '', meta = '', mediaType = 'image', posterUrl = '') => {
   if (!isSafeShowcaseImageUrl(url)) return;
   const modal = document.getElementById('screenshot-preview-modal');
   const imgEl = document.getElementById('screenshot-preview-img');
+  const videoEl = document.getElementById('screenshot-preview-video');
   const titleEl = document.getElementById('screenshot-preview-title');
   const metaEl = document.getElementById('screenshot-preview-meta');
   if (!modal || !imgEl) return;
 
-  imgEl.src = url;
+  const isVideo = mediaType === 'video' || isLikelyVideoUrl(url);
+  if (isVideo && videoEl) {
+    imgEl.classList.add('hidden');
+    imgEl.src = '';
+    videoEl.classList.remove('hidden');
+    videoEl.poster = posterUrl || '';
+    videoEl.src = url;
+    videoEl.load();
+  } else {
+    if (videoEl) {
+      try { videoEl.pause(); } catch (_) {}
+      videoEl.classList.add('hidden');
+      videoEl.removeAttribute('src');
+      videoEl.poster = '';
+    }
+    imgEl.classList.remove('hidden');
+    imgEl.src = url;
+  }
+
   if (titleEl) titleEl.textContent = title;
-  if (metaEl) metaEl.textContent = meta || 'Full-size preview';
+  if (metaEl) metaEl.textContent = meta || (isVideo ? 'HD video preview' : 'Full-size preview');
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 };
@@ -1966,11 +2050,18 @@ const openScreenshotPreviewModal = (title = 'Screenshot Preview', url = '', meta
 const closeScreenshotPreviewModal = () => {
   const modal = document.getElementById('screenshot-preview-modal');
   const imgEl = document.getElementById('screenshot-preview-img');
+  const videoEl = document.getElementById('screenshot-preview-video');
   if (modal) {
     modal.classList.add('hidden');
     modal.classList.remove('flex');
   }
   if (imgEl) imgEl.src = '';
+  if (videoEl) {
+    try { videoEl.pause(); } catch (_) {}
+    videoEl.removeAttribute('src');
+    videoEl.poster = '';
+    videoEl.load();
+  }
 };
 
 const persistPageShowcase = async (pageKey, nextImages, successMsg = 'Saved platform screenshots!') => {
@@ -1994,13 +2085,19 @@ const persistPageShowcase = async (pageKey, nextImages, successMsg = 'Saved plat
   showToast(successMsg);
 };
 
+const updateShowcaseBusyText = (pageKey, text) => {
+  showcaseBusyStatusMap.set(pageKey, text);
+  const labelEl = document.querySelector(`.btn-shot-upload[data-page-key="${pageKey}"] .shot-upload-label`);
+  if (labelEl) labelEl.textContent = text;
+};
+
 const handleShowcaseFileUpload = async (pageKey, fileList) => {
   const files = Array.from(fileList || []);
   if (!files.length) return;
   const existing = platformShowcasesMap.get(pageKey) || [];
   const remainingSlots = MAX_SHOWCASE_IMAGES_PER_PAGE - existing.length;
   if (remainingSlots <= 0) {
-    showToast(`Maximum ${MAX_SHOWCASE_IMAGES_PER_PAGE} screenshots already uploaded for this module.`, 'info');
+    showToast(`Maximum ${MAX_SHOWCASE_IMAGES_PER_PAGE} media items already uploaded for this module.`, 'info');
     return;
   }
 
@@ -2009,6 +2106,7 @@ const handleShowcaseFileUpload = async (pageKey, fileList) => {
   const skippedCount = files.length - toProcess.length;
 
   showcaseBusyPages.add(pageKey);
+  showcaseBusyStatusMap.set(pageKey, 'Preparing...');
   renderScreenshotsManager();
 
   const uploadedUrlsThisBatch = [];
@@ -2016,45 +2114,84 @@ const handleShowcaseFileUpload = async (pageKey, fileList) => {
     const newItems = [];
     for (let i = 0; i < toProcess.length; i += 1) {
       const file = toProcess[i];
-      if (!file || !String(file.type || '').startsWith('image/')) {
-        throw new Error(`"${file?.name || 'File'}" is not a supported image format.`);
+      const mime = String(file?.type || '').toLowerCase();
+      const isImage = mime.startsWith('image/');
+      const isVideo = mime.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(String(file?.name || ''));
+      if (!file || (!isImage && !isVideo)) {
+        throw new Error(`"${file?.name || 'File'}" is not a supported image or video format (JPG, PNG, WebP, MP4, WebM, MOV).`);
       }
-      if (file.size > 20 * 1024 * 1024) {
-        throw new Error(`"${file.name}" exceeds the 20 MB upload limit.`);
-      }
-      const uploadRes = await uploadImageToStorage(
-        file,
-        `company/showcases/${pageKey}`,
-        {
-          ...MEDIA_PRESETS.SHOWCASE,
-          fileNamePrefix: pageKey
-        }
-      );
-      uploadedUrlsThisBatch.push(uploadRes.url);
+
       const baseName = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
-      newItems.push({
-        id: `shot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${i}`,
-        url: uploadRes.url,
-        caption: baseName.slice(0, 120),
-        updatedAt: new Date().toISOString()
-      });
+
+      if (isVideo) {
+        updateShowcaseBusyText(pageKey, 'Generating poster...');
+        const videoRes = await uploadShowcaseVideoToStorage(
+          file,
+          `company/showcases/${pageKey}`,
+          {
+            fileNamePrefix: pageKey,
+            onStageProgress: (stage, pct) => {
+              if (stage === 'poster') {
+                updateShowcaseBusyText(pageKey, 'Extracting poster...');
+              } else if (stage === 'compressing') {
+                updateShowcaseBusyText(pageKey, `Compressing 720p ${pct}%`);
+              } else if (stage === 'uploading') {
+                updateShowcaseBusyText(pageKey, `Uploading video ${pct}%`);
+              }
+            }
+          }
+        );
+        uploadedUrlsThisBatch.push(videoRes.url);
+        if (videoRes.posterUrl) uploadedUrlsThisBatch.push(videoRes.posterUrl);
+        const item = {
+          id: `vid_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${i}`,
+          url: videoRes.url,
+          mediaType: 'video',
+          caption: baseName.slice(0, 120),
+          updatedAt: new Date().toISOString()
+        };
+        if (videoRes.posterUrl) item.posterUrl = videoRes.posterUrl;
+        newItems.push(item);
+      } else {
+        if (file.size > 20 * 1024 * 1024) {
+          throw new Error(`"${file.name}" exceeds the 20 MB image upload limit.`);
+        }
+        updateShowcaseBusyText(pageKey, `Uploading image ${i + 1}/${toProcess.length}...`);
+        const uploadRes = await uploadImageToStorage(
+          file,
+          `company/showcases/${pageKey}`,
+          {
+            ...MEDIA_PRESETS.SHOWCASE,
+            fileNamePrefix: pageKey
+          }
+        );
+        uploadedUrlsThisBatch.push(uploadRes.url);
+        newItems.push({
+          id: `shot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${i}`,
+          url: uploadRes.url,
+          mediaType: 'image',
+          caption: baseName.slice(0, 120),
+          updatedAt: new Date().toISOString()
+        });
+      }
     }
 
     const combined = [...existing, ...newItems].slice(0, MAX_SHOWCASE_IMAGES_PER_PAGE);
-    const note = skippedCount > 0 ? ` (${skippedCount} extra file${skippedCount === 1 ? '' : 's'} skipped due to 5-image limit)` : '';
+    const note = skippedCount > 0 ? ` (${skippedCount} extra file${skippedCount === 1 ? '' : 's'} skipped due to 5-item limit)` : '';
     await persistPageShowcase(
       pageKey,
       combined,
-      `Uploaded ${newItems.length} screenshot${newItems.length === 1 ? '' : 's'} for ${pageMeta?.label || pageKey}${note}`
+      `Uploaded ${newItems.length} media item${newItems.length === 1 ? '' : 's'} for ${pageMeta?.label || pageKey}${note}`
     );
   } catch (err) {
     if (uploadedUrlsThisBatch.length) {
       await Promise.allSettled(uploadedUrlsThisBatch.map((u) => deleteStorageUrlIfManaged(u)));
     }
-    console.error('Screenshot upload error:', err);
-    showToast(err?.message || 'Failed to upload screenshots.', 'error');
+    console.error('Showcase upload error:', err);
+    showToast(err?.message || 'Failed to upload media.', 'error');
   } finally {
     showcaseBusyPages.delete(pageKey);
+    showcaseBusyStatusMap.delete(pageKey);
     renderScreenshotsManager();
   }
 };
@@ -2062,33 +2199,35 @@ const handleShowcaseFileUpload = async (pageKey, fileList) => {
 const handleShowcaseUrlAdd = async (pageKey, rawUrl) => {
   const cleanUrl = String(rawUrl || '').trim();
   if (!cleanUrl) {
-    showToast('Please enter an image URL first.', 'info');
+    showToast('Please enter an image or video URL first.', 'info');
     return;
   }
   let parsedUrl = null;
   try {
     parsedUrl = new URL(cleanUrl);
   } catch (_) {
-    showToast('Please enter a valid HTTPS image URL.', 'error');
+    showToast('Please enter a valid HTTPS media URL.', 'error');
     return;
   }
   if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-    showToast('Only HTTPS/HTTP image URLs are supported.', 'error');
+    showToast('Only HTTPS/HTTP media URLs are supported.', 'error');
     return;
   }
   if (cleanUrl.length > 2000) {
-    showToast('Image URL is too long.', 'error');
+    showToast('Media URL is too long.', 'error');
     return;
   }
 
   const existing = platformShowcasesMap.get(pageKey) || [];
   if (existing.length >= MAX_SHOWCASE_IMAGES_PER_PAGE) {
-    showToast(`Maximum ${MAX_SHOWCASE_IMAGES_PER_PAGE} screenshots allowed per module.`, 'info');
+    showToast(`Maximum ${MAX_SHOWCASE_IMAGES_PER_PAGE} media items allowed per module.`, 'info');
     return;
   }
 
   const pageMeta = PLATFORM_SHOWCASE_PAGES.find((p) => p.key === pageKey);
+  const detectedType = isLikelyVideoUrl(parsedUrl.href) ? 'video' : 'image';
   showcaseBusyPages.add(pageKey);
+  showcaseBusyStatusMap.set(pageKey, 'Saving URL...');
   renderScreenshotsManager();
 
   try {
@@ -2097,16 +2236,18 @@ const handleShowcaseUrlAdd = async (pageKey, rawUrl) => {
       {
         id: `url_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         url: parsedUrl.href,
+        mediaType: detectedType,
         caption: '',
         updatedAt: new Date().toISOString()
       }
     ];
-    await persistPageShowcase(pageKey, nextImages, `Added screenshot URL for ${pageMeta?.label || pageKey}`);
+    await persistPageShowcase(pageKey, nextImages, `Added ${detectedType} URL for ${pageMeta?.label || pageKey}`);
   } catch (err) {
-    console.error('Add screenshot URL error:', err);
-    showToast(err?.message || 'Failed to save screenshot URL.', 'error');
+    console.error('Add media URL error:', err);
+    showToast(err?.message || 'Failed to save media URL.', 'error');
   } finally {
     showcaseBusyPages.delete(pageKey);
+    showcaseBusyStatusMap.delete(pageKey);
     renderScreenshotsManager();
   }
 };
@@ -2118,14 +2259,16 @@ const handleShowcaseMove = async (pageKey, imageIndex, direction) => {
   [existing[imageIndex], existing[targetIndex]] = [existing[targetIndex], existing[imageIndex]];
 
   showcaseBusyPages.add(pageKey);
+  showcaseBusyStatusMap.set(pageKey, 'Reordering...');
   renderScreenshotsManager();
 
   try {
-    await persistPageShowcase(pageKey, existing, 'Updated screenshot display order');
+    await persistPageShowcase(pageKey, existing, 'Updated media display order');
   } catch (err) {
-    showToast(`Failed to reorder screenshot: ${err.message}`, 'error');
+    showToast(`Failed to reorder media: ${err.message}`, 'error');
   } finally {
     showcaseBusyPages.delete(pageKey);
+    showcaseBusyStatusMap.delete(pageKey);
     renderScreenshotsManager();
   }
 };
@@ -2134,27 +2277,34 @@ const handleShowcaseDelete = async (pageKey, imageIndex) => {
   const existing = [...(platformShowcasesMap.get(pageKey) || [])];
   if (imageIndex < 0 || imageIndex >= existing.length) return;
   const pageMeta = PLATFORM_SHOWCASE_PAGES.find((p) => p.key === pageKey);
+  const targetItem = existing[imageIndex];
+  const itemLabel = targetItem?.mediaType === 'video' ? 'video' : 'screenshot';
 
   const ok = await openConfirmDialog({
-    title: 'Delete Screenshot',
-    message: `Remove screenshot #${imageIndex + 1} from ${pageMeta?.label || pageKey}?${existing.length === 1 ? ' This module will automatically revert to the built-in preview card on the Root Gateway.' : ''}`,
+    title: `Delete ${targetItem?.mediaType === 'video' ? 'Video' : 'Screenshot'}`,
+    message: `Remove ${itemLabel} #${imageIndex + 1} from ${pageMeta?.label || pageKey}?${existing.length === 1 ? ' This module will automatically revert to the built-in preview card on the Root Gateway.' : ''}`,
     okLabel: 'Delete'
   });
   if (!ok) return;
 
   const [removedShot] = existing.splice(imageIndex, 1);
   showcaseBusyPages.add(pageKey);
+  showcaseBusyStatusMap.set(pageKey, 'Removing...');
   renderScreenshotsManager();
 
   try {
-    await persistPageShowcase(pageKey, existing, `Removed screenshot from ${pageMeta?.label || pageKey}`);
+    await persistPageShowcase(pageKey, existing, `Removed ${itemLabel} from ${pageMeta?.label || pageKey}`);
     if (removedShot?.url) {
       deleteStorageUrlIfManaged(removedShot.url);
     }
+    if (removedShot?.posterUrl) {
+      deleteStorageUrlIfManaged(removedShot.posterUrl);
+    }
   } catch (err) {
-    showToast(`Failed to delete screenshot: ${err.message}`, 'error');
+    showToast(`Failed to delete ${itemLabel}: ${err.message}`, 'error');
   } finally {
     showcaseBusyPages.delete(pageKey);
+    showcaseBusyStatusMap.delete(pageKey);
     renderScreenshotsManager();
   }
 };
@@ -2206,22 +2356,32 @@ const renderScreenshotsManager = () => {
   grid.innerHTML = filteredPages.map((page, listIdx) => {
     const images = platformShowcasesMap.get(page.key) || [];
     const isBusy = showcaseBusyPages.has(page.key);
+    const busyLabel = showcaseBusyStatusMap.get(page.key) || 'Processing...';
     const isFull = images.length >= MAX_SHOWCASE_IMAGES_PER_PAGE;
     const iconTone = accentBadgeMap[page.accent] || accentBadgeMap.indigo;
     const modeLabel = images.length === 0
       ? 'Default UI Fallback'
       : images.length === 1
-        ? 'Single Image View'
-        : `Carousel (${images.length} Slides)`;
+        ? (images[0].mediaType === 'video' ? 'Single Video View' : 'Single Image View')
+        : `Carousel (${images.length} Items)`;
 
     const thumbsHtml = images.length
       ? `
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          ${images.map((img, idx) => `
+          ${images.map((item, idx) => {
+            const isVideo = item.mediaType === 'video' || isLikelyVideoUrl(item.url);
+            const thumbContent = isVideo
+              ? (item.posterUrl
+                  ? `<img src="${escapeHtml(item.posterUrl)}" alt="${escapeHtml(page.label)} video poster ${idx + 1}" class="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200" referrerpolicy="no-referrer" loading="lazy">
+                     <span class="absolute inset-0 bg-slate-900/25 flex items-center justify-center"><span class="w-9 h-9 rounded-full bg-white/95 text-slate-900 shadow-md flex items-center justify-center"><i class="fas fa-play text-xs ml-0.5"></i></span></span>`
+                  : `<div class="w-full h-full bg-slate-900 flex flex-col items-center justify-center gap-1 text-white"><span class="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center"><i class="fas fa-play text-xs ml-0.5"></i></span><span class="text-[10px] font-bold text-slate-300">Video Clip</span></div>`)
+              : `<img src="${escapeHtml(item.url)}" alt="${escapeHtml(page.label)} screenshot ${idx + 1}" class="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200" referrerpolicy="no-referrer" loading="lazy">`;
+            return `
             <div class="group rounded-xl border border-slate-200 bg-slate-50 overflow-hidden flex flex-col">
               <button type="button" class="btn-shot-preview relative aspect-[16/10] w-full bg-slate-100 overflow-hidden cursor-pointer block" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" title="Click to preview full size">
-                <img src="${escapeHtml(img.url)}" alt="${escapeHtml(page.label)} screenshot ${idx + 1}" class="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200" referrerpolicy="no-referrer" loading="lazy">
+                ${thumbContent}
                 <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-slate-900/75 text-white text-[10px] font-extrabold tabular-nums">#${idx + 1}</span>
+                ${isVideo ? '<span class="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[9px] font-extrabold uppercase tracking-wide inline-flex items-center gap-1"><i class="fas fa-video text-[8px]"></i>Video</span>' : ''}
               </button>
               <div class="px-2 py-1.5 bg-white border-t border-slate-200 flex items-center justify-between gap-1">
                 <div class="flex items-center gap-1">
@@ -2233,22 +2393,23 @@ const renderScreenshotsManager = () => {
                   </button>
                 </div>
                 <div class="flex items-center gap-1">
-                  <button type="button" class="btn-shot-preview w-6 h-6 rounded-md border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 flex items-center justify-center cursor-pointer" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" title="Preview" aria-label="Preview screenshot">
-                    <i class="fas fa-expand text-[9px]"></i>
+                  <button type="button" class="btn-shot-preview w-6 h-6 rounded-md border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 flex items-center justify-center cursor-pointer" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" title="Preview" aria-label="Preview media">
+                    <i class="fas ${isVideo ? 'fa-play' : 'fa-expand'} text-[9px]"></i>
                   </button>
-                  <button type="button" class="btn-shot-delete w-6 h-6 rounded-md border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center cursor-pointer disabled:opacity-40" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" ${isBusy ? 'disabled' : ''} title="Delete Screenshot" aria-label="Delete screenshot">
+                  <button type="button" class="btn-shot-delete w-6 h-6 rounded-md border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center cursor-pointer disabled:opacity-40" data-page-key="${escapeHtml(page.key)}" data-shot-idx="${idx}" ${isBusy ? 'disabled' : ''} title="Delete Media" aria-label="Delete media">
                     <i class="fas fa-trash-alt text-[9px]"></i>
                   </button>
                 </div>
               </div>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       `
       : `
         <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-5 text-center space-y-1">
-          <div class="text-xs font-extrabold text-slate-700">No Custom Screenshots Uploaded</div>
-          <p class="text-[11px] text-slate-500">Root Gateway currently displays the built-in interactive UI preview card for ${escapeHtml(page.label)}.</p>
+          <div class="text-xs font-extrabold text-slate-700">No Custom Media Uploaded</div>
+          <p class="text-[11px] text-slate-500">Root Gateway currently displays the built-in preview card for ${escapeHtml(page.label)}.</p>
         </div>
       `;
 
@@ -2266,7 +2427,7 @@ const renderScreenshotsManager = () => {
               </div>
             </div>
             <div class="text-right shrink-0">
-              <div class="text-xs font-extrabold tabular-nums ${images.length > 0 ? 'text-indigo-700' : 'text-slate-600'}">${images.length} / ${MAX_SHOWCASE_IMAGES_PER_PAGE} Images</div>
+              <div class="text-xs font-extrabold tabular-nums ${images.length > 0 ? 'text-indigo-700' : 'text-slate-600'}">${images.length} / ${MAX_SHOWCASE_IMAGES_PER_PAGE} Media</div>
               <div class="text-[10px] font-semibold text-slate-500 mt-0.5">${escapeHtml(modeLabel)}</div>
             </div>
           </div>
@@ -2276,16 +2437,16 @@ const renderScreenshotsManager = () => {
 
         <div class="pt-3.5 border-t border-slate-100 space-y-2.5">
           <div class="flex flex-wrap items-center gap-2">
-            <input type="file" accept="image/*" multiple class="hidden shot-file-input" id="shot-file-${escapeHtml(page.key)}" data-page-key="${escapeHtml(page.key)}" ${isFull || isBusy ? 'disabled' : ''}>
+            <input type="file" accept="image/*,video/mp4,video/webm,video/quicktime" multiple class="hidden shot-file-input" id="shot-file-${escapeHtml(page.key)}" data-page-key="${escapeHtml(page.key)}" ${isFull || isBusy ? 'disabled' : ''}>
             <button type="button" class="btn-shot-upload px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white text-xs font-extrabold cursor-pointer disabled:cursor-not-allowed inline-flex items-center gap-1.5 whitespace-nowrap transition" data-page-key="${escapeHtml(page.key)}" ${isFull || isBusy ? 'disabled' : ''}>
               <i class="fas ${isBusy ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} text-[11px]"></i>
-              <span>${isBusy ? 'Processing...' : isFull ? 'Limit Reached (5/5)' : 'Upload Screenshots'}</span>
+              <span class="shot-upload-label">${isBusy ? escapeHtml(busyLabel) : isFull ? 'Limit Reached (5/5)' : 'Upload Image / Video'}</span>
             </button>
-            <span class="text-[11px] text-slate-500 font-medium">Auto-compressed WebP/JPEG · Max 5</span>
+            <span class="text-[11px] text-slate-500 font-medium">Images &amp; MP4/WebM (≤15MB HD, &gt;15MB 720p)</span>
           </div>
 
           <div class="flex items-center gap-2">
-            <input type="url" class="shot-url-input flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-medium outline-none disabled:opacity-50" data-page-key="${escapeHtml(page.key)}" placeholder="Or paste optional https:// image URL..." ${isFull || isBusy ? 'disabled' : ''}>
+            <input type="url" class="shot-url-input flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-medium outline-none disabled:opacity-50" data-page-key="${escapeHtml(page.key)}" placeholder="Or paste optional https:// image or .mp4 URL..." ${isFull || isBusy ? 'disabled' : ''}>
             <button type="button" class="btn-shot-add-url px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap transition" data-page-key="${escapeHtml(page.key)}" ${isFull || isBusy ? 'disabled' : ''}>
               Add URL
             </button>
@@ -2354,10 +2515,13 @@ const renderScreenshotsManager = () => {
       const pageMeta = PLATFORM_SHOWCASE_PAGES.find((p) => p.key === key);
       const shot = imgs[idx];
       if (shot) {
+        const isVideo = shot.mediaType === 'video' || isLikelyVideoUrl(shot.url);
         openScreenshotPreviewModal(
-          `${pageMeta?.label || key} — Screenshot #${idx + 1}`,
+          `${pageMeta?.label || key} — ${isVideo ? 'Video' : 'Screenshot'} #${idx + 1}`,
           shot.url,
-          `Slide ${idx + 1} of ${imgs.length}${shot.caption ? ` · ${shot.caption}` : ''}`
+          `Item ${idx + 1} of ${imgs.length}${shot.caption ? ` · ${shot.caption}` : ''}`,
+          isVideo ? 'video' : 'image',
+          shot.posterUrl || ''
         );
       }
     });
@@ -2427,10 +2591,17 @@ const verifyCompanyOwnerSession = async (user) => {
     verifiedCompanyOwnerEmail = email;
     const brandTitle = document.getElementById('company-brand-title');
     const ownerEmailEl = document.getElementById('company-owner-email');
+    const mobileEmailEl = document.getElementById('company-mobile-owner-email');
     if (brandTitle) brandTitle.textContent = data.companyName || 'Institution Manage';
     if (ownerEmailEl) ownerEmailEl.textContent = `${email} • Project: ${firebaseConfig.projectId}`;
+    if (mobileEmailEl) mobileEmailEl.textContent = email;
+
+    const matchedOwner = ownersList.find((o) => String(o?.email || '').trim().toLowerCase() === email && o?.isActive !== false);
+    const activeOtpPhone = String(matchedOwner?.otpPhone || matchedOwner?.phone || data.otpPhone || data.ownerOtpPhone || '').trim();
+    syncCompanyOtpSecurityUI(activeOtpPhone);
+
     window.AppSession?.startCompany?.({
-      name: ownersList.find((o) => String(o?.email || '').toLowerCase() === email)?.name || 'Company Owner',
+      name: matchedOwner?.name || 'Company Owner',
       email,
       companyName: data.companyName || 'Institution Manage'
     });
@@ -2441,16 +2612,87 @@ const verifyCompanyOwnerSession = async (user) => {
   }
 };
 
+const syncCompanyOtpSecurityUI = (rawPhone = '') => {
+  const cleanPhone = String(rawPhone || '').trim();
+  const inputEl = document.getElementById('company-otp-phone-input');
+  const badgeEl = document.getElementById('company-otp-status-badge');
+  const dashBannerEl = document.getElementById('dash-otp-setup-banner');
+
+  if (inputEl) inputEl.value = cleanPhone;
+  const isConfigured = Boolean(normalizePhoneToE164Client(cleanPhone));
+  if (badgeEl) {
+    badgeEl.textContent = isConfigured ? `Active (${cleanPhone})` : 'Not Configured';
+    badgeEl.className = isConfigured
+      ? 'px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 whitespace-nowrap'
+      : 'px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 whitespace-nowrap';
+  }
+  if (dashBannerEl) {
+    dashBannerEl.classList.toggle('hidden', isConfigured);
+  }
+};
+
+const handleCompanyOtpSecuritySubmit = async (e) => {
+  e.preventDefault();
+  const inputEl = document.getElementById('company-otp-phone-input');
+  const rawVal = String(inputEl?.value || '').trim();
+  let normalized = '';
+  if (rawVal) {
+    normalized = normalizePhoneToE164Client(rawVal);
+    if (!normalized) {
+      showToast('Please enter a valid 10-digit mobile number or E.164 format (e.g. +919876543210).', 'error');
+      inputEl?.focus();
+      return;
+    }
+  }
+
+  const btn = document.getElementById('btn-save-company-otp-phone');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+  }
+
+  try {
+    const configRef = doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID);
+    await setDoc(configRef, {
+      otpPhone: normalized,
+      updatedAt: serverTimestamp(),
+      updatedBy: verifiedCompanyOwnerEmail || 'company'
+    }, { merge: true });
+    syncCompanyOtpSecurityUI(normalized);
+    showToast(
+      normalized
+        ? `Company Owner 2-Step SMS OTP enabled for ${normalized}`
+        : 'Company Owner SMS OTP number cleared.'
+    );
+  } catch (err) {
+    console.error('Save Company OTP phone error:', err);
+    showToast(`Failed to save OTP mobile number: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  }
+};
+
 const bindEvents = () => {
   // Persistent Expand / Collapse sidebar toggle
   document.getElementById('btn-open-company-sidebar')?.addEventListener('click', toggleCompanySidebar);
   document.getElementById('btn-close-company-sidebar')?.addEventListener('click', () => applyCompanySidebarCollapsed(true, true));
 
-  document.querySelectorAll('.company-nav-btn[data-company-view]').forEach((btn) => {
+  document.querySelectorAll('.company-nav-btn[data-company-view], .company-bottom-nav-btn[data-company-view], .company-more-nav-btn[data-company-view]').forEach((btn) => {
     btn.addEventListener('click', () => setActiveCompanyView(btn.dataset.companyView));
   });
   document.querySelectorAll('[data-jump-view]').forEach((btn) => {
     btn.addEventListener('click', () => setActiveCompanyView(btn.dataset.jumpView));
+  });
+
+  // Mobile More bottom sheet
+  document.getElementById('btn-company-mobile-more')?.addEventListener('click', openCompanyMobileMoreSheet);
+  document.getElementById('btn-close-company-mobile-more')?.addEventListener('click', closeCompanyMobileMoreSheet);
+  document.getElementById('company-mobile-more-sheet')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeCompanyMobileMoreSheet();
   });
 
   document.getElementById('btn-open-add-inst')?.addEventListener('click', () => setActiveCompanyView('add-institution'));
@@ -2465,9 +2707,12 @@ const bindEvents = () => {
   document.getElementById('btn-preview-catalog-modal')?.addEventListener('click', openCatalogPreview);
   document.getElementById('btn-preview-contact-modal')?.addEventListener('click', openCatalogPreview);
 
-  document.getElementById('btn-company-signout')?.addEventListener('click', () => {
+  const handleCompanySignOut = () => {
     window.AppSession?.signOut?.(auth, { redirectUrl: '/?public=1' });
-  });
+  };
+  document.getElementById('btn-company-signout')?.addEventListener('click', handleCompanySignOut);
+  document.getElementById('btn-company-mobile-signout')?.addEventListener('click', handleCompanySignOut);
+  document.getElementById('company-otp-security-form')?.addEventListener('submit', handleCompanyOtpSecuritySubmit);
 
   // Institutions view filters
   document.getElementById('btn-refresh-institutions')?.addEventListener('click', loadInstitutions);

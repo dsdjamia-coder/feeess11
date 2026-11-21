@@ -1,4 +1,5 @@
-import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously, signOut, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, onSnapshot, collection, getDoc, getDocFromServer, getDocs, setDoc, query, where, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth, firebaseConfig } from '../../config/firebase-config.js';
 import {
@@ -41,8 +42,19 @@ import {
     completeDirectoryOtpLogin,
     lookupStudentsByPhone,
     completeStudentOtpLogin,
+    initiateCompanyOwnerOtp,
+    completeCompanyOwnerOtpLogin,
     normalizePhoneToE164Client
 } from '../shared/custom-auth-service.js';
+
+let companyOtpAuthInstance = null;
+const getCompanyOtpAuth = () => {
+    if (companyOtpAuthInstance) return companyOtpAuthInstance;
+    const existing = getApps().find((a) => a.name === 'company-otp-verifier');
+    const secondaryApp = existing || initializeApp(firebaseConfig, 'company-otp-verifier');
+    companyOtpAuthInstance = getAuth(secondaryApp);
+    return companyOtpAuthInstance;
+};
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 let isRootGatewayMode = false;
@@ -964,8 +976,8 @@ let isRootGatewayMode = false;
                     filterButtons.forEach((b) => {
                         const isActive = (b.getAttribute('data-module-filter') || 'all') === selected;
                         b.className = isActive
-                            ? 'px-3.5 py-2 text-xs font-bold rounded-lg bg-white text-slate-900 shadow-2xs transition-colors cursor-pointer whitespace-nowrap shrink-0'
-                            : 'px-3.5 py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap shrink-0';
+                            ? 'px-2.5 py-1.5 text-[11px] font-extrabold rounded-lg bg-white text-slate-900 shadow-2xs transition-colors cursor-pointer whitespace-nowrap'
+                            : 'px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap';
                     });
                     moduleCards.forEach((card) => {
                         const cat = card.getAttribute('data-module-category') || '';
@@ -975,13 +987,6 @@ let isRootGatewayMode = false;
                 });
             });
 
-            const demoTabButtons = Array.from(document.querySelectorAll('[data-demo-tab]'));
-            const demoPanels = Array.from(document.querySelectorAll('[data-demo-panel]'));
-            const tabScroller = document.getElementById('demo-tablist-scroller');
-            const tabScrollLeftBtn = document.getElementById('demo-tabs-scroll-left');
-            const tabScrollRightBtn = document.getElementById('demo-tabs-scroll-right');
-
-            let activeDemoTabKey = demoTabButtons[0]?.getAttribute('data-demo-tab') || 'public';
             const showcaseImagesByPage = new Map();
             const showcaseSlideIndexByPage = new Map();
             const showcaseLabelByKey = new Map(PLATFORM_SHOWCASE_PAGES.map((p) => [p.key, p.label]));
@@ -998,10 +1003,25 @@ let isRootGatewayMode = false;
                 }
             };
 
-            // Full-screen Showcase Lightbox state & controls
+            const isShowcaseVideoItem = (item = {}) => {
+                if (item.mediaType === 'video') return true;
+                const clean = String(item.url || '').trim().toLowerCase();
+                if (!clean) return false;
+                try {
+                    const parsed = new URL(clean);
+                    return /\.(mp4|webm|mov)(\?|$)/i.test(parsed.pathname)
+                        || clean.includes('_vid_')
+                        || (parsed.searchParams.get('alt') === 'media' && /\.(mp4|webm|mov)/i.test(decodeURIComponent(parsed.pathname)));
+                } catch (_) {
+                    return /\.(mp4|webm|mov)(\?|$)/i.test(clean);
+                }
+            };
+
+            // Full-screen Showcase Lightbox state & controls (supports Images & HD Videos)
             let lightboxState = { pageKey: '', images: [], index: 0 };
             const lightboxModal = document.getElementById('showcase-lightbox-modal');
             const lightboxImg = document.getElementById('showcase-lightbox-img');
+            const lightboxVideo = document.getElementById('showcase-lightbox-video');
             const lightboxTitle = document.getElementById('showcase-lightbox-title');
             const lightboxMeta = document.getElementById('showcase-lightbox-meta');
             const lightboxPrevBtn = document.getElementById('showcase-lightbox-prev');
@@ -1011,6 +1031,15 @@ let isRootGatewayMode = false;
             let lightboxTouchStartX = 0;
             let lightboxTouchStartY = 0;
 
+            const stopLightboxVideo = () => {
+                if (!lightboxVideo) return;
+                try { lightboxVideo.pause(); } catch (_) {}
+                lightboxVideo.removeAttribute('src');
+                lightboxVideo.poster = '';
+                lightboxVideo.load();
+                lightboxVideo.classList.add('hidden');
+            };
+
             const renderLightboxSlide = () => {
                 const { pageKey, images, index } = lightboxState;
                 if (!images.length || !lightboxImg) return;
@@ -1018,14 +1047,28 @@ let isRootGatewayMode = false;
                 lightboxState.index = safeIdx;
                 const shot = images[safeIdx];
                 const moduleLabel = showcaseLabelByKey.get(pageKey) || 'Platform Preview';
+                const isVideo = isShowcaseVideoItem(shot);
 
-                lightboxImg.src = shot.url;
-                lightboxImg.alt = `${moduleLabel} screenshot ${safeIdx + 1}`;
+                if (isVideo && lightboxVideo) {
+                    lightboxImg.classList.add('hidden');
+                    lightboxImg.src = '';
+                    lightboxVideo.classList.remove('hidden');
+                    lightboxVideo.poster = shot.posterUrl || '';
+                    lightboxVideo.src = shot.url;
+                    lightboxVideo.load();
+                } else {
+                    stopLightboxVideo();
+                    lightboxImg.classList.remove('hidden');
+                    lightboxImg.src = shot.url;
+                    lightboxImg.alt = `${moduleLabel} screenshot ${safeIdx + 1}`;
+                }
+
                 if (lightboxTitle) lightboxTitle.textContent = moduleLabel;
                 if (lightboxMeta) {
+                    const kind = isVideo ? 'Video' : 'Screenshot';
                     lightboxMeta.textContent = images.length > 1
-                        ? `Screenshot ${safeIdx + 1} / ${images.length}`
-                        : 'Full-size screenshot preview';
+                        ? `${kind} ${safeIdx + 1} / ${images.length}`
+                        : `Full-size ${kind.toLowerCase()} preview`;
                 }
                 const hasMultiple = images.length > 1;
                 lightboxPrevBtn?.classList.toggle('hidden', !hasMultiple);
@@ -1054,6 +1097,7 @@ let isRootGatewayMode = false;
                 lightboxModal.classList.remove('flex');
                 lightboxModal.setAttribute('aria-hidden', 'true');
                 if (lightboxImg) lightboxImg.src = '';
+                stopLightboxVideo();
                 lightboxState = { pageKey: '', images: [], index: 0 };
             };
 
@@ -1103,26 +1147,51 @@ let isRootGatewayMode = false;
                 if (!wrapper) return;
                 const track = wrapper.querySelector('[data-carousel-track]');
                 const counter = wrapper.querySelector('[data-carousel-counter]');
-                const captionEl = wrapper.querySelector('[data-carousel-caption]');
                 const dots = wrapper.querySelectorAll('[data-carousel-dot]');
 
                 if (track) {
                     track.style.transform = `translate3d(-${safeIdx * 100}%, 0, 0)`;
                 }
                 if (counter) {
-                    counter.textContent = `${safeIdx + 1} / ${images.length}`;
-                }
-                if (captionEl) {
-                    const cap = String(images[safeIdx]?.caption || '').trim();
-                    captionEl.textContent = cap || `${showcaseLabelByKey.get(pageKey) || 'Platform'} · View ${safeIdx + 1}`;
+                    counter.textContent = `${safeIdx + 1}/${images.length}`;
                 }
                 dots.forEach((dot, idx) => {
                     const isActive = idx === safeIdx;
                     dot.setAttribute('aria-current', isActive ? 'true' : 'false');
                     dot.className = isActive
-                        ? 'h-2 w-6 rounded-full bg-blue-600 transition-all cursor-pointer'
-                        : 'h-2 w-2 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer';
+                        ? 'h-1.5 w-4 rounded-full bg-blue-600 transition-all cursor-pointer'
+                        : 'h-1.5 w-1.5 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer';
                 });
+            };
+
+            const renderSlideVisualHtml = (shot, moduleLabel, idx) => {
+                const isVideo = isShowcaseVideoItem(shot);
+                if (isVideo) {
+                    const posterVisual = shot.posterUrl
+                        ? `<img src="${escapeHtml(shot.posterUrl)}" alt="${escapeHtml(moduleLabel)} video preview ${idx + 1}" class="w-full h-full object-cover pointer-events-none" referrerpolicy="no-referrer" loading="lazy">`
+                        : `<div class="w-full h-full bg-slate-900 flex items-center justify-center"><i class="fas fa-film text-slate-600 text-2xl"></i></div>`;
+                    return `
+                        <button type="button" data-showcase-zoom="${idx}" class="w-full h-full shrink-0 relative flex items-center justify-center bg-slate-900 cursor-pointer overflow-hidden group" aria-label="Play ${escapeHtml(moduleLabel)} video ${idx + 1}">
+                            ${posterVisual}
+                            <span class="absolute inset-0 bg-slate-950/30 group-hover:bg-slate-950/20 transition-colors flex items-center justify-center">
+                                <span class="w-11 h-11 rounded-full bg-white/95 text-slate-900 shadow-lg flex items-center justify-center group-hover:scale-105 transition-transform">
+                                    <i class="fas fa-play text-xs ml-0.5" aria-hidden="true"></i>
+                                </span>
+                            </span>
+                            <span class="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-indigo-600/95 text-white text-[9px] font-extrabold uppercase tracking-wide inline-flex items-center gap-1">
+                                <i class="fas fa-video text-[8px]" aria-hidden="true"></i>Video
+                            </span>
+                        </button>
+                    `;
+                }
+                return `
+                    <button type="button" data-showcase-zoom="${idx}" class="w-full h-full shrink-0 relative flex items-center justify-center bg-slate-100 cursor-zoom-in overflow-hidden group" aria-label="Expand ${escapeHtml(moduleLabel)} screenshot ${idx + 1}">
+                        <img src="${escapeHtml(shot.url)}" alt="${escapeHtml(moduleLabel)} screenshot ${idx + 1}" class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-200 pointer-events-none" referrerpolicy="no-referrer" loading="lazy">
+                        <span class="absolute bottom-2 right-2 w-7 h-7 rounded-lg bg-slate-900/70 text-white text-[10px] flex items-center justify-center opacity-85 group-hover:opacity-100 transition-opacity">
+                            <i class="fas fa-expand" aria-hidden="true"></i>
+                        </span>
+                    </button>
+                `;
             };
 
             const renderPageShowcaseViewport = (pageKey) => {
@@ -1148,77 +1217,43 @@ let isRootGatewayMode = false;
                 showcaseSlideIndexByPage.set(pageKey, currentIdx);
 
                 if (images.length === 1) {
-                    const shot = images[0];
                     mediaEl.innerHTML = `
-                        <div class="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
-                            <div class="px-4 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-2">
-                                <div class="flex items-center gap-2 min-w-0">
-                                    <span class="text-xs font-extrabold text-slate-800 truncate">${escapeHtml(moduleLabel)}</span>
-                                    <span class="text-[11px] font-semibold text-slate-400 hidden sm:inline">· Live Screen</span>
-                                </div>
-                                <button type="button" data-showcase-zoom="0" class="px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap transition">
-                                    <i class="fas fa-expand text-[10px]" aria-hidden="true"></i>
-                                    <span>Zoom</span>
-                                </button>
-                            </div>
-                            <button type="button" data-showcase-zoom="0" class="block w-full aspect-[16/10] bg-slate-100 overflow-hidden cursor-zoom-in relative group" aria-label="Open full-size screenshot for ${escapeHtml(moduleLabel)}">
-                                <img src="${escapeHtml(shot.url)}" alt="${escapeHtml(moduleLabel)} platform screenshot" class="w-full h-full object-contain transition-transform duration-200 group-hover:scale-[1.01]" referrerpolicy="no-referrer" loading="lazy">
-                            </button>
-                            ${shot.caption ? `<div class="px-4 py-2 bg-white border-t border-slate-200 text-[11px] font-semibold text-slate-600 truncate">${escapeHtml(shot.caption)}</div>` : ''}
+                        <div class="rounded-xl border border-slate-200 bg-slate-100 overflow-hidden aspect-[16/10] relative">
+                            ${renderSlideVisualHtml(images[0], moduleLabel, 0)}
                         </div>
                     `;
                     mediaEl.querySelectorAll('[data-showcase-zoom]').forEach((btn) => {
                         btn.addEventListener('click', () => openShowcaseLightbox(pageKey, 0));
                     });
-                    const imgEl = mediaEl.querySelector('img');
-                    imgEl?.addEventListener('error', () => {
-                        fallbackEl.classList.remove('hidden');
-                        mediaEl.classList.add('hidden');
-                    }, { once: true });
                     return;
                 }
 
-                // Multi-screenshot interactive carousel (2–5 images)
+                // Multi-media compact interactive carousel (2–5 images/videos)
                 mediaEl.innerHTML = `
-                    <div class="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden">
-                        <div class="px-4 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2 min-w-0">
-                                <span class="text-xs font-extrabold text-slate-800 truncate">${escapeHtml(moduleLabel)}</span>
-                                <span aria-hidden="true" class="text-slate-300">·</span>
-                                <span data-carousel-counter class="text-xs font-extrabold text-blue-600 tabular-nums shrink-0">${currentIdx + 1} / ${images.length}</span>
-                            </div>
-                            <button type="button" data-carousel-zoom-active class="px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap transition">
-                                <i class="fas fa-expand text-[10px]" aria-hidden="true"></i>
-                                <span>Zoom</span>
-                            </button>
-                        </div>
-
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
                         <div data-carousel-stage class="relative aspect-[16/10] bg-slate-100 overflow-hidden select-none" style="touch-action: pan-y;">
                             <div data-carousel-track class="flex h-full transition-transform duration-200 ease-out" style="transform: translate3d(-${currentIdx * 100}%, 0, 0);">
-                                ${images.map((shot, idx) => `
-                                    <button type="button" data-showcase-zoom="${idx}" class="w-full h-full shrink-0 flex items-center justify-center bg-slate-100 cursor-zoom-in overflow-hidden" aria-label="Zoom ${escapeHtml(moduleLabel)} screenshot ${idx + 1}">
-                                        <img src="${escapeHtml(shot.url)}" alt="${escapeHtml(moduleLabel)} screenshot ${idx + 1}" class="w-full h-full object-contain pointer-events-none" referrerpolicy="no-referrer" loading="lazy">
-                                    </button>
-                                `).join('')}
+                                ${images.map((shot, idx) => renderSlideVisualHtml(shot, moduleLabel, idx)).join('')}
                             </div>
 
-                            <button type="button" data-carousel-prev class="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/95 hover:bg-white text-slate-900 border border-slate-200 shadow-md items-center justify-center cursor-pointer transition active:scale-95" aria-label="Previous screenshot">
-                                <i class="fas fa-chevron-left text-xs" aria-hidden="true"></i>
+                            <button type="button" data-carousel-prev class="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-white/90 hover:bg-white text-slate-900 border border-slate-200 shadow-sm flex items-center justify-center cursor-pointer transition" aria-label="Previous media">
+                                <i class="fas fa-chevron-left text-[10px]" aria-hidden="true"></i>
                             </button>
-                            <button type="button" data-carousel-next class="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/95 hover:bg-white text-slate-900 border border-slate-200 shadow-md items-center justify-center cursor-pointer transition active:scale-95" aria-label="Next screenshot">
-                                <i class="fas fa-chevron-right text-xs" aria-hidden="true"></i>
+                            <button type="button" data-carousel-next class="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-white/90 hover:bg-white text-slate-900 border border-slate-200 shadow-sm flex items-center justify-center cursor-pointer transition" aria-label="Next media">
+                                <i class="fas fa-chevron-right text-[10px]" aria-hidden="true"></i>
                             </button>
+                            <span data-carousel-counter class="absolute top-2 right-2 z-10 px-1.5 py-0.5 rounded-md bg-slate-900/75 text-white text-[10px] font-extrabold tabular-nums pointer-events-none">${currentIdx + 1}/${images.length}</span>
                         </div>
 
-                        <div class="px-4 py-2.5 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
-                            <span data-carousel-caption class="text-[11px] font-semibold text-slate-500 truncate max-w-[60%]">
-                                ${escapeHtml(images[currentIdx]?.caption || `${moduleLabel} · Swipe or use arrows`)}
-                            </span>
-                            <div class="flex items-center gap-1.5" role="group" aria-label="Screenshot slides">
+                        <div class="px-2.5 py-1.5 bg-white border-t border-slate-200 flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-1" role="group" aria-label="Media slides">
                                 ${images.map((_, idx) => `
-                                    <button type="button" data-carousel-dot="${idx}" aria-label="Go to slide ${idx + 1}" aria-current="${idx === currentIdx ? 'true' : 'false'}" class="${idx === currentIdx ? 'h-2 w-6 rounded-full bg-blue-600 transition-all cursor-pointer' : 'h-2 w-2 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer'}"></button>
+                                    <button type="button" data-carousel-dot="${idx}" aria-label="Go to slide ${idx + 1}" aria-current="${idx === currentIdx ? 'true' : 'false'}" class="${idx === currentIdx ? 'h-1.5 w-4 rounded-full bg-blue-600 transition-all cursor-pointer' : 'h-1.5 w-1.5 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer'}"></button>
                                 `).join('')}
                             </div>
+                            <button type="button" data-carousel-zoom-active class="text-[10px] font-extrabold text-blue-600 hover:text-blue-700 cursor-pointer inline-flex items-center gap-1">
+                                <i class="fas fa-expand text-[9px]" aria-hidden="true"></i><span>Full View</span>
+                            </button>
                         </div>
                     </div>
                 `;
@@ -1245,7 +1280,6 @@ let isRootGatewayMode = false;
                     });
                 });
 
-                // Mobile touch-swipe support (40px horizontal threshold)
                 const stage = mediaEl.querySelector('[data-carousel-stage]');
                 let touchStartX = 0;
                 let touchStartY = 0;
@@ -1263,84 +1297,25 @@ let isRootGatewayMode = false;
                 }, { passive: true });
             };
 
-            const selectDemoTab = (selectedTab) => {
-                activeDemoTabKey = selectedTab;
-                demoTabButtons.forEach((b) => {
-                    const isActive = (b.getAttribute('data-demo-tab') || '') === selectedTab;
-                    b.setAttribute('aria-selected', isActive ? 'true' : 'false');
-                    b.className = isActive
-                        ? 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg bg-blue-600 text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5'
-                        : 'px-3.5 py-2.5 text-xs font-extrabold rounded-lg text-slate-600 hover:text-slate-900 transition-all cursor-pointer whitespace-nowrap shrink-0 inline-flex items-center gap-1.5';
-                    if (isActive && typeof b.scrollIntoView === 'function') {
-                        b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-                    }
-                });
-                demoPanels.forEach((panel) => {
-                    const panelKey = panel.getAttribute('data-demo-panel') || '';
-                    panel.classList.toggle('hidden', panelKey !== selectedTab);
-                });
-            };
-
-            demoTabButtons.forEach((btn) => {
-                if (btn.dataset.boundDemoTab) return;
-                btn.dataset.boundDemoTab = 'true';
-                btn.addEventListener('click', () => {
-                    const selectedTab = btn.getAttribute('data-demo-tab') || 'public';
-                    selectDemoTab(selectedTab);
-                });
-            });
-
-            if (tabScrollLeftBtn && !tabScrollLeftBtn.dataset.boundScroll) {
-                tabScrollLeftBtn.dataset.boundScroll = 'true';
-                tabScrollLeftBtn.addEventListener('click', () => {
-                    tabScroller?.scrollBy({ left: -260, behavior: 'smooth' });
-                });
-            }
-            if (tabScrollRightBtn && !tabScrollRightBtn.dataset.boundScroll) {
-                tabScrollRightBtn.dataset.boundScroll = 'true';
-                tabScrollRightBtn.addEventListener('click', () => {
-                    tabScroller?.scrollBy({ left: 260, behavior: 'smooth' });
-                });
-            }
-
             if (!document.documentElement.dataset.boundShowcaseKeyboard) {
                 document.documentElement.dataset.boundShowcaseKeyboard = 'true';
                 document.addEventListener('keydown', (e) => {
                     if (!isRootGatewayMode) return;
                     const lightboxOpen = lightboxModal && !lightboxModal.classList.contains('hidden');
-                    if (lightboxOpen) {
-                        if (e.key === 'Escape') {
-                            closeShowcaseLightbox();
-                        } else if (e.key === 'ArrowLeft' && lightboxState.images.length > 1) {
-                            lightboxState.index -= 1;
-                            renderLightboxSlide();
-                        } else if (e.key === 'ArrowRight' && lightboxState.images.length > 1) {
-                            lightboxState.index += 1;
-                            renderLightboxSlide();
-                        }
-                        return;
+                    if (!lightboxOpen) return;
+                    if (e.key === 'Escape') {
+                        closeShowcaseLightbox();
+                    } else if (e.key === 'ArrowLeft' && lightboxState.images.length > 1) {
+                        lightboxState.index -= 1;
+                        renderLightboxSlide();
+                    } else if (e.key === 'ArrowRight' && lightboxState.images.length > 1) {
+                        lightboxState.index += 1;
+                        renderLightboxSlide();
                     }
-
-                    const activeTag = String(document.activeElement?.tagName || '').toLowerCase();
-                    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
-                    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-
-                    const demoSection = document.getElementById('product-demo');
-                    if (!demoSection) return;
-                    const rect = demoSection.getBoundingClientRect();
-                    const isSectionVisible = rect.top < window.innerHeight && rect.bottom > 0;
-                    if (!isSectionVisible) return;
-
-                    const imgs = showcaseImagesByPage.get(activeDemoTabKey) || [];
-                    if (imgs.length <= 1) return;
-                    updateCarouselPosition(
-                        activeDemoTabKey,
-                        (showcaseSlideIndexByPage.get(activeDemoTabKey) || 0) + (e.key === 'ArrowRight' ? 1 : -1)
-                    );
                 });
             }
 
-            // Load uploaded platform showcase screenshots from Firestore (public read)
+            // Load uploaded platform showcase images & videos from Firestore (public read)
             (async () => {
                 try {
                     const snap = await getDocs(
@@ -1356,6 +1331,8 @@ let isRootGatewayMode = false;
                             .map((item, idx) => ({
                                 id: String(item.id || `${pageKey}_${idx}`),
                                 url: String(item.url).trim(),
+                                mediaType: item.mediaType === 'video' || (!item.mediaType && isShowcaseVideoItem(item)) ? 'video' : 'image',
+                                posterUrl: item.posterUrl && isSafeShowcaseUrl(item.posterUrl) ? String(item.posterUrl).trim() : '',
                                 caption: String(item.caption || '').trim()
                             }));
                         showcaseImagesByPage.set(pageKey, validImages);
@@ -1992,7 +1969,7 @@ let isRootGatewayMode = false;
             }
         };
 
-        const ensureRecaptchaVerifier = async () => {
+        const ensureRecaptchaVerifier = async (targetAuth = auth) => {
             const container = document.getElementById('firebase-recaptcha-container');
             if (!container) {
                 throw new Error('Verification container is missing. Please reload the page.');
@@ -2004,7 +1981,7 @@ let isRootGatewayMode = false;
             slot.id = `firebase-recaptcha-slot-${++recaptchaMountCounter}`;
             container.appendChild(slot);
 
-            recaptchaVerifierInstance = new RecaptchaVerifier(auth, slot, {
+            recaptchaVerifierInstance = new RecaptchaVerifier(targetAuth, slot, {
                 size: 'invisible',
                 callback: () => {},
                 'expired-callback': () => {
@@ -2122,9 +2099,15 @@ let isRootGatewayMode = false;
         const closeLoginModal = () => {
             stopOtpTimers();
             resetRecaptchaVerifier();
+            // If Company Owner abandoned 2-Step SMS OTP before completing it, sign out the unverified primary session
+            if (officialOtpState.flowType === 'company_owner') {
+                signOut(auth).catch(() => {});
+                if (companyOtpAuthInstance) signOut(companyOtpAuthInstance).catch(() => {});
+            }
             const modalEl = document.getElementById('login-modal');
             if (modalEl) modalEl.style.display = 'none';
             officialOtpState.cachedPassword = '';
+            officialOtpState.flowType = '';
             showLoginMessage('');
         };
 
@@ -2173,6 +2156,11 @@ let isRootGatewayMode = false;
                 const active = effectiveMode === 'official';
                 officialTab.classList.toggle('is-active', active);
                 officialTab.setAttribute('aria-selected', active ? 'true' : 'false');
+            }
+
+            if (officialOtpState.flowType === 'company_owner') {
+                signOut(auth).catch(() => {});
+                if (companyOtpAuthInstance) signOut(companyOtpAuthInstance).catch(() => {});
             }
 
             verifiedUser = null;
@@ -2945,12 +2933,12 @@ let isRootGatewayMode = false;
 
                     if (passHint) {
                         passHint.textContent = isCompanyOwner
-                            ? 'Enter your Company Owner password to sign in.'
+                            ? 'Enter your Company Owner password. If 2-Step SMS OTP is enabled, a 6-digit code will be sent next.'
                             : 'After verifying your password, an SMS OTP will be sent to your registered mobile.';
                     }
                     const officialNoticeEl = document.getElementById('official-otp-session-notice');
                     if (officialNoticeEl) {
-                        officialNoticeEl.classList.toggle('hidden', isCompanyOwner);
+                        officialNoticeEl.classList.remove('hidden');
                     }
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -2959,8 +2947,8 @@ let isRootGatewayMode = false;
 
                     hideAllLoginPanels();
                     setLoginStepState(2, {
-                        totalSteps: isCompanyOwner ? 2 : 3,
-                        labels: isCompanyOwner ? ['Account', 'Password', ''] : ['Account', 'Password', 'OTP']
+                        totalSteps: 3,
+                        labels: ['Account', 'Password', 'OTP']
                     });
                     document.getElementById('official-step-2')?.classList.remove('hidden');
                     if (passInput) {
@@ -3012,8 +3000,15 @@ let isRootGatewayMode = false;
 
             try {
                 // On resend, refresh the server-side challenge so the 5-minute TTL resets cleanly
-                if (isResend && verifiedUser && officialOtpState.cachedPassword) {
-                    if (officialOtpState.flowType === 'custom_auth') {
+                if (isResend && verifiedUser) {
+                    if (officialOtpState.flowType === 'company_owner') {
+                        const refreshed = await initiateCompanyOwnerOtp();
+                        if (refreshed?.challengeId) {
+                            officialOtpState.challengeId = refreshed.challengeId;
+                            officialOtpState.phoneE164 = refreshed.phoneE164 || officialOtpState.phoneE164;
+                            officialOtpState.maskedPhone = refreshed.maskedPhone || officialOtpState.maskedPhone;
+                        }
+                    } else if (officialOtpState.flowType === 'custom_auth' && officialOtpState.cachedPassword) {
                         const refreshed = await verifyOfficialPasswordForOtp({
                             username: verifiedUser.loginId,
                             password: officialOtpState.cachedPassword,
@@ -3024,7 +3019,7 @@ let isRootGatewayMode = false;
                             officialOtpState.phoneE164 = refreshed.phoneE164 || officialOtpState.phoneE164;
                             officialOtpState.maskedPhone = refreshed.maskedPhone || officialOtpState.maskedPhone;
                         }
-                    } else if (officialOtpState.flowType === 'directory') {
+                    } else if (officialOtpState.flowType === 'directory' && officialOtpState.cachedPassword) {
                         const refreshed = await verifyDirectoryPasswordForOtp({
                             institutionId: INSTITUTION_ID,
                             username: verifiedUser.loginId,
@@ -3038,14 +3033,17 @@ let isRootGatewayMode = false;
                     }
                 }
 
-                const verifier = await ensureRecaptchaVerifier();
-                const confirmationResult = await signInWithPhoneNumber(auth, officialOtpState.phoneE164, verifier);
+                // Company Owner OTP runs on a secondary Firebase Auth instance so the primary
+                // email/password Company Owner session stays intact for Firestore & Storage rules.
+                const otpAuthInstance = officialOtpState.flowType === 'company_owner' ? getCompanyOtpAuth() : auth;
+                const verifier = await ensureRecaptchaVerifier(otpAuthInstance);
+                const confirmationResult = await signInWithPhoneNumber(otpAuthInstance, officialOtpState.phoneE164, verifier);
                 officialOtpState.confirmationResult = confirmationResult;
                 recordOtpSendAttempt('official', officialOtpState.phoneE164);
 
                 const otpNameEl = document.getElementById('official-otp-name');
                 const otpPhoneEl = document.getElementById('official-otp-phone-meta');
-                if (otpNameEl) otpNameEl.textContent = verifiedUser?.displayName || 'Two-Step Verification';
+                if (otpNameEl) otpNameEl.textContent = officialOtpState.ownerName || verifiedUser?.displayName || 'Two-Step Verification';
                 if (otpPhoneEl) otpPhoneEl.textContent = `OTP sent to ${officialOtpState.maskedPhone || officialOtpState.phoneE164}`;
 
                 hideAllLoginPanels();
@@ -3114,7 +3112,7 @@ let isRootGatewayMode = false;
                     return;
                 }
 
-                // A. Company Owner Login (Standard Firebase Email/Password — No OTP)
+                // A. Company Owner Login (Email/Password + Server-Verified 2-Step SMS OTP when otpPhone is configured)
                 if (isCompanyOwner) {
                     await window.AppSession?.clearAll?.();
                     const loginEmail = String(verifiedUser.loginEmail || verifiedUser.loginId || '').trim().toLowerCase();
@@ -3136,51 +3134,77 @@ let isRootGatewayMode = false;
                         return;
                     }
 
-                    const authedEmail = String(userCred?.user?.email || loginEmail).trim().toLowerCase();
-                    let isOwner = false;
-                    let companyName = 'Institution Manage';
-                    let ownerName = 'Company Owner';
                     try {
-                        const companyRef = doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID);
-                        let companySnap = null;
-                        try {
-                            companySnap = await getDocFromServer(companyRef);
-                        } catch (serverErr) {
-                            if (serverErr?.code === 'unavailable' || String(serverErr?.message || '').toLowerCase().includes('offline')) {
-                                companySnap = await getDoc(companyRef);
-                            } else {
-                                throw serverErr;
-                            }
+                        const otpInit = await initiateCompanyOwnerOtp();
+                        if (otpInit?.otpRequired && otpInit?.challengeId && otpInit?.phoneE164) {
+                            officialOtpState = {
+                                challengeId: otpInit.challengeId,
+                                phoneE164: otpInit.phoneE164,
+                                maskedPhone: otpInit.maskedPhone || otpInit.phoneE164,
+                                confirmationResult: null,
+                                cachedPassword: '',
+                                flowType: 'company_owner',
+                                ownerName: otpInit.ownerName || 'Company Owner',
+                                companyName: otpInit.companyName || 'Institution Manage',
+                                email: otpInit.email || String(userCred?.user?.email || loginEmail).trim().toLowerCase()
+                            };
+                            await dispatchOfficialSmsOtp({ isResend: false });
+                            return;
                         }
-                        if (companySnap?.exists()) {
-                            const data = companySnap.data() || {};
-                            const primaryEmail = String(data.email || '').trim().toLowerCase();
-                            const indexMatch = data?.ownersIndex?.[authedEmail] === true;
-                            const ownersList = Array.isArray(data.owners) ? data.owners : [];
-                            const arrayMatch = ownersList.find((o) => String(o?.email || '').trim().toLowerCase() === authedEmail && o?.isActive !== false);
-                            const ownerEmailsArr = Array.isArray(data.ownerEmails) ? data.ownerEmails.map((e) => String(e || '').trim().toLowerCase()) : [];
-                            if (primaryEmail === authedEmail || indexMatch || Boolean(arrayMatch) || ownerEmailsArr.includes(authedEmail)) {
-                                isOwner = true;
-                                companyName = String(data.companyName || 'Institution Manage').trim();
-                                ownerName = String(arrayMatch?.name || data.name || data.ownerName || 'Company Owner').trim();
-                            }
-                        }
-                    } catch (companyErr) {
-                        console.warn('Company owner verification notice:', companyErr);
-                    }
 
-                    if (isOwner) {
-                        window.AppSession?.startCompany?.({
-                            name: ownerName,
-                            email: authedEmail,
-                            companyName
-                        });
-                        window.location.href = '/company';
+                        // Safe first-time bootstrap when otpPhone is not yet configured in company/config
+                        if (otpInit?.ok) {
+                            try { await userCred.user.getIdToken(true); } catch (_) {}
+                            window.AppSession?.startCompany?.({
+                                name: otpInit.ownerName || 'Company Owner',
+                                email: otpInit.email || String(userCred?.user?.email || loginEmail).trim().toLowerCase(),
+                                companyName: otpInit.companyName || 'Institution Manage'
+                            });
+                            window.location.href = '/company';
+                            return;
+                        }
+                    } catch (otpInitErr) {
+                        // Graceful fallback ONLY if initiateCompanyOwnerOtp Cloud Function is not deployed yet
+                        if (otpInitErr?.code === 'functions/not-found') {
+                            const authedEmail = String(userCred?.user?.email || loginEmail).trim().toLowerCase();
+                            let isOwner = false;
+                            let companyName = 'Institution Manage';
+                            let ownerName = 'Company Owner';
+                            try {
+                                const companyRef = doc(db, COMPANY_COLLECTION, COMPANY_CONFIG_DOC_ID);
+                                const companySnap = await getDocFromServer(companyRef).catch(() => getDoc(companyRef));
+                                if (companySnap?.exists()) {
+                                    const data = companySnap.data() || {};
+                                    const primaryEmail = String(data.email || '').trim().toLowerCase();
+                                    const indexMatch = data?.ownersIndex?.[authedEmail] === true;
+                                    const ownersList = Array.isArray(data.owners) ? data.owners : [];
+                                    const arrayMatch = ownersList.find((o) => String(o?.email || '').trim().toLowerCase() === authedEmail && o?.isActive !== false);
+                                    const ownerEmailsArr = Array.isArray(data.ownerEmails) ? data.ownerEmails.map((e) => String(e || '').trim().toLowerCase()) : [];
+                                    if (primaryEmail === authedEmail || indexMatch || Boolean(arrayMatch) || ownerEmailsArr.includes(authedEmail)) {
+                                        isOwner = true;
+                                        companyName = String(data.companyName || 'Institution Manage').trim();
+                                        ownerName = String(arrayMatch?.name || data.name || data.ownerName || 'Company Owner').trim();
+                                    }
+                                }
+                            } catch (_) {}
+                            if (isOwner) {
+                                window.AppSession?.startCompany?.({ name: ownerName, email: authedEmail, companyName });
+                                window.location.href = '/company';
+                                return;
+                            }
+                        }
+
+                        try { await signOut(auth); } catch (_) {}
+                        showLoginMessage(otpInitErr?.message || 'Unable to verify Company Owner account.');
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = SIGN_IN_BTN_HTML;
+                        }
                         return;
                     }
 
                     try { await signOut(auth); } catch (_) {}
-                    showLoginMessage(`Account "${authedEmail}" is not authorized as a Company Console Owner.`);
+                    showLoginMessage(`Account "${loginEmail}" is not authorized as a Company Console Owner.`);
                     if (btn) {
                         btn.disabled = false;
                         btn.innerHTML = SIGN_IN_BTN_HTML;
@@ -3267,6 +3291,33 @@ let isRootGatewayMode = false;
             try {
                 const phoneCred = await officialOtpState.confirmationResult.confirm(code);
                 const phoneIdToken = await phoneCred.user.getIdToken(true);
+
+                // Company Owner 2FA completion (keeps primary Email/Password Firebase Auth intact!)
+                if (officialOtpState.flowType === 'company_owner') {
+                    const completeRes = await completeCompanyOwnerOtpLogin({
+                        challengeId: officialOtpState.challengeId,
+                        phoneIdToken
+                    });
+                    // Cleanly sign out the temporary secondary phone verifier app
+                    if (companyOtpAuthInstance) {
+                        try { await signOut(companyOtpAuthInstance); } catch (_) {}
+                    }
+                    // Refresh primary Company Owner ID token so companyOwner claim is active
+                    if (auth.currentUser) {
+                        try { await auth.currentUser.getIdToken(true); } catch (_) {}
+                    }
+                    stopOtpTimers();
+                    officialOtpState.cachedPassword = '';
+                    officialOtpState.flowType = '';
+                    await window.AppSession?.clearAll?.();
+                    window.AppSession?.startCompany?.({
+                        name: completeRes?.ownerName || officialOtpState.ownerName || 'Company Owner',
+                        email: completeRes?.email || officialOtpState.email || auth.currentUser?.email || '',
+                        companyName: completeRes?.companyName || officialOtpState.companyName || 'Institution Manage'
+                    });
+                    window.location.href = '/company';
+                    return;
+                }
 
                 // Clear prior client session right before finalizing official session
                 await window.AppSession?.clearAll?.();

@@ -1563,3 +1563,162 @@ exports.syncCompanyOwnerClaims = onCall({ cors: true }, async (request) => {
     email: String(authCtx.token.email || '').trim().toLowerCase()
   };
 });
+
+// =========================================================================
+// 10. COMPANY OWNER 2FA STEP-1: initiateCompanyOwnerOtp
+// Requires an authenticated Company Owner email/password session.
+// Reads otpPhone from company/config (or matching owner entry in owners[]).
+// If no otpPhone is configured yet, returns otpRequired: false so the owner
+// can safely configure their OTP mobile in Company Console without lockout.
+// =========================================================================
+exports.initiateCompanyOwnerOtp = onCall({ cors: true }, async (request) => {
+  const authCtx = request.auth;
+  if (!authCtx || !authCtx.uid || !authCtx.token) {
+    throw new HttpsError('unauthenticated', 'Company Owner authentication is required.');
+  }
+  const provider = String(authCtx.token.firebase?.sign_in_provider || '').toLowerCase();
+  if (provider === 'custom' || provider === 'anonymous' || provider === 'phone') {
+    throw new HttpsError('permission-denied', 'Company Owner email/password sign-in is required.');
+  }
+
+  const email = String(authCtx.token.email || '').trim().toLowerCase();
+  if (!email) {
+    throw new HttpsError('permission-denied', 'Authenticated Company Owner email is missing.');
+  }
+
+  const snap = await db.collection(COMPANY_COLLECTION).doc(COMPANY_CONFIG_DOC_ID).get();
+  if (!snap.exists) {
+    throw new HttpsError('permission-denied', 'Company configuration document not found.');
+  }
+  const data = snap.data() || {};
+  const ownersList = Array.isArray(data.owners) ? data.owners : [];
+  const matchedOwner = ownersList.find(
+    (o) => o && o.isActive !== false && String(o.email || '').trim().toLowerCase() === email
+  );
+  const ownerEmailsArr = Array.isArray(data.ownerEmails)
+    ? data.ownerEmails.map((e) => String(e || '').trim().toLowerCase())
+    : [];
+  const isOwner = String(data.email || '').trim().toLowerCase() === email
+    || data.ownersIndex?.[email] === true
+    || data.ownersIndex?.[authCtx.token.email] === true
+    || Boolean(matchedOwner)
+    || ownerEmailsArr.includes(email);
+
+  if (!isOwner) {
+    throw new HttpsError('permission-denied', `Account "${email}" is not authorized as a Company Console Owner.`);
+  }
+
+  const companyName = String(data.companyName || 'Institution Manage').trim();
+  const ownerName = String(matchedOwner?.name || data.name || data.ownerName || 'Company Owner').trim();
+
+  // Resolve configured OTP mobile number: owner-specific first, then company/config.otpPhone
+  const phoneCandidates = [
+    matchedOwner?.otpPhone,
+    matchedOwner?.phone,
+    data.otpPhone,
+    data.ownerOtpPhone
+  ];
+  let phoneE164 = '';
+  for (const cand of phoneCandidates) {
+    const normalized = normalizePhoneToE164(cand);
+    if (normalized) {
+      phoneE164 = normalized;
+      break;
+    }
+  }
+
+  // Sync companyOwner custom claim proactively so Firestore & Storage rules work immediately
+  try {
+    const userRecord = await adminAuth.getUser(authCtx.uid);
+    const existingClaims = (userRecord.customClaims && typeof userRecord.customClaims === 'object')
+      ? userRecord.customClaims
+      : {};
+    if (existingClaims.companyOwner !== true) {
+      await adminAuth.setCustomUserClaims(authCtx.uid, {
+        ...existingClaims,
+        companyOwner: true
+      });
+    }
+  } catch (claimErr) {
+    console.warn('[initiateCompanyOwnerOtp] Claim sync notice:', claimErr?.message || claimErr);
+  }
+
+  if (!phoneE164) {
+    return {
+      ok: true,
+      otpRequired: false,
+      email,
+      ownerName,
+      companyName
+    };
+  }
+
+  await enforceOtpRateLimit(`company-owner:${authCtx.uid}:${phoneE164}`, OTP_SEND_MAX_REQUESTS);
+
+  const challengeId = await createOtpChallenge({
+    type: 'company_owner',
+    uid: authCtx.uid,
+    email,
+    ownerName,
+    companyName,
+    expectedPhoneE164: phoneE164
+  });
+
+  return {
+    ok: true,
+    otpRequired: true,
+    challengeId,
+    phoneE164,
+    maskedPhone: maskPhoneNumber(phoneE164),
+    email,
+    ownerName,
+    companyName
+  };
+});
+
+// =========================================================================
+// 11. COMPANY OWNER 2FA STEP-2: completeCompanyOwnerOtpLogin
+// Verifies BOTH the authenticated Company Owner session AND the freshly
+// verified Phone Auth ID Token from the secondary OTP verifier app.
+// =========================================================================
+exports.completeCompanyOwnerOtpLogin = onCall({ cors: true }, async (request) => {
+  const authCtx = request.auth;
+  if (!authCtx || !authCtx.uid || !authCtx.token) {
+    throw new HttpsError('unauthenticated', 'Company Owner authentication is required.');
+  }
+  const provider = String(authCtx.token.firebase?.sign_in_provider || '').toLowerCase();
+  if (provider === 'custom' || provider === 'anonymous' || provider === 'phone') {
+    throw new HttpsError('permission-denied', 'Company Owner email/password session is required.');
+  }
+
+  const challengeId = String(request.data?.challengeId || '').trim();
+  const phoneIdToken = String(request.data?.phoneIdToken || '').trim();
+  if (!challengeId || !phoneIdToken) {
+    throw new HttpsError('invalid-argument', 'OTP challenge and verified phone token are required.');
+  }
+
+  const challengeSnap = await db.collection(OTP_CHALLENGES_COLLECTION).doc(challengeId).get();
+  if (!challengeSnap.exists) {
+    throw new HttpsError('not-found', 'OTP verification session expired or not found. Please sign in again.');
+  }
+  const preview = challengeSnap.data() || {};
+  if (preview.type !== 'company_owner') {
+    throw new HttpsError('permission-denied', 'Invalid OTP verification session type.');
+  }
+  if (preview.uid !== authCtx.uid) {
+    throw new HttpsError('permission-denied', 'OTP verification session does not match the signed-in Company Owner.');
+  }
+
+  // Verify the SMS OTP phone token BEFORE consuming the challenge so typos/expired tokens can retry
+  await verifyPhoneAuthToken(phoneIdToken, preview.expectedPhoneE164);
+
+  const challenge = await consumeOtpChallenge(challengeId, 'company_owner');
+
+  return {
+    ok: true,
+    email: String(challenge.email || authCtx.token.email || '').trim().toLowerCase(),
+    ownerName: String(challenge.ownerName || 'Company Owner').trim(),
+    companyName: String(challenge.companyName || 'Institution Manage').trim()
+  };
+});
+

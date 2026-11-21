@@ -91,6 +91,8 @@ const manageStaffCredentialCallable = httpsCallable(functions, 'manageStaffCrede
 const changeOwnPasswordCallable = httpsCallable(functions, 'changeOwnPassword');
 const updateOwnOtpPhoneCallable = httpsCallable(functions, 'updateOwnOtpPhone');
 const verifyOwnPasswordCallable = httpsCallable(functions, 'verifyOwnPassword');
+const initiateCompanyOwnerOtpCallable = httpsCallable(functions, 'initiateCompanyOwnerOtp');
+const completeCompanyOwnerOtpLoginCallable = httpsCallable(functions, 'completeCompanyOwnerOtpLogin');
 
 export const verifyLoginIdentifier = async ({ username, institutionId = '' }) => {
   try {
@@ -207,6 +209,33 @@ export const completeStudentOtpLogin = async ({ institutionId, phoneIdToken }) =
     return res?.data || null;
   } catch (err) {
     const msg = extractCallableErrorMessage(err, 'Unable to verify student OTP session.');
+    const wrapped = new Error(msg);
+    wrapped.code = err?.code || 'functions/unauthenticated';
+    throw wrapped;
+  }
+};
+
+export const initiateCompanyOwnerOtp = async () => {
+  try {
+    const res = await initiateCompanyOwnerOtpCallable({});
+    return res?.data || null;
+  } catch (err) {
+    const msg = extractCallableErrorMessage(err, 'Unable to initiate Company Owner OTP verification.');
+    const wrapped = new Error(msg);
+    wrapped.code = err?.code || 'functions/permission-denied';
+    throw wrapped;
+  }
+};
+
+export const completeCompanyOwnerOtpLogin = async ({ challengeId, phoneIdToken }) => {
+  try {
+    const res = await completeCompanyOwnerOtpLoginCallable({
+      challengeId: String(challengeId || '').trim(),
+      phoneIdToken: String(phoneIdToken || '').trim()
+    });
+    return res?.data || null;
+  } catch (err) {
+    const msg = extractCallableErrorMessage(err, 'Company Owner OTP verification failed.');
     const wrapped = new Error(msg);
     wrapped.code = err?.code || 'functions/unauthenticated';
     throw wrapped;
