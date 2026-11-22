@@ -457,8 +457,25 @@ service cloud.firestore {
 
     // 1. Settings Collection
     match /institutions/{institutionId}/settings/{docId} {
-      // Company Owner can manage institution settings unconditionally (including during setup/pause)
-      allow read, write: if isCompanyOwner();
+      function validGalleryLimitWrite() {
+        return docId != 'content'
+          || !('gallery' in request.resource.data)
+          || (
+            request.resource.data.gallery is list
+            && (
+              request.resource.data.gallery.size() <= 24
+              || (
+                resource != null
+                && resource.data.gallery is list
+                && request.resource.data.gallery.size() <= resource.data.gallery.size()
+              )
+            )
+          );
+      }
+
+      // Company Owner can manage institution settings unconditionally (including during setup/pause), while honoring the 24-image gallery cap
+      allow read: if isCompanyOwner();
+      allow write: if isCompanyOwner() && validGalleryLimitWrite();
 
       // Sensitive admin auth doc is strictly Admin/Super Admin readable and Super Admin/Company Owner writable
       allow read: if docId == 'adminAuth' && canAccessTenant(institutionId) && isAdmin(institutionId);
@@ -500,7 +517,7 @@ service cloud.firestore {
         || docId.matches('evaluationConfig_.*')
       );
 
-      allow write: if canAccessTenant(institutionId) && (
+      allow write: if canAccessTenant(institutionId) && validGalleryLimitWrite() && (
         isAdmin(institutionId)
         || (docId == 'sessionRegistry' && isSignedIn() && validSessionRegistryWrite())
         || (isResultOperator(institutionId) && docId == 'resultCenter')

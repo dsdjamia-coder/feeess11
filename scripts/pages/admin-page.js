@@ -150,6 +150,7 @@ let academicYears = [];
 let activeAcademicYear = '';
 let hasLoadedAcademicYearsSnapshot = false;
 let hasLoadedConfigSnapshot = false;
+let latestConfigData = {};
 let hasLoadedStudentsSnapshot = false;
 let latestPublishedStats = null;
 let autoStatsSyncTimer = null;
@@ -4402,6 +4403,16 @@ const activateAdminPage = (targetId, options = {}) => {
     if(targetId === 'staff-management' || targetId === 'manage-staff') { renderStaffList(); }
     if(targetId === 'fee-settings') renderFeeItemsManagement();
     if(targetId === 'fee-concessions') { populateClassDropdowns(); renderConcessionsList(); }
+    if(targetId === 'web-basic-info') {
+        if (hasLoadedConfigSnapshot) {
+            populateBasicInfoForm(latestConfigData, { preservePendingLogo: true });
+        }
+        const aboutEl = document.getElementById('web-about');
+        if (aboutEl && typeof webContent?.description === 'string') {
+            aboutEl.value = webContent.description || '';
+        }
+    }
+    if(targetId === 'web-gallery') { renderWebGallery(); }
     if(targetId === 'web-directory') { renderDirectoryCategories(); }
     if(targetId === 'security-settings') {
         renderAdminRoleList();
@@ -15415,8 +15426,41 @@ document.getElementById('e-fee-update').onclick = () => {
 };
 
 // --- 8. WEBSITE BASIC INFO ---
+const populateBasicInfoForm = (d = {}, { preservePendingLogo = false } = {}) => {
+    const setValueIfExists = (id, value = '') => {
+        const element = document.getElementById(id);
+        if (element) element.value = value;
+    };
+    setValueIfExists('app-name-input', d.appName || '');
+    setValueIfExists('app-subtitle-input', d.appSubtitle || '');
+    lastSavedLogoUrl = String(d.logoUrl || '').trim();
+    const activeLogoUrl = (preservePendingLogo && pendingUnsavedLogoUrl) ? pendingUnsavedLogoUrl : lastSavedLogoUrl;
+    setValueIfExists('web-logo', activeLogoUrl);
+    updateLogoWidgetPreview(activeLogoUrl);
+    setValueIfExists('web-phone', d.contactPhone || '');
+    setValueIfExists('web-email', d.contactEmail || '');
+    setValueIfExists('web-wa', d.socialWhatsapp || '');
+    setValueIfExists('web-fb', d.socialFacebook || '');
+    setValueIfExists('web-ig', d.socialInstagram || '');
+    setValueIfExists('web-tg', d.socialTelegram || '');
+    setValueIfExists('web-yt', d.socialYouTube || '');
+    setValueIfExists('web-regno', d.regNo || '');
+    setValueIfExists('web-place', d.place || '');
+    setValueIfExists('pay-account-name', d.paymentAccountName || d.paymentUpiName || '');
+    setValueIfExists('pay-upi-number', d.paymentUpiNumber || '');
+    setValueIfExists('pay-upi-id', d.paymentUpiId || '');
+    setValueIfExists('pay-bank-name', d.paymentBankName || '');
+    setValueIfExists('pay-account-number', d.paymentAccountNumber || '');
+    setValueIfExists('pay-ifsc', d.paymentIfsc || '');
+    setValueIfExists('pay-branch', d.paymentBranch || '');
+};
+
 document.getElementById('save-web-info-btn').addEventListener('click', async () => {
     if(!requirePermission('website.manage')) return;
+    if (!hasLoadedConfigSnapshot) {
+        alert("Website configuration is still loading. Please wait a moment and try again.");
+        return;
+    }
     if(!confirm("Save website information?")) return;
     const btn = document.getElementById('save-web-info-btn');
     btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Saving...';
@@ -15431,7 +15475,7 @@ document.getElementById('save-web-info-btn').addEventListener('click', async () 
 
         const nextLogoUrl = getInputValue('web-logo').trim();
         const prevLogoUrl = lastSavedLogoUrl;
-        await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), {
+        const payload = {
             appName: getInputValue('app-name-input'),
             appSubtitle: getInputValue('app-subtitle-input'),
             logoUrl: nextLogoUrl,
@@ -15452,13 +15496,17 @@ document.getElementById('save-web-info-btn').addEventListener('click', async () 
             paymentIfsc: getInputValue('pay-ifsc', (value) => value.trim().toUpperCase()),
             paymentBranch: getInputValue('pay-branch', (value) => value.trim()),
             paymentUpiName: getInputValue('pay-account-name', (value) => value.trim())
-        }, {merge: true});
+        };
+        await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), payload, {merge: true});
+        latestConfigData = { ...latestConfigData, ...payload };
         if (prevLogoUrl && prevLogoUrl !== nextLogoUrl) {
             deleteStorageUrlIfManaged(prevLogoUrl);
         }
         lastSavedLogoUrl = nextLogoUrl;
         pendingUnsavedLogoUrl = '';
-        await setDoc(doc(db, `${BASE_PATH}/settings`, 'content'), { description: getInputValue('web-about') }, {merge: true});
+        const nextAbout = getInputValue('web-about');
+        await setDoc(doc(db, `${BASE_PATH}/settings`, 'content'), { description: nextAbout }, {merge: true});
+        webContent.description = nextAbout;
         await logAuditEvent({ category: 'website', action: 'website.info.save', entityType: 'settings', entityId: 'config', message: 'Website basic information updated.' });
         alert("Basic Info Updated!");
     } catch (error) {
@@ -15725,7 +15773,97 @@ const getNextGalleryOrder = () => {
     return Math.max(...existingOrders) + 1;
 };
 
+const MAX_GALLERY_IMAGES = 24;
 let selectedGalleryFiles = [];
+
+const getGalleryCapacityInfo = () => {
+    normalizeGalleryList();
+    const current = Array.isArray(webContent.gallery) ? webContent.gallery.length : 0;
+    const queued = selectedGalleryFiles.length;
+    const remaining = Math.max(0, MAX_GALLERY_IMAGES - current);
+    const remainingAfterQueue = Math.max(0, MAX_GALLERY_IMAGES - current - queued);
+    return {
+        max: MAX_GALLERY_IMAGES,
+        current,
+        queued,
+        remaining,
+        remainingAfterQueue,
+        isAtLimit: current >= MAX_GALLERY_IMAGES
+    };
+};
+
+const updateGalleryLimitUI = () => {
+    const { max, current, queued, remaining, remainingAfterQueue, isAtLimit } = getGalleryCapacityInfo();
+    const badgeEl = document.getElementById('gallery-limit-badge');
+    const noteEl = document.getElementById('gallery-remaining-note');
+    const alertEl = document.getElementById('gallery-limit-alert');
+    const dropzoneEl = document.getElementById('new-gal-dropzone');
+    const dropzoneTitleEl = document.getElementById('new-gal-dropzone-title');
+    const dropzoneSubEl = document.getElementById('new-gal-dropzone-subtitle');
+    const uploadBtnEl = document.getElementById('new-gal-upload-btn');
+    const fileInputEl = document.getElementById('new-gal-file');
+
+    if (badgeEl) {
+        badgeEl.textContent = `${current} / ${max} Photos`;
+        if (isAtLimit) {
+            badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-rose-50 text-rose-700 border border-rose-200';
+        } else if (current >= max - 4) {
+            badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-800 border border-amber-200';
+        } else {
+            badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200';
+        }
+    }
+
+    if (noteEl) {
+        if (isAtLimit) {
+            noteEl.textContent = `Limit reached (${current}/${max}) · Delete an existing photo to upload more`;
+            noteEl.className = 'text-xs font-bold text-rose-600';
+        } else if (queued > 0) {
+            noteEl.textContent = `${remaining} slot${remaining === 1 ? '' : 's'} remaining (${remainingAfterQueue} left after queue) · Smart WebP Max 500KB`;
+            noteEl.className = 'text-xs font-semibold text-blue-700';
+        } else {
+            noteEl.textContent = `${remaining} slot${remaining === 1 ? '' : 's'} remaining · Smart WebP Max 500KB · Default Order 50+`;
+            noteEl.className = 'text-xs font-semibold text-gray-500';
+        }
+    }
+
+    if (alertEl) {
+        alertEl.classList.toggle('hidden', !isAtLimit);
+    }
+
+    if (fileInputEl) {
+        fileInputEl.disabled = isAtLimit;
+    }
+
+    if (dropzoneEl) {
+        if (isAtLimit) {
+            dropzoneEl.classList.add('opacity-60', 'cursor-not-allowed', 'border-rose-200', 'bg-rose-50/40');
+            dropzoneEl.classList.remove('cursor-pointer', 'border-blue-200', 'hover:border-blue-400', 'bg-blue-50/30', 'hover:bg-blue-50/60');
+            dropzoneEl.setAttribute('aria-disabled', 'true');
+        } else {
+            dropzoneEl.classList.remove('opacity-60', 'cursor-not-allowed', 'border-rose-200', 'bg-rose-50/40');
+            dropzoneEl.classList.add('cursor-pointer', 'border-blue-200', 'hover:border-blue-400', 'bg-blue-50/30', 'hover:bg-blue-50/60');
+            dropzoneEl.removeAttribute('aria-disabled');
+        }
+    }
+
+    if (dropzoneTitleEl) {
+        dropzoneTitleEl.textContent = isAtLimit
+            ? 'Gallery limit reached (24 / 24 photos)'
+            : 'Click to choose photos or drag and drop here';
+    }
+    if (dropzoneSubEl) {
+        dropzoneSubEl.textContent = isAtLimit
+            ? 'Delete an existing photo below to free up space for a new upload.'
+            : `You can upload up to ${remainingAfterQueue} more photo${remainingAfterQueue === 1 ? '' : 's'} (max ${max} total) · Smart WebP up to 500KB`;
+    }
+    if (uploadBtnEl) {
+        uploadBtnEl.disabled = isAtLimit;
+        uploadBtnEl.classList.toggle('bg-slate-400', isAtLimit);
+        uploadBtnEl.classList.toggle('bg-blue-600', !isAtLimit);
+        uploadBtnEl.classList.toggle('hover:bg-blue-700', !isAtLimit);
+    }
+};
 
 const resetNewGalleryUploadForm = () => {
     selectedGalleryFiles.forEach((item) => {
@@ -15758,6 +15896,7 @@ const resetNewGalleryUploadForm = () => {
     if (progressBar) progressBar.style.width = '0%';
     if (addBtn) addBtn.disabled = false;
     if (addBtnText) addBtnText.textContent = 'Upload All Photos';
+    updateGalleryLimitUI();
 };
 
 const renderGallerySelectedThumbnails = () => {
@@ -15799,25 +15938,56 @@ const renderGallerySelectedThumbnails = () => {
             </div>
         `;
     }).join('');
+    updateGalleryLimitUI();
 };
 
 const handleSelectedGalleryFiles = (files) => {
+    const fileInput = document.getElementById('new-gal-file');
     if (!files || files.length === 0) return;
+
+    const incomingImages = Array.from(files).filter((file) => file && typeof file.type === 'string' && file.type.startsWith('image/'));
+    if (incomingImages.length === 0) {
+        if (fileInput) fileInput.value = '';
+        return;
+    }
+
+    const { max, current, queued, remainingAfterQueue, isAtLimit } = getGalleryCapacityInfo();
+
+    if (isAtLimit) {
+        if (fileInput) fileInput.value = '';
+        const msg = `Gallery limit reached (${current}/${max} photos). Please delete an existing photo first to upload a new one.`;
+        showToast?.(msg, 'error');
+        alert(msg);
+        updateGalleryLimitUI();
+        return;
+    }
+
+    if (current + queued + incomingImages.length > max) {
+        if (fileInput) fileInput.value = '';
+        const queueDetail = queued > 0 ? ` and ${queued} already queued` : '';
+        const msg = `Gallery limit is ${max} photos maximum. You currently have ${current} photo${current === 1 ? '' : 's'} uploaded${queueDetail} (${remainingAfterQueue} slot${remainingAfterQueue === 1 ? '' : 's'} remaining), but you selected ${incomingImages.length}. Please select ${remainingAfterQueue} or fewer photo${remainingAfterQueue === 1 ? '' : 's'}, or delete existing photos first.`;
+        showToast?.(msg, 'error');
+        alert(msg);
+        updateGalleryLimitUI();
+        return;
+    }
+
     const orderInput = document.getElementById('new-gal-order');
     if (orderInput && (!orderInput.value || Number(orderInput.value) < 1)) {
         orderInput.value = getNextGalleryOrder();
     }
-    Array.from(files).forEach((file) => {
-        if (!file.type.startsWith('image/')) return;
+    incomingImages.forEach((file) => {
         const id = `gal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         const previewUrl = URL.createObjectURL(file);
         selectedGalleryFiles.push({ file, previewUrl, id });
     });
+    if (fileInput) fileInput.value = '';
     renderGallerySelectedThumbnails();
 };
 
 const renderWebGallery = () => {
     normalizeGalleryList();
+    updateGalleryLimitUI();
     const orderInput = document.getElementById('new-gal-order');
     if (orderInput && (!orderInput.value || Number(orderInput.value) < 50)) {
         orderInput.value = getNextGalleryOrder();
@@ -15853,6 +16023,13 @@ const initGalleryUploadControls = () => {
     const thumbnailsContainer = document.getElementById('new-gal-thumbnails');
 
     dropzone?.addEventListener('click', (e) => {
+        const { isAtLimit, current, max } = getGalleryCapacityInfo();
+        if (isAtLimit) {
+            const msg = `Gallery limit reached (${current}/${max} photos). Please delete an existing photo first to upload a new one.`;
+            showToast?.(msg, 'error');
+            alert(msg);
+            return;
+        }
         if (e.target !== fileInput) fileInput?.click();
     });
 
@@ -15860,7 +16037,9 @@ const initGalleryUploadControls = () => {
         dropzone?.addEventListener(eventName, (e) => {
             e.preventDefault();
             e.stopPropagation();
-            dropzone.classList.add('border-blue-500', 'bg-blue-100/50');
+            if (!getGalleryCapacityInfo().isAtLimit) {
+                dropzone.classList.add('border-blue-500', 'bg-blue-100/50');
+            }
         });
     });
 
@@ -15917,7 +16096,18 @@ const initGalleryUploadControls = () => {
             return;
         }
 
+        const { max, current, remaining } = getGalleryCapacityInfo();
         const count = selectedGalleryFiles.length;
+        if (current + count > max) {
+            const msg = remaining <= 0
+                ? `Gallery limit reached (${current}/${max} photos). Please delete an existing photo first to upload a new one.`
+                : `Gallery limit is ${max} photos maximum. You currently have ${current} photo${current === 1 ? '' : 's'} uploaded (${remaining} slot${remaining === 1 ? '' : 's'} remaining), but ${count} photo${count === 1 ? '' : 's'} are queued. Remove ${count - remaining} photo${(count - remaining) === 1 ? '' : 's'} from the queue or delete existing gallery photos first.`;
+            showToast?.(msg, 'error');
+            alert(msg);
+            updateGalleryLimitUI();
+            return;
+        }
+
         if (!confirm(`Upload ${count} photo${count > 1 ? 's' : ''} to gallery? Photos will be optimized (Smart WebP up to 500KB) with sequential display orders.`)) return;
 
         const addBtn = document.getElementById('add-gal-btn');
@@ -15962,21 +16152,27 @@ const initGalleryUploadControls = () => {
         if (progressBar) progressBar.style.width = '100%';
 
         if (uploadedItems.length > 0) {
-            webContent.gallery.push(...uploadedItems);
-            try {
-                await updateWebContent();
-                logAuditEvent({
-                    category: 'website',
-                    action: 'gallery.batch_create',
-                    entityType: 'gallery',
-                    message: `Batch added ${uploadedItems.length} photos starting with order ${startOrder}.`
-                });
-                showToast?.(`Successfully uploaded ${uploadedItems.length} photos!`, 'success');
-            } catch (saveErr) {
-                console.error('Failed to persist gallery batch:', saveErr);
-                webContent.gallery.splice(webContent.gallery.length - uploadedItems.length, uploadedItems.length);
+            normalizeGalleryList();
+            if (webContent.gallery.length + uploadedItems.length > MAX_GALLERY_IMAGES) {
                 await Promise.allSettled(uploadedItems.map((it) => deleteStorageUrlIfManaged(it.url)));
-                alert('Failed to save gallery updates: ' + (saveErr?.message || 'Error'));
+                alert(`Gallery limit is ${MAX_GALLERY_IMAGES} photos maximum. Upload cancelled because the gallery reached its limit.`);
+            } else {
+                webContent.gallery.push(...uploadedItems);
+                try {
+                    await updateWebContent();
+                    logAuditEvent({
+                        category: 'website',
+                        action: 'gallery.batch_create',
+                        entityType: 'gallery',
+                        message: `Batch added ${uploadedItems.length} photos starting with order ${startOrder}.`
+                    });
+                    showToast?.(`Successfully uploaded ${uploadedItems.length} photos!`, 'success');
+                } catch (saveErr) {
+                    console.error('Failed to persist gallery batch:', saveErr);
+                    webContent.gallery.splice(webContent.gallery.length - uploadedItems.length, uploadedItems.length);
+                    await Promise.allSettled(uploadedItems.map((it) => deleteStorageUrlIfManaged(it.url)));
+                    alert('Failed to save gallery updates: ' + (saveErr?.message || 'Error'));
+                }
             }
         }
 
@@ -19109,6 +19305,7 @@ onAuthStateChanged(auth, async (user) => {
 
         onSnapshot(configRef, (docSnap) => {
             const d = docSnap.exists() ? docSnap.data() : {};
+            latestConfigData = { ...d };
             latestPublishedStats = normalizeInstitutionalStats(d.stats || {});
             hasLoadedConfigSnapshot = true;
             if (latestPublishedStats.hasStats) {
@@ -19149,10 +19346,13 @@ onAuthStateChanged(auth, async (user) => {
                 setDoc(configRef, { feeItems: existingItems, appName: d.appName || 'Institution Manage', defaultFee: d.defaultFee || 200 }, { merge: true });
             }
 
-            document.getElementById('app-name-header').textContent = d.appName || 'Admin Dashboard';
-            document.getElementById('footer-inst-name').textContent = d.appName || 'Institution Name';
+            const appNameHeaderEl = document.getElementById('app-name-header');
+            if (appNameHeaderEl) appNameHeaderEl.textContent = d.appName || 'Admin Dashboard';
+            const footerInstEl = document.getElementById('footer-inst-name');
+            if (footerInstEl) footerInstEl.textContent = d.appName || 'Institution Name';
             renderVersionInfo();
-            document.getElementById('app-subtitle-header').textContent = d.appSubtitle || 'Institute Management';
+            const appSubtitleHeaderEl = document.getElementById('app-subtitle-header');
+            if (appSubtitleHeaderEl) appSubtitleHeaderEl.textContent = d.appSubtitle || 'Institute Management';
             const effectiveLogoUrl = rememberInstitutionLogo(d.logoUrl || '', d.appName || '') || '/assets/images/logo.png';
             ['admin-header-logo', 'admin-loader-logo'].forEach((id) => {
                 const logoEl = document.getElementById(id);
@@ -19163,28 +19363,16 @@ onAuthStateChanged(auth, async (user) => {
                     logoEl.src = '/assets/images/logo.png';
                 };
             });
+
             const setValueIfExists = (id, value = '') => {
                 const element = document.getElementById(id);
                 if (element) element.value = value;
             };
-            setValueIfExists('app-name-input', d.appName || ''); setValueIfExists('app-subtitle-input', d.appSubtitle || '');
-            lastSavedLogoUrl = String(d.logoUrl || '').trim();
-            setValueIfExists('web-logo', lastSavedLogoUrl);
-            updateLogoWidgetPreview(lastSavedLogoUrl);
-            setValueIfExists('web-phone', d.contactPhone || '');
-            setValueIfExists('web-email', d.contactEmail || ''); setValueIfExists('web-wa', d.socialWhatsapp || '');
-            setValueIfExists('web-fb', d.socialFacebook || ''); setValueIfExists('web-ig', d.socialInstagram || '');
-            setValueIfExists('web-tg', d.socialTelegram || ''); setValueIfExists('web-yt', d.socialYouTube || '');
-            setValueIfExists('web-regno', d.regNo || ''); setValueIfExists('web-place', d.place || '');
-            setValueIfExists('pay-account-name', d.paymentAccountName || d.paymentUpiName || '');
-            setValueIfExists('pay-upi-number', d.paymentUpiNumber || '');
-            setValueIfExists('pay-upi-id', d.paymentUpiId || '');
-            setValueIfExists('pay-bank-name', d.paymentBankName || '');
-            setValueIfExists('pay-account-number', d.paymentAccountNumber || '');
-            setValueIfExists('pay-ifsc', d.paymentIfsc || '');
-            setValueIfExists('pay-branch', d.paymentBranch || '');
-            document.getElementById('default-fee-input').value = d.defaultFee || 200; document.getElementById('fee-status-title-input').value = d.feeStatusTitle || '';
-            document.getElementById('default-fee-receipt-req').checked = d.defaultReceiptMandatory || false;
+            populateBasicInfoForm(d, { preservePendingLogo: Boolean(pendingUnsavedLogoUrl) });
+            setValueIfExists('default-fee-input', d.defaultFee || 200);
+            setValueIfExists('fee-status-title-input', d.feeStatusTitle || '');
+            const defaultReceiptReqEl = document.getElementById('default-fee-receipt-req');
+            if (defaultReceiptReqEl) defaultReceiptReqEl.checked = d.defaultReceiptMandatory || false;
             setValueIfExists('fee-collect-start-day', String(d.feeCollectionStartDay || 1));
             setValueIfExists('fee-collect-end-day', String(d.feeCollectionEndDay || 10));
             setValueIfExists('fee-notify-mode', d.feeNotifyMode || 'month_start');
@@ -19205,7 +19393,8 @@ onAuthStateChanged(auth, async (user) => {
 
             feeItems = existingItems;
             renderDashboard();
-            if(!document.getElementById('fee-settings-page').classList.contains('hidden')) renderFeeItemsManagement();
+            const feeSettingsPageEl = document.getElementById('fee-settings-page');
+            if (feeSettingsPageEl && !feeSettingsPageEl.classList.contains('hidden')) renderFeeItemsManagement();
             renderBackupCategoryCounts();
             if (hasLoadedStudentsSnapshot) {
                 scheduleAutoStatsSync(250);
@@ -19214,7 +19403,8 @@ onAuthStateChanged(auth, async (user) => {
 
         onSnapshot(doc(db, `${BASE_PATH}/settings`, 'content'), (snap) => {
             webContent = snap.exists() ? Object.assign({ notices: [], gallery: [], directoryCategories: [] }, snap.data()) : { notices: [], gallery: [], directoryCategories: [] };
-            document.getElementById('web-about').value = webContent.description || '';
+            const aboutEl = document.getElementById('web-about');
+            if (aboutEl) aboutEl.value = webContent.description || '';
             renderWebNotices(); renderWebGallery();
             renderDirectoryCategories();
             renderBackupCategoryCounts();

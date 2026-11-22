@@ -1698,6 +1698,78 @@ body.student-shell main { max-width: 900px; margin: 0 auto; padding: 20px 15px; 
     text-align: center;
 }
 
+/* ========================================================
+   UNIFIED WORKSPACE FOOTER — SIDEBAR-RESPONSIVE LAYOUT
+   (Admin, Collection, Attendance, Result, Evaluation,
+    Activity, Academic Plan, Worksheet & Official Portals)
+   ======================================================== */
+footer.unified-workspace-footer {
+    box-sizing: border-box !important;
+    max-width: none !important;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+@media (min-width: 1024px) {
+    .has-desktop-sidebar:not(.sidebar-collapsed) > footer.unified-workspace-footer {
+        margin-left: 16rem !important;
+        width: calc(100% - 16rem) !important;
+        max-width: calc(100% - 16rem) !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .has-desktop-sidebar.sidebar-collapsed > footer.unified-workspace-footer {
+        margin-left: 4.5rem !important;
+        width: calc(100% - 4.5rem) !important;
+        max-width: calc(100% - 4.5rem) !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+}
+
+@media (max-width: 1023px) {
+    .has-desktop-sidebar > footer.unified-workspace-footer {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        transition: none;
+    }
+
+    /* Keep footer links & version meta clear of fixed mobile bottom navigation bars */
+    #collection-app > footer.unified-workspace-footer,
+    #attendance-app > footer.unified-workspace-footer,
+    #result-app > footer.unified-workspace-footer,
+    #evaluation-app > footer.unified-workspace-footer,
+    #activity-app > footer.unified-workspace-footer,
+    #academic-app > footer.unified-workspace-footer {
+        padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
+    }
+}
+
+/* Hide workspace footer during dedicated spreadsheet/worksheet fullscreen modes */
+#collection-app.spreadsheet-fullscreen-mode > footer.unified-workspace-footer,
+body.worksheet-fullscreen-mode footer.unified-workspace-footer {
+    display: none !important;
+}
+
+/* Worksheet & Official pages: keep footer flush at bottom of scrollable #page-content */
+body[data-page-type="worksheet"] #page-content:not(.hidden) {
+    display: flex;
+    flex-direction: column;
+}
+body[data-page-type="worksheet"] #page-content > .official-tab {
+    flex-shrink: 0;
+}
+body[data-page-type="worksheet"] #page-content > footer.unified-workspace-footer {
+    margin-top: auto !important;
+    flex-shrink: 0;
+}
+
 .shared-empty-state {
     display: flex;
     align-items: center;

@@ -709,25 +709,51 @@ const upgradeRootGatewayFooter = (footerCfg) => {
     bindLegalButtons(gatewayFooter);
 };
 
+const resolveCompactFooterMountTarget = () => {
+    const guardType = String(document.documentElement?.dataset?.sessionGuard || '').toLowerCase();
+    const pageContent = document.getElementById('page-content');
+    const companyMainCol = document.querySelector('#company-shell > div.flex-1');
+    const sidebarAppShell = document.querySelector('.has-desktop-sidebar');
+
+    // Official hub & Worksheet (Dashboard / Students / Alumni / Staff tabs scroll inside #page-content;
+    // Excel worksheet tab hides #page-content automatically)
+    if (pageContent && (guardType === 'official' || guardType === 'worksheet')) {
+        return pageContent;
+    }
+    if (companyMainCol) {
+        return companyMainCol;
+    }
+    // All sidebar-driven portals (#admin-app, #collection-app, #attendance-app, #result-app,
+    // #evaluation-app, #activity-app, #academic-app): mount directly inside the sidebar shell
+    // so CSS shifts the footer smoothly with sidebar expand/collapse.
+    if (sidebarAppShell) {
+        return sidebarAppShell;
+    }
+    return document.body;
+};
+
 const mountCompactWorkspaceFooter = (footerCfg) => {
-    const existingLegacyFooter = document.querySelector('body > footer.footer, footer.admin-footer');
-    let targetFooter = document.querySelector('footer[data-unified-mounted="compact"]') || existingLegacyFooter;
+    const mountTarget = resolveCompactFooterMountTarget();
+    if (!mountTarget) return;
+
+    const existingFooters = Array.from(document.querySelectorAll('footer[data-unified-mounted="compact"], footer.admin-footer, footer.footer'));
+    let targetFooter = existingFooters.find((el) => el.dataset.unifiedMounted === 'compact') || existingFooters[0] || null;
+
+    // Remove any duplicate legacy footers so only one unified footer exists per workspace page
+    existingFooters.forEach((el) => {
+        if (el && el !== targetFooter) {
+            el.remove();
+        }
+    });
 
     if (!targetFooter) {
         targetFooter = document.createElement('footer');
-        // Place inside scrollable workspace containers where body uses fixed/flex layout
-        const officialContent = document.getElementById('page-content');
-        const companyMainCol = document.querySelector('#company-shell > div.flex-1');
-        if (officialContent && document.documentElement.dataset.sessionGuard === 'official') {
-            officialContent.appendChild(targetFooter);
-        } else if (companyMainCol) {
-            companyMainCol.appendChild(targetFooter);
-        } else if (document.body) {
-            document.body.appendChild(targetFooter);
-        }
     }
 
-    if (!targetFooter) return;
+    if (targetFooter.parentElement !== mountTarget) {
+        mountTarget.appendChild(targetFooter);
+    }
+
     if (targetFooter.dataset.unifiedMounted === 'compact') {
         syncCompanyBarData(footerCfg);
         return;
