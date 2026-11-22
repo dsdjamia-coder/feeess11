@@ -27,6 +27,7 @@ import {
     renderVersionInfo,
     sanitizePhone,
     sanitizeUrl,
+    showTenantLockOverlay,
     syncDynamicPwaBranding
 } from '../shared/app-common.js';
 import {
@@ -163,9 +164,26 @@ let isRootGatewayMode = false;
             document.getElementById('saved-student-modal').style.display = 'flex';
         };
         let isAddingStudentAccountFlow = false;
+        let latestTenantStatus = null;
+        const showPublicPageLoginBlockedModal = () => {
+            if (isRootGatewayMode) return false;
+            if (!latestTenantStatus?.exists || latestTenantStatus?.active !== false) return false;
+            const evalData = latestTenantStatus.evaluation || {};
+            setMobileMenuState(false);
+            showTenantLockOverlay({
+                ...evalData,
+                institutionSlug: evalData.institutionSlug || INSTITUTION_ID,
+                institutionName: evalData.institutionName || globalInstitutionConfig?.appName || latestTenantStatus?.institution?.name || '',
+                dismissible: true
+            });
+            return true;
+        };
         const openStudentLoginModal = (options = {}) => {
             if (window.AppSession?.hasCompanySession?.()) {
                 window.location.href = '/company';
+                return;
+            }
+            if (showPublicPageLoginBlockedModal()) {
                 return;
             }
             if (!isRootGatewayMode && (window.AppSession?.hasStaffSession?.() || window.AppSession?.hasAdminSession?.())) {
@@ -351,6 +369,10 @@ let isRootGatewayMode = false;
 
                 if (!forceAdd && window.AppSession?.hasCompanySession?.()) {
                     window.location.href = '/company';
+                    return;
+                }
+
+                if (showPublicPageLoginBlockedModal()) {
                     return;
                 }
 
@@ -1362,19 +1384,32 @@ let isRootGatewayMode = false;
                 db,
                 institutionId: INSTITUTION_ID,
                 allowMissingRoot: true,
+                allowPublicIndex: true,
                 liveWatch: true,
                 onStatusUpdate: (statusRes) => {
+                    latestTenantStatus = statusRes;
                     if (statusRes?.exists && statusRes?.institution?.name) {
                         const loginInstEl = document.getElementById('login-institution-name');
                         if (loginInstEl && !globalInstitutionConfig?.appName) {
                             loginInstEl.textContent = statusRes.institution.name;
                         }
                     }
+                    if (!statusRes?.isRootGateway && statusRes?.exists && statusRes?.active === false) {
+                        const loginModal = document.getElementById('login-modal');
+                        if (loginModal && loginModal.style.display === 'flex') {
+                            loginModal.style.display = 'none';
+                        }
+                        const savedModal = document.getElementById('saved-student-modal');
+                        if (savedModal && savedModal.style.display === 'flex') {
+                            savedModal.style.display = 'none';
+                        }
+                    }
                 }
             });
 
+            latestTenantStatus = tenantCheck;
             isRootGatewayMode = Boolean(tenantCheck?.isRootGateway);
-            if (!tenantCheck?.active) {
+            if (!tenantCheck?.active && !tenantCheck?.publicIndexAllowed) {
                 loaded.config = true;
                 loaded.content = true;
                 loaded.staff = true;
@@ -1580,26 +1615,31 @@ let isRootGatewayMode = false;
                 loaded.dirEntries = true;
             });
 
-            // 4. Category Auth & Page Access settings
-            onSnapshot(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig'), snap => {
-                const payload = snap.exists() ? snap.data() : {};
-                categoryAuthConfig = payload && typeof payload.categories === 'object' ? payload : { categories: {} };
-                loaded.dirAuth = true;
-                validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
-            }, err => {
-                console.warn('Category auth notice:', err);
-                loaded.dirAuth = true;
-            });
+            // 4. Category Auth & Page Access settings (only required when tenant portal login is active)
+            if (tenantCheck?.active) {
+                onSnapshot(doc(db, `${BASE_PATH}/settings`, 'categoryAuthConfig'), snap => {
+                    const payload = snap.exists() ? snap.data() : {};
+                    categoryAuthConfig = payload && typeof payload.categories === 'object' ? payload : { categories: {} };
+                    loaded.dirAuth = true;
+                    validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
+                }, err => {
+                    console.warn('Category auth notice:', err);
+                    loaded.dirAuth = true;
+                });
 
-            onSnapshot(doc(db, `${BASE_PATH}/settings`, 'pageAccess'), snap => {
-                const payload = snap.exists() ? snap.data() : {};
-                pageAccessConfig = (payload && typeof payload === 'object') ? payload : { categories: {}, overrides: {} };
+                onSnapshot(doc(db, `${BASE_PATH}/settings`, 'pageAccess'), snap => {
+                    const payload = snap.exists() ? snap.data() : {};
+                    pageAccessConfig = (payload && typeof payload === 'object') ? payload : { categories: {}, overrides: {} };
+                    loaded.pageAccess = true;
+                    validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
+                }, err => {
+                    console.warn('Page access notice:', err);
+                    loaded.pageAccess = true;
+                });
+            } else {
+                loaded.dirAuth = true;
                 loaded.pageAccess = true;
-                validateAndPruneRememberedAccounts({ verifyStudentsOnline: false });
-            }, err => {
-                console.warn('Page access notice:', err);
-                loaded.pageAccess = true;
-            });
+            }
 
             const isCategoryPubliclyVisible = (categoryId = '') => {
                 const target = String(categoryId || '').trim().toLowerCase();
@@ -2465,6 +2505,7 @@ let isRootGatewayMode = false;
         const validateAndPruneRememberedAccounts = async ({ verifyStudentsOnline = false } = {}) => {
             const accounts = window.AppSession?.getRememberedAccounts?.() || [];
             if (!accounts.length) return [];
+            if (latestTenantStatus?.exists && latestTenantStatus?.active === false) return accounts;
             if (verifyStudentsOnline && !auth.currentUser) {
                 try { await signInAnonymously(auth); } catch (_) {}
             }

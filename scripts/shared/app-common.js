@@ -1919,15 +1919,31 @@ export const evaluateInstitutionAccess = (institutionData = null, requiredPage =
 
     const allowedPages = normalizeAllowedPages(institutionData.allowedPages || {});
     const status = String(institutionData.status || 'active').trim().toLowerCase();
+    const instSlug = String(institutionData.slug || institutionData.id || '').trim();
+    const instName = String(institutionData.name || instSlug || '').trim();
 
-    if (status === 'paused' || status === 'suspended' || institutionData.isActive === false) {
+    if (status === 'unsubscribed' || status === 'pending' || status === 'no_plan') {
+        return {
+            allowed: false,
+            reasonCode: 'unsubscribed',
+            title: 'No Active Subscription Plan',
+            message: 'Portal login and internal modules are not active for this institution yet. Please activate a subscription plan to enable portal access.',
+            reason: String(institutionData.pauseReason || '').trim(),
+            institutionName: instName,
+            institutionSlug: instSlug,
+            allowedPages
+        };
+    }
+
+    if (status === 'paused' || status === 'suspended' || status === 'inactive' || institutionData.isActive === false) {
         return {
             allowed: false,
             reasonCode: 'paused',
             title: 'Portal Temporarily Paused',
             message: 'Access to this institution portal has been temporarily paused by the platform administrator.',
             reason: String(institutionData.pauseReason || '').trim(),
-            institutionName: String(institutionData.name || institutionData.slug || '').trim(),
+            institutionName: instName,
+            institutionSlug: instSlug,
             allowedPages
         };
     }
@@ -1951,7 +1967,8 @@ export const evaluateInstitutionAccess = (institutionData = null, requiredPage =
                 title: 'Subscription Expired',
                 message: 'This institution subscription plan has expired. Please contact the platform provider to renew service.',
                 expiryDate: String(institutionData.expiryDate || '').trim(),
-                institutionName: String(institutionData.name || institutionData.slug || '').trim(),
+                institutionName: instName,
+                institutionSlug: instSlug,
                 allowedPages
             };
         }
@@ -1968,8 +1985,8 @@ export const evaluateInstitutionAccess = (institutionData = null, requiredPage =
                 requiredPage: normalizedKey,
                 title: 'Premium - Upgrade',
                 message: 'This module is not included in your current plan. Upgrade to unlock full access.',
-                institutionName: String(institutionData.name || institutionData.slug || '').trim(),
-                institutionSlug: String(institutionData.slug || institutionData.id || '').trim(),
+                institutionName: instName,
+                institutionSlug: instSlug,
                 allowedPages
             };
         }
@@ -1978,13 +1995,19 @@ export const evaluateInstitutionAccess = (institutionData = null, requiredPage =
     return {
         allowed: true,
         reasonCode: 'active',
-        institutionName: String(institutionData.name || institutionData.slug || '').trim(),
-        institutionSlug: String(institutionData.slug || institutionData.id || '').trim(),
+        institutionName: instName,
+        institutionSlug: instSlug,
         allowedPages
     };
 };
 
+let tenantLockEscHandler = null;
+
 export const removeTenantLockOverlay = () => {
+    if (tenantLockEscHandler && typeof document !== 'undefined') {
+        document.removeEventListener('keydown', tenantLockEscHandler);
+        tenantLockEscHandler = null;
+    }
     const existing = document.getElementById('tenant-status-lock-overlay');
     if (existing) existing.remove();
 };
@@ -1998,43 +2021,59 @@ export const showTenantLockOverlay = ({
     expiryDate = '',
     institutionName = '',
     institutionSlug = '',
-    allowedPages = DEFAULT_COMPANY_ALLOWED_PAGES
+    allowedPages = DEFAULT_COMPANY_ALLOWED_PAGES,
+    dismissible = false
 } = {}) => {
     if (typeof document === 'undefined') return;
     const isModuleBlock = reasonCode === 'module_disabled';
     const isNotFound = reasonCode === 'not_found';
     const isExpired = reasonCode === 'expired';
-    const showPlansAction = !isNotFound && (isModuleBlock || isExpired || reasonCode === 'paused');
+    const isUnsubscribed = reasonCode === 'unsubscribed';
+    const showPlansAction = !isNotFound && (isModuleBlock || isExpired || isUnsubscribed || reasonCode === 'paused');
+
+    if (tenantLockEscHandler) {
+        document.removeEventListener('keydown', tenantLockEscHandler);
+        tenantLockEscHandler = null;
+    }
 
     let overlay = document.getElementById('tenant-status-lock-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'tenant-status-lock-overlay';
-        overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(15,23,42,0.94);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;';
         document.body.appendChild(overlay);
     }
+    overlay.style.cssText = dismissible
+        ? 'position:fixed;inset:0;z-index:999999;background:rgba(15,23,42,0.72);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;'
+        : 'position:fixed;inset:0;z-index:999999;background:rgba(15,23,42,0.94);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px;';
 
     const iconClass = isNotFound
         ? 'fa-compass'
         : isExpired
             ? 'fa-hourglass-end'
-            : isModuleBlock
-                ? 'fa-crown'
-                : 'fa-pause-circle';
+            : isUnsubscribed
+                ? 'fa-lock'
+                : isModuleBlock
+                    ? 'fa-crown'
+                    : 'fa-pause-circle';
     const badgeColor = isNotFound
         ? 'background:#334155;color:#e2e8f0;'
         : isExpired
             ? 'background:#7f1d1d;color:#fecaca;'
-            : isModuleBlock
+            : isUnsubscribed
                 ? 'background:#fef3c7;color:#b45309;border:1px solid #fde68a;'
-                : 'background:#78350f;color:#fde68a;';
+                : isModuleBlock
+                    ? 'background:#fef3c7;color:#b45309;border:1px solid #fde68a;'
+                    : 'background:#78350f;color:#fde68a;';
 
-    const officialHref = window.AppSession?.buildPageUrl?.('official.html') || '/official.html';
-    const homeHref = window.AppSession?.buildPageUrl?.('index.html?public=1') || '/index.html?public=1';
-    const canGoOfficial = isModuleBlock && allowedPages?.official !== false;
+    const targetSlug = String(institutionSlug || INSTITUTION_ID || '').trim().toLowerCase();
+    const officialHref = window.AppSession?.buildPageUrl?.('official.html', targetSlug || null) || '/official.html';
+    const homeHref = window.AppSession?.buildPageUrl?.('index.html?public=1', targetSlug || null) || '/index.html?public=1';
+    const canGoOfficial = !dismissible && isModuleBlock && allowedPages?.official !== false;
+    const showPublicPageBtn = !dismissible && !isNotFound && !isModuleBlock && Boolean(targetSlug && targetSlug !== 'school');
 
     overlay.innerHTML = `
-        <div style="max-width:460px;width:100%;background:#ffffff;border-radius:24px;padding:32px 26px;text-align:center;box-shadow:0 30px 70px rgba(0,0,0,0.45);border:1px solid #e2e8f0;font-family:'Plus Jakarta Sans',sans-serif;">
+        <div id="tenant-lock-card" style="position:relative;max-width:460px;width:100%;background:#ffffff;border-radius:24px;padding:30px 26px;text-align:center;box-shadow:0 30px 70px rgba(0,0,0,0.45);border:1px solid #e2e8f0;font-family:'Plus Jakarta Sans',sans-serif;">
+            ${dismissible ? `<button type="button" id="tenant-lock-close-x" aria-label="Close popup" style="position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;color:#475569;font-size:18px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;">&times;</button>` : ''}
             <div style="width:68px;height:68px;border-radius:20px;margin:0 auto 18px;display:flex;align-items:center;justify-content:center;font-size:28px;${badgeColor}">
                 <i class="fas ${escapeHtml(iconClass)}"></i>
             </div>
@@ -2045,9 +2084,11 @@ export const showTenantLockOverlay = ({
             ${expiryDate ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:13px;font-weight:600;color:#991b1b;">Expired On: ${escapeHtml(formatDateDisplay(expiryDate))}</div>` : ''}
             <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:20px;">
                 ${showPlansAction ? `<button type="button" id="tenant-lock-view-plans-btn" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#d97706;color:#ffffff;font-weight:800;font-size:13px;border:none;cursor:pointer;"><i class="fas fa-crown"></i><span>View Premium Plans</span></button>` : ''}
+                ${dismissible ? `<button type="button" id="tenant-lock-close-btn" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#f1f5f9;color:#334155;font-weight:700;font-size:13px;border:1px solid #cbd5e1;cursor:pointer;"><i class="fas fa-times"></i><span>Close</span></button>` : ''}
                 ${canGoOfficial ? `<a href="${escapeHtml(officialHref)}" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#4f46e5;color:#ffffff;font-weight:700;font-size:13px;text-decoration:none;"><i class="fas fa-th-large"></i><span>Back to Official Hub</span></a>` : ''}
-                ${!isNotFound ? `<button type="button" id="tenant-lock-signout-btn" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#0f172a;color:#ffffff;font-weight:700;font-size:13px;border:none;cursor:pointer;"><i class="fas fa-arrow-right-from-bracket"></i><span>${isModuleBlock ? 'Public Home' : 'Sign Out & Return Home'}</span></button>` : ''}
-                <a href="/" style="display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:12px;background:#f1f5f9;color:#334155;font-weight:700;font-size:13px;text-decoration:none;border:1px solid #cbd5e1;"><i class="fas fa-house"></i><span>Platform Home</span></a>
+                ${showPublicPageBtn ? `<a href="${escapeHtml(homeHref)}" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#2563eb;color:#ffffff;font-weight:700;font-size:13px;text-decoration:none;"><i class="fas fa-globe"></i><span>Public Page</span></a>` : ''}
+                ${(!dismissible && !isNotFound) ? `<button type="button" id="tenant-lock-signout-btn" style="display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;background:#0f172a;color:#ffffff;font-weight:700;font-size:13px;border:none;cursor:pointer;"><i class="fas fa-arrow-right-from-bracket"></i><span>${isModuleBlock ? 'Public Home' : 'Sign Out & Return Home'}</span></button>` : ''}
+                ${!dismissible ? `<a href="/" style="display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:12px;background:#f1f5f9;color:#334155;font-weight:700;font-size:13px;text-decoration:none;border:1px solid #cbd5e1;"><i class="fas fa-house"></i><span>Platform Home</span></a>` : ''}
             </div>
         </div>
     `;
@@ -2055,15 +2096,32 @@ export const showTenantLockOverlay = ({
     const viewPlansBtn = document.getElementById('tenant-lock-view-plans-btn');
     if (viewPlansBtn) {
         viewPlansBtn.addEventListener('click', () => {
+            if (dismissible) removeTenantLockOverlay();
             openPremiumPlansModal({
                 contextType: isModuleBlock ? 'module' : (isExpired ? 'expired' : 'paused'),
                 moduleKey: requiredPage,
                 institutionName,
-                institutionSlug: institutionSlug || INSTITUTION_ID,
-                pauseReason: reason,
+                institutionSlug: targetSlug,
+                pauseReason: reason || (isUnsubscribed ? 'No active subscription plan.' : ''),
                 expiryDate
             });
         });
+    }
+
+    if (dismissible) {
+        const closeXBtn = document.getElementById('tenant-lock-close-x');
+        const closeBtn = document.getElementById('tenant-lock-close-btn');
+        closeXBtn?.addEventListener('click', removeTenantLockOverlay);
+        closeBtn?.addEventListener('click', removeTenantLockOverlay);
+        overlay.onclick = (e) => {
+            if (e.target === overlay) removeTenantLockOverlay();
+        };
+        tenantLockEscHandler = (e) => {
+            if (e.key === 'Escape') removeTenantLockOverlay();
+        };
+        document.addEventListener('keydown', tenantLockEscHandler);
+    } else {
+        overlay.onclick = null;
     }
 
     const signoutBtn = document.getElementById('tenant-lock-signout-btn');
@@ -2085,12 +2143,14 @@ export const ensureTenantStatusAndAccess = async ({
     requiredPage = '',
     institutionId = INSTITUTION_ID,
     allowMissingRoot = false,
+    allowPublicIndex = false,
     liveWatch = true,
     onStatusUpdate = null
 } = {}) => {
     if (!db) {
         return {
             active: true,
+            publicIndexAllowed: true,
             exists: false,
             isRootGateway: false,
             institution: null,
@@ -2108,6 +2168,7 @@ export const ensureTenantStatusAndAccess = async ({
                 removeTenantLockOverlay();
                 const res = {
                     active: true,
+                    publicIndexAllowed: true,
                     exists: false,
                     isRootGateway: true,
                     institution: null,
@@ -2120,6 +2181,7 @@ export const ensureTenantStatusAndAccess = async ({
             showTenantLockOverlay(evalRes);
             const res = {
                 active: false,
+                publicIndexAllowed: false,
                 exists: false,
                 isRootGateway: false,
                 institution: null,
@@ -2135,9 +2197,24 @@ export const ensureTenantStatusAndAccess = async ({
         window.AppSession?.setCompanyAllowedPages?.(evalRes.allowedPages);
 
         if (!evalRes.allowed) {
+            if (allowPublicIndex) {
+                removeTenantLockOverlay();
+                const res = {
+                    active: false,
+                    publicIndexAllowed: true,
+                    exists: true,
+                    isRootGateway: false,
+                    institution: data,
+                    allowedPages: evalRes.allowedPages,
+                    evaluation: evalRes
+                };
+                onStatusUpdate?.(res);
+                return res;
+            }
             showTenantLockOverlay(evalRes);
             const res = {
                 active: false,
+                publicIndexAllowed: false,
                 exists: true,
                 isRootGateway: false,
                 institution: data,
@@ -2151,6 +2228,7 @@ export const ensureTenantStatusAndAccess = async ({
         removeTenantLockOverlay();
         const res = {
             active: true,
+            publicIndexAllowed: true,
             exists: true,
             isRootGateway: false,
             institution: data,

@@ -87,6 +87,12 @@ service cloud.firestore {
       return isInstitutionActiveAndUnexpired(institutionId) || isCompanyOwner();
     }
 
+    // Public index landing page remains read-only accessible for any registered institution
+    // even when subscription is expired or paused; all writes and internal portal data stay strictly locked.
+    function isPublicIndexReadableInstitution(institutionId) {
+      return institutionMetaExists(institutionId) || canAccessTenant(institutionId);
+    }
+
     function adminAuthRef(institutionId) {
       return /databases/$(database)/documents/institutions/$(institutionId)/settings/adminAuth;
     }
@@ -458,14 +464,18 @@ service cloud.firestore {
       allow read: if docId == 'adminAuth' && canAccessTenant(institutionId) && isAdmin(institutionId);
       allow write: if docId == 'adminAuth' && canAccessTenant(institutionId) && (isCompanyOwner() || isSuperAdminDoc(institutionId));
 
-      // Public settings required by landing page & portal shells (explicit allowlist, excludes adminAuth)
-      allow read: if canAccessTenant(institutionId) && docId in [
+      // Always-open public landing page branding, notices, gallery & content docs (read-only)
+      allow read: if isPublicIndexReadableInstitution(institutionId) && docId in [
         'config',
         'content',
+        'websiteContent',
+        'institutionConfig'
+      ];
+
+      // Operational portal shell settings require an active, unexpired subscription
+      allow read: if canAccessTenant(institutionId) && docId in [
         'categoryAuthConfig',
         'pageAccess',
-        'websiteContent',
-        'institutionConfig',
         'academicYears',
         'sessionControl'
       ];
@@ -515,9 +525,9 @@ service cloud.firestore {
       );
     }
 
-    // 2. Staff Profiles (Public profiles; credentials stored strictly in Firebase Auth)
+    // 2. Staff Profiles (Public profiles readable on index page; credentials stored strictly in Firebase Auth)
     match /institutions/{institutionId}/staff/{docId} {
-      allow read: if canAccessTenant(institutionId);
+      allow read: if isPublicIndexReadableInstitution(institutionId);
       allow create, delete: if canAccessTenant(institutionId) && isAdmin(institutionId);
       allow update: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isAllowedStaffSelfPhotoUpdate(institutionId, docId));
     }
@@ -707,7 +717,7 @@ service cloud.firestore {
 
     // 16. Public Directory (Public read for landing page; auth metadata isolated to admin)
     match /institutions/{institutionId}/publicDirectory/{docId} {
-      allow read: if canAccessTenant(institutionId);
+      allow read: if isPublicIndexReadableInstitution(institutionId);
       allow create, delete: if canAccessTenant(institutionId) && isAdmin(institutionId);
       allow update: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isAllowedDirectorySelfPhotoUpdate());
     }
