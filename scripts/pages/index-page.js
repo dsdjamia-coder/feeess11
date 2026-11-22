@@ -173,20 +173,22 @@ let isRootGatewayMode = false;
                 return;
             }
             isAddingStudentAccountFlow = Boolean(options?.addStudent);
-            const preferredMode = isRootGatewayMode
-                ? 'official'
-                : (options?.mode === 'official' ? 'official' : 'student');
+            const preferredMode = options?.mode === 'official' ? 'official' : 'student';
             document.getElementById('login-modal').style.display = 'flex';
             setMobileMenuState(false);
             resetUniversalLoginForm(preferredMode);
             const sessionNotice = window.AppSession?.consumeFlash?.();
             if (sessionNotice) showLoginMessage(sessionNotice);
-            // Warm up verification registries in background while user types
-            ensureVerificationRegistriesLoaded().catch(() => {});
+            // Warm up verification registries in background on tenant portals while user types
+            if (!isRootGatewayMode) {
+                ensureVerificationRegistriesLoaded().catch(() => {});
+            }
         };
-        const syncStudentGroupMembersToSession = async (studentId = '', { clearDismissed = false } = {}) => {
+        const syncStudentGroupMembersToSession = async (studentId = '', { clearDismissed = false, institutionId = '' } = {}) => {
             const cleanStudentId = String(studentId || '').trim();
             if (!cleanStudentId) return;
+            const targetInstId = String(institutionId || INSTITUTION_ID || '').trim().toLowerCase();
+            const targetBasePath = targetInstId ? `institutions/${targetInstId}` : BASE_PATH;
             if (clearDismissed) {
                 window.AppSession?.clearDismissedGroupStudents?.();
             }
@@ -197,7 +199,7 @@ let isRootGatewayMode = false;
                 if (!auth.currentUser) return;
 
                 const groupSnap = await getDocs(
-                    query(collection(db, `${BASE_PATH}/studentGroups`), where('memberIds', 'array-contains', cleanStudentId))
+                    query(collection(db, `${targetBasePath}/studentGroups`), where('memberIds', 'array-contains', cleanStudentId))
                 );
                 if (!groupSnap || groupSnap.empty) return;
 
@@ -207,9 +209,10 @@ let isRootGatewayMode = false;
                 const primaryGroupName = String(primaryGroup?.name || '').trim();
 
                 window.AppSession?.registerStudentAccount?.(cleanStudentId, {
+                    institutionId: targetInstId,
                     groupId: primaryGroupId,
                     groupName: primaryGroupName
-                }, { keepOrder: true });
+                }, { keepOrder: true, institutionId: targetInstId });
 
                 const dismissed = new Set(window.AppSession?.getDismissedGroupStudentIds?.() || []);
                 const siblingGroupMap = new Map();
@@ -231,7 +234,7 @@ let isRootGatewayMode = false;
                 if (!siblingIds.length) return;
 
                 const siblingSnaps = await Promise.all(
-                    siblingIds.map((sibId) => getDoc(doc(db, `${BASE_PATH}/students`, sibId)).catch(() => null))
+                    siblingIds.map((sibId) => getDoc(doc(db, `${targetBasePath}/students`, sibId)).catch(() => null))
                 );
 
                 siblingSnaps.forEach((snap, idx) => {
@@ -242,12 +245,13 @@ let isRootGatewayMode = false;
                     const sibId = siblingIds[idx];
                     const grpMeta = siblingGroupMap.get(sibId) || {};
                     window.AppSession?.registerStudentAccount?.(sibId, {
+                        institutionId: targetInstId,
                         name: sibData.name || '',
                         class: sibData.class || '',
                         adm: sibData.adm || '',
                         groupId: grpMeta.groupId || '',
                         groupName: grpMeta.groupName || ''
-                    }, { append: true });
+                    }, { append: true, institutionId: targetInstId });
                 });
             } catch (err) {
                 console.warn('Student group session sync notice:', err);
@@ -2106,9 +2110,16 @@ let isRootGatewayMode = false;
             }
         };
 
+        const collapseLoginSessionNotices = () => {
+            document.querySelectorAll('#login-modal details.login-session-disclosure[open]').forEach((el) => {
+                el.removeAttribute('open');
+            });
+        };
+
         const closeLoginModal = () => {
             stopOtpTimers();
             resetRecaptchaVerifier();
+            collapseLoginSessionNotices();
             // If Company Owner abandoned 2-Step SMS OTP before completing it, sign out the unverified primary session
             if (officialOtpState.flowType === 'company_owner') {
                 signOut(auth).catch(() => {});
@@ -2147,15 +2158,16 @@ let isRootGatewayMode = false;
         });
 
         const setLoginMode = (mode = 'student') => {
-            const effectiveMode = isRootGatewayMode ? 'official' : (mode === 'official' ? 'official' : 'student');
+            const effectiveMode = mode === 'official' ? 'official' : 'student';
             activeLoginMode = effectiveMode;
             stopOtpTimers();
+            collapseLoginSessionNotices();
             showLoginMessage('');
 
             const tabsWrap = document.getElementById('login-mode-tabs');
             const studentTab = document.getElementById('login-tab-student');
             const officialTab = document.getElementById('login-tab-official');
-            tabsWrap?.classList.toggle('hidden', isRootGatewayMode);
+            tabsWrap?.classList.remove('hidden');
 
             if (studentTab) {
                 const active = effectiveMode === 'student';
@@ -2251,12 +2263,12 @@ let isRootGatewayMode = false;
         };
 
         const resetUniversalLoginForm = (preferredMode = null) => {
-            const targetMode = preferredMode || (isRootGatewayMode ? 'official' : 'student');
+            const targetMode = preferredMode || 'student';
             setLoginMode(targetMode);
         };
 
         document.getElementById('login-tab-student')?.addEventListener('click', () => {
-            if (!isRootGatewayMode) setLoginMode('student');
+            setLoginMode('student');
         });
         document.getElementById('login-tab-official')?.addEventListener('click', () => {
             setLoginMode('official');
@@ -2485,6 +2497,7 @@ let isRootGatewayMode = false;
         // STUDENT MOBILE OTP FLOW
         // =========================================================================
         const checkStudentPortalAvailable = () => {
+            if (isRootGatewayMode) return true;
             if (window.AppSession?.isCompanyPageAllowed?.('student') === false) {
                 showLoginMessage('Student Portal is a Premium module (Premium - Upgrade).');
                 openPremiumPlansModal({
@@ -2503,7 +2516,6 @@ let isRootGatewayMode = false;
         };
 
         const handleStudentVerifyPhone = async () => {
-            if (isRootGatewayMode) return;
             if (!checkStudentPortalAvailable()) return;
 
             const phoneInput = document.getElementById('student-login-phone');
@@ -2527,7 +2539,7 @@ let isRootGatewayMode = false;
 
             try {
                 const lookup = await lookupStudentsByPhone({
-                    institutionId: INSTITUTION_ID,
+                    institutionId: isRootGatewayMode ? '' : INSTITUTION_ID,
                     phone: rawPhone,
                     countryCode
                 });
@@ -2560,12 +2572,15 @@ let isRootGatewayMode = false;
                     previewListEl.innerHTML = lookup.students.map((item) => {
                         const displayName = item.fullName || item.name || item.maskedName || 'Student';
                         const displayClass = item.classLabel || 'Student';
+                        const metaText = (isRootGatewayMode && item.institutionName)
+                            ? `${displayClass} • ${item.institutionName}`
+                            : displayClass;
                         return `
                         <div class="login-preview-item">
                             <span class="login-preview-icon" aria-hidden="true"><i class="fas fa-user-graduate"></i></span>
                             <div class="min-w-0">
                                 <div class="login-preview-name">${escapeHtml(displayName)}</div>
-                                <div class="login-preview-meta">${escapeHtml(displayClass)}</div>
+                                <div class="login-preview-meta">${escapeHtml(metaText)}</div>
                             </div>
                         </div>`;
                     }).join('');
@@ -2664,32 +2679,41 @@ let isRootGatewayMode = false;
             const list = Array.isArray(allVerifiedStudents) && allVerifiedStudents.length
                 ? allVerifiedStudents
                 : [selectedStudent];
+            const targetInstId = String(selectedStudent.institutionId || INSTITUTION_ID || '').trim().toLowerCase();
+            const sameInstList = list.filter((st) => {
+                const stInst = String(st?.institutionId || targetInstId).trim().toLowerCase();
+                return !targetInstId || stInst === targetInstId;
+            });
 
             if (!isAddingStudentAccountFlow && !window.AppSession?.hasStudentSession?.()) {
                 await window.AppSession?.clearAll?.({ clearRemembered: false });
             }
 
-            // Register all linked siblings verified under this phone number
-            list.forEach((st) => {
+            // Register all linked siblings verified under this phone number for the target institution
+            sameInstList.forEach((st) => {
                 if (!st?.studentId) return;
                 window.AppSession?.registerStudentAccount?.(st.studentId, {
+                    institutionId: targetInstId,
                     name: st.name || '',
                     class: st.class || '',
                     adm: st.adm || ''
-                }, { append: true });
+                }, { append: true, institutionId: targetInstId });
             });
 
             window.AppSession?.startStudent?.(selectedStudent.studentId, {
+                institutionId: targetInstId,
                 name: selectedStudent.name || '',
                 class: selectedStudent.class || '',
                 adm: selectedStudent.adm || ''
-            });
+            }, targetInstId);
 
             await Promise.race([
-                syncStudentGroupMembersToSession(selectedStudent.studentId, { clearDismissed: true }),
+                syncStudentGroupMembersToSession(selectedStudent.studentId, { clearDismissed: true, institutionId: targetInstId }),
                 new Promise((resolve) => setTimeout(resolve, 1500))
             ]);
-            window.location.href = getPageUrl('student.html');
+            window.location.href = (targetInstId && window.AppSession?.buildPageUrl)
+                ? window.AppSession.buildPageUrl('student.html', targetInstId)
+                : getPageUrl('student.html');
         };
 
         const handleStudentVerifyOtp = async () => {
@@ -2716,7 +2740,7 @@ let isRootGatewayMode = false;
                 const phoneCred = await studentOtpState.confirmationResult.confirm(code);
                 const phoneIdToken = await phoneCred.user.getIdToken(true);
                 const completeRes = await completeStudentOtpLogin({
-                    institutionId: INSTITUTION_ID,
+                    institutionId: isRootGatewayMode ? '' : INSTITUTION_ID,
                     phoneIdToken
                 });
 
@@ -2736,18 +2760,25 @@ let isRootGatewayMode = false;
                 }
 
                 // Multiple siblings linked to this mobile -> display selection list
+                const uniqueInstCount = new Set(students.map((st) => String(st.institutionId || '').trim().toLowerCase()).filter(Boolean)).size;
+                const showInstitutionLabel = isRootGatewayMode || uniqueInstCount > 1;
                 const verifiedListEl = document.getElementById('student-verified-list');
                 if (verifiedListEl) {
-                    verifiedListEl.innerHTML = students.map((st, idx) => `
+                    verifiedListEl.innerHTML = students.map((st, idx) => {
+                        const baseMeta = `Class ${st.class || '-'} • Adm: ${st.adm || '-'}`;
+                        const metaLine = (showInstitutionLabel && st.institutionName)
+                            ? `${baseMeta} • ${st.institutionName}`
+                            : baseMeta;
+                        return `
                         <button type="button" class="login-sibling-btn" data-verified-student-index="${idx}">
                             <span class="login-preview-avatar" aria-hidden="true"><i class="fas fa-user-graduate"></i></span>
                             <span class="login-sibling-info">
                                 <span class="login-sibling-name">${escapeHtml(st.name || 'Student')}</span>
-                                <span class="login-sibling-meta">Class ${escapeHtml(st.class || '-')} • Adm: ${escapeHtml(st.adm || '-')}</span>
+                                <span class="login-sibling-meta">${escapeHtml(metaLine)}</span>
                             </span>
                             <i class="fas fa-chevron-right login-sibling-chevron" aria-hidden="true"></i>
-                        </button>
-                    `).join('');
+                        </button>`;
+                    }).join('');
                 }
 
                 hideAllLoginPanels();
@@ -2816,24 +2847,46 @@ let isRootGatewayMode = false;
                                 showLoginMessage('This account is currently inactive. Please contact your administrator.');
                                 return;
                             }
-                            if (lookupRes.institutionStatus && lookupRes.institutionStatus !== 'active') {
+                            if (lookupRes.institutionActive === false || (lookupRes.institutionStatus && lookupRes.institutionStatus !== 'active')) {
                                 showLoginMessage('This institution portal is currently paused or inactive.');
                                 return;
                             }
-                            const isSuper = lookupRes.role === 'super_admin';
-                            matched = {
-                                type: 'custom_auth',
-                                role: lookupRes.role || 'staff',
-                                data: lookupRes,
-                                displayName: lookupRes.displayName || lookupRes.displayUsername || rawInput,
-                                meta: lookupRes.institutionName
-                                    ? `${isSuper ? 'Super Admin' : 'Staff Member'} • ${lookupRes.institutionName}`
-                                    : (isSuper ? 'Super Admin' : 'Staff Member'),
-                                loginId: lookupRes.displayUsername || lookupRes.username || rawInput,
-                                targetInstitutionId: String(lookupRes.institutionId || INSTITUTION_ID || '').trim().toLowerCase(),
-                                hasPhone: Boolean(lookupRes.hasPhone),
-                                maskedPhone: String(lookupRes.maskedPhone || '').trim()
-                            };
+                            if (lookupRes.institutionExpired === true) {
+                                showLoginMessage('This institution subscription has expired. Please contact support.');
+                                return;
+                            }
+                            if (lookupRes.accountType === 'directory' || lookupRes.role === 'directory') {
+                                const roleLabel = String(lookupRes.roleTitle || 'Category User').trim();
+                                matched = {
+                                    type: 'directory',
+                                    role: 'directory',
+                                    data: {
+                                        id: lookupRes.entryId || '',
+                                        categoryId: lookupRes.categoryId || ''
+                                    },
+                                    displayName: lookupRes.displayName || lookupRes.displayUsername || rawInput,
+                                    meta: lookupRes.institutionName ? `${roleLabel} • ${lookupRes.institutionName}` : roleLabel,
+                                    loginId: String(lookupRes.username || rawInput).toLowerCase().trim(),
+                                    targetInstitutionId: String(lookupRes.institutionId || INSTITUTION_ID || '').trim().toLowerCase(),
+                                    hasPhone: Boolean(lookupRes.hasPhone),
+                                    maskedPhone: String(lookupRes.maskedPhone || '').trim()
+                                };
+                            } else {
+                                const isSuper = lookupRes.role === 'super_admin';
+                                matched = {
+                                    type: 'custom_auth',
+                                    role: lookupRes.role || 'staff',
+                                    data: lookupRes,
+                                    displayName: lookupRes.displayName || lookupRes.displayUsername || rawInput,
+                                    meta: lookupRes.institutionName
+                                        ? `${isSuper ? 'Super Admin' : 'Staff Member'} • ${lookupRes.institutionName}`
+                                        : (isSuper ? 'Super Admin' : 'Staff Member'),
+                                    loginId: lookupRes.displayUsername || lookupRes.username || rawInput,
+                                    targetInstitutionId: String(lookupRes.institutionId || INSTITUTION_ID || '').trim().toLowerCase(),
+                                    hasPhone: Boolean(lookupRes.hasPhone),
+                                    maskedPhone: String(lookupRes.maskedPhone || '').trim()
+                                };
+                            }
                         }
                     } catch (fnErr) {
                         customLookupError = fnErr;
@@ -3029,7 +3082,7 @@ let isRootGatewayMode = false;
                         }
                     } else if (officialOtpState.flowType === 'directory' && officialOtpState.cachedPassword) {
                         const refreshed = await verifyDirectoryPasswordForOtp({
-                            institutionId: INSTITUTION_ID,
+                            institutionId: verifiedUser.targetInstitutionId || INSTITUTION_ID,
                             username: verifiedUser.loginId,
                             password: officialOtpState.cachedPassword
                         });
@@ -3220,9 +3273,10 @@ let isRootGatewayMode = false;
                 }
 
                 // B. Directory User 2FA Step 1 (Server Password Verification -> SMS OTP)
-                if (verifiedUser.type === 'directory' && !isRootGatewayMode) {
+                if (verifiedUser.type === 'directory') {
+                    const dirInstId = String(verifiedUser.targetInstitutionId || INSTITUTION_ID || '').trim().toLowerCase();
                     const challenge = await verifyDirectoryPasswordForOtp({
-                        institutionId: INSTITUTION_ID,
+                        institutionId: dirInstId,
                         username: verifiedUser.loginId,
                         password: enteredPassword
                     });
@@ -3336,6 +3390,7 @@ let isRootGatewayMode = false;
                         phoneIdToken
                     });
                     const profile = completeRes?.profile || {};
+                    const effectiveDirInstId = String(profile.institutionId || verifiedUser?.targetInstitutionId || INSTITUTION_ID || '').trim().toLowerCase();
                     const userLogin = String(profile.username || verifiedUser?.loginId || '').toLowerCase().trim();
                     const rawName = String(profile.displayName || verifiedUser?.displayName || userLogin || 'User');
                     const dirRoleTitle = String(profile.roleTitle || verifiedUser?.meta || 'Category User');
@@ -3355,11 +3410,11 @@ let isRootGatewayMode = false;
                     };
                     stopOtpTimers();
                     officialOtpState.cachedPassword = '';
-                    window.AppSession?.startStaff?.(rawName, userLogin, dirAccess);
+                    window.AppSession?.startStaff?.(rawName, userLogin, dirAccess, effectiveDirInstId);
                     const activeProject = window.AppSession?.getActiveProjectId?.() || '';
                     localStorage.setItem('official_portal_session_v1', JSON.stringify({
                         ...(activeProject ? { projectId: activeProject } : {}),
-                        institutionId: INSTITUTION_ID,
+                        institutionId: effectiveDirInstId,
                         id: dirAccess.entryId,
                         name: rawName,
                         username: userLogin,
@@ -3373,7 +3428,9 @@ let isRootGatewayMode = false;
                         source: 'directory',
                         access: dirAccess
                     }));
-                    window.location.href = getPageUrl('official.html');
+                    window.location.href = (effectiveDirInstId && window.AppSession?.buildPageUrl)
+                        ? window.AppSession.buildPageUrl('official.html', effectiveDirInstId)
+                        : getPageUrl('official.html');
                     return;
                 }
 

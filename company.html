@@ -50,6 +50,20 @@
     #company-sidebar[data-collapsed="true"] .sidebar-footer-actions {
       grid-template-columns: 1fr !important;
     }
+    .company-desktop-flex { display: flex; }
+    .company-sm-block { display: block; }
+    .company-sm-inline { display: inline; }
+    @media (max-width: 767.98px) {
+      .company-desktop-flex { display: none !important; }
+    }
+    @media (min-width: 768px) {
+      #company-mobile-bottom-nav,
+      #company-mobile-more-sheet { display: none !important; }
+    }
+    @media (max-width: 639.98px) {
+      .company-sm-block,
+      .company-sm-inline { display: none !important; }
+    }
   </style>
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
@@ -70,7 +84,7 @@
   <div id="company-shell" class="hidden min-h-screen flex flex-row">
 
     <!-- Persistent Expandable / Collapsible Side Menu Bar (Desktop md+ only; mobile uses Bottom Navigation) -->
-    <aside id="company-sidebar" data-collapsed="false" class="hidden md:flex sticky top-0 h-screen z-40 bg-white border-r border-slate-200 flex-col transition-all duration-200 shrink-0 select-none">
+    <aside id="company-sidebar" data-collapsed="false" class="company-desktop-flex sticky top-0 h-screen z-40 bg-white border-r border-slate-200 flex-col transition-all duration-200 shrink-0 select-none">
       <div class="sidebar-brand-row h-16 px-3.5 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
           <div class="w-9 h-9 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shadow-xs shrink-0" title="Institution Manage — Company Console">
@@ -163,18 +177,18 @@
           <div class="md:hidden w-8 h-8 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shrink-0">
             <img src="/assets/images/logo.png" alt="Institution Manage" class="w-full h-full object-contain rounded-lg" referrerpolicy="no-referrer">
           </div>
-          <button type="button" id="btn-open-company-sidebar" class="hidden md:flex w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 items-center justify-center cursor-pointer shrink-0 transition" title="Expand / Collapse Sidebar" aria-label="Expand or Collapse Navigation Sidebar">
+          <button type="button" id="btn-open-company-sidebar" class="company-desktop-flex w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 items-center justify-center cursor-pointer shrink-0 transition" title="Expand / Collapse Sidebar" aria-label="Expand or Collapse Navigation Sidebar">
             <i id="company-sidebar-toggle-icon" class="fas fa-bars"></i>
           </button>
           <div class="min-w-0">
             <h2 id="company-view-title" class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Dashboard</h2>
-            <p id="company-view-subtitle" class="text-[11px] font-medium text-slate-500 truncate hidden sm:block">Platform overview, quick actions, and subscription health.</p>
+            <p id="company-view-subtitle" class="text-[11px] font-medium text-slate-500 truncate company-sm-block">Platform overview, quick actions, and subscription health.</p>
           </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <button type="button" id="btn-header-preview-plans" class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-extrabold transition cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap" title="Preview Plans Modal">
             <i class="fas fa-crown text-amber-600"></i>
-            <span class="hidden sm:inline">Preview Plans Modal</span>
+            <span class="company-sm-inline">Preview Plans Modal</span>
           </button>
         </div>
       </header>

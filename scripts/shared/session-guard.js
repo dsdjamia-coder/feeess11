@@ -298,25 +298,32 @@
         const state = readJson(STUDENT_STATE_KEY);
         return matchesProjectScope(state) ? state : null;
     };
-    const getStudentAccounts = () => {
+    const resolveTargetInst = (overrideInstitutionId = null) => (
+        overrideInstitutionId
+            ? (sanitizeInstitutionSlug(overrideInstitutionId) || CURRENT_INSTITUTION_ID)
+            : CURRENT_INSTITUTION_ID
+    );
+    const getStudentAccounts = (overrideInstitutionId = null) => {
+        const targetInst = resolveTargetInst(overrideInstitutionId);
         const accounts = readJson(STUDENT_ACCOUNTS_KEY);
         if (!Array.isArray(accounts)) return [];
         const activeProject = getActiveProjectId();
         return accounts.filter((a) => {
             if (!a) return false;
             if (activeProject && a.projectId !== activeProject) return false;
-            return String(a.institutionId || 'school').trim().toLowerCase() === CURRENT_INSTITUTION_ID;
+            return String(a.institutionId || 'school').trim().toLowerCase() === targetInst;
         });
     };
-    const saveStudentAccounts = (accounts = []) => {
+    const saveStudentAccounts = (accounts = [], overrideInstitutionId = null) => {
+        const targetInst = resolveTargetInst(overrideInstitutionId);
         const activeProject = getActiveProjectId();
         const allStored = readJson(STUDENT_ACCOUNTS_KEY);
         const otherTenants = Array.isArray(allStored)
-            ? allStored.filter((a) => a && (!activeProject || a.projectId === activeProject) && String(a.institutionId || 'school').trim().toLowerCase() !== CURRENT_INSTITUTION_ID)
+            ? allStored.filter((a) => a && (!activeProject || a.projectId === activeProject) && String(a.institutionId || 'school').trim().toLowerCase() !== targetInst)
             : [];
         const stamped = (Array.isArray(accounts) ? accounts : []).map((a) => ({
             ...a,
-            institutionId: CURRENT_INSTITUTION_ID,
+            institutionId: targetInst,
             ...(activeProject ? { projectId: activeProject } : {})
         }));
         writeJson(STUDENT_ACCOUNTS_KEY, [...stamped, ...otherTenants]);
@@ -378,11 +385,12 @@
         removeKey(DISMISSED_GROUP_STUDENTS_KEY);
     };
 
-    const getRememberedAccounts = () => {
+    const getRememberedAccounts = (overrideInstitutionId = null) => {
+        const targetInst = resolveTargetInst(overrideInstitutionId);
         let accounts = readJson(REMEMBERED_ACCOUNTS_KEY);
         const activeProject = getActiveProjectId();
         if (!Array.isArray(accounts)) {
-            const legacyStudents = getStudentAccounts();
+            const legacyStudents = getStudentAccounts(targetInst);
             accounts = legacyStudents.map((st) => ({
                 id: st.studentId,
                 role: 'student',
@@ -390,6 +398,7 @@
                 name: st.name || '',
                 class: st.class || '',
                 adm: st.adm || '',
+                institutionId: targetInst,
                 ...(st.groupId ? { groupId: st.groupId } : {}),
                 ...(st.groupName ? { groupName: st.groupName } : {}),
                 ...(st.projectId || activeProject ? { projectId: st.projectId || activeProject } : {}),
@@ -398,17 +407,18 @@
             if (accounts.length) writeJson(REMEMBERED_ACCOUNTS_KEY, accounts);
         }
         if (!Array.isArray(accounts)) return [];
-        // Strictly restrict remembered multi-account switching to student accounts for the current institution
-        const studentOnly = accounts.filter((a) => isStudentAccountRecord(a) && String(a.institutionId || 'school').trim().toLowerCase() === CURRENT_INSTITUTION_ID);
+        // Strictly restrict remembered multi-account switching to student accounts for the target institution
+        const studentOnly = accounts.filter((a) => isStudentAccountRecord(a) && String(a.institutionId || 'school').trim().toLowerCase() === targetInst);
         if (!activeProject) return studentOnly;
         return studentOnly.filter((a) => a.projectId === activeProject);
     };
 
-    const saveRememberedAccounts = (accounts = []) => {
+    const saveRememberedAccounts = (accounts = [], overrideInstitutionId = null) => {
+        const targetInst = resolveTargetInst(overrideInstitutionId);
         const activeProject = getActiveProjectId();
         const rawStored = readJson(REMEMBERED_ACCOUNTS_KEY);
         const otherTenantAccounts = Array.isArray(rawStored)
-            ? rawStored.filter((a) => isStudentAccountRecord(a) && (!activeProject || a.projectId === activeProject) && String(a.institutionId || 'school').trim().toLowerCase() !== CURRENT_INSTITUTION_ID)
+            ? rawStored.filter((a) => isStudentAccountRecord(a) && (!activeProject || a.projectId === activeProject) && String(a.institutionId || 'school').trim().toLowerCase() !== targetInst)
             : [];
         const studentOnly = (Array.isArray(accounts) ? accounts : [])
             .filter((a) => isStudentAccountRecord(a))
@@ -417,7 +427,7 @@
                 role: 'student',
                 studentId: a.studentId || a.id,
                 id: a.id || a.studentId,
-                institutionId: CURRENT_INSTITUTION_ID,
+                institutionId: targetInst,
                 ...(activeProject ? { projectId: activeProject } : {})
             }));
         writeJson(REMEMBERED_ACCOUNTS_KEY, [...studentOnly, ...otherTenantAccounts]);
@@ -428,15 +438,16 @@
             adm: s.adm || '',
             ...(s.groupId ? { groupId: s.groupId } : {}),
             ...(s.groupName ? { groupName: s.groupName } : {}),
-            institutionId: CURRENT_INSTITUTION_ID,
+            institutionId: targetInst,
             ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: s.updatedAt
-        })));
+        })), targetInst);
     };
 
     const registerRememberedAccount = (accountData = {}, options = {}) => {
         if (!accountData || !accountData.id || !isStudentAccountRecord(accountData)) return;
-        const currentAccounts = getRememberedAccounts();
+        const targetInst = resolveTargetInst(options.institutionId || accountData.institutionId || null);
+        const currentAccounts = getRememberedAccounts(targetInst);
         const activeProject = getActiveProjectId();
         const targetId = String(accountData.studentId || accountData.id);
         const existingIndex = currentAccounts.findIndex((a) => String(a.studentId || a.id) === targetId);
@@ -447,7 +458,7 @@
             id: targetId,
             studentId: targetId,
             role: 'student',
-            institutionId: CURRENT_INSTITUTION_ID,
+            institutionId: targetInst,
             ...(activeProject ? { projectId: activeProject } : {}),
             updatedAt: now()
         };
@@ -461,7 +472,7 @@
         } else {
             updatedAccounts = [nextAccount, ...currentAccounts.filter((a) => String(a.studentId || a.id) !== targetId)];
         }
-        saveRememberedAccounts(updatedAccounts.slice(0, 25));
+        saveRememberedAccounts(updatedAccounts.slice(0, 25), targetInst);
     };
 
     const getStateByRole = (role) => {
@@ -865,29 +876,34 @@
         hasStudentSession,
         hasStaffSession,
         hasAdminSession,
-        startStudent(studentId, profile = {}) {
+        startStudent(studentId, profile = {}, overrideInstitutionId = null) {
             if (!studentId) return;
+            const targetInst = resolveTargetInst(overrideInstitutionId || profile.institutionId || null);
+            try { localStorage.setItem(ACTIVE_INSTITUTION_KEY, targetInst); } catch (_) {}
             undismissGroupStudent(studentId);
-            writeJson(STUDENT_STATE_KEY, buildState({ studentId, role: 'student' }));
-            rememberLastInstitution(CURRENT_INSTITUTION_ID);
+            writeJson(STUDENT_STATE_KEY, buildState({ studentId, role: 'student', institutionId: targetInst }));
+            rememberLastInstitution(targetInst);
             registerRememberedAccount({
                 id: studentId,
                 role: 'student',
                 studentId,
+                institutionId: targetInst,
                 name: profile.name || '',
                 class: profile.class || '',
                 adm: profile.adm || '',
                 ...(profile.groupId ? { groupId: profile.groupId } : {}),
                 ...(profile.groupName ? { groupName: profile.groupName } : {})
-            });
+            }, { institutionId: targetInst });
             setCurrentRole('student');
         },
         registerStudentAccount(studentId, profile = {}, options = {}) {
             if (!studentId) return;
+            const targetInst = resolveTargetInst(options.institutionId || profile.institutionId || null);
             registerRememberedAccount({
                 id: studentId,
                 role: 'student',
                 studentId,
+                institutionId: targetInst,
                 name: profile.name || '',
                 class: profile.class || '',
                 adm: profile.adm || '',
@@ -895,7 +911,8 @@
                 ...(profile.groupName ? { groupName: profile.groupName } : {})
             }, {
                 append: options.append !== false,
-                keepOrder: options.keepOrder === true
+                keepOrder: options.keepOrder === true,
+                institutionId: targetInst
             });
         },
         getDismissedGroupStudentIds,

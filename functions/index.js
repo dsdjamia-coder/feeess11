@@ -400,12 +400,7 @@ const isInstitutionAdminOrCompanyOwner = async (authCtx, slug) => {
   return false;
 };
 
-const checkInstitutionOperationalStatus = async (slug) => {
-  const instSnap = await db.collection(INSTITUTIONS_COLLECTION).doc(slug).get();
-  if (!instSnap.exists) {
-    return { exists: false, active: true, expired: false, name: slug, pauseReason: '' };
-  }
-  const inst = instSnap.data() || {};
+const evaluateInstitutionDoc = (slug, inst = {}) => {
   const isActive = inst.isActive !== false && String(inst.status || 'active').toLowerCase() === 'active';
   let expired = false;
   if (inst.isLifetime !== true && inst.expiryTimestamp) {
@@ -416,13 +411,52 @@ const checkInstitutionOperationalStatus = async (slug) => {
       expired = true;
     }
   }
+  const studentPageAllowed = !(
+    inst?.allowedPages
+    && typeof inst.allowedPages === 'object'
+    && inst.allowedPages.student === false
+  );
   return {
+    slug: normalizeInstitutionSlug(slug),
     exists: true,
     active: isActive,
     expired,
+    studentPageAllowed,
     name: String(inst.name || slug).trim(),
     pauseReason: String(inst.pauseReason || '').trim()
   };
+};
+
+const checkInstitutionOperationalStatus = async (slug) => {
+  const instSnap = await db.collection(INSTITUTIONS_COLLECTION).doc(slug).get();
+  if (!instSnap.exists) {
+    return { exists: false, active: true, expired: false, studentPageAllowed: true, name: slug, pauseReason: '' };
+  }
+  return evaluateInstitutionDoc(slug, instSnap.data() || {});
+};
+
+const getActiveOperationalInstitutions = async () => {
+  const snap = await db.collection(INSTITUTIONS_COLLECTION).get();
+  const list = [];
+  snap.forEach((docSnap) => {
+    const slug = normalizeInstitutionSlug(docSnap.id);
+    if (!slug) return;
+    const status = evaluateInstitutionDoc(slug, docSnap.data() || {});
+    if (status.active && !status.expired) {
+      list.push(status);
+    }
+  });
+  return list;
+};
+
+const runInBatches = async (items = [], batchSize = 8, worker = async () => null) => {
+  const results = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const chunk = items.slice(i, i + batchSize);
+    const chunkRes = await Promise.all(chunk.map((item) => worker(item)));
+    results.push(...chunkRes);
+  }
+  return results;
 };
 
 const isStudentActiveRecord = (st = {}) => {
@@ -449,7 +483,7 @@ const extractStudentPhoneCandidates = (st = {}) => {
   return list.filter(Boolean);
 };
 
-const findMatchingStudentsByPhone = async (slug, targetPhoneE164) => {
+const findMatchingStudentsByPhone = async (slug, targetPhoneE164, institutionName = '') => {
   const studentsSnap = await db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/students`).get();
   const matched = [];
   studentsSnap.forEach((docSnap) => {
@@ -460,6 +494,8 @@ const findMatchingStudentsByPhone = async (slug, targetPhoneE164) => {
       const prof = (data.profile && typeof data.profile === 'object') ? data.profile : {};
       matched.push({
         studentId: docSnap.id,
+        institutionId: slug,
+        institutionName: String(institutionName || slug).trim(),
         name: String(data.name || prof.name || 'Student').trim(),
         class: String(data.class || prof.class || '').trim(),
         adm: String(data.adm || data.admissionNo || prof.adm || '').trim(),
@@ -469,6 +505,97 @@ const findMatchingStudentsByPhone = async (slug, targetPhoneE164) => {
   });
   matched.sort((a, b) => a.name.localeCompare(b.name));
   return matched;
+};
+
+const findMatchingStudentsAcrossInstitutions = async (targetPhoneE164) => {
+  const activeInstitutions = (await getActiveOperationalInstitutions()).filter((inst) => inst.studentPageAllowed !== false);
+  const perInstMatches = await runInBatches(activeInstitutions, 8, async (inst) => {
+    try {
+      const configSnap = await db.doc(`${INSTITUTIONS_COLLECTION}/${inst.slug}/settings/config`).get();
+      const configData = configSnap.exists ? (configSnap.data() || {}) : {};
+      if (configData?.enabledModules?.student === false) return [];
+      const displayInstName = String(configData?.appName || inst.name || inst.slug).trim();
+      return await findMatchingStudentsByPhone(inst.slug, targetPhoneE164, displayInstName);
+    } catch (_) {
+      return [];
+    }
+  });
+  const matched = perInstMatches.flat().filter(Boolean);
+  matched.sort((a, b) => a.name.localeCompare(b.name) || a.institutionName.localeCompare(b.institutionName));
+  return matched;
+};
+
+const normalizeDirectoryUsernameKey = (value = '') => String(value || '').trim().toLowerCase().replace(/[\\/\s]+/g, '_');
+
+const findMatchingDirectoryUserAcrossInstitutions = async (rawUsername) => {
+  const cleanLower = String(rawUsername || '').trim().toLowerCase();
+  const cleanKey = normalizeDirectoryUsernameKey(rawUsername);
+  if (!cleanLower) return null;
+
+  const activeInstitutions = await getActiveOperationalInstitutions();
+  const perInstMatches = await runInBatches(activeInstitutions, 8, async (inst) => {
+    try {
+      const authConfSnap = await db.doc(`${INSTITUTIONS_COLLECTION}/${inst.slug}/settings/categoryAuthConfig`).get();
+      if (!authConfSnap.exists) return null;
+      const categories = authConfSnap.data()?.categories || {};
+      const hasEnabledCategory = Object.values(categories).some((c) => c && c.enabled === true);
+      if (!hasEnabledCategory) return null;
+
+      const [dirSnap, accessSnap] = await Promise.all([
+        db.collection(`${INSTITUTIONS_COLLECTION}/${inst.slug}/publicDirectory`).get(),
+        db.doc(`${INSTITUTIONS_COLLECTION}/${inst.slug}/settings/pageAccess`).get()
+      ]);
+      const pageAccessData = accessSnap.exists ? (accessSnap.data() || {}) : {};
+      let found = null;
+
+      dirSnap.forEach((docSnap) => {
+        if (found) return;
+        const entry = { id: docSnap.id, ...(docSnap.data() || {}) };
+        if (!entry.categoryId) return;
+        const authConf = categories[entry.categoryId] || {};
+        if (authConf.enabled !== true) return;
+        if (pageAccessData?.overrides?.[entry.id]?.blocked === true) return;
+
+        const values = (entry.values && typeof entry.values === 'object') ? entry.values : {};
+        const usernameField = String(authConf.usernameField || '').trim();
+        const configuredUsername = usernameField ? String(values[usernameField] || '').trim().toLowerCase() : '';
+        const authUsername = String(entry.authMeta?.username || '').trim().toLowerCase();
+        const candidates = [authUsername, configuredUsername].filter(Boolean);
+        const isMatch = candidates.some((u) => u === cleanLower || normalizeDirectoryUsernameKey(u) === cleanKey);
+        if (!isMatch) return;
+
+        const rawPhone = values.phone || values.Phone || values.mobile || values.Mobile || values.contact || entry.phone || '';
+        const phoneE164 = normalizePhoneToE164(rawPhone);
+        const displayName = String(entry.name || values.name || values.Name || entry.authMeta?.usernameRaw || rawUsername).trim();
+        const roleTitle = String(values.role || entry.role || 'Category User').trim();
+        const resolvedUsername = authUsername || configuredUsername || cleanLower;
+
+        found = {
+          found: true,
+          isActive: true,
+          accountType: 'directory',
+          displayName,
+          displayUsername: String(entry.authMeta?.usernameRaw || rawUsername).trim(),
+          username: resolvedUsername,
+          role: 'directory',
+          roleTitle,
+          entryId: entry.id,
+          categoryId: entry.categoryId,
+          institutionId: inst.slug,
+          institutionName: inst.name || inst.slug,
+          institutionActive: true,
+          institutionExpired: false,
+          hasPhone: Boolean(phoneE164),
+          maskedPhone: phoneE164 ? maskPhoneDisplay(phoneE164) : ''
+        };
+      });
+      return found;
+    } catch (_) {
+      return null;
+    }
+  });
+
+  return perInstMatches.find(Boolean) || null;
 };
 
 const mintOfficialCustomToken = async (uid, customClaims) => {
@@ -503,6 +630,12 @@ exports.verifyLoginIdentifier = onCall({ cors: true }, async (request) => {
   const credSnap = await db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash).get();
 
   if (!credSnap.exists) {
+    if (!requestedInst) {
+      const dirMatch = await findMatchingDirectoryUserAcrossInstitutions(rawUsername);
+      if (dirMatch) {
+        return dirMatch;
+      }
+    }
     return { found: false };
   }
 
@@ -828,7 +961,15 @@ exports.verifyDirectoryPasswordForOtp = onCall({ cors: true }, async (request) =
     const authConf = categoryAuthConfig[entry.categoryId] || {};
     if (authConf.enabled !== true) return;
     const authMeta = (entry.authMeta && typeof entry.authMeta === 'object') ? entry.authMeta : {};
-    if (String(authMeta.username || '').trim().toLowerCase() !== rawUsername) return;
+    const values = (entry.values && typeof entry.values === 'object') ? entry.values : {};
+    const usernameField = String(authConf.usernameField || '').trim();
+    const configuredUsername = usernameField ? String(values[usernameField] || '').trim().toLowerCase() : '';
+    const authUsername = String(authMeta.username || '').trim().toLowerCase();
+    const cleanKey = normalizeDirectoryUsernameKey(rawUsername);
+    const usernameMatches = [authUsername, configuredUsername]
+      .filter(Boolean)
+      .some((u) => u === rawUsername || normalizeDirectoryUsernameKey(u) === cleanKey);
+    if (!usernameMatches) return;
     if (String(authMeta.passwordHash || '').trim() !== passwordHash) return;
 
     const override = pageAccessData?.overrides?.[entry.id] || {};
@@ -928,38 +1069,40 @@ exports.completeDirectoryOtpLogin = onCall({ cors: true }, async (request) => {
 });
 
 // =========================================================================
-// 4A. STUDENT OTP STEP-1: lookupStudentsByPhone (Masked Preview Only)
+// 4A. STUDENT OTP STEP-1: lookupStudentsByPhone (Single or Cross-Institution)
 // =========================================================================
 exports.lookupStudentsByPhone = onCall({ cors: true }, async (request) => {
   const slug = normalizeInstitutionSlug(request.data?.institutionId || '');
   const rawPhone = String(request.data?.phone || '').trim();
   const countryCode = normalizeCountryCode(request.data?.countryCode || '+91');
 
-  if (!slug) {
-    throw new HttpsError('invalid-argument', 'Valid institution ID is required.');
-  }
-
   const phoneE164 = normalizePhoneToE164(rawPhone, countryCode);
   if (!phoneE164) {
     throw new HttpsError('invalid-argument', 'Please enter a valid mobile number.');
   }
 
-  const instStatus = await checkInstitutionOperationalStatus(slug);
-  if (!instStatus.active) {
-    throw new HttpsError(
-      'permission-denied',
-      instStatus.pauseReason
-        ? `Institution access is paused: ${instStatus.pauseReason}`
-        : 'Institution access is currently paused.'
-    );
-  }
-  if (instStatus.expired) {
-    throw new HttpsError('permission-denied', 'Institution subscription has expired.');
+  let matched = [];
+  if (slug) {
+    const instStatus = await checkInstitutionOperationalStatus(slug);
+    if (!instStatus.active) {
+      throw new HttpsError(
+        'permission-denied',
+        instStatus.pauseReason
+          ? `Institution access is paused: ${instStatus.pauseReason}`
+          : 'Institution access is currently paused.'
+      );
+    }
+    if (instStatus.expired) {
+      throw new HttpsError('permission-denied', 'Institution subscription has expired.');
+    }
+
+    await enforceOtpRateLimit(`student-lookup:${slug}:${phoneE164}`);
+    matched = await findMatchingStudentsByPhone(slug, phoneE164, instStatus.name);
+  } else {
+    await enforceOtpRateLimit(`student-lookup:global:${phoneE164}`);
+    matched = await findMatchingStudentsAcrossInstitutions(phoneE164);
   }
 
-  await enforceOtpRateLimit(`student-lookup:${slug}:${phoneE164}`);
-
-  const matched = await findMatchingStudentsByPhone(slug, phoneE164);
   if (!matched.length) {
     return {
       found: false,
@@ -970,14 +1113,16 @@ exports.lookupStudentsByPhone = onCall({ cors: true }, async (request) => {
     };
   }
 
-  // Return full student name and class for confirmation before OTP verification
+  // Return full student name, class, and institution for confirmation before OTP verification
   const studentConfirmations = matched.map((st) => {
     const fullName = String(st.name || 'Student').trim() || 'Student';
     return {
       name: fullName,
       fullName,
       maskedName: fullName,
-      classLabel: st.class ? `Class ${st.class}` : 'Student'
+      classLabel: st.class ? `Class ${st.class}` : 'Student',
+      institutionId: st.institutionId || slug || '',
+      institutionName: st.institutionName || ''
     };
   });
 
@@ -997,20 +1142,25 @@ exports.completeStudentOtpLogin = onCall({ cors: true }, async (request) => {
   const slug = normalizeInstitutionSlug(request.data?.institutionId || '');
   const phoneIdToken = String(request.data?.phoneIdToken || '').trim();
 
-  if (!slug || !phoneIdToken) {
-    throw new HttpsError('invalid-argument', 'Institution and verified OTP token are required.');
+  if (!phoneIdToken) {
+    throw new HttpsError('invalid-argument', 'Verified OTP token is required.');
   }
 
-  const instStatus = await checkInstitutionOperationalStatus(slug);
-  if (!instStatus.active) {
-    throw new HttpsError('permission-denied', 'Institution access is currently paused.');
-  }
-  if (instStatus.expired) {
-    throw new HttpsError('permission-denied', 'Institution subscription has expired.');
-  }
-
+  let matched = [];
   const verified = await verifyPhoneAuthToken(phoneIdToken);
-  const matched = await findMatchingStudentsByPhone(slug, verified.phoneE164);
+
+  if (slug) {
+    const instStatus = await checkInstitutionOperationalStatus(slug);
+    if (!instStatus.active) {
+      throw new HttpsError('permission-denied', 'Institution access is currently paused.');
+    }
+    if (instStatus.expired) {
+      throw new HttpsError('permission-denied', 'Institution subscription has expired.');
+    }
+    matched = await findMatchingStudentsByPhone(slug, verified.phoneE164, instStatus.name);
+  } else {
+    matched = await findMatchingStudentsAcrossInstitutions(verified.phoneE164);
+  }
 
   if (!matched.length) {
     throw new HttpsError(
@@ -1019,9 +1169,10 @@ exports.completeStudentOtpLogin = onCall({ cors: true }, async (request) => {
     );
   }
 
+  const uniqueInstIds = Array.from(new Set(matched.map((s) => s.institutionId).filter(Boolean)));
   return {
     ok: true,
-    institutionId: slug,
+    institutionId: slug || (uniqueInstIds.length === 1 ? uniqueInstIds[0] : ''),
     verifiedPhoneE164: verified.phoneE164,
     maskedPhone: maskPhoneDisplay(verified.phoneE164),
     students: matched

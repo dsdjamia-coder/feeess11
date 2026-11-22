@@ -1112,10 +1112,18 @@
                         </div>
                     </div>
                     <p class="login-field-hint">Enter the parent or student mobile number registered with the institution.</p>
-                    <div class="login-session-notice">
-                        <i class="fas fa-circle-info" aria-hidden="true"></i>
-                        <span><strong>One-time device verification:</strong> Once signed in, you stay logged in on this device with no session time limit. OTP is only required again if you log out or sign in on another device.</span>
-                    </div>
+                    <details class="login-session-notice login-session-disclosure">
+                        <summary class="login-session-summary">
+                            <span class="login-session-summary-left">
+                                <i class="fas fa-circle-info" aria-hidden="true"></i>
+                                <span>One-time device verification</span>
+                            </span>
+                            <i class="fas fa-chevron-down login-session-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="login-session-body">
+                            Once signed in, you stay logged in on this device with no session time limit. OTP is only required again if you log out or sign in on another device.
+                        </div>
+                    </details>
                 </div>
                 <button type="button" id="btn-student-verify-phone" class="login-primary-btn">
                     <i class="fas fa-arrow-right" aria-hidden="true"></i>
@@ -1181,10 +1189,18 @@
                         <span id="student-otp-timer-text" class="login-otp-timer"></span>
                         <button type="button" id="btn-student-resend-otp" class="login-link-btn" disabled>Resend OTP</button>
                     </div>
-                    <div class="login-session-notice">
-                        <i class="fas fa-shield-halved" aria-hidden="true"></i>
-                        <span>One-time verification for this device — no session time limit after login until you log out or switch devices. Max 2 resends per 15 minutes.</span>
-                    </div>
+                    <details class="login-session-notice login-session-disclosure">
+                        <summary class="login-session-summary">
+                            <span class="login-session-summary-left">
+                                <i class="fas fa-shield-halved" aria-hidden="true"></i>
+                                <span>One-time device verification</span>
+                            </span>
+                            <i class="fas fa-chevron-down login-session-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="login-session-body">
+                            One-time verification for this device — no session time limit after login until you log out or switch devices. Max 2 resends per 15 minutes.
+                        </div>
+                    </details>
                 </div>
 
                 <button type="button" id="btn-student-verify-otp" class="login-primary-btn">
@@ -1248,10 +1264,18 @@
                         </button>
                     </div>
                     <p id="login-password-hint" class="login-field-hint">After verifying your password, an SMS OTP will be sent to your registered mobile.</p>
-                    <div id="official-otp-session-notice" class="login-session-notice">
-                        <i class="fas fa-circle-info" aria-hidden="true"></i>
-                        <span><strong>One-time device verification:</strong> Once signed in, you stay logged in on this device with no session time limit. OTP is only required again if you log out or sign in on another device.</span>
-                    </div>
+                    <details id="official-otp-session-notice" class="login-session-notice login-session-disclosure">
+                        <summary class="login-session-summary">
+                            <span class="login-session-summary-left">
+                                <i class="fas fa-circle-info" aria-hidden="true"></i>
+                                <span>One-time device verification</span>
+                            </span>
+                            <i class="fas fa-chevron-down login-session-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="login-session-body">
+                            Once signed in, you stay logged in on this device with no session time limit. OTP is only required again if you log out or sign in on another device.
+                        </div>
+                    </details>
                 </div>
 
                 <button type="button" id="btn-login-submit" class="login-primary-btn">
@@ -1288,10 +1312,18 @@
                         <span id="official-otp-timer-text" class="login-otp-timer"></span>
                         <button type="button" id="btn-official-resend-otp" class="login-link-btn" disabled>Resend OTP</button>
                     </div>
-                    <div class="login-session-notice">
-                        <i class="fas fa-shield-halved" aria-hidden="true"></i>
-                        <span>One-time verification for this device — no session time limit after login until you log out or switch devices. Max 2 resends per 15 minutes.</span>
-                    </div>
+                    <details class="login-session-notice login-session-disclosure">
+                        <summary class="login-session-summary">
+                            <span class="login-session-summary-left">
+                                <i class="fas fa-shield-halved" aria-hidden="true"></i>
+                                <span>One-time device verification</span>
+                            </span>
+                            <i class="fas fa-chevron-down login-session-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="login-session-body">
+                            One-time verification for this device — no session time limit after login until you log out or switch devices. Max 2 resends per 15 minutes.
+                        </div>
+                    </details>
                 </div>
 
                 <button type="button" id="btn-official-verify-otp" class="login-primary-btn">

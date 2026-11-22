@@ -3449,6 +3449,75 @@ body:not(.worksheet-fullscreen-mode) .worksheet-sticky-header {
     flex-shrink: 0;
 }
 
+#login-modal .login-session-notice.login-session-disclosure {
+    display: block;
+    padding: 0;
+    overflow: hidden;
+    transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+#login-modal .login-session-disclosure .login-session-summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 11px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 700;
+    font-size: 11.5px;
+    line-height: 1.3;
+    color: #1e40af;
+    transition: background-color 150ms ease;
+}
+
+#login-modal .login-session-disclosure .login-session-summary::-webkit-details-marker {
+    display: none;
+}
+
+#login-modal .login-session-disclosure .login-session-summary:hover {
+    background: #dbeafe;
+}
+
+#login-modal .login-session-disclosure .login-session-summary-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+#login-modal .login-session-disclosure .login-session-summary-left i {
+    margin-top: 0;
+    font-size: 12.5px;
+    color: #2563eb;
+}
+
+#login-modal .login-session-disclosure .login-session-summary-left span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#login-modal .login-session-disclosure .login-session-chevron {
+    margin-top: 0;
+    font-size: 10px;
+    color: #3b82f6;
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#login-modal .login-session-disclosure[open] .login-session-chevron {
+    transform: rotate(180deg);
+}
+
+#login-modal .login-session-disclosure .login-session-body {
+    padding: 0 11px 9px 30px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.48;
+    color: #1e3a8a;
+}
+
 #login-modal .login-link-btn {
     border: none;
     background: transparent;
