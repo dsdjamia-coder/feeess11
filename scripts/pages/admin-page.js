@@ -4746,7 +4746,7 @@ const updateLogoWidgetPreview = (logoUrl) => {
         if (placeholder) placeholder.classList.add('hidden');
         if (removeBtn) removeBtn.classList.remove('hidden');
         if (statusNote) {
-            statusNote.textContent = 'Custom Institution Logo active (Used across portals & App Install icon)';
+            statusNote.textContent = 'Custom Institution Logo active (Used across public page & portals)';
             statusNote.className = 'text-[11px] font-semibold text-emerald-700';
         }
     } else {
@@ -15774,58 +15774,30 @@ const getNextGalleryOrder = () => {
 };
 
 const MAX_GALLERY_IMAGES = 24;
+const MAX_GALLERY_BATCH_UPLOAD = 5;
 let selectedGalleryFiles = [];
 
 const getGalleryCapacityInfo = () => {
     normalizeGalleryList();
     const current = Array.isArray(webContent.gallery) ? webContent.gallery.length : 0;
     const queued = selectedGalleryFiles.length;
-    const remaining = Math.max(0, MAX_GALLERY_IMAGES - current);
-    const remainingAfterQueue = Math.max(0, MAX_GALLERY_IMAGES - current - queued);
     return {
         max: MAX_GALLERY_IMAGES,
+        batchMax: MAX_GALLERY_BATCH_UPLOAD,
         current,
         queued,
-        remaining,
-        remainingAfterQueue,
         isAtLimit: current >= MAX_GALLERY_IMAGES
     };
 };
 
 const updateGalleryLimitUI = () => {
-    const { max, current, queued, remaining, remainingAfterQueue, isAtLimit } = getGalleryCapacityInfo();
-    const badgeEl = document.getElementById('gallery-limit-badge');
-    const noteEl = document.getElementById('gallery-remaining-note');
+    const { batchMax, isAtLimit } = getGalleryCapacityInfo();
     const alertEl = document.getElementById('gallery-limit-alert');
     const dropzoneEl = document.getElementById('new-gal-dropzone');
     const dropzoneTitleEl = document.getElementById('new-gal-dropzone-title');
     const dropzoneSubEl = document.getElementById('new-gal-dropzone-subtitle');
     const uploadBtnEl = document.getElementById('new-gal-upload-btn');
     const fileInputEl = document.getElementById('new-gal-file');
-
-    if (badgeEl) {
-        badgeEl.textContent = `${current} / ${max} Photos`;
-        if (isAtLimit) {
-            badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-rose-50 text-rose-700 border border-rose-200';
-        } else if (current >= max - 4) {
-            badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-50 text-amber-800 border border-amber-200';
-        } else {
-            badgeEl.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200';
-        }
-    }
-
-    if (noteEl) {
-        if (isAtLimit) {
-            noteEl.textContent = `Limit reached (${current}/${max}) · Delete an existing photo to upload more`;
-            noteEl.className = 'text-xs font-bold text-rose-600';
-        } else if (queued > 0) {
-            noteEl.textContent = `${remaining} slot${remaining === 1 ? '' : 's'} remaining (${remainingAfterQueue} left after queue) · Smart WebP Max 500KB`;
-            noteEl.className = 'text-xs font-semibold text-blue-700';
-        } else {
-            noteEl.textContent = `${remaining} slot${remaining === 1 ? '' : 's'} remaining · Smart WebP Max 500KB · Default Order 50+`;
-            noteEl.className = 'text-xs font-semibold text-gray-500';
-        }
-    }
 
     if (alertEl) {
         alertEl.classList.toggle('hidden', !isAtLimit);
@@ -15849,13 +15821,13 @@ const updateGalleryLimitUI = () => {
 
     if (dropzoneTitleEl) {
         dropzoneTitleEl.textContent = isAtLimit
-            ? 'Gallery limit reached (24 / 24 photos)'
+            ? 'Gallery limit reached'
             : 'Click to choose photos or drag and drop here';
     }
     if (dropzoneSubEl) {
         dropzoneSubEl.textContent = isAtLimit
             ? 'Delete an existing photo below to free up space for a new upload.'
-            : `You can upload up to ${remainingAfterQueue} more photo${remainingAfterQueue === 1 ? '' : 's'} (max ${max} total) · Smart WebP up to 500KB`;
+            : `Upload up to ${batchMax} photos at a time · Smart WebP up to 500KB`;
     }
     if (uploadBtnEl) {
         uploadBtnEl.disabled = isAtLimit;
@@ -15951,11 +15923,22 @@ const handleSelectedGalleryFiles = (files) => {
         return;
     }
 
-    const { max, current, queued, remainingAfterQueue, isAtLimit } = getGalleryCapacityInfo();
+    const { max, batchMax, current, queued, isAtLimit } = getGalleryCapacityInfo();
 
     if (isAtLimit) {
         if (fileInput) fileInput.value = '';
-        const msg = `Gallery limit reached (${current}/${max} photos). Please delete an existing photo first to upload a new one.`;
+        const msg = 'Gallery limit reached. Please delete an existing photo first to upload a new one.';
+        showToast?.(msg, 'error');
+        alert(msg);
+        updateGalleryLimitUI();
+        return;
+    }
+
+    if (queued + incomingImages.length > batchMax) {
+        if (fileInput) fileInput.value = '';
+        const msg = queued > 0
+            ? `You can upload a maximum of ${batchMax} photos at a time. You already have ${queued} photo${queued === 1 ? '' : 's'} selected in the queue.`
+            : `You can upload a maximum of ${batchMax} photos at a time. Please select ${batchMax} or fewer photos.`;
         showToast?.(msg, 'error');
         alert(msg);
         updateGalleryLimitUI();
@@ -15964,8 +15947,7 @@ const handleSelectedGalleryFiles = (files) => {
 
     if (current + queued + incomingImages.length > max) {
         if (fileInput) fileInput.value = '';
-        const queueDetail = queued > 0 ? ` and ${queued} already queued` : '';
-        const msg = `Gallery limit is ${max} photos maximum. You currently have ${current} photo${current === 1 ? '' : 's'} uploaded${queueDetail} (${remainingAfterQueue} slot${remainingAfterQueue === 1 ? '' : 's'} remaining), but you selected ${incomingImages.length}. Please select ${remainingAfterQueue} or fewer photo${remainingAfterQueue === 1 ? '' : 's'}, or delete existing photos first.`;
+        const msg = 'Gallery storage limit reached. Please delete some existing photos before uploading more.';
         showToast?.(msg, 'error');
         alert(msg);
         updateGalleryLimitUI();
@@ -16023,9 +16005,9 @@ const initGalleryUploadControls = () => {
     const thumbnailsContainer = document.getElementById('new-gal-thumbnails');
 
     dropzone?.addEventListener('click', (e) => {
-        const { isAtLimit, current, max } = getGalleryCapacityInfo();
+        const { isAtLimit } = getGalleryCapacityInfo();
         if (isAtLimit) {
-            const msg = `Gallery limit reached (${current}/${max} photos). Please delete an existing photo first to upload a new one.`;
+            const msg = 'Gallery limit reached. Please delete an existing photo first to upload a new one.';
             showToast?.(msg, 'error');
             alert(msg);
             return;
@@ -16096,12 +16078,17 @@ const initGalleryUploadControls = () => {
             return;
         }
 
-        const { max, current, remaining } = getGalleryCapacityInfo();
+        const { max, batchMax, current } = getGalleryCapacityInfo();
         const count = selectedGalleryFiles.length;
+        if (count > batchMax) {
+            const msg = `You can upload a maximum of ${batchMax} photos at a time. Please remove extra photos from the queue.`;
+            showToast?.(msg, 'error');
+            alert(msg);
+            updateGalleryLimitUI();
+            return;
+        }
         if (current + count > max) {
-            const msg = remaining <= 0
-                ? `Gallery limit reached (${current}/${max} photos). Please delete an existing photo first to upload a new one.`
-                : `Gallery limit is ${max} photos maximum. You currently have ${current} photo${current === 1 ? '' : 's'} uploaded (${remaining} slot${remaining === 1 ? '' : 's'} remaining), but ${count} photo${count === 1 ? '' : 's'} are queued. Remove ${count - remaining} photo${(count - remaining) === 1 ? '' : 's'} from the queue or delete existing gallery photos first.`;
+            const msg = 'Gallery storage limit reached. Please delete some existing photos before uploading more.';
             showToast?.(msg, 'error');
             alert(msg);
             updateGalleryLimitUI();
@@ -16155,7 +16142,7 @@ const initGalleryUploadControls = () => {
             normalizeGalleryList();
             if (webContent.gallery.length + uploadedItems.length > MAX_GALLERY_IMAGES) {
                 await Promise.allSettled(uploadedItems.map((it) => deleteStorageUrlIfManaged(it.url)));
-                alert(`Gallery limit is ${MAX_GALLERY_IMAGES} photos maximum. Upload cancelled because the gallery reached its limit.`);
+                alert('Gallery storage limit reached. Upload cancelled. Please delete existing photos before uploading more.');
             } else {
                 webContent.gallery.push(...uploadedItems);
                 try {
