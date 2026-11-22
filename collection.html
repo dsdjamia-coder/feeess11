@@ -2126,48 +2126,47 @@
                     </div>
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-1.5 mb-1">
-                            <span id="prof-status" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">Active</span>
+                            <span id="prof-status" data-prof-field="status" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">Active</span>
                             <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-600 text-white">Class: <span id="prof-class">-</span></span>
-                            <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-white text-slate-700 border border-slate-200">Adm: <span id="prof-adm">-</span></span>
+                            <span data-prof-field="adm" class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-white text-slate-700 border border-slate-200">Adm: <span id="prof-adm">-</span></span>
                             <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">Year: <span id="prof-academic-year">-</span></span>
                         </div>
                         <h2 id="prof-name" class="text-base sm:text-lg font-black text-slate-900 leading-snug break-words">-</h2>
                         <div class="text-[11px] text-slate-500 font-semibold mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                             <span>Gender: <b id="prof-gender" class="text-slate-700">-</b></span>
-                            <span>•</span>
-                            <span>UID: <b id="prof-uid" class="font-mono text-slate-700">-</b></span>
+                            <span data-prof-field="uid">• UID: <b id="prof-uid" class="font-mono text-slate-700">-</b></span>
                         </div>
                     </div>
                 </div>
 
-                <!-- 16-Field Structured Details Grid -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">5. Father's Name</div>
+                <!-- Dynamic Student Details Grid -->
+                <div id="prof-fields-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                    <div data-prof-field="father" class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="father" class="text-[10px] font-bold uppercase text-slate-400">Father's Name</div>
                         <div id="prof-father" class="font-bold text-slate-800 mt-0.5 break-words">-</div>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">6. Mother's Name</div>
+                    <div data-prof-field="mother" class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="mother" class="text-[10px] font-bold uppercase text-slate-400">Mother's Name</div>
                         <div id="prof-mother" class="font-bold text-slate-800 mt-0.5 break-words">-</div>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">9. Date of Birth</div>
+                    <div data-prof-field="dob" class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="dob" class="text-[10px] font-bold uppercase text-slate-400">Date of Birth</div>
                         <div id="prof-dob" class="font-bold font-mono text-slate-800 mt-0.5">-</div>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">10. Date of Admission</div>
+                    <div data-prof-field="admDate" class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="admDate" class="text-[10px] font-bold uppercase text-slate-400">Date of Admission</div>
                         <div id="prof-adm-date" class="font-bold font-mono text-slate-800 mt-0.5">-</div>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">12. Aadhaar Number</div>
+                    <div data-prof-field="adhaar" class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="adhaar" class="text-[10px] font-bold uppercase text-slate-400">Aadhaar Number</div>
                         <div id="prof-aadhaar" class="font-bold font-mono text-slate-800 mt-0.5">-</div>
                     </div>
                     <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">16. Academic Year</div>
+                        <div class="text-[10px] font-bold uppercase text-slate-400">Academic Year</div>
                         <div id="prof-academic-year-val" class="font-bold text-indigo-700 mt-0.5 font-mono">-</div>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">13. Father's Phone Number</div>
+                    <div data-prof-field="mobile" class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="mobile" class="text-[10px] font-bold uppercase text-slate-400">Father's Phone Number</div>
                         <div class="flex items-center justify-between gap-1.5 mt-0.5">
                             <span id="prof-mobile" class="font-bold font-mono text-slate-800 truncate">-</span>
                             <div class="flex items-center gap-1 shrink-0">
@@ -2180,8 +2179,8 @@
                             </div>
                         </div>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">14. Mother's Phone Number</div>
+                    <div data-prof-field="motherMobile" class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="motherMobile" class="text-[10px] font-bold uppercase text-slate-400">Mother's Phone Number</div>
                         <div class="flex items-center justify-between gap-1.5 mt-0.5">
                             <span id="prof-mother-mobile" class="font-bold font-mono text-slate-800 truncate">-</span>
                             <div class="flex items-center gap-1 shrink-0">
@@ -2194,8 +2193,8 @@
                             </div>
                         </div>
                     </div>
-                    <div class="sm:col-span-2 bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
-                        <div class="text-[10px] font-bold uppercase text-slate-400">15. Permanent Address</div>
+                    <div data-prof-field="address" class="sm:col-span-2 bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5">
+                        <div data-prof-label="address" class="text-[10px] font-bold uppercase text-slate-400">Permanent Address</div>
                         <div id="prof-addr" class="font-bold text-slate-800 mt-0.5 break-words leading-relaxed">-</div>
                     </div>
                 </div>

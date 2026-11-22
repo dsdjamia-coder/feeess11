@@ -804,7 +804,13 @@
             <section id="add-students-page" class="page hidden">
                  <div class="card p-5 rounded-xl shadow-sm mb-6">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 border-b pb-2 gap-2">
-                        <h2 class="text-xl font-bold text-gray-800">Add Student (Manual Entry)</h2>
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <h2 class="text-xl font-bold text-gray-800">Add Student (Manual Entry)</h2>
+                            <button type="button" id="open-student-fields-config-btn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-300 text-xs font-bold shadow-2xs transition cursor-pointer" title="Configure Student Form Fields, Order & Custom Fields">
+                                <i class="fas fa-cog text-blue-600"></i>
+                                <span>Form Fields</span>
+                            </button>
+                        </div>
                         <span id="add-students-year-badge" class="text-xs font-bold uppercase tracking-widest bg-blue-50 text-blue-700 px-3 py-1 rounded-full border border-blue-100">Academic Year: --</span>
                     </div>
 
@@ -829,14 +835,14 @@
                             <span id="student-permissions-status-msg" class="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px] font-bold hidden"><i class="fas fa-check-circle"></i> Saved</span>
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-4">
-                        <div class="col-span-1 sm:col-span-2 lg:col-span-3 xl:col-span-4 flex flex-col sm:flex-row gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 items-center">
+                    <div id="add-student-fields-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-4">
+                        <div data-stu-field="photo" class="col-span-1 sm:col-span-2 lg:col-span-3 xl:col-span-4 flex flex-col sm:flex-row gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 items-center">
                             <div class="relative w-20 h-20 rounded-full border-2 border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center shrink-0 shadow-inner">
                                 <img id="add-stu-photo-preview" class="w-full h-full object-cover hidden" alt="Student Profile Preview">
                                 <i id="add-stu-photo-placeholder" class="fas fa-user text-3xl text-slate-400"></i>
                             </div>
                             <div class="flex-1 text-center sm:text-left space-y-1.5">
-                                <label class="block text-xs font-black text-slate-700">Student Profile Photo (Smart WebP • Max 150KB)</label>
+                                <label data-stu-field-label="photo" class="block text-xs font-black text-slate-700">Student Profile Photo (Smart WebP • Max 150KB)</label>
                                 <div class="flex flex-wrap gap-2 justify-center sm:justify-start">
                                     <button type="button" id="add-stu-camera-btn" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-camera"></i> Camera</button>
                                     <button type="button" id="add-stu-upload-btn" class="px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-upload"></i> Upload</button>
@@ -846,21 +852,21 @@
                                 <input type="file" id="add-stu-file-input" accept="image/*" class="hidden">
                             </div>
                         </div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">2. Class <span class="mandatory-star">*</span></label><select id="add-stu-class" data-smart-select="true" class="w-full p-2.5 border rounded-lg bg-white font-semibold"><option value="">-- Select Class --</option></select></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">3. ID/UID</label><input type="text" id="add-stu-uid" class="w-full p-2.5 border rounded-lg" placeholder="Unique ID"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">4. Student Name <span class="mandatory-star">*</span></label><input type="text" id="add-stu-name" class="w-full p-2.5 border rounded-lg" placeholder="Full Name (Will auto capitalize)"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">5. Father's Name</label><input type="text" id="add-stu-father" class="w-full p-2.5 border rounded-lg" placeholder="Father's Name"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">6. Mother's Name</label><input type="text" id="add-stu-mother" class="w-full p-2.5 border rounded-lg" placeholder="Mother's Name"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">7. Gender <span class="mandatory-star">*</span></label><select id="add-stu-gender" class="w-full p-2.5 border rounded-lg"><option value="Male">Male</option><option value="Female">Female</option></select></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">8. Admission Number (Adm. No.)</label><input type="text" id="add-stu-adm" class="w-full p-2.5 border rounded-lg" placeholder="Admission Number"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">9. Date of Birth</label><input type="date" id="add-stu-dob" class="w-full p-2.5 border rounded-lg"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">10. Date of Admission</label><input type="date" id="add-stu-adm-date" class="w-full p-2.5 border rounded-lg"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">11. Student Status</label><select id="add-stu-status" class="w-full p-2.5 border rounded-lg"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Alumni">Alumni</option></select></div>
-                        <div id="add-stu-passed-out-wrapper" class="col-span-1 hidden"><label class="block text-sm font-semibold mb-1 text-indigo-700">11b. Passed-out Academic Year <span class="mandatory-star">*</span></label><select id="add-stu-passed-out-year" class="w-full p-2.5 border border-indigo-300 rounded-lg bg-indigo-50/50 font-semibold text-indigo-900"></select></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">12. Aadhaar Number</label><input type="text" id="add-stu-adhaar" class="w-full p-2.5 border rounded-lg" placeholder="Aadhaar No."></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">13. Father's Phone Number</label><input type="tel" id="add-stu-mobile" class="w-full p-2.5 border rounded-lg" placeholder="Father's Phone Number"></div>
-                        <div class="col-span-1"><label class="block text-sm font-semibold mb-1">14. Mother's Phone Number</label><input type="tel" id="add-stu-mother-mobile" class="w-full p-2.5 border rounded-lg" placeholder="Mother's Phone Number"></div>
-                        <div class="col-span-1 sm:col-span-2 lg:col-span-2"><label class="block text-sm font-semibold mb-1">15. Permanent Address</label><textarea id="add-stu-address" rows="1" class="w-full p-2.5 border rounded-lg" placeholder="Permanent Address"></textarea></div>
+                        <div data-stu-field="class" class="col-span-1"><label data-stu-field-label="class" class="block text-sm font-semibold mb-1">2. Class <span class="mandatory-star">*</span></label><select id="add-stu-class" data-smart-select="true" class="w-full p-2.5 border rounded-lg bg-white font-semibold"><option value="">-- Select Class --</option></select></div>
+                        <div data-stu-field="uid" class="col-span-1"><label data-stu-field-label="uid" class="block text-sm font-semibold mb-1">3. ID/UID</label><input type="text" id="add-stu-uid" class="w-full p-2.5 border rounded-lg" placeholder="Unique ID"></div>
+                        <div data-stu-field="name" class="col-span-1"><label data-stu-field-label="name" class="block text-sm font-semibold mb-1">4. Student Name <span class="mandatory-star">*</span></label><input type="text" id="add-stu-name" class="w-full p-2.5 border rounded-lg" placeholder="Full Name (Will auto capitalize)"></div>
+                        <div data-stu-field="father" class="col-span-1"><label data-stu-field-label="father" class="block text-sm font-semibold mb-1">5. Father's Name</label><input type="text" id="add-stu-father" class="w-full p-2.5 border rounded-lg" placeholder="Father's Name"></div>
+                        <div data-stu-field="mother" class="col-span-1"><label data-stu-field-label="mother" class="block text-sm font-semibold mb-1">6. Mother's Name</label><input type="text" id="add-stu-mother" class="w-full p-2.5 border rounded-lg" placeholder="Mother's Name"></div>
+                        <div data-stu-field="gender" class="col-span-1"><label data-stu-field-label="gender" class="block text-sm font-semibold mb-1">7. Gender <span class="mandatory-star">*</span></label><select id="add-stu-gender" class="w-full p-2.5 border rounded-lg"><option value="Male">Male</option><option value="Female">Female</option></select></div>
+                        <div data-stu-field="adm" class="col-span-1"><label data-stu-field-label="adm" class="block text-sm font-semibold mb-1">8. Admission Number (Adm. No.)</label><input type="text" id="add-stu-adm" class="w-full p-2.5 border rounded-lg" placeholder="Admission Number"></div>
+                        <div data-stu-field="dob" class="col-span-1"><label data-stu-field-label="dob" class="block text-sm font-semibold mb-1">9. Date of Birth</label><input type="date" id="add-stu-dob" class="w-full p-2.5 border rounded-lg"></div>
+                        <div data-stu-field="admDate" class="col-span-1"><label data-stu-field-label="admDate" class="block text-sm font-semibold mb-1">10. Date of Admission</label><input type="date" id="add-stu-adm-date" class="w-full p-2.5 border rounded-lg"></div>
+                        <div data-stu-field="status" class="col-span-1"><label data-stu-field-label="status" class="block text-sm font-semibold mb-1">11. Student Status</label><select id="add-stu-status" class="w-full p-2.5 border rounded-lg"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Alumni">Alumni</option></select></div>
+                        <div id="add-stu-passed-out-wrapper" data-stu-linked="status" class="col-span-1 hidden"><label class="block text-sm font-semibold mb-1 text-indigo-700">Passed-out Academic Year <span class="mandatory-star">*</span></label><select id="add-stu-passed-out-year" class="w-full p-2.5 border border-indigo-300 rounded-lg bg-indigo-50/50 font-semibold text-indigo-900"></select></div>
+                        <div data-stu-field="adhaar" class="col-span-1"><label data-stu-field-label="adhaar" class="block text-sm font-semibold mb-1">12. Aadhaar Number</label><input type="text" id="add-stu-adhaar" class="w-full p-2.5 border rounded-lg" placeholder="Aadhaar No."></div>
+                        <div data-stu-field="mobile" class="col-span-1"><label data-stu-field-label="mobile" class="block text-sm font-semibold mb-1">13. Father's Phone Number</label><input type="tel" id="add-stu-mobile" class="w-full p-2.5 border rounded-lg" placeholder="Father's Phone Number"></div>
+                        <div data-stu-field="motherMobile" class="col-span-1"><label data-stu-field-label="motherMobile" class="block text-sm font-semibold mb-1">14. Mother's Phone Number</label><input type="tel" id="add-stu-mother-mobile" class="w-full p-2.5 border rounded-lg" placeholder="Mother's Phone Number"></div>
+                        <div data-stu-field="address" class="col-span-1 sm:col-span-2 lg:col-span-2"><label data-stu-field-label="address" class="block text-sm font-semibold mb-1">15. Permanent Address</label><textarea id="add-stu-address" rows="1" class="w-full p-2.5 border rounded-lg" placeholder="Permanent Address"></textarea></div>
                     </div>
                     <datalist id="class-suggestions"></datalist>
                      <div class="text-right border-t pt-4"><button id="add-manual-btn" class="btn-primary font-bold py-2.5 px-8 rounded-lg shadow-md w-full sm:w-auto"><i class="fas fa-save mr-2"></i> Save Student</button></div>
@@ -3701,40 +3707,40 @@
                             <i class="fas fa-user-graduate text-blue-600"></i> Academic &amp; Identity Profile
                         </h4>
                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-5 gap-y-4 text-xs">
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">Class</span>
+                            <div data-stu-detail-field="class">
+                                <span data-stu-detail-label="class" class="block text-[11px] font-medium text-slate-500">Class</span>
                                 <span id="view-stu-class-val" class="font-bold text-blue-700 text-sm mt-0.5 block">--</span>
                             </div>
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">Admission Number</span>
+                            <div data-stu-detail-field="adm">
+                                <span data-stu-detail-label="adm" class="block text-[11px] font-medium text-slate-500">Admission Number</span>
                                 <span id="view-stu-adm-val" class="font-bold text-slate-900 text-sm mt-0.5 block font-mono tabular-nums">--</span>
                             </div>
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">ID / UID</span>
+                            <div data-stu-detail-field="uid">
+                                <span data-stu-detail-label="uid" class="block text-[11px] font-medium text-slate-500">ID / UID</span>
                                 <span id="view-stu-uid-val" class="font-bold text-slate-800 text-sm mt-0.5 block font-mono tabular-nums break-all">--</span>
                             </div>
                             <div>
                                 <span class="block text-[11px] font-medium text-slate-500">Academic Year</span>
                                 <span id="view-stu-academic-year-val" class="font-bold text-indigo-700 text-sm mt-0.5 block font-mono tabular-nums">--</span>
                             </div>
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">Student Status</span>
+                            <div data-stu-detail-field="status">
+                                <span data-stu-detail-label="status" class="block text-[11px] font-medium text-slate-500">Student Status</span>
                                 <span id="view-stu-status-val" class="font-bold text-slate-900 text-sm mt-0.5 block">--</span>
                             </div>
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">Gender</span>
+                            <div data-stu-detail-field="gender">
+                                <span data-stu-detail-label="gender" class="block text-[11px] font-medium text-slate-500">Gender</span>
                                 <span id="view-stu-gender-val" class="font-semibold text-slate-900 text-sm mt-0.5 block">--</span>
                             </div>
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">Date of Birth</span>
+                            <div data-stu-detail-field="dob">
+                                <span data-stu-detail-label="dob" class="block text-[11px] font-medium text-slate-500">Date of Birth</span>
                                 <span id="view-stu-dob-val" class="font-semibold text-slate-800 text-sm mt-0.5 block font-mono tabular-nums">--</span>
                             </div>
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">Date of Admission</span>
+                            <div data-stu-detail-field="admDate">
+                                <span data-stu-detail-label="admDate" class="block text-[11px] font-medium text-slate-500">Date of Admission</span>
                                 <span id="view-stu-adm-date-val" class="font-semibold text-slate-800 text-sm mt-0.5 block font-mono tabular-nums">--</span>
                             </div>
-                            <div>
-                                <span class="block text-[11px] font-medium text-slate-500">Aadhaar Number</span>
+                            <div data-stu-detail-field="adhaar">
+                                <span data-stu-detail-label="adhaar" class="block text-[11px] font-medium text-slate-500">Aadhaar Number</span>
                                 <span id="view-stu-adhaar-val" class="font-semibold text-slate-800 text-sm mt-0.5 block font-mono tabular-nums">--</span>
                             </div>
                         </div>
@@ -3751,12 +3757,12 @@
                                     <i class="fas fa-user text-sky-600"></i> Father / Guardian
                                 </div>
                                 <div class="grid grid-cols-1 gap-1.5">
-                                    <div>
-                                        <span class="block text-[11px] text-slate-500">Name</span>
+                                    <div data-stu-detail-field="father">
+                                        <span data-stu-detail-label="father" class="block text-[11px] text-slate-500">Name</span>
                                         <span id="view-stu-father-name" class="font-semibold text-slate-900 text-sm block mt-0.5">--</span>
                                     </div>
-                                    <div>
-                                        <span class="block text-[11px] text-slate-500">Mobile Number</span>
+                                    <div data-stu-detail-field="mobile">
+                                        <span data-stu-detail-label="mobile" class="block text-[11px] text-slate-500">Mobile Number</span>
                                         <span id="view-stu-father-phone" class="font-bold text-slate-800 text-sm font-mono tabular-nums block mt-0.5">--</span>
                                     </div>
                                 </div>
@@ -3767,22 +3773,30 @@
                                     <i class="fas fa-user text-purple-600"></i> Mother
                                 </div>
                                 <div class="grid grid-cols-1 gap-1.5">
-                                    <div>
-                                        <span class="block text-[11px] text-slate-500">Name</span>
+                                    <div data-stu-detail-field="mother">
+                                        <span data-stu-detail-label="mother" class="block text-[11px] text-slate-500">Name</span>
                                         <span id="view-stu-mother-name" class="font-semibold text-slate-900 text-sm block mt-0.5">--</span>
                                     </div>
-                                    <div>
-                                        <span class="block text-[11px] text-slate-500">Mobile Number</span>
+                                    <div data-stu-detail-field="motherMobile">
+                                        <span data-stu-detail-label="motherMobile" class="block text-[11px] text-slate-500">Mobile Number</span>
                                         <span id="view-stu-mother-phone" class="font-bold text-slate-800 text-sm font-mono tabular-nums block mt-0.5">--</span>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="sm:col-span-2 pt-3 border-t border-slate-100">
-                                <span class="block text-[11px] font-medium text-slate-500 mb-1">Permanent Address</span>
+                            <div data-stu-detail-field="address" class="sm:col-span-2 pt-3 border-t border-slate-100">
+                                <span data-stu-detail-label="address" class="block text-[11px] font-medium text-slate-500 mb-1">Permanent Address</span>
                                 <p id="view-stu-address-val" class="font-medium text-slate-800 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap">--</p>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Custom Fields Section (Dynamically shown when custom fields exist) -->
+                    <div id="view-stu-custom-fields-section" class="hidden bg-white p-4 sm:p-5 rounded-xl border border-slate-200">
+                        <h4 class="text-xs font-bold text-slate-900 border-b border-slate-100 pb-2.5 mb-4 flex items-center gap-2">
+                            <i class="fas fa-list-check text-blue-600"></i> Additional Student Fields
+                        </h4>
+                        <div id="view-stu-custom-fields-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-x-5 gap-y-4 text-xs"></div>
                     </div>
 
                     <!-- Fee & Group Linking Details -->
@@ -3837,14 +3851,14 @@
     <div id="edit-student-popup" class="fixed inset-0 popup-overlay items-center justify-center hidden px-4 z-50">
         <div class="card rounded-2xl shadow-2xl p-6 w-full max-w-2xl mx-auto bg-white max-h-[90vh] overflow-y-auto relative">
             <h3 class="text-xl font-bold mb-4 text-gray-900 border-b pb-2">Edit Student Information</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div class="col-span-1 lg:col-span-4 flex flex-col sm:flex-row gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 items-center">
+            <div id="edit-student-fields-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div data-stu-field="photo" class="col-span-1 lg:col-span-4 flex flex-col sm:flex-row gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 items-center">
                     <div class="relative w-20 h-20 rounded-full border-2 border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center shrink-0 shadow-inner">
                         <img id="e-stu-photo-preview" class="w-full h-full object-cover hidden" alt="Student Profile Preview">
                         <i id="e-stu-photo-placeholder" class="fas fa-user text-3xl text-slate-400"></i>
                     </div>
                     <div class="flex-1 text-center sm:text-left space-y-1.5">
-                        <label class="block text-xs font-black text-slate-700">1. Student Profile Photo (Smart WebP • Max 150KB)</label>
+                        <label data-stu-field-label="photo" class="block text-xs font-black text-slate-700">1. Student Profile Photo (Smart WebP • Max 150KB)</label>
                         <div class="flex flex-wrap gap-2 justify-center sm:justify-start">
                             <button type="button" id="e-stu-camera-btn" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-camera"></i> Camera</button>
                             <button type="button" id="e-stu-upload-btn" class="px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-all"><i class="fas fa-upload"></i> Upload</button>
@@ -3854,26 +3868,131 @@
                         <input type="file" id="e-stu-file-input" accept="image/*" class="hidden">
                     </div>
                 </div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">2. Class <span class="mandatory-star">*</span></label><select id="e-stu-class" data-smart-select="true" class="w-full p-2.5 border rounded-lg bg-white font-semibold"><option value="">-- Select Class --</option></select></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">3. ID/UID</label><input type="text" id="e-stu-uid" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Unique ID"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">4. Student Name <span class="mandatory-star">*</span></label><input type="text" id="e-stu-name" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Full Name (Will auto capitalize)"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">5. Father's Name</label><input type="text" id="e-stu-fat" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Father's Name"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">6. Mother's Name</label><input type="text" id="e-stu-mother" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Mother's Name"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">7. Gender <span class="mandatory-star">*</span></label><select id="e-stu-gender" class="w-full p-2.5 border rounded-lg bg-white"><option value="Male">Male</option><option value="Female">Female</option></select></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">8. Admission Number (Adm. No.)</label><input type="text" id="e-stu-adm" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Admission Number"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">9. Date of Birth</label><input type="date" id="e-stu-dob" class="w-full p-2.5 border rounded-lg bg-white"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">10. Date of Admission</label><input type="date" id="e-stu-adm-date" class="w-full p-2.5 border rounded-lg bg-white"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">11. Student Status</label><select id="e-stu-status" class="w-full p-2.5 border rounded-lg bg-white"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Alumni">Alumni</option></select></div>
-                <div id="e-stu-passed-out-wrapper" class="col-span-1 lg:col-span-2 hidden"><label class="block text-sm font-semibold mb-1 text-indigo-700">11b. Passed-out Academic Year <span class="mandatory-star">*</span></label><select id="e-stu-passed-out-year" class="w-full p-2.5 border border-indigo-300 rounded-lg bg-indigo-50/50 font-semibold text-indigo-900"></select></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">12. Aadhaar Number</label><input type="text" id="e-stu-adhaar" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Aadhaar No."></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">13. Father's Phone Number</label><input type="tel" id="e-stu-mob" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Father's Phone Number"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">14. Mother's Phone Number</label><input type="tel" id="e-stu-mother-mobile" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Mother's Phone Number"></div>
-                <div class="col-span-1 lg:col-span-2"><label class="block text-sm font-semibold mb-1">15. Permanent Address</label><textarea id="e-stu-addr" rows="1" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Permanent Address"></textarea></div>
+                <div data-stu-field="class" class="col-span-1 lg:col-span-2"><label data-stu-field-label="class" class="block text-sm font-semibold mb-1">2. Class <span class="mandatory-star">*</span></label><select id="e-stu-class" data-smart-select="true" class="w-full p-2.5 border rounded-lg bg-white font-semibold"><option value="">-- Select Class --</option></select></div>
+                <div data-stu-field="uid" class="col-span-1 lg:col-span-2"><label data-stu-field-label="uid" class="block text-sm font-semibold mb-1">3. ID/UID</label><input type="text" id="e-stu-uid" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Unique ID"></div>
+                <div data-stu-field="name" class="col-span-1 lg:col-span-2"><label data-stu-field-label="name" class="block text-sm font-semibold mb-1">4. Student Name <span class="mandatory-star">*</span></label><input type="text" id="e-stu-name" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Full Name (Will auto capitalize)"></div>
+                <div data-stu-field="father" class="col-span-1 lg:col-span-2"><label data-stu-field-label="father" class="block text-sm font-semibold mb-1">5. Father's Name</label><input type="text" id="e-stu-fat" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Father's Name"></div>
+                <div data-stu-field="mother" class="col-span-1 lg:col-span-2"><label data-stu-field-label="mother" class="block text-sm font-semibold mb-1">6. Mother's Name</label><input type="text" id="e-stu-mother" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Mother's Name"></div>
+                <div data-stu-field="gender" class="col-span-1 lg:col-span-2"><label data-stu-field-label="gender" class="block text-sm font-semibold mb-1">7. Gender <span class="mandatory-star">*</span></label><select id="e-stu-gender" class="w-full p-2.5 border rounded-lg bg-white"><option value="Male">Male</option><option value="Female">Female</option></select></div>
+                <div data-stu-field="adm" class="col-span-1 lg:col-span-2"><label data-stu-field-label="adm" class="block text-sm font-semibold mb-1">8. Admission Number (Adm. No.)</label><input type="text" id="e-stu-adm" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Admission Number"></div>
+                <div data-stu-field="dob" class="col-span-1 lg:col-span-2"><label data-stu-field-label="dob" class="block text-sm font-semibold mb-1">9. Date of Birth</label><input type="date" id="e-stu-dob" class="w-full p-2.5 border rounded-lg bg-white"></div>
+                <div data-stu-field="admDate" class="col-span-1 lg:col-span-2"><label data-stu-field-label="admDate" class="block text-sm font-semibold mb-1">10. Date of Admission</label><input type="date" id="e-stu-adm-date" class="w-full p-2.5 border rounded-lg bg-white"></div>
+                <div data-stu-field="status" class="col-span-1 lg:col-span-2"><label data-stu-field-label="status" class="block text-sm font-semibold mb-1">11. Student Status</label><select id="e-stu-status" class="w-full p-2.5 border rounded-lg bg-white"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Alumni">Alumni</option></select></div>
+                <div id="e-stu-passed-out-wrapper" data-stu-linked="status" class="col-span-1 lg:col-span-2 hidden"><label class="block text-sm font-semibold mb-1 text-indigo-700">Passed-out Academic Year <span class="mandatory-star">*</span></label><select id="e-stu-passed-out-year" class="w-full p-2.5 border border-indigo-300 rounded-lg bg-indigo-50/50 font-semibold text-indigo-900"></select></div>
+                <div data-stu-field="adhaar" class="col-span-1 lg:col-span-2"><label data-stu-field-label="adhaar" class="block text-sm font-semibold mb-1">12. Aadhaar Number</label><input type="text" id="e-stu-adhaar" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Aadhaar No."></div>
+                <div data-stu-field="mobile" class="col-span-1 lg:col-span-2"><label data-stu-field-label="mobile" class="block text-sm font-semibold mb-1">13. Father's Phone Number</label><input type="tel" id="e-stu-mob" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Father's Phone Number"></div>
+                <div data-stu-field="motherMobile" class="col-span-1 lg:col-span-2"><label data-stu-field-label="motherMobile" class="block text-sm font-semibold mb-1">14. Mother's Phone Number</label><input type="tel" id="e-stu-mother-mobile" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Mother's Phone Number"></div>
+                <div data-stu-field="address" class="col-span-1 lg:col-span-2"><label data-stu-field-label="address" class="block text-sm font-semibold mb-1">15. Permanent Address</label><textarea id="e-stu-addr" rows="1" class="w-full p-2.5 border rounded-lg bg-white" placeholder="Permanent Address"></textarea></div>
                 <input type="hidden" id="e-stu-samastha" value="">
             </div>
             <div class="flex justify-end gap-3 pt-4 border-t mt-2">
                 <button id="edit-student-cancel" class="px-5 py-2.5 bg-gray-200 text-gray-800 font-bold rounded-lg hover:bg-gray-300">Cancel</button>
                 <button id="edit-student-update" class="btn-primary px-6 py-2.5 rounded-lg font-bold shadow-md">Update Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Student Form Field Manager Modal -->
+    <div id="student-fields-config-modal" class="fixed inset-0 popup-overlay items-center justify-center hidden px-3 sm:px-4 z-50">
+        <div class="card rounded-2xl shadow-2xl w-full max-w-4xl mx-auto bg-white max-h-[92vh] flex flex-col overflow-hidden">
+            <!-- Header -->
+            <div class="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <span class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <i class="fas fa-sliders"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <h3 class="text-base sm:text-lg font-black text-slate-900 leading-tight">Student Form Field Manager</h3>
+                        <p class="text-xs text-slate-500">Configure visible fields, display order, labels, required rules, and custom fields across all portals.</p>
+                    </div>
+                </div>
+                <button type="button" id="student-fields-config-close" class="w-9 h-9 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 flex items-center justify-center transition cursor-pointer shrink-0" aria-label="Close">
+                    <i class="fas fa-times text-base"></i>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">
+                <!-- Info Note -->
+                <div class="bg-blue-50 border border-blue-200/80 rounded-xl p-3 text-xs text-blue-900 flex items-start gap-2.5">
+                    <i class="fas fa-circle-info text-blue-600 mt-0.5 shrink-0"></i>
+                    <div class="space-y-0.5 leading-relaxed">
+                        <p class="font-bold">System Fields &amp; Student Login Phone Rules</p>
+                        <p class="text-blue-800/90">Built-in system fields cannot be deleted (optional ones can be hidden). <strong>Class</strong>, <strong>Student Name</strong>, <strong>Gender</strong>, and both <strong>Phone Number</strong> fields are always visible. Any custom field set to <strong>Phone Number (Login Enabled)</strong> will also work for Student Portal login.</p>
+                    </div>
+                </div>
+
+                <!-- Add New Custom Field Panel -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                            <i class="fas fa-plus-circle text-emerald-600"></i>
+                            <span>Add New Custom Field</span>
+                        </h4>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                        <div class="sm:col-span-4">
+                            <label for="stu-cfg-new-label" class="block text-[11px] font-bold text-slate-600 mb-1">Field Label <span class="mandatory-star">*</span></label>
+                            <input type="text" id="stu-cfg-new-label" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white" placeholder="e.g., Guardian Phone, Blood Group">
+                        </div>
+                        <div class="sm:col-span-4">
+                            <label for="stu-cfg-new-type" class="block text-[11px] font-bold text-slate-600 mb-1">Field Type <span class="mandatory-star">*</span></label>
+                            <select id="stu-cfg-new-type" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white font-medium">
+                                <option value="text">Text</option>
+                                <option value="phone">Phone Number (Login Enabled)</option>
+                                <option value="number">Number</option>
+                                <option value="date">Date</option>
+                                <option value="email">Email</option>
+                                <option value="textarea">Long Text / Address</option>
+                                <option value="select">Dropdown (Select)</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-2 flex items-center h-[38px]">
+                            <label class="inline-flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-slate-700">
+                                <input type="checkbox" id="stu-cfg-new-required" class="w-4 h-4 text-blue-600 rounded">
+                                <span>Required</span>
+                            </label>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <button type="button" id="stu-cfg-add-field-btn" class="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5">
+                                <i class="fas fa-plus"></i>
+                                <span>Add Field</span>
+                            </button>
+                        </div>
+                        <div id="stu-cfg-new-options-wrap" class="sm:col-span-12 hidden">
+                            <label for="stu-cfg-new-options" class="block text-[11px] font-bold text-slate-600 mb-1">Dropdown Options (comma-separated) <span class="mandatory-star">*</span></label>
+                            <input type="text" id="stu-cfg-new-options" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white" placeholder="e.g., A+, A-, B+, B-, O+, O-, AB+, AB-">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configured Fields List -->
+                <div class="space-y-2.5">
+                    <div class="flex items-center justify-between gap-2">
+                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                            Configured Fields (<span id="stu-cfg-field-count">0</span>)
+                        </h4>
+                        <span class="text-[11px] text-slate-500">Use arrows or order number to arrange fields</span>
+                    </div>
+                    <div id="stu-cfg-fields-list" class="space-y-2">
+                        <!-- Dynamically rendered by admin-page.js -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-5 py-3.5 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <button type="button" id="stu-cfg-reset-btn" class="px-3.5 py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition cursor-pointer flex items-center gap-1.5">
+                    <i class="fas fa-rotate-left"></i>
+                    <span>Reset System Defaults</span>
+                </button>
+                <div class="flex items-center gap-2.5 ml-auto">
+                    <button type="button" id="stu-cfg-cancel-btn" class="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition cursor-pointer">Cancel</button>
+                    <button type="button" id="stu-cfg-save-btn" class="btn-primary px-5 py-2 rounded-lg font-bold text-xs shadow-sm cursor-pointer flex items-center gap-1.5">
+                        <i class="fas fa-save"></i>
+                        <span>Save Field Settings</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

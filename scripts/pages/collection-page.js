@@ -17,6 +17,14 @@ import { initSharedFeeModal, openFeeEntryEditModal } from './collection/shared-f
 import { initFinanceManagementModule, renderFeeItemsManagement, renderStudentGroups, renderConcessionsList, syncFeeConfigUI, applyFinanceSettingsAccessUI } from './collection/finance-management.js';
 import { initFeeDuesModule, updateFeeDuesData, renderFeeDues } from './collection/dues-module.js';
 import { downloadSpreadsheetRows, formatSpreadsheetCellValue, normalizeToIsoDate, parseCsvArrayBufferToMatrix } from '../shared/spreadsheet-utils.js';
+import {
+    formatStudentFieldDisplayValue,
+    getStudentCustomValuesMap,
+    isStudentFieldVisible,
+    normalizeStudentFieldSchema
+} from '../shared/student-fields.js';
+
+let studentFieldSchema = normalizeStudentFieldSchema([]);
 
 // Clean URL Guard: Strip any lingering hash fragment to ensure clean base .html on every refresh
 if (typeof window !== 'undefined' && window.location && window.location.hash) {
@@ -1545,8 +1553,67 @@ window.openStudentProfile = (id) => {
         }
     }
 
+    // Apply dynamic student form field schema (visibility, labels, order, custom fields)
     const popup = document.getElementById('student-profile-popup');
     if (popup) {
+        const schema = normalizeStudentFieldSchema(studentFieldSchema);
+
+        const photoBox = photoImg?.parentElement;
+        if (photoBox) {
+            photoBox.classList.toggle('hidden', !isStudentFieldVisible(schema, 'photo'));
+        }
+        popup.querySelectorAll('[data-prof-field="status"], [data-prof-field="adm"], [data-prof-field="uid"]').forEach((el) => {
+            const key = el.dataset.profField;
+            el.classList.toggle('hidden', !isStudentFieldVisible(schema, key));
+        });
+
+        const grid = document.getElementById('prof-fields-grid');
+        if (grid) {
+            grid.querySelectorAll('[data-prof-custom-card="true"]').forEach((el) => el.remove());
+
+            schema.forEach((field) => {
+                const card = grid.querySelector(`[data-prof-field="${field.key}"]`);
+                if (card) {
+                    card.classList.toggle('hidden', field.visible === false);
+                    const lbl = card.querySelector(`[data-prof-label="${field.key}"]`);
+                    if (lbl) lbl.textContent = field.label;
+                    grid.appendChild(card);
+                    return;
+                }
+                if (field.isCustom && field.visible !== false) {
+                    const rawVal = getStudentCustomValuesMap(s)[field.key] || '';
+                    const displayVal = formatStudentFieldDisplayValue(s, field, '-');
+                    const customCard = document.createElement('div');
+                    customCard.dataset.profCustomCard = 'true';
+                    customCard.dataset.profField = field.key;
+                    customCard.className = `${field.type === 'textarea' ? 'sm:col-span-2 ' : ''}bg-slate-50/80 border border-slate-200/80 rounded-xl p-2.5`;
+
+                    if (field.type === 'phone') {
+                        const cleanWa = String(rawVal || '').replace(/\D/g, '');
+                        const waNum = cleanWa.length === 10 ? `91${cleanWa}` : cleanWa;
+                        customCard.innerHTML = `
+                            <div data-prof-label="${escapeHtml(field.key)}" class="text-[10px] font-bold uppercase text-slate-400">${escapeHtml(field.label)}</div>
+                            <div class="flex items-center justify-between gap-1.5 mt-0.5">
+                                <span class="font-bold font-mono text-slate-800 truncate">${escapeHtml(rawVal || 'Not Available')}</span>
+                                ${rawVal ? `<div class="flex items-center gap-1 shrink-0">
+                                    <a href="tel:${escapeHtml(rawVal)}" class="inline-flex px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold items-center gap-1 shadow-2xs transition">
+                                        <i class="fas fa-phone text-[8.5px]"></i> Call
+                                    </a>
+                                    ${cleanWa ? `<a href="https://wa.me/${escapeHtml(waNum)}" target="_blank" rel="noopener noreferrer" class="inline-flex px-2 py-0.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold items-center gap-1 shadow-2xs transition">
+                                        <i class="fab fa-whatsapp text-[9px]"></i> WA
+                                    </a>` : ''}
+                                </div>` : ''}
+                            </div>`;
+                    } else {
+                        customCard.innerHTML = `
+                            <div data-prof-label="${escapeHtml(field.key)}" class="text-[10px] font-bold uppercase text-slate-400">${escapeHtml(field.label)}</div>
+                            <div class="font-bold ${field.type === 'date' || field.type === 'number' ? 'font-mono ' : ''}text-slate-800 mt-0.5 break-words">${escapeHtml(displayVal)}</div>`;
+                    }
+                    grid.appendChild(customCard);
+                }
+            });
+        }
+
         popup.classList.remove('hidden');
         popup.classList.add('flex');
         popup.style.display = 'flex';
@@ -9535,6 +9602,7 @@ onAuthStateChanged(auth, async (user) => {
             renderVersionInfo();
             setTimeout(() => { fitTextToContainer('header-title'); }, 50);
 
+            studentFieldSchema = normalizeStudentFieldSchema(d.studentFields);
             defaultFee = d.defaultFee || 200;
             feeItems = sortFeeItemsForDisplay(d.feeItems || []);
             defaultReceiptMandatory = d.defaultReceiptMandatory || false;

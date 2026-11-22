@@ -287,7 +287,7 @@ service cloud.firestore {
     }
 
     function validStudentDetailsProfileMap(changedKeys) {
-      let allowedProfileKeys = ['name', 'gender', 'dob', 'adhaar', 'aadhaar', 'father', 'mother', 'mobile', 'phone', 'motherMobile', 'address'];
+      let allowedProfileKeys = ['name', 'gender', 'dob', 'adhaar', 'aadhaar', 'father', 'mother', 'mobile', 'phone', 'motherMobile', 'address', 'customFields'];
       return !('profile' in changedKeys)
         || (
           request.resource.data.profile is map
@@ -297,12 +297,13 @@ service cloud.firestore {
             || ((!('profile' in resource.data) || !(resource.data.profile is map))
               && request.resource.data.profile.keys().hasOnly(allowedProfileKeys))
           )
+          && (!('customFields' in request.resource.data.profile) || (request.resource.data.profile.customFields is map && request.resource.data.profile.customFields.size() <= 40))
         );
     }
 
     function isAllowedStudentDetailsUpdate(institutionId) {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
-      let allowedKeys = ['name', 'gender', 'dob', 'adhaar', 'aadhaar', 'father', 'mother', 'mobile', 'phone', 'motherMobile', 'address', 'profile', 'updatedAt'];
+      let allowedKeys = ['name', 'gender', 'dob', 'adhaar', 'aadhaar', 'father', 'mother', 'mobile', 'phone', 'motherMobile', 'address', 'customFields', 'phones', 'profile', 'updatedAt'];
       return isSignedIn()
         && studentDetailsEditEnabled(institutionId)
         && changed.hasOnly(allowedKeys)
@@ -317,6 +318,8 @@ service cloud.firestore {
         && (!('phone' in changed) || (request.resource.data.phone is string && request.resource.data.phone.size() <= 20))
         && (!('motherMobile' in changed) || (request.resource.data.motherMobile is string && request.resource.data.motherMobile.size() <= 20))
         && (!('address' in changed) || (request.resource.data.address is string && request.resource.data.address.size() <= 300))
+        && (!('customFields' in changed) || (request.resource.data.customFields is map && request.resource.data.customFields.size() <= 40))
+        && (!('phones' in changed) || (request.resource.data.phones is list && request.resource.data.phones.size() <= 15))
         && (!('updatedAt' in changed) || request.resource.data.updatedAt is number || request.resource.data.updatedAt is timestamp || request.resource.data.updatedAt is string)
         && validStudentDetailsProfileMap(changed);
     }

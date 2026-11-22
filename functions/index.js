@@ -469,27 +469,56 @@ const isStudentActiveRecord = (st = {}) => {
   return true;
 };
 
-const extractStudentPhoneCandidates = (st = {}) => {
+const getCustomPhoneFieldKeysFromConfig = (configData = {}) => {
+  const fields = Array.isArray(configData?.studentFields) ? configData.studentFields : [];
+  return fields
+    .filter((f) => f && f.system !== true && String(f.type || '').toLowerCase() === 'phone' && f.key)
+    .map((f) => String(f.key).trim())
+    .filter(Boolean);
+};
+
+const extractStudentPhoneCandidates = (st = {}, customPhoneKeys = []) => {
   const prof = (st.profile && typeof st.profile === 'object') ? st.profile : {};
+  const customTop = (st.customFields && typeof st.customFields === 'object') ? st.customFields : {};
+  const customProf = (prof.customFields && typeof prof.customFields === 'object') ? prof.customFields : {};
   const list = [
     st.mobile,
     st.phone,
     st.motherMobile,
+    st.mother_mobile,
+    st.fatherPhone,
+    st.fatherMobile,
+    st.motherPhone,
     prof.mobile,
     prof.phone,
     prof.motherMobile
   ];
   if (Array.isArray(st.phones)) list.push(...st.phones);
+  if (Array.isArray(customPhoneKeys) && customPhoneKeys.length > 0) {
+    customPhoneKeys.forEach((key) => {
+      if (customTop[key]) list.push(customTop[key]);
+      if (customProf[key]) list.push(customProf[key]);
+    });
+  }
   return list.filter(Boolean);
 };
 
-const findMatchingStudentsByPhone = async (slug, targetPhoneE164, institutionName = '') => {
+const findMatchingStudentsByPhone = async (slug, targetPhoneE164, institutionName = '', customPhoneKeys = null) => {
+  let resolvedCustomPhoneKeys = Array.isArray(customPhoneKeys) ? customPhoneKeys : null;
+  if (resolvedCustomPhoneKeys === null) {
+    try {
+      const cfgSnap = await db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/config`).get();
+      resolvedCustomPhoneKeys = cfgSnap.exists ? getCustomPhoneFieldKeysFromConfig(cfgSnap.data() || {}) : [];
+    } catch (_) {
+      resolvedCustomPhoneKeys = [];
+    }
+  }
   const studentsSnap = await db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/students`).get();
   const matched = [];
   studentsSnap.forEach((docSnap) => {
     const data = docSnap.data() || {};
     if (!isStudentActiveRecord(data)) return;
-    const candidates = extractStudentPhoneCandidates(data);
+    const candidates = extractStudentPhoneCandidates(data, resolvedCustomPhoneKeys);
     if (candidates.some((cand) => phonesMatch(cand, targetPhoneE164))) {
       const prof = (data.profile && typeof data.profile === 'object') ? data.profile : {};
       matched.push({
@@ -515,7 +544,8 @@ const findMatchingStudentsAcrossInstitutions = async (targetPhoneE164) => {
       const configData = configSnap.exists ? (configSnap.data() || {}) : {};
       if (configData?.enabledModules?.student === false) return [];
       const displayInstName = String(configData?.appName || inst.name || inst.slug).trim();
-      return await findMatchingStudentsByPhone(inst.slug, targetPhoneE164, displayInstName);
+      const customPhoneKeys = getCustomPhoneFieldKeysFromConfig(configData);
+      return await findMatchingStudentsByPhone(inst.slug, targetPhoneE164, displayInstName, customPhoneKeys);
     } catch (_) {
       return [];
     }

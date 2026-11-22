@@ -4,6 +4,21 @@ import { db, auth } from '../../config/firebase-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, isUpcomingAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
+import {
+    buildCustomFieldInputHtml,
+    extractAllStudentPhones,
+    formatStudentFieldDisplayValue,
+    getCustomStudentFields,
+    getStudentCustomValuesMap,
+    getStudentFieldByKey,
+    getStudentFieldLabel,
+    isStudentFieldVisible,
+    normalizeStudentFieldSchema,
+    parseSelectOptions,
+    readCustomFieldsFromContainer
+} from '../shared/student-fields.js';
+
+let studentFieldSchema = normalizeStudentFieldSchema([]);
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -4038,6 +4053,92 @@ registerServiceWorker();
             const addrEl = document.getElementById('dash-addr');
             if (addrEl) addrEl.textContent = addrVal;
 
+            // Apply Dynamic Student Form Field Schema (Visibility, Labels, Order, Custom Fields)
+            const schema = normalizeStudentFieldSchema(studentFieldSchema);
+            const photoWrapEl = document.getElementById('student-profile-photo-wrap');
+            if (photoWrapEl) {
+                photoWrapEl.classList.toggle('hidden', !isStudentFieldVisible(schema, 'photo'));
+            }
+            if (statusBadge) {
+                statusBadge.classList.toggle('hidden', !isStudentFieldVisible(schema, 'status'));
+            }
+            const admWrapEl = document.getElementById('dash-adm-wrap');
+            if (admWrapEl) {
+                admWrapEl.classList.toggle('hidden', !isStudentFieldVisible(schema, 'adm'));
+                const admLblEl = admWrapEl.querySelector('[data-stu-header-label="adm"]');
+                if (admLblEl) admLblEl.textContent = `${getStudentFieldLabel(schema, 'adm', 'Adm No')}:`;
+            }
+            const uidWrapEl = document.getElementById('dash-uid-wrap');
+            if (uidWrapEl) {
+                uidWrapEl.classList.toggle('hidden', !isStudentFieldVisible(schema, 'uid'));
+                const uidLblEl = uidWrapEl.querySelector('[data-stu-header-label="uid"]');
+                if (uidLblEl) uidLblEl.textContent = `${getStudentFieldLabel(schema, 'uid', 'UID')}:`;
+            }
+
+            const detailsGrid = document.getElementById('student-details-fields-grid');
+            if (detailsGrid) {
+                detailsGrid.querySelectorAll('[data-stu-custom-card="true"]').forEach((el) => el.remove());
+
+                const iconByType = {
+                    phone: { icon: 'fa-phone', bg: 'bg-emerald-100 text-emerald-700' },
+                    email: { icon: 'fa-envelope', bg: 'bg-sky-100 text-sky-700' },
+                    date: { icon: 'fa-calendar-alt', bg: 'bg-teal-100 text-teal-700' },
+                    number: { icon: 'fa-hashtag', bg: 'bg-amber-100 text-amber-700' },
+                    select: { icon: 'fa-list-ul', bg: 'bg-violet-100 text-violet-700' },
+                    textarea: { icon: 'fa-align-left', bg: 'bg-indigo-100 text-indigo-700' },
+                    text: { icon: 'fa-tag', bg: 'bg-slate-200 text-slate-700' }
+                };
+
+                schema.forEach((field) => {
+                    const existingCard = detailsGrid.querySelector(`[data-stu-card-field="${field.key}"]`);
+                    if (existingCard) {
+                        existingCard.classList.toggle('hidden', field.visible === false);
+                        const lblEl = existingCard.querySelector(`[data-stu-card-label="${field.key}"]`);
+                        if (lblEl) lblEl.textContent = field.label;
+                        const editBtnEl = existingCard.querySelector('.field-edit-btn');
+                        if (editBtnEl) {
+                            editBtnEl.dataset.label = field.label;
+                            editBtnEl.title = `Edit ${field.label}`;
+                        }
+                        detailsGrid.appendChild(existingCard);
+                        return;
+                    }
+
+                    if (field.isCustom && field.visible !== false) {
+                        const rawVal = getStudentCustomValuesMap(st)[field.key] || '';
+                        const displayVal = formatStudentFieldDisplayValue(st, field, '-');
+                        const styleMeta = iconByType[field.type] || iconByType.text;
+                        const isWide = field.type === 'textarea';
+                        const card = document.createElement('div');
+                        card.dataset.stuCustomCard = 'true';
+                        card.dataset.stuCardField = field.key;
+                        card.className = `bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 flex items-center justify-between gap-3 group hover:border-blue-200 transition${isWide ? ' sm:col-span-2 lg:col-span-3' : ''}`;
+
+                        const valueMarkup = field.type === 'phone'
+                            ? `<div class="flex items-center gap-2 mt-0.5">
+                                <a ${rawVal ? `href="tel:${escapeHtml(rawVal)}"` : ''} class="text-xs font-bold text-blue-700 hover:underline font-mono break-all leading-snug ${rawVal ? '' : 'pointer-events-none'}">${escapeHtml(displayVal)}</a>
+                                ${rawVal ? `<button type="button" class="copy-pay-detail-btn inline-flex items-center justify-center p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" data-copy-value="${encodeURIComponent(rawVal)}" title="Copy Number"><i class="fas fa-copy text-xs"></i></button>` : ''}
+                              </div>`
+                            : `<div class="text-xs font-bold text-slate-800 break-words ${field.type === 'date' || field.type === 'number' ? 'font-mono' : ''} leading-snug">${escapeHtml(displayVal)}</div>`;
+
+                        card.innerHTML = `
+                            <div class="flex items-center gap-3 min-w-0 flex-1">
+                                <div class="w-10 h-10 rounded-lg ${styleMeta.bg} flex items-center justify-center shrink-0 text-base">
+                                    <i class="fas ${styleMeta.icon}"></i>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div data-stu-card-label="${escapeHtml(field.key)}" class="text-[10px] font-black uppercase text-slate-400 tracking-wider">${escapeHtml(field.label)}</div>
+                                    ${valueMarkup}
+                                </div>
+                            </div>
+                            <button type="button" class="field-edit-btn p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 shadow-xs transition" data-custom-field="true" data-field="${escapeHtml(field.key)}" data-label="${escapeHtml(field.label)}" data-type="${escapeHtml(field.type || 'text')}" data-options="${escapeHtml((field.options || []).join(','))}" title="Edit ${escapeHtml(field.label)}">
+                                <i class="fas fa-pencil-alt text-xs"></i>
+                            </button>`;
+                        detailsGrid.appendChild(card);
+                    }
+                });
+            }
+
             // Apply portal permissions (show/hide edit buttons)
             applyStudentPortalPermissionsUI();
 
@@ -4446,10 +4547,13 @@ registerServiceWorker();
             const counterEl = document.getElementById('quick-edit-char-counter');
             const errorEl = document.getElementById('quick-edit-error-msg');
 
-            if (!modal) return;
+            if (!modal || modal.dataset.quickEditBound === 'true') return;
+            modal.dataset.quickEditBound = 'true';
 
             let activeField = '';
             let activeLabel = '';
+            let activeIsCustom = false;
+            let activeFieldDef = null;
 
             const ALLOWED_STUDENT_EDIT_FIELDS = ['name', 'father', 'mother', 'gender', 'dob', 'adhaar', 'mobile', 'motherMobile', 'address'];
 
@@ -4465,113 +4569,124 @@ registerServiceWorker();
             closeBtn?.addEventListener('click', closeModal);
             cancelBtn?.addEventListener('click', closeModal);
 
-            document.querySelectorAll('.field-edit-btn').forEach((btn) => {
-                if (btn.dataset.bound === 'true') return;
-                btn.dataset.bound = 'true';
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest('.field-edit-btn');
+                if (!btn) return;
+                e.stopPropagation();
 
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const field = btn.dataset.field;
-                    const label = btn.dataset.label;
-                    const type = btn.dataset.type || 'text';
-                    const options = btn.dataset.options || '';
+                const field = btn.dataset.field || '';
+                const isCustomBtn = btn.dataset.customField === 'true';
+                const fieldDef = getStudentFieldByKey(studentFieldSchema, field);
+                const label = btn.dataset.label || fieldDef?.label || field;
+                const type = btn.dataset.type || fieldDef?.type || 'text';
+                const options = btn.dataset.options || (Array.isArray(fieldDef?.options) ? fieldDef.options.join(',') : '');
 
-                    if (!studentPortalPerms.allowDetailsEdit) {
-                        alert('Details editing is currently disabled by administrator.');
-                        return;
+                if (!studentPortalPerms.allowDetailsEdit) {
+                    alert('Details editing is currently disabled by administrator.');
+                    return;
+                }
+
+                if (!isCustomBtn && !ALLOWED_STUDENT_EDIT_FIELDS.includes(field)) {
+                    alert('This field cannot be edited by students.');
+                    return;
+                }
+                if (isCustomBtn && !fieldDef) {
+                    alert('This field is no longer available.');
+                    return;
+                }
+
+                activeField = field;
+                activeLabel = label;
+                activeIsCustom = isCustomBtn;
+                activeFieldDef = fieldDef || null;
+
+                if (errorEl) {
+                    errorEl.classList.add('hidden');
+                    errorEl.textContent = '';
+                }
+
+                const liveSt = studentProfile || currentSt;
+                const prof = liveSt.profile || {};
+                let curVal = '';
+                if (isCustomBtn) {
+                    curVal = getStudentCustomValuesMap(liveSt)[field] || '';
+                } else if (field === 'name') curVal = liveSt.name || prof.name || '';
+                else if (field === 'dob') curVal = liveSt.dob || prof.dob || '';
+                else if (field === 'gender') curVal = liveSt.gender || prof.gender || 'Male';
+                else if (field === 'adhaar') curVal = liveSt.adhaar || prof.adhaar || liveSt.aadhaar || prof.aadhaar || '';
+                else if (field === 'father') curVal = liveSt.father || prof.father || '';
+                else if (field === 'mobile') curVal = liveSt.mobile || prof.mobile || liveSt.phone || prof.phone || '';
+                else if (field === 'mother') curVal = liveSt.mother || prof.mother || '';
+                else if (field === 'motherMobile') curVal = liveSt.motherMobile || prof.motherMobile || '';
+                else if (field === 'address') curVal = liveSt.address || prof.address || '';
+
+                if (titleEl) titleEl.innerHTML = `<i class="fas fa-pencil-alt text-blue-600"></i> Edit ${escapeHtml(label)}`;
+                if (labelEl) labelEl.textContent = label;
+
+                if (type === 'select') {
+                    const optList = parseSelectOptions(options);
+                    const emptyOpt = isCustomBtn ? `<option value="">-- Select ${escapeHtml(label)} --</option>` : '';
+                    inputContainer.innerHTML = `
+                        <select id="quick-edit-input" class="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                            ${emptyOpt}
+                            ${optList.map((opt) => `<option value="${escapeHtml(opt)}" ${opt.toLowerCase() === String(curVal).toLowerCase() ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('')}
+                        </select>`;
+                    if (helperEl) helperEl.textContent = '';
+                    if (counterEl) counterEl.textContent = '';
+                } else if (type === 'textarea') {
+                    inputContainer.innerHTML = `
+                        <textarea id="quick-edit-input" rows="3" maxlength="250" class="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="${escapeHtml(label)} (Max 250 chars)">${escapeHtml(curVal)}</textarea>`;
+                    if (helperEl) helperEl.textContent = 'Max 250 characters';
+                    if (counterEl) counterEl.textContent = `${curVal.length} / 250`;
+                } else if (!isCustomBtn && (field === 'name' || field === 'father' || field === 'mother')) {
+                    inputContainer.innerHTML = `
+                        <input type="text" id="quick-edit-input" maxlength="60" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm uppercase font-semibold bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="${escapeHtml(label)} (Max 60 chars)">`;
+                    if (helperEl) helperEl.textContent = 'Letters, spaces and dots only (Max 60)';
+                    if (counterEl) counterEl.textContent = `${curVal.length} / 60`;
+                } else if (type === 'phone' || field === 'mobile' || field === 'motherMobile') {
+                    inputContainer.innerHTML = `
+                        <input type="tel" id="quick-edit-input" maxlength="13" inputmode="tel" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="10 digits or +91XXXXXXXXXX">`;
+                    if (helperEl) helperEl.textContent = 'Min 10, Max 13 chars with country code (e.g. +91XXXXXXXXXX)';
+                    if (counterEl) counterEl.textContent = `${curVal.length} / 13`;
+                } else if (!isCustomBtn && field === 'adhaar') {
+                    inputContainer.innerHTML = `
+                        <input type="text" id="quick-edit-input" maxlength="12" inputmode="numeric" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="12-digit Aadhaar Number">`;
+                    if (helperEl) helperEl.textContent = 'Exactly 12 numeric digits';
+                    if (counterEl) counterEl.textContent = `${curVal.length} / 12`;
+                } else {
+                    const htmlType = (type === 'date' || type === 'number' || type === 'email') ? type : 'text';
+                    inputContainer.innerHTML = `
+                        <input type="${htmlType}" id="quick-edit-input" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Enter ${escapeHtml(label)}">`;
+                    if (helperEl) helperEl.textContent = field === 'dob' ? 'Valid date, cannot be in future' : '';
+                    if (counterEl) counterEl.textContent = '';
+                }
+
+                const activeInput = document.getElementById('quick-edit-input');
+                activeInput?.addEventListener('input', (evt) => {
+                    if (errorEl) errorEl.classList.add('hidden');
+                    let val = evt.target.value;
+                    if (!isCustomBtn && (field === 'name' || field === 'father' || field === 'mother')) {
+                        val = val.replace(/[^A-Za-z\s\.]/g, '').slice(0, 60).toUpperCase();
+                        evt.target.value = val;
+                        if (counterEl) counterEl.textContent = `${val.length} / 60`;
+                    } else if (type === 'phone' || field === 'mobile' || field === 'motherMobile') {
+                        val = sanitizePhoneString(val);
+                        evt.target.value = val;
+                        if (counterEl) counterEl.textContent = `${val.length} / 13`;
+                    } else if (!isCustomBtn && field === 'adhaar') {
+                        val = val.replace(/\D/g, '').slice(0, 12);
+                        evt.target.value = val;
+                        if (counterEl) counterEl.textContent = `${val.length} / 12`;
+                    } else if (type === 'textarea' || field === 'address') {
+                        val = val.replace(/[<>]/g, '').slice(0, 250);
+                        evt.target.value = val;
+                        if (counterEl) counterEl.textContent = `${val.length} / 250`;
                     }
-
-                    if (!ALLOWED_STUDENT_EDIT_FIELDS.includes(field)) {
-                        alert('This field cannot be edited by students.');
-                        return;
-                    }
-
-                    activeField = field;
-                    activeLabel = label;
-
-                    if (errorEl) {
-                        errorEl.classList.add('hidden');
-                        errorEl.textContent = '';
-                    }
-
-                    const liveSt = studentProfile || currentSt;
-                    const prof = liveSt.profile || {};
-                    let curVal = '';
-                    if (field === 'name') curVal = liveSt.name || prof.name || '';
-                    else if (field === 'dob') curVal = liveSt.dob || prof.dob || '';
-                    else if (field === 'gender') curVal = liveSt.gender || prof.gender || 'Male';
-                    else if (field === 'adhaar') curVal = liveSt.adhaar || prof.adhaar || liveSt.aadhaar || prof.aadhaar || '';
-                    else if (field === 'father') curVal = liveSt.father || prof.father || '';
-                    else if (field === 'mobile') curVal = liveSt.mobile || prof.mobile || liveSt.phone || prof.phone || '';
-                    else if (field === 'mother') curVal = liveSt.mother || prof.mother || '';
-                    else if (field === 'motherMobile') curVal = liveSt.motherMobile || prof.motherMobile || '';
-                    else if (field === 'address') curVal = liveSt.address || prof.address || '';
-
-                    if (titleEl) titleEl.innerHTML = `<i class="fas fa-pencil-alt text-blue-600"></i> Edit ${escapeHtml(label)}`;
-                    if (labelEl) labelEl.textContent = label;
-
-                    if (type === 'select') {
-                        const optList = options.split(',').map((o) => o.trim());
-                        inputContainer.innerHTML = `
-                            <select id="quick-edit-input" class="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-                                ${optList.map((opt) => `<option value="${escapeHtml(opt)}" ${opt.toLowerCase() === String(curVal).toLowerCase() ? 'selected' : ''}>${escapeHtml(opt)}</option>`).join('')}
-                            </select>`;
-                        if (helperEl) helperEl.textContent = '';
-                        if (counterEl) counterEl.textContent = '';
-                    } else if (type === 'textarea') {
-                        inputContainer.innerHTML = `
-                            <textarea id="quick-edit-input" rows="3" maxlength="250" class="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Permanent Address (Max 250 chars)">${escapeHtml(curVal)}</textarea>`;
-                        if (helperEl) helperEl.textContent = 'Max 250 characters';
-                        if (counterEl) counterEl.textContent = `${curVal.length} / 250`;
-                    } else if (field === 'name' || field === 'father' || field === 'mother') {
-                        inputContainer.innerHTML = `
-                            <input type="text" id="quick-edit-input" maxlength="60" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm uppercase font-semibold bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="${escapeHtml(label)} (Max 60 chars)">`;
-                        if (helperEl) helperEl.textContent = 'Letters, spaces and dots only (Max 60)';
-                        if (counterEl) counterEl.textContent = `${curVal.length} / 60`;
-                    } else if (field === 'mobile' || field === 'motherMobile') {
-                        inputContainer.innerHTML = `
-                            <input type="tel" id="quick-edit-input" maxlength="13" inputmode="tel" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="10 digits or +91XXXXXXXXXX">`;
-                        if (helperEl) helperEl.textContent = 'Min 10, Max 13 chars with country code (e.g. +91XXXXXXXXXX)';
-                        if (counterEl) counterEl.textContent = `${curVal.length} / 13`;
-                    } else if (field === 'adhaar') {
-                        inputContainer.innerHTML = `
-                            <input type="text" id="quick-edit-input" maxlength="12" inputmode="numeric" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm font-mono bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="12-digit Aadhaar Number">`;
-                        if (helperEl) helperEl.textContent = 'Exactly 12 numeric digits';
-                        if (counterEl) counterEl.textContent = `${curVal.length} / 12`;
-                    } else {
-                        inputContainer.innerHTML = `
-                            <input type="${type}" id="quick-edit-input" value="${escapeHtml(curVal)}" class="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">`;
-                        if (helperEl) helperEl.textContent = field === 'dob' ? 'Valid date, cannot be in future' : '';
-                        if (counterEl) counterEl.textContent = '';
-                    }
-
-                    const activeInput = document.getElementById('quick-edit-input');
-                    activeInput?.addEventListener('input', (evt) => {
-                        if (errorEl) errorEl.classList.add('hidden');
-                        let val = evt.target.value;
-                        if (field === 'name' || field === 'father' || field === 'mother') {
-                            val = val.replace(/[^A-Za-z\s\.]/g, '').slice(0, 60).toUpperCase();
-                            evt.target.value = val;
-                            if (counterEl) counterEl.textContent = `${val.length} / 60`;
-                        } else if (field === 'mobile' || field === 'motherMobile') {
-                            val = sanitizePhoneString(val);
-                            evt.target.value = val;
-                            if (counterEl) counterEl.textContent = `${val.length} / 13`;
-                        } else if (field === 'adhaar') {
-                            val = val.replace(/\D/g, '').slice(0, 12);
-                            evt.target.value = val;
-                            if (counterEl) counterEl.textContent = `${val.length} / 12`;
-                        } else if (field === 'address') {
-                            val = val.replace(/[<>]/g, '').slice(0, 250);
-                            evt.target.value = val;
-                            if (counterEl) counterEl.textContent = `${val.length} / 250`;
-                        }
-                    });
-
-                    modal.classList.remove('hidden');
-                    modal.classList.add('flex');
-                    document.getElementById('quick-edit-input')?.focus();
                 });
+
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                document.getElementById('quick-edit-input')?.focus();
             });
 
             saveBtn?.addEventListener('click', async () => {
@@ -4585,16 +4700,24 @@ registerServiceWorker();
 
                 // Run field-specific validation
                 let validation = { valid: true, value: newVal };
-                if (activeField === 'name') {
-                    validation = validateNameString(newVal, 'Student Name');
+                if (activeIsCustom) {
+                    if (activeFieldDef?.required && !newVal) {
+                        validation = { valid: false, error: `${activeLabel} is required.` };
+                    } else if (activeFieldDef?.type === 'phone') {
+                        validation = validatePhoneNumber(newVal, activeLabel);
+                    } else if (activeFieldDef?.type === 'email' && newVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newVal)) {
+                        validation = { valid: false, error: `Please enter a valid email address for ${activeLabel}.` };
+                    }
+                } else if (activeField === 'name') {
+                    validation = validateNameString(newVal, activeLabel || 'Student Name');
                 } else if (activeField === 'father') {
-                    validation = validateOptionalNameString(newVal, "Father's Name");
+                    validation = validateOptionalNameString(newVal, activeLabel || "Father's Name");
                 } else if (activeField === 'mother') {
-                    validation = validateOptionalNameString(newVal, "Mother's Name");
+                    validation = validateOptionalNameString(newVal, activeLabel || "Mother's Name");
                 } else if (activeField === 'mobile') {
-                    validation = validatePhoneNumber(newVal, "Father's Phone Number");
+                    validation = validatePhoneNumber(newVal, activeLabel || "Father's Phone Number");
                 } else if (activeField === 'motherMobile') {
-                    validation = validatePhoneNumber(newVal, "Mother's Phone Number");
+                    validation = validatePhoneNumber(newVal, activeLabel || "Mother's Phone Number");
                 } else if (activeField === 'adhaar') {
                     validation = validateAadhaarNumber(newVal);
                 } else if (activeField === 'address') {
@@ -4622,25 +4745,58 @@ registerServiceWorker();
                         await signInAnonymously(auth);
                     }
                     const studentRef = doc(db, `${BASE_PATH}/students`, studentId);
-                    const profilePatch = { [activeField]: newVal };
-                    const updateData = { [activeField]: newVal, profile: profilePatch };
-
-                    if (activeField === 'adhaar') {
-                        updateData.aadhaar = newVal;
-                        profilePatch.aadhaar = newVal;
-                    }
-                    if (activeField === 'mobile') {
-                        updateData.phone = newVal;
-                        profilePatch.phone = newVal;
-                    }
-
-                    await setDoc(studentRef, updateData, { merge: true });
-
                     const liveSt = studentProfile || currentSt;
-                    liveSt[activeField] = newVal;
-                    liveSt.profile = { ...(liveSt.profile || {}), ...profilePatch };
-                    if (activeField === 'adhaar') liveSt.aadhaar = newVal;
-                    if (activeField === 'mobile') liveSt.phone = newVal;
+
+                    if (activeIsCustom) {
+                        const nextCustomFields = {
+                            ...getStudentCustomValuesMap(liveSt),
+                            [activeField]: newVal
+                        };
+                        const candidateStudent = {
+                            ...liveSt,
+                            customFields: nextCustomFields,
+                            profile: { ...(liveSt.profile || {}), customFields: nextCustomFields }
+                        };
+                        const nextPhones = extractAllStudentPhones(candidateStudent, studentFieldSchema);
+                        const updateData = {
+                            customFields: nextCustomFields,
+                            phones: nextPhones,
+                            profile: { customFields: nextCustomFields }
+                        };
+                        await setDoc(studentRef, updateData, { merge: true });
+
+                        liveSt.customFields = nextCustomFields;
+                        liveSt.phones = nextPhones;
+                        liveSt.profile = { ...(liveSt.profile || {}), customFields: nextCustomFields };
+                    } else {
+                        const profilePatch = { [activeField]: newVal };
+                        const updateData = { [activeField]: newVal, profile: profilePatch };
+
+                        if (activeField === 'adhaar') {
+                            updateData.aadhaar = newVal;
+                            profilePatch.aadhaar = newVal;
+                        }
+                        if (activeField === 'mobile') {
+                            updateData.phone = newVal;
+                            profilePatch.phone = newVal;
+                        }
+                        if (activeField === 'mobile' || activeField === 'motherMobile') {
+                            const candidateStudent = {
+                                ...liveSt,
+                                ...updateData,
+                                profile: { ...(liveSt.profile || {}), ...profilePatch }
+                            };
+                            updateData.phones = extractAllStudentPhones(candidateStudent, studentFieldSchema);
+                        }
+
+                        await setDoc(studentRef, updateData, { merge: true });
+
+                        liveSt[activeField] = newVal;
+                        liveSt.profile = { ...(liveSt.profile || {}), ...profilePatch };
+                        if (activeField === 'adhaar') liveSt.aadhaar = newVal;
+                        if (activeField === 'mobile') liveSt.phone = newVal;
+                        if (updateData.phones) liveSt.phones = updateData.phones;
+                    }
 
                     renderStudentComprehensiveProfile(liveSt);
                     closeModal();
@@ -4751,6 +4907,36 @@ registerServiceWorker();
                 if (addressInput) addressInput.value = addr;
                 if (addressCounterEl) addressCounterEl.textContent = `${addr.length} / 250`;
 
+                // Respect hidden optional built-in fields in full edit modal
+                const fieldInputMap = {
+                    dob: dobInput,
+                    adhaar: adhaarInput,
+                    father: fatherInput,
+                    mother: motherInput,
+                    address: addressInput
+                };
+                Object.entries(fieldInputMap).forEach(([key, input]) => {
+                    const wrapper = input?.closest('div[data-st-edit-field]') || input?.parentElement;
+                    if (wrapper) {
+                        wrapper.classList.toggle('hidden', !isStudentFieldVisible(studentFieldSchema, key));
+                    }
+                });
+
+                // Render visible custom fields in full edit modal
+                const customWrap = document.getElementById('st-edit-custom-fields-wrap');
+                if (customWrap) {
+                    const visibleCustom = getCustomStudentFields(studentFieldSchema, { onlyVisible: true });
+                    const existingCustomVals = getStudentCustomValuesMap(liveSt);
+                    customWrap.innerHTML = visibleCustom.map((f) => buildCustomFieldInputHtml(
+                        f,
+                        'st-edit-',
+                        existingCustomVals[f.key] || '',
+                        null,
+                        { inputClass: 'w-full p-2 border rounded-lg text-sm bg-white' }
+                    )).join('');
+                    customWrap.classList.toggle('hidden', visibleCustom.length === 0);
+                }
+
                 modal.classList.remove('hidden');
                 modal.classList.add('flex');
             });
@@ -4789,23 +4975,23 @@ registerServiceWorker();
                 };
 
                 // Sequential Validation
-                const nameCheck = validateNameString(rawName, 'Student Name');
+                const nameCheck = validateNameString(rawName, getStudentFieldLabel(studentFieldSchema, 'name', 'Student Name'));
                 if (!nameCheck.valid) return showFieldError(nameCheck.error, 'st-edit-name');
                 const newName = nameCheck.value;
 
-                const fatherCheck = validateOptionalNameString(rawFather, "Father's Name");
+                const fatherCheck = validateOptionalNameString(rawFather, getStudentFieldLabel(studentFieldSchema, 'father', "Father's Name"));
                 if (!fatherCheck.valid) return showFieldError(fatherCheck.error, 'st-edit-father');
                 const newFather = fatherCheck.value;
 
-                const motherCheck = validateOptionalNameString(rawMother, "Mother's Name");
+                const motherCheck = validateOptionalNameString(rawMother, getStudentFieldLabel(studentFieldSchema, 'mother', "Mother's Name"));
                 if (!motherCheck.valid) return showFieldError(motherCheck.error, 'st-edit-mother');
                 const newMother = motherCheck.value;
 
-                const fatherPhoneCheck = validatePhoneNumber(rawFatherPhone, "Father's Phone Number");
+                const fatherPhoneCheck = validatePhoneNumber(rawFatherPhone, getStudentFieldLabel(studentFieldSchema, 'mobile', "Father's Phone Number"));
                 if (!fatherPhoneCheck.valid) return showFieldError(fatherPhoneCheck.error, 'st-edit-father-phone');
                 const newFatherPhone = fatherPhoneCheck.value;
 
-                const motherPhoneCheck = validatePhoneNumber(rawMotherPhone, "Mother's Phone Number");
+                const motherPhoneCheck = validatePhoneNumber(rawMotherPhone, getStudentFieldLabel(studentFieldSchema, 'motherMobile', "Mother's Phone Number"));
                 if (!motherPhoneCheck.valid) return showFieldError(motherPhoneCheck.error, 'st-edit-mother-phone');
                 const newMotherPhone = motherPhoneCheck.value;
 
@@ -4820,6 +5006,33 @@ registerServiceWorker();
                 const dobCheck = validateDobString(rawDob);
                 if (!dobCheck.valid) return showFieldError(dobCheck.error, 'st-edit-dob');
                 const newDob = dobCheck.value;
+
+                // Validate and read visible custom fields
+                const liveSt = studentProfile || currentSt;
+                const customWrap = document.getElementById('st-edit-custom-fields-wrap');
+                const { customFields: collectedCustom } = customWrap
+                    ? readCustomFieldsFromContainer(customWrap, studentFieldSchema, 'st-edit-')
+                    : { customFields: {} };
+                const visibleCustom = getCustomStudentFields(studentFieldSchema, { onlyVisible: true });
+                for (const cf of visibleCustom) {
+                    const val = String(collectedCustom[cf.key] || '').trim();
+                    const inputId = `st-edit-cf-${cf.key}`;
+                    if (cf.required && !val) {
+                        return showFieldError(`${cf.label} is required.`, inputId);
+                    }
+                    if (cf.type === 'phone' && val) {
+                        const phCheck = validatePhoneNumber(val, cf.label);
+                        if (!phCheck.valid) return showFieldError(phCheck.error, inputId);
+                        collectedCustom[cf.key] = phCheck.value;
+                    }
+                    if (cf.type === 'email' && val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+                        return showFieldError(`Please enter a valid email for ${cf.label}.`, inputId);
+                    }
+                }
+                const nextCustomFields = {
+                    ...getStudentCustomValuesMap(liveSt),
+                    ...collectedCustom
+                };
 
                 saveBtn.disabled = true;
                 saveBtn.textContent = 'Saving...';
@@ -4840,8 +5053,18 @@ registerServiceWorker();
                         mobile: newFatherPhone,
                         phone: newFatherPhone,
                         motherMobile: newMotherPhone,
-                        address: newAddress
+                        address: newAddress,
+                        customFields: nextCustomFields
                     };
+
+                    const nextPhones = extractAllStudentPhones({
+                        ...liveSt,
+                        mobile: newFatherPhone,
+                        phone: newFatherPhone,
+                        motherMobile: newMotherPhone,
+                        customFields: nextCustomFields,
+                        profile: { ...(liveSt.profile || {}), ...profilePatch }
+                    }, studentFieldSchema);
 
                     await setDoc(studentRef, {
                         name: newName,
@@ -4855,10 +5078,11 @@ registerServiceWorker();
                         phone: newFatherPhone,
                         motherMobile: newMotherPhone,
                         address: newAddress,
+                        customFields: nextCustomFields,
+                        phones: nextPhones,
                         profile: profilePatch
                     }, { merge: true });
 
-                    const liveSt = studentProfile || currentSt;
                     liveSt.name = newName;
                     liveSt.gender = newGender;
                     liveSt.dob = newDob;
@@ -4870,6 +5094,8 @@ registerServiceWorker();
                     liveSt.phone = newFatherPhone;
                     liveSt.motherMobile = newMotherPhone;
                     liveSt.address = newAddress;
+                    liveSt.customFields = nextCustomFields;
+                    liveSt.phones = nextPhones;
                     liveSt.profile = { ...(liveSt.profile || {}), ...profilePatch };
 
                     renderStudentComprehensiveProfile(liveSt);
@@ -7341,6 +7567,7 @@ registerServiceWorker();
                         }
                     }
 
+                    studentFieldSchema = normalizeStudentFieldSchema(conf.studentFields);
                     studentPortalPerms.allowPhotoUpload = conf.allowStudentPhotoUpload === true;
                     studentPortalPerms.allowDetailsEdit = conf.allowStudentDetailsEdit === true;
                     applyStudentPortalPermissionsUI();
@@ -7386,6 +7613,7 @@ registerServiceWorker();
                     };
                     renderProfilePaymentDetails();
                     if (studentProfile) {
+                        renderStudentComprehensiveProfile(studentProfile);
                         availableAcademicYears = buildAvailableAcademicYears(studentProfile, allPayments, studentResultsCache);
                         if (!selectedFeeAcademicYear || !availableAcademicYears.includes(selectedFeeAcademicYear)) selectedFeeAcademicYear = currentAcademicYear && availableAcademicYears.includes(currentAcademicYear) ? currentAcademicYear : availableAcademicYears[0];
                         if (!selectedResultAcademicYear || !availableAcademicYears.includes(selectedResultAcademicYear)) selectedResultAcademicYear = selectedFeeAcademicYear;

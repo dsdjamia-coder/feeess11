@@ -6,6 +6,18 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     import { InteractiveCropper } from '../shared/image-cropper.js';
     import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
     import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
+    import {
+      formatStudentFieldDisplayValue,
+      getCustomStudentFields,
+      getStudentCustomValuesMap,
+      getStudentFieldByKey,
+      getStudentFieldLabel,
+      getVisibleStudentFields,
+      isStudentFieldVisible,
+      normalizeStudentFieldSchema
+    } from '../shared/student-fields.js';
+
+    let studentFieldSchema = normalizeStudentFieldSchema([]);
 
     const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -174,7 +186,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         const val = student.dob || prof.dob || '';
         return String(val).trim() !== '' && String(val).trim() !== '--';
       }
-      if (key === 'adm_date') {
+      if (key === 'adm_date' || key === 'admDate') {
         const val = student.adm_date || student.admDate || prof.admDate || prof.adm_date || '';
         return String(val).trim() !== '' && String(val).trim() !== '--';
       }
@@ -198,7 +210,8 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         const val = student.address || prof.address || '';
         return String(val).trim() !== '' && String(val).trim() !== '--';
       }
-      const genericVal = student[key] !== undefined ? student[key] : prof[key];
+      const customMap = getStudentCustomValuesMap(student);
+      const genericVal = student[key] !== undefined ? student[key] : (prof[key] !== undefined ? prof[key] : customMap[key]);
       return Boolean(genericVal && String(genericVal).trim() !== '' && String(genericVal).trim() !== '--');
     };
 
@@ -956,6 +969,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
 
     const applyOfficialBranding = (conf = {}) => {
       institutionConfig = conf || {};
+      studentFieldSchema = normalizeStudentFieldSchema(conf.studentFields);
       if (conf.enabledModules && typeof conf.enabledModules === 'object') {
         try {
           localStorage.setItem('app_enabled_modules', JSON.stringify(conf.enabledModules));
@@ -2004,37 +2018,64 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         ? (hasIndividualConc ? `₹${student.concessionFee}/month (Group: ₹${group.fee || 0}/month)` : `Group Standard Rate: ₹${group.fee || 0}/month`)
         : (hasIndividualConc ? `₹${student.concessionFee}/month` : 'Standard Rate (No Concession)');
 
+      const schema = normalizeStudentFieldSchema(studentFieldSchema);
+      const isVis = (k) => isStudentFieldVisible(schema, k);
+      const lbl = (k, fallback) => getStudentFieldLabel(schema, k, fallback);
+      const visibleCustomFields = getCustomStudentFields(schema, { onlyVisible: true });
+
       const avatarHtml = renderAvatarMarkup(student, nameVal, 'w-14 h-14 sm:w-22 sm:h-22 rounded-xl sm:rounded-2xl text-xl sm:text-2xl shadow-md border-2 border-white/30 shrink-0');
+
+      const customFieldsSectionHtml = visibleCustomFields.length > 0 ? `
+          <!-- Additional Custom Fields -->
+          <div class="bg-white rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs p-2.5 sm:p-4">
+            <h4 class="text-[11px] sm:text-xs font-extrabold uppercase tracking-wider text-slate-500 mb-2 sm:mb-3 flex items-center gap-1.5">
+              <i class="fas fa-sliders text-indigo-600"></i>
+              <span>Additional Information</span>
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 text-xs">
+              ${visibleCustomFields.map((cf) => {
+                const rawVal = getStudentCustomValuesMap(student)[cf.key] || '';
+                const dispVal = formatStudentFieldDisplayValue(student, cf, '--');
+                const isPhone = cf.type === 'phone';
+                return `
+                  <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80 ${cf.type === 'textarea' ? 'sm:col-span-2 lg:col-span-3' : ''}">
+                    <div class="flex items-center justify-between gap-1">
+                      <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(cf.label)}</span>
+                      ${isPhone && rawVal ? `<a href="tel:${escapeHtml(rawVal)}" class="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold inline-flex items-center gap-1 shrink-0 transition shadow-2xs"><i class="fas fa-phone-alt text-[8px]"></i> Call</a>` : ''}
+                    </div>
+                    <span class="text-xs sm:text-sm font-extrabold ${isPhone || cf.type === 'date' || cf.type === 'number' ? 'font-mono ' : ''}text-slate-900 mt-0.5 block break-words">${escapeHtml(dispVal)}</span>
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>` : '';
 
       return `
         <div class="space-y-2.5 sm:space-y-4">
           <!-- Top Identity Header Banner -->
           <div class="flex items-center gap-3 sm:gap-4 p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 text-white shadow-xl border border-slate-800">
-            <div class="relative shrink-0">
+            ${isVis('photo') ? `<div class="relative shrink-0">
               ${avatarHtml}
-              <span class="absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-slate-900 ${isAct ? 'bg-emerald-500' : 'bg-rose-500'} flex items-center justify-center text-[8px] sm:text-[9px]" title="${isAct ? 'Active Student' : 'Inactive'}">
+              ${isVis('status') ? `<span class="absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-slate-900 ${isAct ? 'bg-emerald-500' : 'bg-rose-500'} flex items-center justify-center text-[8px] sm:text-[9px]" title="${isAct ? 'Active Student' : 'Inactive'}">
                 <i class="fas ${isAct ? 'fa-check' : 'fa-times'} text-white"></i>
-              </span>
-            </div>
+              </span>` : ''}
+            </div>` : ''}
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap items-center gap-1.5 mb-1">
-                <span class="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider ${isAct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-rose-500/20 text-rose-300 border border-rose-400/30'}">
+                ${isVis('status') ? `<span class="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider ${isAct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-rose-500/20 text-rose-300 border border-rose-400/30'}">
                   <i class="fas fa-circle text-[6px] mr-1"></i>${escapeHtml(status)}
-                </span>
+                </span>` : ''}
                 <span class="px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-extrabold bg-blue-600 text-white shadow-xs">
-                  <i class="fas fa-graduation-cap mr-1 opacity-80"></i>Class ${escapeHtml(classVal)}
+                  <i class="fas fa-graduation-cap mr-1 opacity-80"></i>${escapeHtml(lbl('class', 'Class'))} ${escapeHtml(classVal)}
                 </span>
-                <span class="px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-mono font-bold bg-white/10 text-slate-100 border border-white/15">
-                  Adm: ${escapeHtml(admVal)}
-                </span>
+                ${isVis('adm') ? `<span class="px-2 py-0.5 rounded-lg text-[10px] sm:text-[11px] font-mono font-bold bg-white/10 text-slate-100 border border-white/15">
+                  ${escapeHtml(lbl('adm', 'Adm'))}: ${escapeHtml(admVal)}
+                </span>` : ''}
               </div>
               <h3 class="text-base sm:text-2xl font-black text-white leading-tight truncate sm:whitespace-normal">${escapeHtml(nameVal)}</h3>
               <div class="text-[11px] sm:text-xs font-semibold text-indigo-200 mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                 <span><i class="fas fa-venus-mars mr-1 opacity-75"></i>${escapeHtml(genderVal)}</span>
-                <span class="opacity-50">•</span>
-                <span><i class="fas fa-fingerprint mr-1 opacity-75"></i>UID: <b class="text-white font-mono">${escapeHtml(uidVal)}</b></span>
-                <span class="opacity-50">•</span>
-                <span><i class="fas fa-calendar-alt mr-1 opacity-75"></i>DOB: <b class="text-white font-mono">${escapeHtml(dobVal)}</b></span>
+                ${isVis('uid') ? `<span class="opacity-50">•</span><span><i class="fas fa-fingerprint mr-1 opacity-75"></i>${escapeHtml(lbl('uid', 'UID'))}: <b class="text-white font-mono">${escapeHtml(uidVal)}</b></span>` : ''}
+                ${isVis('dob') ? `<span class="opacity-50">•</span><span><i class="fas fa-calendar-alt mr-1 opacity-75"></i>${escapeHtml(lbl('dob', 'DOB'))}: <b class="text-white font-mono">${escapeHtml(dobVal)}</b></span>` : ''}
               </div>
             </div>
           </div>
@@ -2047,21 +2088,21 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             </h4>
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 text-xs">
               <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
-                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Class / Division</span>
+                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('class', 'Class / Division'))}</span>
                 <span class="text-xs sm:text-sm font-extrabold text-indigo-950 mt-0.5 block truncate">${escapeHtml(classVal)}</span>
               </div>
-              <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
-                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Admission Number</span>
+              ${isVis('adm') ? `<div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
+                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('adm', 'Admission Number'))}</span>
                 <span class="text-xs sm:text-sm font-extrabold font-mono text-slate-900 mt-0.5 block truncate">${escapeHtml(admVal)}</span>
-              </div>
-              <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
-                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Date of Admission</span>
+              </div>` : ''}
+              ${isVis('admDate') ? `<div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
+                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('admDate', 'Date of Admission'))}</span>
                 <span class="text-xs sm:text-sm font-extrabold font-mono text-slate-900 mt-0.5 block truncate">${escapeHtml(admDateVal)}</span>
-              </div>
-              <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
-                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Unique ID (UID)</span>
+              </div>` : ''}
+              ${isVis('uid') ? `<div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
+                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('uid', 'Unique ID (UID)'))}</span>
                 <span class="text-xs sm:text-sm font-extrabold font-mono text-slate-900 mt-0.5 block truncate">${escapeHtml(uidVal)}</span>
-              </div>
+              </div>` : ''}
             </div>
           </div>
 
@@ -2073,20 +2114,20 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             </h4>
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 text-xs">
               <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
-                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Gender</span>
+                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('gender', 'Gender'))}</span>
                 <span class="text-xs sm:text-sm font-extrabold text-slate-900 mt-0.5 block flex items-center gap-1 truncate">
                   <i class="fas ${genderVal.toLowerCase() === 'female' ? 'fa-female text-pink-500' : 'fa-male text-blue-500'}"></i>
                   ${escapeHtml(genderVal)}
                 </span>
               </div>
-              <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
-                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Date of Birth (DOB)</span>
+              ${isVis('dob') ? `<div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
+                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('dob', 'Date of Birth (DOB)'))}</span>
                 <span class="text-xs sm:text-sm font-extrabold font-mono text-slate-900 mt-0.5 block truncate">${escapeHtml(dobVal)}</span>
-              </div>
-              <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80 col-span-2 sm:col-span-1">
-                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Aadhaar Number</span>
+              </div>` : ''}
+              ${isVis('adhaar') ? `<div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80 col-span-2 sm:col-span-1">
+                <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('adhaar', 'Aadhaar Number'))}</span>
                 <span class="text-xs sm:text-sm font-extrabold font-mono text-slate-900 mt-0.5 block truncate">${escapeHtml(adhaarVal)}</span>
-              </div>
+              </div>` : ''}
             </div>
           </div>
 
@@ -2096,32 +2137,34 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
               <i class="fas fa-phone-alt text-emerald-600"></i>
               <span>Parent, Contact & Address</span>
             </h4>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs mb-2 sm:mb-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs ${isVis('address') ? 'mb-2 sm:mb-3' : ''}">
               <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
                 <div class="flex items-center justify-between gap-1">
-                  <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Father's Info</span>
+                  <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">${escapeHtml(lbl('mobile', "Father's Phone"))}</span>
                   ${fatherPhone ? `<a href="tel:${escapeHtml(fatherPhone)}" class="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold inline-flex items-center gap-1 shrink-0 transition shadow-2xs"><i class="fas fa-phone-alt text-[8px]"></i> Call</a>` : ''}
                 </div>
-                <div class="text-xs sm:text-sm font-extrabold text-slate-900 mt-1 truncate">${escapeHtml(fatherVal)}</div>
+                ${isVis('father') ? `<div class="text-xs sm:text-sm font-extrabold text-slate-900 mt-1 truncate">${escapeHtml(fatherVal)}</div>` : ''}
                 <div class="font-bold font-mono text-[11px] sm:text-xs text-slate-600 mt-0.5">${escapeHtml(fatherPhone || 'No Phone')}</div>
               </div>
               <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80">
                 <div class="flex items-center justify-between gap-1">
-                  <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Mother's Info</span>
+                  <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">${escapeHtml(lbl('motherMobile', "Mother's Phone"))}</span>
                   ${motherPhone ? `<a href="tel:${escapeHtml(motherPhone)}" class="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold inline-flex items-center gap-1 shrink-0 transition shadow-2xs"><i class="fas fa-phone-alt text-[8px]"></i> Call</a>` : ''}
                 </div>
-                <div class="text-xs sm:text-sm font-extrabold text-slate-900 mt-1 truncate">${escapeHtml(motherVal)}</div>
+                ${isVis('mother') ? `<div class="text-xs sm:text-sm font-extrabold text-slate-900 mt-1 truncate">${escapeHtml(motherVal)}</div>` : ''}
                 <div class="font-bold font-mono text-[11px] sm:text-xs text-slate-600 mt-0.5">${escapeHtml(motherPhone || 'No Phone')}</div>
               </div>
             </div>
-            <div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
-              <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Permanent Address</span>
+            ${isVis('address') ? `<div class="p-2 sm:p-3 rounded-lg sm:rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+              <span class="text-[9px] sm:text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">${escapeHtml(lbl('address', 'Permanent Address'))}</span>
               <div class="text-xs sm:text-sm font-bold text-slate-800 mt-1 leading-snug break-words flex items-start gap-1.5">
                 <i class="fas fa-map-marker-alt text-slate-400 mt-0.5 shrink-0 text-xs"></i>
                 <span>${escapeHtml(addressVal)}</span>
               </div>
-            </div>
+            </div>` : ''}
           </div>
+
+          ${customFieldsSectionHtml}
 
           <!-- Section 4: Fees, Concession & Sibling Group -->
           <div class="grid grid-cols-1 ${group ? 'lg:grid-cols-2' : ''} gap-2 sm:gap-3">
@@ -2384,28 +2427,20 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       const classLabel = officialFilters.studentClass && officialFilters.studentClass !== 'ALL' ? `Class_${officialFilters.studentClass}` : 'All_Classes';
       const dateStr = formatDate(new Date()).replace(/-/g, '_');
       const filename = `Students_Register_${yearLabel}_${classLabel}_${dateStr}.xlsx`;
+      const visibleFields = getVisibleStudentFields(studentFieldSchema).filter((f) => f.key !== 'photo');
 
       const rowsData = studentsToExport.map((s, idx) => {
         const grp = getStudentGroup(s.id);
-        return {
-          'No': idx + 1,
-          'Class': s.class || '',
-          'UID / Roll No': s.uid || '',
-          'Student Name': s.name || '',
-          'Father Name': s.father || '',
-          'Mother Name': s.mother || '',
-          'Gender': s.gender || '',
-          'Adm No': s.adm || '',
-          'Date of Birth': s.dob || '',
-          'Admission Date': s.adm_date || s.admDate || '',
-          'Status': getStudentStatus(s),
-          'Aadhaar No': s.adhaar || s.aadhaar || s.aadhar || '',
-          'Father Mobile': s.mobile || s.phone || '',
-          'Mother Mobile': s.motherMobile || s.mother_mobile || '',
-          'Concession Fee': hasStudentConcession(s) ? s.concessionFee : '',
-          'Group Info': grp ? `Group (${grp.fee || 0})` : '',
-          'Address': s.address || ''
-        };
+        const row = { 'No': idx + 1 };
+        visibleFields.forEach((f) => {
+          const val = f.key === 'status'
+            ? getStudentStatus(s)
+            : formatStudentFieldDisplayValue(s, f, '');
+          row[f.label] = val;
+        });
+        row['Concession Fee'] = hasStudentConcession(s) ? s.concessionFee : '';
+        row['Group Info'] = grp ? `Group (${grp.fee || 0})` : '';
+        return row;
       });
 
       exportUnifiedRegisterToExcel({
@@ -2419,41 +2454,25 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       const yearObj = academicYears.find((y) => y.id === (officialFilters.academicYearId || activeAcademicYearId));
       const yearTitle = yearObj ? (yearObj.name || yearObj.id) : (officialFilters.academicYearId || activeAcademicYearId || 'Current Academic Year');
       const classTitle = (!officialFilters.studentClass || officialFilters.studentClass === 'ALL') ? 'All Classes' : `Class ${officialFilters.studentClass}`;
+      const visibleFields = getVisibleStudentFields(studentFieldSchema).filter((f) => f.key !== 'photo');
 
       const columns = [
         { label: 'No', align: 'center', width: '35px', bold: true },
-        { label: 'Class', align: 'center', width: '50px' },
-        { label: 'UID', align: 'center', width: '65px' },
-        { label: 'Student Name', align: 'left', bold: true },
-        { label: 'Father Name', align: 'left' },
-        { label: 'Mother Name', align: 'left' },
-        { label: 'Gender', align: 'center', width: '45px' },
-        { label: 'Adm No', align: 'center', width: '55px' },
-        { label: 'DOB', align: 'center', width: '65px' },
-        { label: 'Adm Date', align: 'center', width: '65px' },
-        { label: 'Status', align: 'center', width: '50px' },
-        { label: 'Aadhaar', align: 'center', width: '75px' },
-        { label: "Father's Phone", align: 'center', width: '80px' },
-        { label: "Mother's Phone", align: 'center', width: '80px' },
-        { label: 'Address', align: 'left' }
+        ...visibleFields.map((f) => ({
+          label: f.label,
+          align: ['class', 'uid', 'gender', 'adm', 'dob', 'admDate', 'status', 'adhaar', 'mobile', 'motherMobile'].includes(f.key) || f.type === 'phone' || f.type === 'date' ? 'center' : 'left',
+          bold: f.key === 'name'
+        }))
       ];
 
       const rows = studentsToPrint.map((s, idx) => [
         idx + 1,
-        escapeHtml(s.class || '--'),
-        escapeHtml(s.uid || '--'),
-        escapeHtml(s.name || '--'),
-        escapeHtml(s.father || '--'),
-        escapeHtml(s.mother || '--'),
-        escapeHtml(s.gender || '--'),
-        escapeHtml(s.adm || '--'),
-        escapeHtml(s.dob || '--'),
-        escapeHtml(s.adm_date || s.admDate || '--'),
-        escapeHtml(getStudentStatus(s)),
-        escapeHtml(s.adhaar || s.aadhaar || s.aadhar || '--'),
-        escapeHtml(s.mobile || s.phone || '--'),
-        escapeHtml(s.motherMobile || s.mother_mobile || '--'),
-        escapeHtml(s.address || '--')
+        ...visibleFields.map((f) => {
+          const val = f.key === 'status'
+            ? getStudentStatus(s)
+            : formatStudentFieldDisplayValue(s, f, '--');
+          return escapeHtml(val || '--');
+        })
       ]);
 
       printUnifiedOfficialRegisterPdf({
@@ -2495,21 +2514,16 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       const endIdx = totalCount === 0 ? 0 : Math.min(startIdx + pageSize, totalCount);
       const paginatedStudents = filteredStudents.slice(startIdx, endIdx);
 
+      const visibleSchemaFields = getVisibleStudentFields(studentFieldSchema).filter((f) => f.key !== 'photo');
+      const nameField = visibleSchemaFields.find((f) => f.key === 'name');
+      const otherFields = visibleSchemaFields.filter((f) => f.key !== 'name');
       const coreAdminColumns = [
-        { key: 'name', label: 'Student Name' },
-        { key: 'class', label: 'Class' },
-        { key: 'uid', label: 'UID' },
-        { key: 'father', label: 'Father Name' },
-        { key: 'mother', label: 'Mother Name' },
-        { key: 'gender', label: 'Gender' },
-        { key: 'adm', label: 'Adm No' },
-        { key: 'dob', label: 'DOB' },
-        { key: 'adm_date', label: 'Admission Date' },
-        { key: 'status', label: 'Status' },
-        { key: 'adhaar', label: 'Aadhaar No' },
-        { key: 'mobile', label: 'Father Mobile' },
-        { key: 'motherMobile', label: 'Mother Mobile' },
-        { key: 'address', label: 'Permanent Address' },
+        ...(nameField ? [{ key: 'name', label: nameField.label, fieldObj: nameField }] : []),
+        ...otherFields.map((f) => ({
+          key: f.key === 'admDate' ? 'adm_date' : f.key,
+          label: f.label,
+          fieldObj: f
+        })),
         { key: 'group', label: 'Group' },
         { key: 'concessionFee', label: 'Concession' }
       ];
@@ -2518,7 +2532,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         `<th class="${col.key === 'name' ? 'stu-sticky-col-3' : ''} px-2 py-2 whitespace-nowrap text-left font-extrabold text-slate-700">${escapeHtml(col.label)}</th>`
       ).join('');
 
-      const getStudentColValue = (student, key) => {
+      const getStudentColValue = (student, key, fieldObj = null) => {
         const prof = (student?.profile && typeof student.profile === 'object') ? student.profile : {};
         if (key === 'status') return getStudentStatus(student);
         if (key === 'adm') return student.adm || prof.admNo || prof.adm || '--';
@@ -2527,7 +2541,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         if (key === 'mother') return student.mother || prof.mother || '--';
         if (key === 'gender') return student.gender || prof.gender || '--';
         if (key === 'dob') return formatDateIfIso(student.dob || prof.dob || '');
-        if (key === 'adm_date') return formatDateIfIso(student.adm_date || student.admDate || prof.admDate || prof.adm_date || '');
+        if (key === 'adm_date' || key === 'admDate') return formatDateIfIso(student.adm_date || student.admDate || prof.admDate || prof.adm_date || '');
         if (key === 'adhaar') return student.adhaar || student.aadhaar || student.aadhar || prof.adhaar || prof.aadhaar || '--';
         if (key === 'mobile') return student.mobile || student.phone || student.fatherMobile || prof.mobile || prof.phone || '--';
         if (key === 'motherMobile') return student.motherMobile || student.mother_mobile || prof.motherMobile || '--';
@@ -2537,7 +2551,11 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           return grp ? `Group ₹${grp.fee || 0}` : '--';
         }
         if (key === 'concessionFee') return hasStudentConcession(student) ? `₹${student.concessionFee}` : '--';
-        const val = valueToDisplay(student?.[key] !== undefined ? student[key] : prof?.[key]);
+        if (fieldObj?.isCustom) {
+          return formatStudentFieldDisplayValue(student, fieldObj, '--');
+        }
+        const customMap = getStudentCustomValuesMap(student);
+        const val = valueToDisplay(student?.[key] !== undefined ? student[key] : (prof?.[key] !== undefined ? prof[key] : customMap[key]));
         return val !== '' ? val : '--';
       };
 
@@ -2551,7 +2569,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             ${renderAvatarMarkup(student, student.name, 'w-8 h-8 rounded-lg text-xs')}
           </td>
           ${coreAdminColumns.map((col) => {
-            const val = getStudentColValue(student, col.key);
+            const val = getStudentColValue(student, col.key, col.fieldObj);
             if (col.key === 'name') {
               return `<td class="stu-sticky-col-3 px-2 py-1.5 align-middle font-extrabold text-slate-900 whitespace-nowrap truncate" title="${escapeHtml(val)}">${escapeHtml(val)}</td>`;
             }
@@ -4815,23 +4833,16 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           { id: 'CUSTOM', label: 'Custom / Blank Column' }
         ];
       }
+      const visibleStudentFields = getVisibleStudentFields(studentFieldSchema)
+        .filter((f) => f.key !== 'photo')
+        .map((f) => ({
+          id: f.key === 'admDate' ? 'adm_date' : f.key,
+          label: f.label
+        }));
       return [
         { id: 'SNO', label: 'Serial No. (Auto)' },
-        { id: 'name', label: 'Student Name' },
-        { id: 'adm', label: 'Admission No.' },
-        { id: 'uid', label: 'UID / Roll No.' },
-        { id: 'class', label: 'Class' },
-        { id: 'gender', label: 'Gender' },
-        { id: 'dob', label: 'Date of Birth' },
-        { id: 'adm_date', label: 'Admission Date' },
-        { id: 'father', label: 'Father Name' },
-        { id: 'mobile', label: 'Father Mobile' },
-        { id: 'mother', label: 'Mother Name' },
-        { id: 'motherMobile', label: 'Mother Mobile' },
-        { id: 'adhaar', label: 'Aadhaar No.' },
-        { id: 'status', label: 'Status' },
+        ...visibleStudentFields,
         { id: 'concessionFee', label: 'Concession Fee' },
-        { id: 'address', label: 'Address' },
         { id: 'CUSTOM', label: 'Custom / Blank Column' }
       ];
     };
@@ -5074,7 +5085,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           alumniList = alumniList.filter((s) => getAlumniGraduatedYear(s) === builderConfig.academicYearId);
         }
         let rows = alumniList.map((s) => ({
+          ...getStudentCustomValuesMap(s),
           ...s,
+          adm_date: s.adm_date || s.admDate || s.profile?.admDate || '',
           class: 'Alumni',
           graduatedYear: getAlumniGraduatedYear(s),
           completedClass: s.finalClass || s.promotedFrom || 'Completed'
@@ -5119,11 +5132,24 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
 
       let rows = [];
       if (builderConfig.sourceType === 'fees') {
-        rows = filteredStudents.map((s) => computeStudentFeeRecord(s, yearId));
+        rows = filteredStudents.map((s) => ({
+          ...getStudentCustomValuesMap(s),
+          ...computeStudentFeeRecord(s, yearId),
+          adm_date: s.adm_date || s.admDate || s.profile?.admDate || ''
+        }));
       } else if (builderConfig.sourceType === 'results') {
-        rows = computeStudentResultRows(filteredStudents, yearId);
+        rows = computeStudentResultRows(filteredStudents, yearId).map((r) => ({
+          ...getStudentCustomValuesMap(r),
+          ...r,
+          adm_date: r.adm_date || r.admDate || r.profile?.admDate || ''
+        }));
       } else {
-        rows = filteredStudents.map((s) => ({ ...s, class: getStudentClass(s) }));
+        rows = filteredStudents.map((s) => ({
+          ...getStudentCustomValuesMap(s),
+          ...s,
+          adm_date: s.adm_date || s.admDate || s.profile?.admDate || '',
+          class: getStudentClass(s)
+        }));
       }
 
       if (builderConfig.sortBy === 'name') {
@@ -5267,7 +5293,14 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
           cell.textContent = recordId ? String(rowIndex + 1) : '';
         } else {
           const item = rowMap.get(String(recordId));
-          cell.textContent = item ? valueToDisplay(item[fieldId]) : '';
+          const schemaField = getStudentFieldByKey(studentFieldSchema, fieldId === 'adm_date' ? 'admDate' : fieldId);
+          if (!item) {
+            cell.textContent = '';
+          } else if (schemaField?.isCustom) {
+            cell.textContent = formatStudentFieldDisplayValue(item, schemaField, '');
+          } else {
+            cell.textContent = valueToDisplay(item[fieldId]);
+          }
         }
       });
     };
@@ -5530,7 +5563,12 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             ${builderConfig.columns.map((col, cIndex) => {
               let cellValue = '';
               if (col.field === 'SNO') cellValue = rec ? globalRowIdx + 1 : '';
-              else if (col.field !== 'CUSTOM' && rec) cellValue = valueToDisplay(rec[col.field]);
+              else if (col.field !== 'CUSTOM' && rec) {
+                const schemaField = getStudentFieldByKey(studentFieldSchema, col.field === 'adm_date' ? 'admDate' : col.field);
+                cellValue = schemaField?.isCustom
+                  ? formatStudentFieldDisplayValue(rec, schemaField, '')
+                  : valueToDisplay(rec[col.field]);
+              }
               const isNumField = ['SNO', 'feeTotal', 'concession', 'netPayable', 'paidAmount', 'balanceDue', 'obtainedMarks', 'maxMarks', 'rank'].includes(col.field) || String(col.field).startsWith('SUB_');
               const alignStyle = isNumField ? 'text-align: center;' : '';
               return `<td class="excel-cell builder-cell" contenteditable="true" data-row="${globalRowIdx}" data-col="${cIndex}" style="padding: ${densityPadding}; border: ${defaultBorderCss}; ${alignStyle}">${escapeHtml(String(cellValue))}</td>`;

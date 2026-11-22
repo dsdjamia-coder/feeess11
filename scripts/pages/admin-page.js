@@ -21,6 +21,27 @@ import {
     deleteStorageUrlIfManaged,
     uploadImageToStorage
 } from '../shared/storage-media-service.js';
+import {
+    CUSTOM_STUDENT_FIELD_TYPES,
+    DEFAULT_STUDENT_FIELDS,
+    buildCustomFieldInputHtml,
+    extractAllStudentPhones,
+    formatStudentFieldDisplayValue,
+    getCustomPhoneFieldKeys,
+    getCustomStudentFields,
+    getFieldTypeDisplayLabel,
+    getStudentCustomValuesMap,
+    getStudentFieldByKey,
+    getStudentFieldLabel,
+    getStudentFieldValue,
+    getVisibleStudentFields,
+    isStudentFieldVisible,
+    normalizeStudentFieldSchema,
+    parseSelectOptions,
+    readCustomFieldsFromContainer,
+    sanitizeCustomFieldKey,
+    serializeStudentFieldSchema
+} from '../shared/student-fields.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -151,6 +172,7 @@ let activeAcademicYear = '';
 let hasLoadedAcademicYearsSnapshot = false;
 let hasLoadedConfigSnapshot = false;
 let latestConfigData = {};
+let studentFieldSchema = normalizeStudentFieldSchema([]);
 let hasLoadedStudentsSnapshot = false;
 let latestPublishedStats = null;
 let autoStatsSyncTimer = null;
@@ -2115,21 +2137,14 @@ const syncSingleStudentLookup = async (studentId, studentData) => {
     const sClass = String(studentData.class || '').trim().toLowerCase().replace(/[\\/\\s]+/g, '_');
     if (!sAdm) return;
 
-    const phones = [
-        normalizePhone(studentData.mobile || ''),
-        normalizePhone(studentData.phone || ''),
-        normalizePhone(studentData.fatherPhone || ''),
-        normalizePhone(studentData.motherPhone || ''),
-        normalizePhone(studentData.fatherMobile || ''),
-        normalizePhone(studentData.motherMobile || '')
-    ].filter(Boolean);
+    const phones = extractAllStudentPhones(studentData, studentFieldSchema, normalizePhone);
 
     const lookupPayload = {
         studentId,
         name: studentData.name || '',
         class: studentData.class || '',
         adm: studentData.adm || studentData.admNo || '',
-        phones: Array.from(new Set(phones)),
+        phones,
         updatedAt: Date.now()
     };
 
@@ -2161,21 +2176,14 @@ const syncAllStudentsLookupIndex = async (studentsList = rawStudents, onProgress
         const sClass = String(st.class || '').trim().toLowerCase().replace(/[\\/\\s]+/g, '_');
         if (!sAdm) continue;
 
-        const phones = [
-            normalizePhone(st.mobile || ''),
-            normalizePhone(st.phone || ''),
-            normalizePhone(st.fatherPhone || ''),
-            normalizePhone(st.motherPhone || ''),
-            normalizePhone(st.fatherMobile || ''),
-            normalizePhone(st.motherMobile || '')
-        ].filter(Boolean);
+        const phones = extractAllStudentPhones(st, studentFieldSchema, normalizePhone);
 
         const payload = {
             studentId: st.id,
             name: st.name || '',
             class: st.class || '',
             adm: st.adm || st.admNo || '',
-            phones: Array.from(new Set(phones)),
+            phones,
             updatedAt: Date.now()
         };
 
@@ -2189,6 +2197,24 @@ const syncAllStudentsLookupIndex = async (studentsList = rawStudents, onProgress
         await runBatchedWrites(operations);
     }
     return operations.length;
+};
+
+const syncAllStudentsPhonesField = async (studentsList = rawStudents, schema = studentFieldSchema) => {
+    if (!Array.isArray(studentsList) || studentsList.length === 0) return 0;
+    const ops = [];
+    for (const st of studentsList) {
+        if (!st || !st.id) continue;
+        const nextPhones = extractAllStudentPhones(st, schema, normalizePhone);
+        const prevPhones = Array.isArray(st.phones) ? st.phones : [];
+        const same = nextPhones.length === prevPhones.length && nextPhones.every((p, idx) => prevPhones[idx] === p);
+        if (!same) {
+            ops.push((batch) => batch.set(doc(db, `${BASE_PATH}/students`, st.id), { phones: nextPhones }, { merge: true }));
+        }
+    }
+    if (ops.length > 0) {
+        await runBatchedWrites(ops);
+    }
+    return ops.length;
 };
 
 // Institutional Student Statistics Helpers
@@ -6220,39 +6246,31 @@ window.toggleStaffStatus = async (id, nextState) => {
     }
 };
 
-// --- 2. ADD STUDENTS ---
-const BULK_TEMPLATE_HEADERS = [
-    "Student Name",
-    "ID/UID",
-    "Father's Name",
-    "Mother's Name",
-    "Gender",
-    "Admission Number (Adm. No.)",
-    "Date of Birth",
-    "Date of Admission",
-    "Student Status",
-    "Aadhaar Number",
-    "Father's Phone Number",
-    "Mother's Phone Number",
-    "Permanent Address"
-];
+// --- 2. ADD STUDENTS & DYNAMIC FIELD SCHEMA ---
+const getDynamicBulkTemplateHeaders = () => {
+    const visible = getVisibleStudentFields(studentFieldSchema).filter(
+        (f) => f.key !== 'photo' && f.key !== 'class'
+    );
+    return visible.map((f) => f.label);
+};
 
 window.downloadBulkTemplate = (format = 'csv') => {
+    const headers = getDynamicBulkTemplateHeaders();
     const ext = String(format || 'csv').toLowerCase().replace(/^\./, '');
     if (ext === 'xlsx' || ext === 'xls') {
         if (typeof XLSX === 'undefined') {
             alert('Spreadsheet library is still loading. Please try again in a moment.');
             return;
         }
-        const ws = XLSX.utils.aoa_to_sheet([BULK_TEMPLATE_HEADERS]);
-        ws['!cols'] = BULK_TEMPLATE_HEADERS.map((h) => ({ wch: Math.max(h.length + 4, 16) }));
+        const ws = XLSX.utils.aoa_to_sheet([headers]);
+        ws['!cols'] = headers.map((h) => ({ wch: Math.max(h.length + 4, 16) }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Students');
         XLSX.writeFile(wb, `student_upload_template.${ext}`, { bookType: ext });
         return;
     }
 
-    const csvLine = BULK_TEMPLATE_HEADERS.map((h) => (/[",\n]/.test(h) ? `"${h.replace(/"/g, '""')}"` : h)).join(',') + '\n';
+    const csvLine = headers.map((h) => (/[",\n]/.test(h) ? `"${h.replace(/"/g, '""')}"` : h)).join(',') + '\n';
     const blob = new Blob(['\uFEFF' + csvLine], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -6309,22 +6327,21 @@ let excelWorkingRows = [];
 let excelColumns = [];
 let isExcelEditMode = false;
 
-const EXCEL_SCHEMA_FIELDS = [
-    { key: 'name', label: 'Student Name *', required: true },
-    { key: 'uid', label: 'ID/UID' },
-    { key: 'father', label: "Father's Name" },
-    { key: 'mother', label: "Mother's Name" },
-    { key: 'gender', label: 'Gender *', required: true },
-    { key: 'adm', label: 'Admission Number (Adm. No.)' },
-    { key: 'dob', label: 'Date of Birth' },
-    { key: 'admDate', label: 'Date of Admission' },
-    { key: 'status', label: 'Student Status' },
-    { key: 'adhaar', label: 'Aadhaar Number' },
-    { key: 'mobile', label: "Father's Phone Number" },
-    { key: 'motherMobile', label: "Mother's Phone Number" },
-    { key: 'address', label: 'Permanent Address' },
-    { key: 'none', label: '-- Skip / Ignore --' }
-];
+const getDynamicExcelSchemaFields = () => {
+    const visible = getVisibleStudentFields(studentFieldSchema).filter(
+        (f) => f.key !== 'photo' && f.key !== 'class'
+    );
+    return [
+        ...visible.map((f) => ({
+            key: f.key,
+            label: `${f.label}${f.required ? ' *' : ''}`,
+            required: Boolean(f.required),
+            system: Boolean(f.system),
+            type: f.type
+        })),
+        { key: 'none', label: '-- Skip / Ignore --' }
+    ];
+};
 
 function getDuplicateMappedFields() {
     const counts = {};
@@ -6565,6 +6582,42 @@ function validateAndBuildStudent(extracted, rowIdx, selectedBulkClass, existingC
 
     fieldStatuses.address = addressVal ? { status: 'valid', val: addressVal } : { status: 'blank', val: '' };
 
+    // Extract & validate visible custom fields
+    const customFieldsData = {};
+    const customDefs = getCustomStudentFields(studentFieldSchema, { onlyVisible: true });
+    customDefs.forEach((cf) => {
+        const rawVal = extracted[cf.key] !== undefined && extracted[cf.key] !== null ? String(extracted[cf.key]).trim() : '';
+        if (!rawVal) {
+            fieldStatuses[cf.key] = { status: 'blank', val: '' };
+            customFieldsData[cf.key] = '';
+            return;
+        }
+        if (cf.type === 'phone') {
+            const digits = rawVal.replace(/\D/g, '');
+            if (digits.length >= 10 && digits.length <= 15) {
+                customFieldsData[cf.key] = digits;
+                fieldStatuses[cf.key] = { status: 'valid', val: digits };
+            } else {
+                customFieldsData[cf.key] = '';
+                fieldStatuses[cf.key] = { status: 'error', val: rawVal, reason: `Invalid ${cf.label} (will be skipped)` };
+                omittedFields.push(cf.label);
+            }
+        } else if (cf.type === 'date') {
+            const iso = normalizeToIsoDate(rawVal);
+            if (iso) {
+                customFieldsData[cf.key] = iso;
+                fieldStatuses[cf.key] = { status: 'valid', val: iso };
+            } else {
+                customFieldsData[cf.key] = '';
+                fieldStatuses[cf.key] = { status: 'error', val: rawVal, reason: `Invalid date format for ${cf.label} (will be skipped)` };
+                omittedFields.push(cf.label);
+            }
+        } else {
+            customFieldsData[cf.key] = rawVal;
+            fieldStatuses[cf.key] = { status: 'valid', val: rawVal };
+        }
+    });
+
     const studentObj = {
         name: rawName ? rawName.toUpperCase().trim() : '',
         gender: genderVal,
@@ -6583,6 +6636,7 @@ function validateAndBuildStudent(extracted, rowIdx, selectedBulkClass, existingC
         samastha: uidVal,
         samasthaId: uidVal,
         address: addressVal,
+        customFields: customFieldsData,
         photoUrl: '',
         academicYear: getActiveAcademicYearLabel(),
         fees: {},
@@ -6758,14 +6812,15 @@ function openAddFieldModal() {
     if (!modal || !listContainer) return;
 
     const currentlyMapped = new Set(excelColumns.map(c => c.mappedField));
-    const unmappedFields = EXCEL_SCHEMA_FIELDS.filter(f => f.key !== 'none' && !currentlyMapped.has(f.key));
+    const schemaFields = getDynamicExcelSchemaFields();
+    const unmappedFields = schemaFields.filter(f => f.key !== 'none' && !currentlyMapped.has(f.key));
 
     if (unmappedFields.length === 0) {
         listContainer.innerHTML = `
             <div class="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
                 <i class="fas fa-check-circle text-emerald-600 text-2xl mb-1.5"></i>
-                <div class="text-xs font-bold text-emerald-900">All 13 Student Fields Present</div>
-                <div class="text-[11px] text-emerald-700 mt-0.5">All 13 student fields from manual entry are already present in the spreadsheet.</div>
+                <div class="text-xs font-bold text-emerald-900">All Active Student Fields Present</div>
+                <div class="text-[11px] text-emerald-700 mt-0.5">All configured student fields are already present in the spreadsheet.</div>
             </div>
         `;
     } else {
@@ -6809,8 +6864,9 @@ function renderExcelPreviewTable() {
 
     const duplicateFields = getDuplicateMappedFields();
     const hasDuplicateMapping = duplicateFields.size > 0;
+    const schemaFields = getDynamicExcelSchemaFields();
     const duplicateLabels = Array.from(duplicateFields).map(f => {
-        return EXCEL_SCHEMA_FIELDS.find(s => s.key === f)?.label?.replace('*', '').trim() || f;
+        return schemaFields.find(s => s.key === f)?.label?.replace('*', '').trim() || f;
     });
 
     const mappedCount = excelColumns.filter(c => c.mappedField && c.mappedField !== 'none').length;
@@ -6890,7 +6946,7 @@ function renderExcelPreviewTable() {
                                             : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : '')}
                                     </div>
                                     <select class="excel-col-map-dropdown w-full p-1 border ${selectStyleClass} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
-                                        ${EXCEL_SCHEMA_FIELDS.map(f => `
+                                        ${schemaFields.map(f => `
                                             <option value="${f.key}" ${col.mappedField === f.key ? 'selected' : ''}>
                                                 ${escapeHtml(f.label)}
                                             </option>
@@ -7187,6 +7243,15 @@ function handleExcelFile(file) {
                 motherMobile: ['mothersphonenumber', 'mothersphone', 'mothermobile', 'motherphone', 'motherphonenumber'],
                 address: ['permanentaddress', 'address', 'permanent', 'addr', 'residentialaddress']
             };
+            // Include configured field labels & custom fields in auto-mapping
+            getVisibleStudentFields(studentFieldSchema).forEach((f) => {
+                if (f.key === 'photo' || f.key === 'class') return;
+                const normLabel = normalizeHeader(f.label);
+                const normKey = normalizeHeader(f.key);
+                if (!aliasMap[f.key]) aliasMap[f.key] = [];
+                if (normLabel && !aliasMap[f.key].includes(normLabel)) aliasMap[f.key].push(normLabel);
+                if (normKey && !aliasMap[f.key].includes(normKey)) aliasMap[f.key].push(normKey);
+            });
 
             const detectedHeaders = [];
             rawData.forEach(row => {
@@ -7411,6 +7476,7 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
             chunk.forEach((s) => {
                 const effectiveClass = s.class || s.studentClass || selectedBulkClass || '';
                 const studentStatus = s.status || 'Active';
+                const customFieldsObj = (s.customFields && typeof s.customFields === 'object') ? { ...s.customFields } : {};
                 const cleanPayload = {
                     name: s.name || '',
                     class: effectiveClass,
@@ -7430,6 +7496,7 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
                     adhaar: s.adhaar || '',
                     samasthaId: s.samasthaId || '',
                     photo: s.photo || '',
+                    customFields: customFieldsObj,
                     academicYear: targetAcademicYear,
                     academicYears: {
                         [targetAcademicYear]: {
@@ -7452,9 +7519,11 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
                         mother: s.mother || '',
                         mobile: s.mobile || '',
                         motherMobile: s.motherMobile || '',
-                        status: studentStatus
+                        status: studentStatus,
+                        customFields: customFieldsObj
                     }
                 };
+                cleanPayload.phones = extractAllStudentPhones(cleanPayload, studentFieldSchema, normalizePhone);
 
                 if (s.isDuplicate && s.existingMatch) {
                     if (mergePolicy === 'merge') {
@@ -7470,6 +7539,16 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
                                 updateData[`profile.${f}`] = cleanPayload[f];
                             }
                         });
+                        const mergedCustom = {
+                            ...getStudentCustomValuesMap(s.existingMatch),
+                            ...Object.fromEntries(Object.entries(customFieldsObj).filter(([, v]) => String(v || '').trim() !== ''))
+                        };
+                        if (Object.keys(mergedCustom).length > 0) {
+                            updateData.customFields = mergedCustom;
+                            updateData['profile.customFields'] = mergedCustom;
+                        }
+                        const mergedStudentPreview = { ...s.existingMatch, ...updateData, customFields: mergedCustom };
+                        updateData.phones = extractAllStudentPhones(mergedStudentPreview, studentFieldSchema, normalizePhone);
                         updateData.class = effectiveClass;
                         updateData.studentClass = effectiveClass;
                         updateData.academicYear = targetAcademicYear;
@@ -7480,8 +7559,8 @@ async function executeBulkImport(datasetToUpload, mergePolicy) {
                         };
 
                         batch.set(studentRef, updateData, { merge: true });
-                        batch.set(getEnrollmentRef(targetAcademicYear, existingDocId), buildEnrollmentPayload(existingDocId, { ...s.existingMatch, ...cleanPayload, academicYear: targetAcademicYear }), { merge: true });
-                        importedLookupRecords.push({ id: existingDocId, ...s.existingMatch, ...cleanPayload });
+                        batch.set(getEnrollmentRef(targetAcademicYear, existingDocId), buildEnrollmentPayload(existingDocId, { ...mergedStudentPreview, academicYear: targetAcademicYear }), { merge: true });
+                        importedLookupRecords.push({ id: existingDocId, ...mergedStudentPreview });
                         mergedCount += 1;
                     } else {
                         // Skip existing
@@ -7611,6 +7690,440 @@ document.getElementById('skip-issues-upload-btn')?.addEventListener('click', asy
     await executeBulkImport(completelyValidRows, mergePolicy);
 });
 
+// --- Dynamic Student Form Schema Applier & Field Manager Modal ---
+const SYSTEM_INPUT_ID_MAP = {
+    add: {
+        photo: 'add-stu-photo',
+        class: 'add-stu-class',
+        uid: 'add-stu-uid',
+        name: 'add-stu-name',
+        father: 'add-stu-father',
+        mother: 'add-stu-mother',
+        gender: 'add-stu-gender',
+        adm: 'add-stu-adm',
+        dob: 'add-stu-dob',
+        admDate: 'add-stu-adm-date',
+        status: 'add-stu-status',
+        adhaar: 'add-stu-adhaar',
+        mobile: 'add-stu-mobile',
+        motherMobile: 'add-stu-mother-mobile',
+        address: 'add-stu-address'
+    },
+    edit: {
+        photo: 'e-stu-photo',
+        class: 'e-stu-class',
+        uid: 'e-stu-uid',
+        name: 'e-stu-name',
+        father: 'e-stu-fat',
+        mother: 'e-stu-mother',
+        gender: 'e-stu-gender',
+        adm: 'e-stu-adm',
+        dob: 'e-stu-dob',
+        admDate: 'e-stu-adm-date',
+        status: 'e-stu-status',
+        adhaar: 'e-stu-adhaar',
+        mobile: 'e-stu-mob',
+        motherMobile: 'e-stu-mother-mobile',
+        address: 'e-stu-addr'
+    }
+};
+
+const applyStudentFieldSchemaToForm = (gridId, idPrefix, schema = studentFieldSchema, existingCustomValues = {}, gridVariant = 'add') => {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+
+    const normalized = normalizeStudentFieldSchema(schema);
+    // Preserve any unsaved values in existing custom fields if existingCustomValues wasn't explicitly passed
+    const prevCustomValues = {};
+    grid.querySelectorAll('[data-stu-custom-field="true"]').forEach((el) => {
+        const inp = el.querySelector('[data-custom-field-key]');
+        if (inp) prevCustomValues[inp.getAttribute('data-custom-field-key')] = inp.value;
+        el.remove();
+    });
+
+    const linkedStatusEl = grid.querySelector('[data-stu-linked="status"]');
+    let visibleIdx = 0;
+
+    normalized.forEach((field) => {
+        if (field.system) {
+            const wrapper = grid.querySelector(`[data-stu-field="${field.key}"]:not([data-stu-custom-field="true"])`);
+            if (!wrapper) return;
+            wrapper.classList.toggle('hidden', !field.visible);
+
+            if (field.visible) {
+                visibleIdx += 1;
+                const labelEl = wrapper.querySelector(`[data-stu-field-label="${field.key}"]`);
+                if (labelEl) {
+                    const reqHtml = field.required ? ' <span class="mandatory-star">*</span>' : '';
+                    const loginBadge = field.type === 'phone'
+                        ? ' <span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold align-middle"><i class="fas fa-key text-[9px]"></i>Login</span>'
+                        : '';
+                    if (field.key === 'photo') {
+                        labelEl.innerHTML = `${visibleIdx}. ${escapeHtml(field.label)} (Smart WebP • Max 150KB)${reqHtml}`;
+                    } else {
+                        labelEl.innerHTML = `${visibleIdx}. ${escapeHtml(field.label)}${reqHtml}${loginBadge}`;
+                    }
+                }
+            }
+
+            grid.appendChild(wrapper);
+            if (field.key === 'status' && linkedStatusEl) {
+                grid.appendChild(linkedStatusEl);
+                if (!field.visible) linkedStatusEl.classList.add('hidden');
+            }
+        } else if (field.visible) {
+            visibleIdx += 1;
+            const initialVal = existingCustomValues && Object.prototype.hasOwnProperty.call(existingCustomValues, field.key)
+                ? existingCustomValues[field.key]
+                : (prevCustomValues[field.key] ?? '');
+            const temp = document.createElement('div');
+            temp.innerHTML = buildCustomFieldInputHtml(field, idPrefix, initialVal, visibleIdx, { gridVariant });
+            if (temp.firstElementChild) {
+                grid.appendChild(temp.firstElementChild);
+            }
+        }
+    });
+};
+
+const validateRequiredVisibleFields = (variant, gridId, idPrefix, schema = studentFieldSchema) => {
+    const missing = [];
+    const map = SYSTEM_INPUT_ID_MAP[variant] || SYSTEM_INPUT_ID_MAP.add;
+    const normalized = normalizeStudentFieldSchema(schema);
+    normalized.forEach((field) => {
+        if (!field.visible || !field.required) return;
+        if (field.system) {
+            const el = document.getElementById(map[field.key]);
+            const val = el ? String(el.value || '').trim() : '';
+            if (!val) missing.push(field.label);
+        }
+    });
+    const grid = document.getElementById(gridId);
+    const { customFields, missingRequired } = readCustomFieldsFromContainer(grid, normalized, idPrefix);
+    missingRequired.forEach((lbl) => missing.push(lbl));
+    return { missing, customFields };
+};
+
+// Gear Icon Student Form Field Manager Modal State & Controller
+let studentFieldsDraft = [];
+
+const renderStudentFieldsConfigList = () => {
+    const listEl = document.getElementById('stu-cfg-fields-list');
+    const countEl = document.getElementById('stu-cfg-field-count');
+    if (!listEl) return;
+
+    studentFieldsDraft = normalizeStudentFieldSchema(studentFieldsDraft);
+    if (countEl) countEl.textContent = String(studentFieldsDraft.length);
+
+    listEl.innerHTML = studentFieldsDraft.map((field, index) => {
+        const isFirst = index === 0;
+        const isLast = index === studentFieldsDraft.length - 1;
+        const isLockedVisible = Boolean(field.alwaysVisible);
+        const isLockedRequired = Boolean(field.alwaysRequired);
+        const isSystem = Boolean(field.system);
+        const typeOptionsHtml = CUSTOM_STUDENT_FIELD_TYPES.map((t) =>
+            `<option value="${t.value}" ${field.type === t.value ? 'selected' : ''}>${escapeHtml(t.label)}</option>`
+        ).join('');
+        const optionsValue = Array.isArray(field.options) ? field.options.join(', ') : '';
+
+        return `
+            <div class="stu-cfg-row border rounded-xl p-3 transition ${field.visible ? 'bg-white border-slate-200' : 'bg-slate-50/90 border-slate-200/80 opacity-80'}" data-field-key="${escapeHtml(field.key)}">
+                <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+                    <!-- Order controls -->
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <div class="flex flex-col gap-0.5">
+                            <button type="button" class="stu-cfg-move-up w-6 h-5 rounded border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-[10px] flex items-center justify-center transition ${isFirst ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}" data-idx="${index}" ${isFirst ? 'disabled' : ''} title="Move Up"><i class="fas fa-chevron-up"></i></button>
+                            <button type="button" class="stu-cfg-move-down w-6 h-5 rounded border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-[10px] flex items-center justify-center transition ${isLast ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}" data-idx="${index}" ${isLast ? 'disabled' : ''} title="Move Down"><i class="fas fa-chevron-down"></i></button>
+                        </div>
+                        <input type="number" min="1" max="${studentFieldsDraft.length}" value="${index + 1}" class="stu-cfg-order-input w-12 px-1.5 py-1.5 text-xs font-mono font-bold text-center border border-slate-300 rounded-lg bg-white" data-idx="${index}" title="Display Order">
+                    </div>
+
+                    <!-- Label & Badges -->
+                    <div class="flex-1 min-w-0 space-y-1.5">
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            ${isSystem
+                                ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-extrabold uppercase">System</span>'
+                                : '<span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-extrabold uppercase">Custom</span>'}
+                            ${isLockedVisible
+                                ? '<span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold"><i class="fas fa-lock text-[9px] mr-1"></i>Always ON</span>'
+                                : ''}
+                            ${field.type === 'phone'
+                                ? '<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold"><i class="fas fa-key text-[9px] mr-1"></i>Login Phone</span>'
+                                : ''}
+                            <span class="text-[10px] text-slate-400 font-mono">key: ${escapeHtml(field.key)}</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                            <div class="sm:col-span-7">
+                                <input type="text" value="${escapeHtml(field.label)}" class="stu-cfg-label-input w-full px-2.5 py-1.5 text-xs font-semibold text-slate-800 border border-slate-300 rounded-lg bg-white" data-idx="${index}" placeholder="Field Label">
+                            </div>
+                            <div class="sm:col-span-5">
+                                ${isSystem
+                                    ? `<div class="w-full px-2.5 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg bg-slate-100 truncate" title="System field type">${escapeHtml(getFieldTypeDisplayLabel(field.type))}</div>`
+                                    : `<select class="stu-cfg-type-select w-full px-2 py-1.5 text-xs font-semibold text-slate-800 border border-slate-300 rounded-lg bg-white" data-idx="${index}">${typeOptionsHtml}</select>`}
+                            </div>
+                        </div>
+                        ${(!isSystem && field.type === 'select') ? `
+                            <div>
+                                <input type="text" value="${escapeHtml(optionsValue)}" class="stu-cfg-options-input w-full px-2.5 py-1.5 text-xs text-slate-700 border border-slate-300 rounded-lg bg-white" data-idx="${index}" placeholder="Dropdown options (comma-separated, e.g. A+, A-, B+, O+)">
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Toggles & Delete -->
+                    <div class="flex flex-wrap items-center gap-3 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                        <label class="inline-flex items-center gap-1.5 text-xs font-bold ${isLockedVisible ? 'text-slate-400 cursor-not-allowed' : 'text-slate-700 cursor-pointer'} select-none" title="${isLockedVisible ? 'Core system field — always visible' : 'Show or hide this field'}">
+                            <input type="checkbox" class="stu-cfg-visible-chk w-4 h-4 text-blue-600 rounded" data-idx="${index}" ${field.visible ? 'checked' : ''} ${isLockedVisible ? 'disabled' : ''}>
+                            <span>Show</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1.5 text-xs font-bold ${(isLockedRequired || !field.visible) ? 'text-slate-400 cursor-not-allowed' : 'text-slate-700 cursor-pointer'} select-none" title="${isLockedRequired ? 'Core mandatory field' : 'Make this field required'}">
+                            <input type="checkbox" class="stu-cfg-required-chk w-4 h-4 text-rose-600 rounded" data-idx="${index}" ${field.required ? 'checked' : ''} ${(isLockedRequired || !field.visible) ? 'disabled' : ''}>
+                            <span>Required</span>
+                        </label>
+                        ${isSystem
+                            ? '<span class="w-8 h-8 rounded-lg bg-slate-100 text-slate-300 flex items-center justify-center text-xs" title="System fields cannot be deleted"><i class="fas fa-shield-halved"></i></span>'
+                            : `<button type="button" class="stu-cfg-delete-btn w-8 h-8 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center text-xs transition cursor-pointer" data-idx="${index}" title="Delete Custom Field"><i class="fas fa-trash-alt"></i></button>`}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+};
+
+const openStudentFieldsConfigModal = () => {
+    if (!requirePermission('students.manage')) return;
+    studentFieldsDraft = normalizeStudentFieldSchema(studentFieldSchema).map((f) => ({ ...f, options: [...(f.options || [])] }));
+    renderStudentFieldsConfigList();
+
+    const newLabelEl = document.getElementById('stu-cfg-new-label');
+    const newTypeEl = document.getElementById('stu-cfg-new-type');
+    const newReqEl = document.getElementById('stu-cfg-new-required');
+    const newOptsEl = document.getElementById('stu-cfg-new-options');
+    const newOptsWrap = document.getElementById('stu-cfg-new-options-wrap');
+    if (newLabelEl) newLabelEl.value = '';
+    if (newTypeEl) newTypeEl.value = 'text';
+    if (newReqEl) newReqEl.checked = false;
+    if (newOptsEl) newOptsEl.value = '';
+    if (newOptsWrap) newOptsWrap.classList.add('hidden');
+
+    const modal = document.getElementById('student-fields-config-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+};
+
+const closeStudentFieldsConfigModal = () => {
+    const modal = document.getElementById('student-fields-config-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+};
+
+(() => {
+    document.getElementById('open-student-fields-config-btn')?.addEventListener('click', openStudentFieldsConfigModal);
+    document.getElementById('student-fields-config-close')?.addEventListener('click', closeStudentFieldsConfigModal);
+    document.getElementById('stu-cfg-cancel-btn')?.addEventListener('click', closeStudentFieldsConfigModal);
+
+    document.getElementById('student-fields-config-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'student-fields-config-modal') closeStudentFieldsConfigModal();
+    });
+
+    document.getElementById('stu-cfg-new-type')?.addEventListener('change', (e) => {
+        const wrap = document.getElementById('stu-cfg-new-options-wrap');
+        if (wrap) wrap.classList.toggle('hidden', e.target.value !== 'select');
+    });
+
+    document.getElementById('stu-cfg-add-field-btn')?.addEventListener('click', () => {
+        const labelInput = document.getElementById('stu-cfg-new-label');
+        const typeSelect = document.getElementById('stu-cfg-new-type');
+        const reqChk = document.getElementById('stu-cfg-new-required');
+        const optsInput = document.getElementById('stu-cfg-new-options');
+
+        const label = String(labelInput?.value || '').trim();
+        const type = String(typeSelect?.value || 'text').trim();
+        const required = Boolean(reqChk?.checked);
+        const options = type === 'select' ? parseSelectOptions(optsInput?.value || '') : [];
+
+        if (!label) {
+            alert('Please enter a Field Label.');
+            labelInput?.focus();
+            return;
+        }
+        if (type === 'select' && options.length === 0) {
+            alert('Please provide at least one comma-separated option for the Dropdown field.');
+            optsInput?.focus();
+            return;
+        }
+
+        const existingKeys = studentFieldsDraft.map((f) => f.key);
+        const key = sanitizeCustomFieldKey(label, existingKeys);
+        studentFieldsDraft.push({
+            key,
+            label,
+            type,
+            system: false,
+            alwaysVisible: false,
+            alwaysRequired: false,
+            visible: true,
+            required,
+            order: studentFieldsDraft.length + 1,
+            loginEligible: type === 'phone',
+            options
+        });
+
+        if (labelInput) labelInput.value = '';
+        if (typeSelect) typeSelect.value = 'text';
+        if (reqChk) reqChk.checked = false;
+        if (optsInput) optsInput.value = '';
+        document.getElementById('stu-cfg-new-options-wrap')?.classList.add('hidden');
+        renderStudentFieldsConfigList();
+    });
+
+    const listEl = document.getElementById('stu-cfg-fields-list');
+    listEl?.addEventListener('click', (e) => {
+        const upBtn = e.target.closest('.stu-cfg-move-up');
+        if (upBtn) {
+            const idx = Number(upBtn.dataset.idx);
+            if (idx > 0 && idx < studentFieldsDraft.length) {
+                const temp = studentFieldsDraft[idx - 1];
+                studentFieldsDraft[idx - 1] = studentFieldsDraft[idx];
+                studentFieldsDraft[idx] = temp;
+                studentFieldsDraft.forEach((f, i) => { f.order = i + 1; });
+                renderStudentFieldsConfigList();
+            }
+            return;
+        }
+
+        const downBtn = e.target.closest('.stu-cfg-move-down');
+        if (downBtn) {
+            const idx = Number(downBtn.dataset.idx);
+            if (idx >= 0 && idx < studentFieldsDraft.length - 1) {
+                const temp = studentFieldsDraft[idx + 1];
+                studentFieldsDraft[idx + 1] = studentFieldsDraft[idx];
+                studentFieldsDraft[idx] = temp;
+                studentFieldsDraft.forEach((f, i) => { f.order = i + 1; });
+                renderStudentFieldsConfigList();
+            }
+            return;
+        }
+
+        const delBtn = e.target.closest('.stu-cfg-delete-btn');
+        if (delBtn) {
+            const idx = Number(delBtn.dataset.idx);
+            const target = studentFieldsDraft[idx];
+            if (!target || target.system) return;
+            if (!confirm(`Delete custom field "${target.label}"? Existing student records will keep historical data in the database, but this field will be removed from all forms and views.`)) return;
+            studentFieldsDraft.splice(idx, 1);
+            studentFieldsDraft.forEach((f, i) => { f.order = i + 1; });
+            renderStudentFieldsConfigList();
+        }
+    });
+
+    listEl?.addEventListener('change', (e) => {
+        const idx = Number(e.target.dataset?.idx);
+        if (!Number.isInteger(idx) || !studentFieldsDraft[idx]) return;
+        const field = studentFieldsDraft[idx];
+
+        if (e.target.classList.contains('stu-cfg-label-input')) {
+            const nextLabel = String(e.target.value || '').trim();
+            if (nextLabel) field.label = nextLabel;
+            else e.target.value = field.label;
+        } else if (e.target.classList.contains('stu-cfg-type-select') && !field.system) {
+            field.type = e.target.value;
+            field.loginEligible = field.type === 'phone';
+            if (field.type !== 'select') field.options = [];
+            renderStudentFieldsConfigList();
+        } else if (e.target.classList.contains('stu-cfg-options-input') && !field.system) {
+            field.options = parseSelectOptions(e.target.value);
+        } else if (e.target.classList.contains('stu-cfg-visible-chk') && !field.alwaysVisible) {
+            field.visible = Boolean(e.target.checked);
+            if (!field.visible && !field.alwaysRequired) field.required = false;
+            renderStudentFieldsConfigList();
+        } else if (e.target.classList.contains('stu-cfg-required-chk') && !field.alwaysRequired) {
+            field.required = Boolean(e.target.checked);
+        } else if (e.target.classList.contains('stu-cfg-order-input')) {
+            let targetPos = Math.max(1, Math.min(studentFieldsDraft.length, Math.round(Number(e.target.value) || (idx + 1))));
+            const [moved] = studentFieldsDraft.splice(idx, 1);
+            studentFieldsDraft.splice(targetPos - 1, 0, moved);
+            studentFieldsDraft.forEach((f, i) => { f.order = i + 1; });
+            renderStudentFieldsConfigList();
+        }
+    });
+
+    document.getElementById('stu-cfg-reset-btn')?.addEventListener('click', () => {
+        if (!confirm('Reset system field labels, visibility, required flags, and order to default? (Your custom fields will remain at the bottom unless deleted.)')) return;
+        const existingCustom = studentFieldsDraft.filter((f) => !f.system);
+        studentFieldsDraft = [
+            ...DEFAULT_STUDENT_FIELDS.map((f) => ({ ...f, options: [] })),
+            ...existingCustom.map((f, idx) => ({ ...f, order: DEFAULT_STUDENT_FIELDS.length + idx + 1 }))
+        ];
+        renderStudentFieldsConfigList();
+    });
+
+    document.getElementById('stu-cfg-save-btn')?.addEventListener('click', async () => {
+        if (!requirePermission('students.manage')) return;
+        const saveBtn = document.getElementById('stu-cfg-save-btn');
+        // Validate any select custom field has at least one option
+        const invalidSelect = studentFieldsDraft.find((f) => !f.system && f.type === 'select' && parseSelectOptions(f.options).length === 0);
+        if (invalidSelect) {
+            alert(`Please enter at least one dropdown option for "${invalidSelect.label}".`);
+            return;
+        }
+        const emptyLabel = studentFieldsDraft.find((f) => !String(f.label || '').trim());
+        if (emptyLabel) {
+            alert('All fields must have a non-empty label.');
+            return;
+        }
+
+        const prevPhoneKeys = getCustomPhoneFieldKeys(studentFieldSchema).sort().join(',');
+        const serialized = serializeStudentFieldSchema(studentFieldsDraft);
+        const nextNormalized = normalizeStudentFieldSchema(serialized);
+        const nextPhoneKeys = getCustomPhoneFieldKeys(nextNormalized).sort().join(',');
+
+        try {
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Saving...</span>';
+            }
+            await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), {
+                studentFields: serialized
+            }, { merge: true });
+
+            studentFieldSchema = nextNormalized;
+            latestConfigData = { ...latestConfigData, studentFields: serialized };
+            applyStudentFieldSchemaToForm('add-student-fields-grid', 'add-stu-', studentFieldSchema, {}, 'add');
+
+            // If custom phone fields were added/changed/removed, re-sync student phone arrays & auth lookup
+            if (prevPhoneKeys !== nextPhoneKeys && Array.isArray(rawStudents) && rawStudents.length > 0) {
+                await syncAllStudentsPhonesField(rawStudents, studentFieldSchema);
+                await syncAllStudentsLookupIndex(rawStudents);
+            }
+
+            await logAuditEvent({
+                category: 'settings',
+                action: 'settings.studentFields.update',
+                entityType: 'settings',
+                entityId: 'config',
+                message: `Updated student form fields configuration (${serialized.length} fields).`
+            });
+
+            closeStudentFieldsConfigModal();
+            showToast?.('Student form fields saved and synchronized across all portals.', 'success');
+        } catch (err) {
+            console.error('Failed to save student fields configuration:', err);
+            alert('Failed to save field settings: ' + (err.message || err));
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> <span>Save Field Settings</span>';
+            }
+        }
+    });
+})();
+
+// Apply initial default schema cleanly on boot
+applyStudentFieldSchemaToForm('add-student-fields-grid', 'add-stu-', studentFieldSchema, {}, 'add');
+
 document.getElementById('add-manual-btn')?.addEventListener('click', async () => {
     if(!requirePermission('students.manage')) return;
     const btn = document.getElementById('add-manual-btn');
@@ -7620,6 +8133,11 @@ document.getElementById('add-manual-btn')?.addEventListener('click', async () =>
     const name = (document.getElementById('add-stu-name')?.value || '').toUpperCase().trim();
     const gender = document.getElementById('add-stu-gender')?.value || 'Male';
     if(!cls || !name || !gender) return alert("Class, Name and Gender are mandatory.");
+
+    const { missing, customFields } = validateRequiredVisibleFields('add', 'add-student-fields-grid', 'add-stu-', studentFieldSchema);
+    if (missing.length > 0) {
+        return alert(`Please fill all required fields:\n- ${missing.join('\n- ')}`);
+    }
     if(!confirm("Are you sure you want to add this student?")) return;
 
     try {
@@ -7675,6 +8193,7 @@ document.getElementById('add-manual-btn')?.addEventListener('click', async () =>
             adhaar: adhaarVal,
             samasthaId: samasthaVal,
             photo: photoVal,
+            customFields: { ...customFields },
             profile: {
                 dob: dobVal,
                 address: addressVal,
@@ -7689,9 +8208,11 @@ document.getElementById('add-manual-btn')?.addEventListener('click', async () =>
                 mother: motherVal,
                 mobile: mobileVal,
                 motherMobile: motherMobileVal,
-                status: statusVal
+                status: statusVal,
+                customFields: { ...customFields }
             }
         };
+        nextStudent.phones = extractAllStudentPhones(nextStudent, studentFieldSchema, normalizePhone);
 
         const duplicateStudent = students.find((student) => student.class === cls && student.name === name && (student.adm || '') === nextStudent.adm && (student.uid || '') === nextStudent.uid);
         if (duplicateStudent) {
@@ -7714,6 +8235,9 @@ document.getElementById('add-manual-btn')?.addEventListener('click', async () =>
         ['add-stu-class','add-stu-uid','add-stu-name','add-stu-father','add-stu-mother','add-stu-mobile','add-stu-mother-mobile','add-stu-adm','add-stu-address','add-stu-photo', 'add-stu-dob', 'add-stu-adm-date', 'add-stu-adhaar', 'add-stu-samastha'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
+        });
+        document.querySelectorAll('#add-student-fields-grid [data-custom-field-key]').forEach((el) => {
+            el.value = '';
         });
         syncSmartSelectDisplay(document.getElementById('add-stu-class'));
         updateAdminPhotoWidgetPreview('', 'add-stu-photo-preview', 'add-stu-photo-placeholder', 'add-stu-remove-btn', 'add-stu-photo');
@@ -8494,6 +9018,7 @@ const openEditStudentModal = (studentId) => {
         setVal('e-stu-adhaar', prof.adhaar || st.adhaar || '');
         setVal('e-stu-samastha', prof.samasthaId || st.samasthaId || '');
         updateAdminPhotoWidgetPreview(st.photo || st.profile?.photo || '', 'e-stu-photo-preview', 'e-stu-photo-placeholder', 'e-stu-remove-btn', 'e-stu-photo');
+        applyStudentFieldSchemaToForm('edit-student-fields-grid', 'e-stu-', studentFieldSchema, getStudentCustomValuesMap(st), 'edit');
         const popup = document.getElementById('edit-student-popup');
         if (popup) {
             popup.classList.remove('hidden');
@@ -8510,6 +9035,11 @@ document.getElementById('edit-student-update')?.addEventListener('click', async 
     const nameVal = getVal('e-stu-name').toUpperCase();
     const genderVal = document.getElementById('e-stu-gender')?.value || 'Male';
     if(!updatedClass || !nameVal || !genderVal) return alert("Class, Name and Gender are mandatory.");
+
+    const { missing, customFields } = validateRequiredVisibleFields('edit', 'edit-student-fields-grid', 'e-stu-', studentFieldSchema);
+    if (missing.length > 0) {
+        return alert(`Please fill all required fields:\n- ${missing.join('\n- ')}`);
+    }
     if(!confirm("Are you sure you want to update this student's information?")) return;
     const photoVal = getVal('e-stu-photo');
     const dobVal = document.getElementById('e-stu-dob')?.value || '';
@@ -8520,6 +9050,10 @@ document.getElementById('edit-student-update')?.addEventListener('click', async 
     const finalStatus = isAlumniSelected ? 'Alumni' : normalizeStudentStatus(selectedStatus);
 
     const existingStudent = rawStudents.find((student) => student.id === editingStudentId) || {};
+    const mergedCustomFields = {
+        ...getStudentCustomValuesMap(existingStudent),
+        ...customFields
+    };
     const editPassedOutVal = document.getElementById('e-stu-passed-out-year')?.value?.trim();
     const effectivePassedOut = (isAlumniSelected || finalStatus === 'Alumni')
         ? (editPassedOutVal || existingStudent.passedOutYear || existingStudent.graduatedYear || activeAcademicYear || currentAcademicYear)
@@ -8546,6 +9080,7 @@ document.getElementById('edit-student-update')?.addEventListener('click', async 
         adhaar: adhaarVal,
         samasthaId: samasthaVal,
         photo: photoVal,
+        customFields: mergedCustomFields,
         profile: {
             dob: dobVal,
             address: getVal('e-stu-addr'),
@@ -8560,9 +9095,11 @@ document.getElementById('edit-student-update')?.addEventListener('click', async 
             mother: getVal('e-stu-mother').toUpperCase(),
             mobile: getVal('e-stu-mob'),
             motherMobile: getVal('e-stu-mother-mobile'),
-            status: finalStatus
+            status: finalStatus,
+            customFields: mergedCustomFields
         }
     };
+    updatedPayload.phones = extractAllStudentPhones(updatedPayload, studentFieldSchema, normalizePhone);
     const activeYearForEdit = activeAcademicYear || currentAcademicYear;
     const existingAcademicYears = existingStudent.academicYears || {};
     updatedPayload.academicYears = {
@@ -8649,27 +9186,22 @@ const sanitizeForFormulaInjection = (val) => {
 
 const buildStudentExportRows = () => {
     const selectedYear = document.getElementById('filter-manage-academic-year')?.value || getActiveAcademicYearLabel();
+    const visibleFields = getVisibleStudentFields(studentFieldSchema);
     return getManagedStudentsForExport().map((student, index) => {
-        const prof = student.profile || {};
-        return {
+        const row = {
             'Sl. No': index + 1,
-            'Academic Year': sanitizeForFormulaInjection(selectedYear),
-            'Photo': student.photo ? 'Yes' : 'No',
-            'Class': sanitizeForFormulaInjection(student.class || ''),
-            'ID/UID': sanitizeForFormulaInjection(student.uid || ''),
-            'Student Name': sanitizeForFormulaInjection(student.name || ''),
-            "Father's Name": sanitizeForFormulaInjection(student.father || ''),
-            "Mother's Name": sanitizeForFormulaInjection(student.mother || prof.mother || ''),
-            'Gender': sanitizeForFormulaInjection(student.gender || ''),
-            'Admission Number (Adm. No.)': sanitizeForFormulaInjection(student.adm || ''),
-            'Date of Birth': sanitizeForFormulaInjection(prof.dob || ''),
-            'Date of Admission': sanitizeForFormulaInjection(prof.admDate || ''),
-            'Student Status': sanitizeForFormulaInjection(normalizeStudentStatus(student.status)),
-            'Aadhaar Number': sanitizeForFormulaInjection(prof.adhaar || ''),
-            "Father's Phone Number": sanitizeForFormulaInjection(student.mobile || ''),
-            "Mother's Phone Number": sanitizeForFormulaInjection(student.motherMobile || prof.motherMobile || ''),
-            'Permanent Address': sanitizeForFormulaInjection(student.address || '')
+            'Academic Year': sanitizeForFormulaInjection(selectedYear)
         };
+        visibleFields.forEach((field) => {
+            if (field.key === 'photo') {
+                row[field.label] = student.photo ? 'Yes' : 'No';
+            } else if (field.key === 'status') {
+                row[field.label] = sanitizeForFormulaInjection(normalizeStudentStatus(student.status));
+            } else {
+                row[field.label] = sanitizeForFormulaInjection(getStudentFieldValue(student, field));
+            }
+        });
+        return row;
     });
 };
 const exportStudentsToExcel = () => {
@@ -8680,11 +9212,8 @@ const exportStudentsToExcel = () => {
     }
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
     const workbook = XLSX.utils.book_new();
-    worksheet['!cols'] = [
-        { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 28 }, { wch: 20 },
-        { wch: 20 }, { wch: 10 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 12 },
-        { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 32 }
-    ];
+    const keys = Object.keys(exportRows[0] || {});
+    worksheet['!cols'] = keys.map((k) => ({ wch: Math.max(k.length + 4, 14) }));
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
     XLSX.writeFile(workbook, `students-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
@@ -14988,6 +15517,42 @@ const openStudentDetailsModal = (studentId) => {
     setText('view-stu-mother-phone', motherPhone || 'Not recorded');
     setText('view-stu-address-val', address || 'No address provided');
 
+    // Sync visibility & labels with configured studentFieldSchema
+    modal.querySelectorAll('[data-stu-detail-field]').forEach((wrap) => {
+        const fKey = wrap.getAttribute('data-stu-detail-field');
+        const fieldDef = getStudentFieldByKey(studentFieldSchema, fKey);
+        if (!fieldDef) return;
+        wrap.classList.toggle('hidden', !fieldDef.visible);
+        const lblEl = wrap.querySelector(`[data-stu-detail-label="${fKey}"]`);
+        if (lblEl) lblEl.textContent = fieldDef.label;
+    });
+
+    // Render visible custom fields in configured order
+    const customSection = document.getElementById('view-stu-custom-fields-section');
+    const customGrid = document.getElementById('view-stu-custom-fields-grid');
+    if (customSection && customGrid) {
+        const visibleCustom = getCustomStudentFields(studentFieldSchema, { onlyVisible: true });
+        if (visibleCustom.length > 0) {
+            customSection.classList.remove('hidden');
+            customGrid.innerHTML = visibleCustom.map((cf) => {
+                const displayVal = formatStudentFieldDisplayValue(student, cf, '--');
+                const loginBadge = cf.type === 'phone'
+                    ? ' <span class="inline-flex items-center px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold ml-1">Login</span>'
+                    : '';
+                const isWide = cf.type === 'textarea';
+                return `
+                    <div class="${isWide ? 'col-span-2 sm:col-span-3' : ''}">
+                        <span class="block text-[11px] font-medium text-slate-500">${escapeHtml(cf.label)}${loginBadge}</span>
+                        <span class="font-semibold text-slate-900 text-sm mt-0.5 block ${cf.type === 'phone' || cf.type === 'number' || cf.type === 'date' ? 'font-mono tabular-nums' : ''} break-words whitespace-pre-wrap">${escapeHtml(displayVal)}</span>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            customSection.classList.add('hidden');
+            customGrid.innerHTML = '';
+        }
+    }
+
     // Concession Info
     const concVal = document.getElementById('view-stu-concession-val');
     const concAmt = document.getElementById('view-stu-concession-amt');
@@ -19370,6 +19935,9 @@ onAuthStateChanged(auth, async (user) => {
             if (photoUploadToggle) photoUploadToggle.checked = d.allowStudentPhotoUpload === true;
             const detailsEditToggle = document.getElementById('admin-toggle-student-details-edit');
             if (detailsEditToggle) detailsEditToggle.checked = d.allowStudentDetailsEdit === true;
+
+            studentFieldSchema = normalizeStudentFieldSchema(d.studentFields);
+            applyStudentFieldSchemaToForm('add-student-fields-grid', 'add-stu-', studentFieldSchema, {}, 'add');
 
             if (d.enabledModules && typeof d.enabledModules === 'object') {
                 localStorage.setItem('app_enabled_modules', JSON.stringify({ ...DEFAULT_ENABLED_MODULES, ...d.enabledModules }));
