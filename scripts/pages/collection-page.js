@@ -44,7 +44,7 @@ let currentUserEmail = '';
 let currentCollectorKey = '';
 let students = [], allStudentsRaw = [], allPayments = [], allDonations = [], classes = [], institutionalConfiguredClasses = [], studentGroups = [], feeItems = [], allStaff = [];
 let directoryEntries = [], directoryCategories = [], pageAccessConfig = { categories: {}, overrides: {} };
-let defaultFee = 200, defaultReceiptMandatory = false;
+let defaultFee = 200, defaultReceiptMandatory = false, defaultMonthlyFeeEnabled = true;
 let currentWorkingAcademicYear = getAcademicYearFromDate(new Date());
 let hasLoadedCollectionAcademicYears = false;
 if (typeof document !== 'undefined') {
@@ -405,6 +405,7 @@ const syncMasterLedgerState = (forceResetYear = false) => {
             payments: Array.isArray(allPayments) ? allPayments : [],
             classes: effectiveClasses,
             defaultFee: typeof defaultFee === 'number' ? defaultFee : 200,
+            defaultMonthlyFeeEnabled: defaultMonthlyFeeEnabled !== false,
             academicYear: currentWorkingAcademicYear || '',
             academicYearSettings: Array.isArray(academicYearSettings) ? academicYearSettings : [],
             forceResetYear
@@ -437,6 +438,7 @@ const syncFeeDuesState = (preferredClass, forceResetYear = false) => {
             isAdmin: isSuper,
             dutyClasses: isSuper ? [] : (Array.isArray(selectedDutyClasses) ? [...selectedDutyClasses] : []),
             defaultFee: typeof defaultFee === 'number' ? defaultFee : 200,
+            defaultMonthlyFeeEnabled: defaultMonthlyFeeEnabled !== false,
             academicYear: currentWorkingAcademicYear || '',
             academicYearSettings: Array.isArray(academicYearSettings) ? academicYearSettings : [],
             initialClass: activeClass,
@@ -1422,7 +1424,7 @@ window.openStudentProfile = (id) => {
                 photoAvatar.classList.remove('hidden');
             };
         } else {
-            photoImg.src = '';
+            photoImg.removeAttribute('src');
             photoImg.classList.add('hidden');
             photoAvatar.classList.remove('hidden');
         }
@@ -1667,7 +1669,7 @@ const openProfileHandler = (e) => {
         document.getElementById('my-prof-phone').textContent = myData.phone || '-';
         document.getElementById('my-prof-msr').textContent = myData.msr || '-';
         document.getElementById('my-prof-addr').textContent = myData.address || '-';
-        document.getElementById('my-prof-img').src = myData.photo || "https://via.placeholder.com/150";
+        document.getElementById('my-prof-img').src = myData.photo || "/assets/images/logo.png";
     } else if (staffAccess) {
         document.getElementById('my-prof-name').textContent = window.AppSession?.getStaffName?.() || 'Staff';
         document.getElementById('my-prof-role').textContent = staffAccess.role || staffAccess.type || 'Staff';
@@ -1675,7 +1677,7 @@ const openProfileHandler = (e) => {
         document.getElementById('my-prof-phone').textContent = staffAccess.phone || '-';
         document.getElementById('my-prof-msr').textContent = '-';
         document.getElementById('my-prof-addr').textContent = '-';
-        document.getElementById('my-prof-img').src = staffAccess.photo || "https://via.placeholder.com/150";
+        document.getElementById('my-prof-img').src = staffAccess.photo || "/assets/images/logo.png";
     } else if(isCurrentAdmin) {
         document.getElementById('my-prof-name').textContent = "Administrator";
         document.getElementById('my-prof-role').textContent = "Master Admin";
@@ -1683,7 +1685,7 @@ const openProfileHandler = (e) => {
         document.getElementById('my-prof-phone').textContent = "-";
         document.getElementById('my-prof-msr').textContent = "-";
         document.getElementById('my-prof-addr').textContent = "System Administrator Account";
-        document.getElementById('my-prof-img').src = "assets/images/logo.png";
+        document.getElementById('my-prof-img').src = "/assets/images/logo.png";
     }
     document.getElementById('my-profile-popup').classList.remove('hidden');
     document.getElementById('my-profile-popup').classList.add('flex');
@@ -2336,6 +2338,7 @@ const calculateStudentDuesForYear = (student, year) => {
         const itemYear = item.academicYear || getAcademicYearFromDate();
         if (itemYear !== year) return false;
         if (item.isVisible === false) return false;
+        if (!defaultMonthlyFeeEnabled && (item.type || 'month') === 'month') return false;
         return true;
     });
 
@@ -3150,6 +3153,7 @@ const getVisibleFeeItemsForCurrentStudentAndYear = () => {
         const itemYear = i.academicYear || getAcademicYearFromDate();
         if (selectedFeeAcademicYear && itemYear !== selectedFeeAcademicYear) return false;
         if (i.isVisible === false) return false;
+        if (!defaultMonthlyFeeEnabled && (i.type || 'month') === 'month') return false;
         if (i.type === 'custom' && st) {
             if (i.scope === 'specific' && targetClasses.length > 0 && i.targetClass && !targetClasses.includes(i.targetClass)) {
                 return false;
@@ -4087,7 +4091,10 @@ const populateFeeItemSelection = () => {
     const visibleItems = getVisibleFeeItemsForCurrentStudentAndYear();
 
     if (visibleItems.length === 0) {
-         container.innerHTML = '<div class="col-span-3 text-center text-xs font-semibold text-gray-400 py-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">No fee items available</div>';
+         const emptyMsg = !defaultMonthlyFeeEnabled
+             ? 'Default 12-Month Fee is disabled and no custom fee items are configured for this academic year.'
+             : 'No fee items available';
+         container.innerHTML = `<div class="col-span-3 text-center text-xs font-semibold text-gray-500 py-4 px-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">${emptyMsg}</div>`;
          document.getElementById('total-amount').value = 0;
          return;
     }
@@ -4995,6 +5002,11 @@ const downloadCollectionBulkTemplate = (format = 'xlsx') => {
     const filteredStudents = getBulkStudentsForClassAndYear(targetClass, year);
     if (filteredStudents.length === 0) {
         alert('No students found in this class for the selected academic year.');
+        return;
+    }
+
+    if (!defaultMonthlyFeeEnabled) {
+        alert('Default 12-Month Fee is currently disabled in Fee Settings & Setup. Bulk monthly upload template is unavailable while monthly fees are turned off.');
         return;
     }
 
@@ -5971,6 +5983,13 @@ const handleBulkFileSelection = (file) => {
 
             if (matrix.length < 2) {
                 alert('No fee rows found in the selected file.');
+                const fi = document.getElementById('bulk-file-input');
+                if (fi) fi.value = '';
+                return;
+            }
+
+            if (!defaultMonthlyFeeEnabled) {
+                alert('Default 12-Month Fee is currently disabled in Fee Settings & Setup. Bulk monthly upload is unavailable while monthly fees are turned off.');
                 const fi = document.getElementById('bulk-file-input');
                 if (fi) fi.value = '';
                 return;
@@ -9295,6 +9314,7 @@ initFinanceManagementModule({
     getStudentGroups: () => (Array.isArray(studentGroups) ? studentGroups : []),
     getFeeItems: () => (Array.isArray(feeItems) ? feeItems : []),
     getDefaultFee: () => defaultFee,
+    isDefaultMonthlyFeeEnabled: () => defaultMonthlyFeeEnabled !== false,
     getAcademicYear: () => currentWorkingAcademicYear || selectedFeeAcademicYear || '',
     getUserEmail: () => getEffectiveStaffEmail() || currentUserEmail || '',
     getCollectorKey: () => getCollectorKey(),
@@ -9603,6 +9623,7 @@ onAuthStateChanged(auth, async (user) => {
             setTimeout(() => { fitTextToContainer('header-title'); }, 50);
 
             studentFieldSchema = normalizeStudentFieldSchema(d.studentFields);
+            defaultMonthlyFeeEnabled = d.defaultMonthlyFeeEnabled !== false;
             defaultFee = d.defaultFee || 200;
             feeItems = sortFeeItemsForDisplay(d.feeItems || []);
             defaultReceiptMandatory = d.defaultReceiptMandatory || false;
@@ -9611,12 +9632,16 @@ onAuthStateChanged(auth, async (user) => {
             syncFeeDuesState();
             syncMasterLedgerState();
 
+            window.defaultMonthlyFeeEnabled = defaultMonthlyFeeEnabled;
             window.defaultFee = defaultFee;
             window.feeItems = feeItems;
             window.defaultReceiptMandatory = defaultReceiptMandatory;
             window.getNextReceiptNoForStaff = getNextReceiptNoForStaff;
             window.getCollectorKey = getCollectorKey;
             checkReceiptMandatory();
+            if (selectedStudentId && !isEditMode) {
+                populateFeeItemSelection();
+            }
             refreshVisibleViewOnDataUpdate();
         }
     });

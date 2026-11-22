@@ -17,6 +17,7 @@ let duesPayments = [];
 let duesFeeItems = [];
 let duesClasses = [];
 let duesDefaultFee = 200;
+let duesMonthlyFeeEnabled = true;
 let duesAcademicYear = '';
 let duesAcademicYearSettings = [];
 let duesIsAdmin = true;
@@ -168,6 +169,7 @@ const calculateStudentPastDues = (student, currentTargetYear) => {
     pastYears.forEach(pastYear => {
         const yearItems = (duesFeeItems || []).filter(item => {
             const itemYear = item.academicYear || '';
+            if (!duesMonthlyFeeEnabled && (item.type || 'month') !== 'custom') return false;
             return itemYear === pastYear && item.isVisible !== false;
         });
 
@@ -261,26 +263,28 @@ export const calculateStudentDueDetails = (student, targetYear, activeCutoffMont
     const unpaidMonths = [];
     let currentMonthlyDuesTotal = 0;
 
-    activeCutoffMonths.forEach(monthShort => {
-        // Find if this month is paid
-        const isPaid = (duesPayments || []).some(p => {
-            const pYear = String(p.academicYear || '').trim();
-            if (pYear && targetYear && pYear !== targetYear) return false;
-            const matchesMonth = isMonthMatch(p.itemKey, monthShort);
-            if (!matchesMonth) return false;
+    if (duesMonthlyFeeEnabled) {
+        activeCutoffMonths.forEach(monthShort => {
+            // Find if this month is paid
+            const isPaid = (duesPayments || []).some(p => {
+                const pYear = String(p.academicYear || '').trim();
+                if (pYear && targetYear && pYear !== targetYear) return false;
+                const matchesMonth = isMonthMatch(p.itemKey, monthShort);
+                if (!matchesMonth) return false;
 
-            if (isGroupMember && p.billingGroupId === group.id) return true;
-            if (p.studentId === student.id || (student.adm && p.admissionNo === student.adm)) return true;
-            if (isGroupMember && Array.isArray(group.memberIds) && group.memberIds.includes(p.studentId)) return true;
+                if (isGroupMember && p.billingGroupId === group.id) return true;
+                if (p.studentId === student.id || (student.adm && p.admissionNo === student.adm)) return true;
+                if (isGroupMember && Array.isArray(group.memberIds) && group.memberIds.includes(p.studentId)) return true;
 
-            return false;
+                return false;
+            });
+
+            if (!isPaid) {
+                unpaidMonths.push(monthShort);
+                currentMonthlyDuesTotal += effectiveMonthlyFee;
+            }
         });
-
-        if (!isPaid) {
-            unpaidMonths.push(monthShort);
-            currentMonthlyDuesTotal += effectiveMonthlyFee;
-        }
-    });
+    }
 
     // Check custom fee items for current academic year
     const yearCustomItems = (duesFeeItems || []).filter(item => {
@@ -502,7 +506,9 @@ export const renderFeeDues = () => {
     const activeCutoffMonths = getActiveCutoffMonths(targetYear);
     const cutoffBadge = document.getElementById('dues-cutoff-badge');
     if (cutoffBadge) {
-        cutoffBadge.textContent = `${activeCutoffMonths.length} Months (${activeCutoffMonths[0]} - ${activeCutoffMonths[activeCutoffMonths.length - 1]})`;
+        cutoffBadge.textContent = duesMonthlyFeeEnabled
+            ? `${activeCutoffMonths.length} Months (${activeCutoffMonths[0]} - ${activeCutoffMonths[activeCutoffMonths.length - 1]})`
+            : 'Custom Fees Only (Monthly Disabled)';
     }
 
     // 4. Render Table
@@ -537,7 +543,7 @@ export const renderFeeDues = () => {
                         <th class="py-2 sm:py-3 px-2 sm:px-3 min-w-[155px] sm:min-w-[180px]">Student Details</th>
                         <th class="py-2 sm:py-3 px-2 sm:px-3 w-16 sm:w-20 text-center">Class</th>
                         <th class="py-2 sm:py-3 px-2 sm:px-3 min-w-[155px] sm:min-w-[180px]">Guardian &amp; Phone</th>
-                        <th class="py-2 sm:py-3 px-2 sm:px-3 min-w-[140px] sm:min-w-[160px]">Unpaid Months (${escapeHtml(targetYear)})</th>
+                        <th class="py-2 sm:py-3 px-2 sm:px-3 min-w-[140px] sm:min-w-[160px]">${duesMonthlyFeeEnabled ? 'Unpaid Months' : 'Unpaid Fee Items'} (${escapeHtml(targetYear)})</th>
                         <th class="py-2 sm:py-3 px-2 sm:px-3 text-right min-w-[90px] sm:min-w-[100px]">Current Due</th>
                         <th class="py-2 sm:py-3 px-2 sm:px-3 text-right min-w-[90px] sm:min-w-[100px]">Past Dues</th>
                         <th class="py-2 sm:py-3 px-2 sm:px-3 text-right min-w-[95px] sm:min-w-[110px]">Total Due</th>
@@ -561,9 +567,11 @@ export const renderFeeDues = () => {
             ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 ml-1" title="Monthly Concession: ${item.concessionFee}"><i class="fas fa-tag text-[8px]"></i>Concession</span>`
             : '';
 
-        // Unpaid months pills
-        const unpaidPills = item.unpaidMonths.length
-            ? item.unpaidMonths.map(m => `<span class="inline-block px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[10px] font-bold m-0.5">${escapeHtml(m)}</span>`).join('')
+        // Unpaid months & custom fee items pills
+        const monthPillsHtml = item.unpaidMonths.map(m => `<span class="inline-block px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[10px] font-bold m-0.5">${escapeHtml(m)}</span>`).join('');
+        const customPillsHtml = (item.unpaidCustomItems || []).map(c => `<span class="inline-block px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded text-[10px] font-bold m-0.5">${escapeHtml(c.name)}</span>`).join('');
+        const unpaidPills = (monthPillsHtml || customPillsHtml)
+            ? `${monthPillsHtml}${customPillsHtml}`
             : '<span class="text-slate-400 italic">None</span>';
 
         // Past dues breakdown
@@ -574,7 +582,14 @@ export const renderFeeDues = () => {
         // WhatsApp prefilled message
         const cleanPhone = String(item.phone || '').replace(/\D/g, '');
         const instName = document.getElementById('header-title')?.textContent?.trim() || 'Institution';
-        const waMsg = encodeURIComponent(`Dear Guardian, Fee due reminder from ${instName} for ${item.name} (Class: ${item.class}, Adm: ${item.adm}). Pending Dues: ${formatAmount(item.grandTotalDue)} (Unpaid Months: ${item.unpaidMonths.join(', ')}). Please clear at the earliest. Thank you.`);
+        const unpaidLabelList = [
+            ...item.unpaidMonths,
+            ...(item.unpaidCustomItems || []).map(c => c.name)
+        ].filter(Boolean);
+        const waItemsPart = unpaidLabelList.length
+            ? ` (${duesMonthlyFeeEnabled ? 'Unpaid' : 'Unpaid Fees'}: ${unpaidLabelList.join(', ')})`
+            : '';
+        const waMsg = encodeURIComponent(`Dear Guardian, Fee due reminder from ${instName} for ${item.name} (Class: ${item.class}, Adm: ${item.adm}). Pending Dues: ${formatAmount(item.grandTotalDue)}${waItemsPart}. Please clear at the earliest. Thank you.`);
         const waLink = cleanPhone ? `https://wa.me/91${cleanPhone.length === 10 ? cleanPhone : cleanPhone.slice(-10)}?text=${waMsg}` : '#';
 
         tableHtml += `
@@ -776,7 +791,9 @@ export const exportFeeDuesPdfWithOptions = ({ includeClass = false, includeGuard
     docPdf.setFontSize(8);
     docPdf.setTextColor(71, 85, 105);
     const classScopeText = filters.classFilter && filters.classFilter !== 'all' ? `Class: ${filters.classFilter}` : 'All Classes';
-    const periodText = `Period: ${activeCutoffMonths[0]} - ${activeCutoffMonths[activeCutoffMonths.length - 1]}`;
+    const periodText = duesMonthlyFeeEnabled
+        ? `Period: ${activeCutoffMonths[0]} - ${activeCutoffMonths[activeCutoffMonths.length - 1]}`
+        : 'Scope: Custom Fees Only (Monthly Disabled)';
     const metaStr = `${classScopeText} | ${periodText} | Generated: ${new Date().toLocaleString('en-GB')} | Total Defaulters: ${allDues.length}`;
     docPdf.text(metaStr, pageWidth - 20, 58, { align: 'right' });
 
@@ -801,13 +818,17 @@ export const exportFeeDuesPdfWithOptions = ({ includeClass = false, includeGuard
         const cols = ['NO', 'ADM', genderTitle];
         if (includeClass) cols.push('CLASS');
         if (includeGuardianPhone) cols.push('GUARDIAN & PHONE');
-        cols.push('UNPAID MONTHS', 'CURRENT DUE', 'PAST DUES', 'TOTAL DUE');
+        cols.push(duesMonthlyFeeEnabled ? 'UNPAID MONTHS' : 'UNPAID FEE ITEMS', 'CURRENT DUE', 'PAST DUES', 'TOTAL DUE');
         return [cols];
     };
 
     const buildRows = (students = []) => {
         return sortStudents(students).map((item, idx) => {
-            const unpaidMonthsStr = item.unpaidMonths.join(', ') || 'None';
+            const unpaidCombined = [
+                ...item.unpaidMonths,
+                ...(item.unpaidCustomItems || []).map(c => c.name)
+            ].filter(Boolean);
+            const unpaidMonthsStr = unpaidCombined.join(', ') || 'None';
             const pastStr = item.pastYearsBreakdown.length
                 ? item.pastYearsBreakdown.map(b => `${b.year}: ${formatAmount(b.amount)}`).join('\n')
                 : '0';
@@ -1052,10 +1073,14 @@ export const exportFeeDuesExcel = () => {
 
     const targetYear = filters.academicYear || duesAcademicYear;
     const rows = [
-        ['SL NO', 'ADMISSION NO', 'STUDENT NAME', 'CLASS', 'GENDER', 'GUARDIAN NAME', 'PHONE NUMBER', 'UNPAID MONTHS', 'CURRENT YEAR DUE (INR)', 'PAST YEARS DUE (INR)', 'TOTAL OUTSTANDING (INR)', 'ACADEMIC YEAR']
+        ['SL NO', 'ADMISSION NO', 'STUDENT NAME', 'CLASS', 'GENDER', 'GUARDIAN NAME', 'PHONE NUMBER', duesMonthlyFeeEnabled ? 'UNPAID MONTHS' : 'UNPAID FEE ITEMS', 'CURRENT YEAR DUE (INR)', 'PAST YEARS DUE (INR)', 'TOTAL OUTSTANDING (INR)', 'ACADEMIC YEAR']
     ];
 
     allDues.forEach((item, idx) => {
+        const unpaidCombined = [
+            ...item.unpaidMonths,
+            ...(item.unpaidCustomItems || []).map(c => c.name)
+        ].filter(Boolean);
         rows.push([
             idx + 1,
             item.adm,
@@ -1064,7 +1089,7 @@ export const exportFeeDuesExcel = () => {
             item.gender,
             item.guardian,
             item.phone,
-            item.unpaidMonths.join(', '),
+            unpaidCombined.join(', '),
             item.currentYearTotalDue,
             item.pastYearsDue,
             item.grandTotalDue,
@@ -1279,6 +1304,7 @@ export const updateFeeDuesData = ({
     feeItems,
     classes,
     defaultFee,
+    defaultMonthlyFeeEnabled,
     academicYear,
     academicYearSettings,
     isAdmin,
@@ -1295,6 +1321,7 @@ export const updateFeeDuesData = ({
     if (Array.isArray(feeItems)) duesFeeItems = feeItems;
     if (Array.isArray(classes)) duesClasses = classes;
     if (typeof defaultFee === 'number') duesDefaultFee = defaultFee;
+    if (typeof defaultMonthlyFeeEnabled === 'boolean') duesMonthlyFeeEnabled = defaultMonthlyFeeEnabled;
     if (forceResetYear) {
         filters.academicYear = '';
         const yearSelect = document.getElementById('dues-academic-year-select');

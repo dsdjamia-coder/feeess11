@@ -20,6 +20,7 @@ let ledgerGroups = [];
 let ledgerPayments = [];
 let ledgerClasses = ['+2', '+1', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
 let ledgerDefaultFee = 200;
+let ledgerMonthlyFeeEnabled = true;
 let ledgerAcademicYear = '';
 let isInitialized = false;
 
@@ -657,6 +658,35 @@ const renderLedgerTable = (options = {}) => {
     const preserveScroll = Boolean(options && options.preserveScroll);
     const tableContainer = document.getElementById('master-ledger-table-container');
     if (!tableContainer) return;
+
+    if (!ledgerMonthlyFeeEnabled) {
+        selectedLedgerCells.clear();
+        updateLedgerBulkActionButtons();
+        tableContainer.innerHTML = `
+            <div class="py-14 px-5 text-center max-w-lg mx-auto bg-white rounded-2xl border border-amber-200 shadow-xs my-2">
+                <div class="w-14 h-14 mx-auto mb-3.5 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center text-2xl shadow-2xs">
+                    <i class="fas fa-calendar-times"></i>
+                </div>
+                <h3 class="text-base font-extrabold text-slate-900 mb-1.5">Default Monthly Fee (12 Months) is Disabled</h3>
+                <p class="text-xs text-slate-600 leading-relaxed mb-5">This institution has turned off recurring 12-month tuition fees in Fee Settings &amp; Setup. Custom fee items can be collected from Collection Entry and monitored in Fee Dues, while all past monthly payment records remain safely preserved in Payment History and Reports.</p>
+                <div class="flex flex-wrap items-center justify-center gap-2.5">
+                    <button type="button" id="ledger-go-entry-btn" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition cursor-pointer inline-flex items-center gap-1.5">
+                        <i class="fas fa-cash-register"></i> Go to Collection Entry
+                    </button>
+                    <button type="button" id="ledger-go-settings-btn" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5">
+                        <i class="fas fa-sliders-h"></i> Open Fee Settings
+                    </button>
+                </div>
+            </div>
+        `;
+        document.getElementById('ledger-go-entry-btn')?.addEventListener('click', () => {
+            document.querySelector('.nav-link[data-target="home-page"]')?.click();
+        });
+        document.getElementById('ledger-go-settings-btn')?.addEventListener('click', () => {
+            document.querySelector('.nav-link[data-target="fee-settings-page"]')?.click();
+        });
+        return;
+    }
 
     if (!filters.classFilter) {
         selectedLedgerCells.clear();
@@ -1730,7 +1760,7 @@ const resetFilters = () => {
 };
 
 // Public update hook to sync with collection-page.js data
-export const updateMasterLedgerData = ({ students, allStudents, rawStudents, dutyClasses, groups, payments, classes, defaultFee, academicYear, academicYearSettings, forceResetYear = false }) => {
+export const updateMasterLedgerData = ({ students, allStudents, rawStudents, dutyClasses, groups, payments, classes, defaultFee, defaultMonthlyFeeEnabled, academicYear, academicYearSettings, forceResetYear = false }) => {
     if (Array.isArray(students)) ledgerStudents = students;
     if (Array.isArray(allStudents)) ledgerAllStudents = allStudents;
     else if (Array.isArray(students) && ledgerAllStudents.length === 0) ledgerAllStudents = students;
@@ -1740,6 +1770,7 @@ export const updateMasterLedgerData = ({ students, allStudents, rawStudents, dut
     if (Array.isArray(payments)) ledgerPayments = payments;
     if (Array.isArray(classes)) ledgerClasses = classes;
     if (typeof defaultFee === 'number') ledgerDefaultFee = defaultFee;
+    if (typeof defaultMonthlyFeeEnabled === 'boolean') ledgerMonthlyFeeEnabled = defaultMonthlyFeeEnabled;
     if (forceResetYear) {
         filters.academicYear = '';
         const yearSelect = document.getElementById('ledger-academic-year-select');

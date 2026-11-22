@@ -174,23 +174,13 @@ export const applyFinanceSettingsAccessUI = () => {
     // 1. Structure -> Default Configuration (Admin Only)
     document.getElementById('default-fee-readonly-badge')?.classList.toggle('hidden', admin);
     document.getElementById('save-fee-config-btn')?.classList.toggle('hidden', !admin);
-    [
-        'default-fee-input',
-        'fee-collect-start-day',
-        'fee-collect-end-day',
-        'fee-notify-mode',
-        'fee-notify-days-before',
-        'default-fee-receipt-req'
-    ].forEach((id) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.disabled = !admin;
-        el.classList.toggle('opacity-75', !admin);
-        el.classList.toggle('cursor-not-allowed', !admin);
-        if (el.tagName === 'SELECT') {
-            syncSmartSelectDisplay(el);
-        }
-    });
+    const monthlyToggleEl = document.getElementById('default-monthly-fee-enabled');
+    if (monthlyToggleEl) {
+        monthlyToggleEl.disabled = !admin;
+        monthlyToggleEl.classList.toggle('opacity-75', !admin);
+        monthlyToggleEl.classList.toggle('cursor-not-allowed', !admin);
+    }
+    updateDefaultMonthlyFeeToggleUI();
 
     // 2. Structure -> Advanced Fee Builder & Active Items Reorder Hint
     document.getElementById('adv-fee-scope-note-badge')?.classList.toggle('hidden', admin);
@@ -364,10 +354,19 @@ export const renderFeeItemsManagement = () => {
         </div>`;
     };
 
+    const monthlyEnabled = ctx.isDefaultMonthlyFeeEnabled ? ctx.isDefaultMonthlyFeeEnabled() !== false : true;
+    const monthlyStatusBadge = monthlyEnabled
+        ? ''
+        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 normal-case tracking-normal"><i class="fas fa-ban text-[9px]"></i> Disabled</span>`;
+    const monthlyDisabledHint = monthlyEnabled
+        ? ''
+        : `<p class="text-[11px] sm:text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2.5 font-semibold"><i class="fas fa-info-circle mr-1.5 text-amber-600"></i>Default 12-Month Fee is turned off in Default Configuration. Custom fee items below remain active.</p>`;
+
     cont.innerHTML = `
         <div class="mb-3.5 sm:mb-5">
-            <h4 class="text-xs sm:text-sm font-bold text-blue-800 mb-2 sm:mb-2.5 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2"><i class="fas fa-calendar-check text-blue-600"></i> Default Months (${escapeHtml(activeYear || '--')})</h4>
-            <div id="fee-items-monthly-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
+            <h4 class="text-xs sm:text-sm font-bold text-blue-800 mb-2 sm:mb-2.5 uppercase tracking-wider flex items-center gap-1.5 sm:gap-2 flex-wrap"><i class="fas fa-calendar-check text-blue-600"></i> Default Months (${escapeHtml(activeYear || '--')}) ${monthlyStatusBadge}</h4>
+            ${monthlyDisabledHint}
+            <div id="fee-items-monthly-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 ${monthlyEnabled ? '' : 'opacity-50 pointer-events-none select-none'}">
                 ${monthlyItems.map(renderMonthlyItemCard).join('') || '<p class="text-xs text-gray-500 italic col-span-full">Monthly defaults are not available.</p>'}
             </div>
         </div>
@@ -405,7 +404,47 @@ export const renderFeeItemsManagement = () => {
     }
 };
 
+function updateDefaultMonthlyFeeToggleUI() {
+    const toggleEl = document.getElementById('default-monthly-fee-enabled');
+    const badgeEl = document.getElementById('default-monthly-fee-status-badge');
+    const noticeEl = document.getElementById('default-monthly-fee-disabled-notice');
+    const fieldsWrap = document.getElementById('default-monthly-fee-fields-wrap');
+    const enabled = toggleEl ? toggleEl.checked : true;
+    const admin = isUserAdmin();
+
+    if (badgeEl) {
+        badgeEl.textContent = enabled ? 'Active' : 'Disabled';
+        badgeEl.className = enabled
+            ? 'inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full'
+            : 'inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full';
+    }
+    noticeEl?.classList.toggle('hidden', enabled);
+    if (fieldsWrap) {
+        fieldsWrap.classList.toggle('opacity-55', !enabled);
+        fieldsWrap.classList.toggle('pointer-events-none', !enabled);
+    }
+    [
+        'default-fee-input',
+        'fee-collect-start-day',
+        'fee-collect-end-day',
+        'fee-notify-mode',
+        'fee-notify-days-before',
+        'default-fee-receipt-req'
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const shouldDisable = !admin || !enabled;
+        el.disabled = shouldDisable;
+        el.classList.toggle('opacity-75', shouldDisable);
+        el.classList.toggle('cursor-not-allowed', shouldDisable);
+        if (el.tagName === 'SELECT') {
+            syncSmartSelectDisplay(el);
+        }
+    });
+}
+
 export const syncFeeConfigUI = (data = {}) => {
+    const monthlyToggleEl = document.getElementById('default-monthly-fee-enabled');
     const defFeeInput = document.getElementById('default-fee-input');
     const reqCheckbox = document.getElementById('default-fee-receipt-req');
     const startDaySelect = document.getElementById('fee-collect-start-day');
@@ -413,6 +452,7 @@ export const syncFeeConfigUI = (data = {}) => {
     const notifyModeSelect = document.getElementById('fee-notify-mode');
     const notifyDaysInput = document.getElementById('fee-notify-days-before');
 
+    if (monthlyToggleEl) monthlyToggleEl.checked = data.defaultMonthlyFeeEnabled !== false;
     if (defFeeInput && data.defaultFee !== undefined) defFeeInput.value = data.defaultFee;
     if (reqCheckbox && data.defaultReceiptMandatory !== undefined) reqCheckbox.checked = !!data.defaultReceiptMandatory;
 
@@ -434,6 +474,7 @@ export const syncFeeConfigUI = (data = {}) => {
     }
     if (notifyDaysInput && daysVal !== undefined) notifyDaysInput.value = daysVal;
 
+    updateDefaultMonthlyFeeToggleUI();
     updateFeeScheduleSummary();
 };
 
@@ -475,6 +516,7 @@ const saveFeeConfiguration = async () => {
         showToast('Only administrators can modify default fee settings.', 'warn');
         return;
     }
+    const monthlyToggleEl = document.getElementById('default-monthly-fee-enabled');
     const defFeeInput = document.getElementById('default-fee-input');
     const reqCheckbox = document.getElementById('default-fee-receipt-req');
     const startDaySelect = document.getElementById('fee-collect-start-day');
@@ -482,6 +524,7 @@ const saveFeeConfiguration = async () => {
     const notifyModeSelect = document.getElementById('fee-notify-mode');
     const notifyDaysInput = document.getElementById('fee-notify-days-before');
 
+    const defaultMonthlyFeeEnabled = monthlyToggleEl ? monthlyToggleEl.checked : true;
     const defaultFee = parseFloat(defFeeInput?.value) || 0;
     const defaultReceiptMandatory = !!reqCheckbox?.checked;
 
@@ -491,6 +534,7 @@ const saveFeeConfiguration = async () => {
     const notifyDaysBefore = parseInt(notifyDaysInput?.value || '5', 10);
 
     const payload = {
+        defaultMonthlyFeeEnabled,
         defaultFee,
         defaultReceiptMandatory,
         feeCollectionStartDay: startDay,
@@ -507,7 +551,13 @@ const saveFeeConfiguration = async () => {
 
     try {
         await setDoc(doc(db, `${BASE_PATH}/settings`, 'config'), payload, { merge: true });
-        await logAudit('fee', 'config.save', 'feeConfig', 'config', `Fee config updated. Default Fee: ₹${defaultFee}.`);
+        await logAudit(
+            'fee',
+            'config.save',
+            'feeConfig',
+            'config',
+            `Fee config updated. Default Monthly Fee (12 Months): ${defaultMonthlyFeeEnabled ? 'Enabled' : 'Disabled'}, Default Fee: ₹${defaultFee}.`
+        );
         showToast('Fee configuration successfully saved!', 'success');
     } catch (err) {
         console.error('Error saving fee config:', err);
@@ -1438,6 +1488,7 @@ export const initFinanceManagementModule = (stateContext) => {
 
     // --- Fee Settings Listeners ---
     document.getElementById('save-fee-config-btn')?.addEventListener('click', saveFeeConfiguration);
+    document.getElementById('default-monthly-fee-enabled')?.addEventListener('change', updateDefaultMonthlyFeeToggleUI);
 
     ['fee-collect-start-day', 'fee-collect-end-day', 'fee-notify-mode', 'fee-notify-days-before'].forEach((id) => {
         document.getElementById(id)?.addEventListener('change', updateFeeScheduleSummary);

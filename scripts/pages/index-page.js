@@ -474,7 +474,7 @@ let isRootGatewayMode = false;
                 if (whatsappBtn) whatsappBtn.style.display = 'none';
             }
             document.getElementById('modal-address').textContent = address || 'Not Available';
-            document.getElementById('modal-img').src = (img && img.startsWith('data:')) ? img : (sanitizeUrl(img) || 'https://via.placeholder.com/150?text=User');
+            document.getElementById('modal-img').src = (img && img.startsWith('data:')) ? img : (sanitizeUrl(img) || '/assets/images/logo.png');
             document.getElementById('person-modal').style.display = 'flex';
         };
 
@@ -763,7 +763,7 @@ let isRootGatewayMode = false;
                         const values = entry.values || {};
                         const nameValue = String(values.name || values.Name || values.title || 'Profile');
                         const rawPhoto = values.photo || values.Photo || values.image || values.img || '';
-                        const photoValue = (rawPhoto && rawPhoto.startsWith('data:')) ? rawPhoto : (sanitizeUrl(rawPhoto) || 'https://via.placeholder.com/150?text=User');
+                        const photoValue = (rawPhoto && rawPhoto.startsWith('data:')) ? rawPhoto : (sanitizeUrl(rawPhoto) || '/assets/images/logo.png');
                         const phoneValue = String(values.phone || values.mobile || values.contact || '');
                         const addressValue = String(values.address || values.place || '');
                         const roleField = fields.find((field) => !['name', 'role', 'photo', 'phone', 'address'].includes(String(field.key || '').toLowerCase()));
@@ -1707,7 +1707,7 @@ let isRootGatewayMode = false;
                         if (heroBtn) heroBtn.classList.remove('hidden'); 
                         
                         document.getElementById(id).innerHTML = list.map((p) => {
-                            const safePhoto = (p.photo && p.photo.startsWith('data:')) ? p.photo : (sanitizeUrl(p.photo) || 'https://via.placeholder.com/150?text=User');
+                            const safePhoto = (p.photo && p.photo.startsWith('data:')) ? p.photo : (sanitizeUrl(p.photo) || '/assets/images/logo.png');
                             return `<button type="button" class="person-card" data-person-name="${escapeHtml(p.name || '')}" data-person-role="${escapeHtml(p.role || '')}" data-person-phone="${escapeHtml(p.phone || '')}" data-person-img="${escapeHtml(safePhoto)}" data-person-address="${escapeHtml(p.address || '')}"><img src="${safePhoto}" class="person-img" alt="${escapeHtml(p.name || 'Staff member')}"><div class="person-name">${escapeHtml(p.name)}</div><div class="person-role">${escapeHtml(p.role)}</div></button>`;
                         }).join('');
                     }

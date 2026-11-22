@@ -1325,6 +1325,7 @@ registerServiceWorker();
         let feeItems = [], allPayments = [], siblingPayments = [], studentGroups = [], allStaff = [];
         let groupMemberProfileMap = {};
         let defaultFee = 200;
+        let defaultMonthlyFeeEnabled = true;
         let feeCollectionConfig = {
             startDay: 1,
             endDay: 10,
@@ -1602,6 +1603,7 @@ registerServiceWorker();
             const visibleItems = currentYearFeeItems.filter((item) => {
                 if(item.isVisible === false) return false;
                 if(item.key === STUDENT_DONATION_ITEM_KEY) return false;
+                if(!defaultMonthlyFeeEnabled && (!item.type || item.type === 'month')) return false;
                 if(item.type === 'custom' && item.scope === 'specific' && item.targetClass !== classLabel) return false;
                 return true;
             });
@@ -5152,6 +5154,9 @@ registerServiceWorker();
 
             const visibleItems = currentYearFeeItems.filter(i => {
                 if(i.isVisible === false) return false;
+                if(!defaultMonthlyFeeEnabled && (!i.type || i.type === 'month')) {
+                    return Boolean(getMatchedStudentPayment(i));
+                }
                 if(i.type === 'custom' && i.scope === 'specific' && i.targetClass !== classLabel) return false;
                 return true;
             });
@@ -7594,6 +7599,7 @@ registerServiceWorker();
                     setTimeout(() => { fitText('header-title'); }, 50);
                     renderVersionInfo();
                     defaultFee = conf.defaultFee || 200;
+                    defaultMonthlyFeeEnabled = conf.defaultMonthlyFeeEnabled !== false;
                     const winCfg = conf.feeCollectionWindow || {};
                     feeCollectionConfig = {
                         startDay: Math.min(31, Math.max(1, parseInt(winCfg.startDay ?? conf.feeCollectionStartDay, 10) || 1)),

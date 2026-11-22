@@ -5481,7 +5481,7 @@ const renderStaffList = () => {
         return String(a?.name || '').localeCompare(String(b?.name || ''));
     });
     const buildHTML = (list, isAct) => list.map((staffMember) => {
-        const safePhoto = resolveSafePhotoUrl(staffMember.photo, 'https://via.placeholder.com/60?text=Staff');
+        const safePhoto = resolveSafePhotoUrl(staffMember.photo, '/assets/images/logo.png');
         const typeLabel = getStaffTypeLabel(staffMember.type);
         const categoryFields = getActiveFieldsForCategory(staffMember.type);
         const customBadges = categoryFields
@@ -5597,7 +5597,7 @@ window.openStaffDetailsModal = (id) => {
     const container = document.getElementById('staff-details-content');
     if (!modal || !container) return;
 
-    const safePhoto = resolveSafePhotoUrl(s.photo, 'https://via.placeholder.com/80?text=Staff');
+    const safePhoto = resolveSafePhotoUrl(s.photo, '/assets/images/logo.png');
     const typeLabel = getStaffTypeLabel(s.type);
     const categoryFields = getActiveFieldsForCategory(s.type);
 
@@ -16543,7 +16543,7 @@ const renderWebGallery = () => {
     if (!galleryListEl) return;
 
     galleryListEl.innerHTML = webContent.gallery.length === 0 ? '<p class="col-span-full text-sm italic text-gray-500 p-2">Gallery is empty.</p>' : webContent.gallery.map((item, i) => {
-        const safeUrl = sanitizeUrl(item.url) || 'https://via.placeholder.com/320x180?text=Image';
+        const safeUrl = sanitizeUrl(item.url) || '/assets/images/logo.png';
         const orderValue = Number.isFinite(Number(item.order)) ? Number(item.order) : 50 + i;
         return `<div class="relative rounded-xl overflow-hidden shadow-sm border border-gray-200 bg-white">
             <img src="${safeUrl}" class="w-full h-32 object-cover" alt="Gallery image ${i + 1}">

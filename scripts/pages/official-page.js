@@ -292,7 +292,7 @@ const buildStudentDetailHtml = (student = {}) => {
     </div>` : '';
   return `
     <div class="flex items-start gap-4 mb-4">
-      <img src="${escapeHtml(getPhoto(student))}" onerror="this.src='assets/images/logo.png'" class="w-20 h-20 rounded-2xl object-cover border border-slate-200">
+      <img src="${escapeHtml(getPhoto(student))}" onerror="this.onerror=null;this.src='/assets/images/logo.png'" class="w-20 h-20 rounded-2xl object-cover border border-slate-200">
       <div><h3 class="text-xl font-extrabold text-slate-900">${escapeHtml(student.name || '--')}</h3><p class="text-sm font-bold text-blue-700">Class ${escapeHtml(student.class || '--')} • Adm: ${escapeHtml(student.adm || '--')}</p><span class="mt-2 inline-flex badge">${escapeHtml(getStudentStatus(student))}</span></div>
     </div>
     ${renderKeyValueGrid(student, ['id', 'photo', 'image'])}
@@ -435,7 +435,7 @@ const buildProfileCard = (person = {}, titleFallback = 'Profile', subtitleFallba
   const title = person.name || person.title || person.fullName || titleFallback;
   const subtitle = person.role || person.designation || person.type || person.subtitle || subtitleFallback;
   const entries = Array.isArray(detailEntries) ? detailEntries : getVisibleEntries(person, ['photo', 'image', 'logo']).map(([key, value]) => ({ key, label: toLabel(key), value }));
-  return `<article class="id-card official-profile-card" data-profile-title="${escapeHtml(title)}"><div class="id-card-top"><img src="${escapeHtml(getPhoto(person))}" onerror="this.src='assets/images/logo.png'" class="id-photo" alt="${escapeHtml(title)}"><div><div class="font-extrabold text-slate-900">${escapeHtml(title)}</div><div class="text-xs text-slate-600">${escapeHtml(subtitle)}</div></div></div>${renderEntriesGrid(entries)}</article>`;
+  return `<article class="id-card official-profile-card" data-profile-title="${escapeHtml(title)}"><div class="id-card-top"><img src="${escapeHtml(getPhoto(person))}" onerror="this.onerror=null;this.src='/assets/images/logo.png'" class="id-photo" alt="${escapeHtml(title)}"><div><div class="font-extrabold text-slate-900">${escapeHtml(title)}</div><div class="text-xs text-slate-600">${escapeHtml(subtitle)}</div></div></div>${renderEntriesGrid(entries)}</article>`;
 };
 const buildStaffProfileCard = (staff = {}) => buildProfileCard(staff, 'Staff', staff.type || 'Staff', getStaffProfileEntries(staff));
 const buildDirectoryProfileCard = (entry = {}) => {
@@ -526,7 +526,7 @@ const renderHome = () => {
       <div class="official-me-hero p-5 sm:p-7 text-white">
         <div class="grid md:grid-cols-[180px_1fr] gap-5 items-center">
           <div class="text-center">
-            <img src="${escapeHtml(photo)}" onerror="this.src='assets/images/logo.png'" class="official-me-photo mx-auto" alt="${escapeHtml(label)}">
+            <img src="${escapeHtml(photo)}" onerror="this.onerror=null;this.src='/assets/images/logo.png'" class="official-me-photo mx-auto" alt="${escapeHtml(label)}">
           </div>
           <div>
             <div class="inline-flex px-3 py-1 rounded-full text-xs font-black bg-white/20 border border-white/25 backdrop-blur">Read-only Official Profile</div>

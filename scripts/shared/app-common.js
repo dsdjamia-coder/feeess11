@@ -1075,12 +1075,6 @@ export const applyInstitutionBranding = (conf = {}, options = {}) => {
 
     rememberInstitutionLogo(conf.logoUrl || '', appName);
     setLogo(logoIds, conf.logoUrl);
-    const effectiveFavicon = normalizeLogoUrl(conf.logoUrl) || DEFAULT_LOGO_URL;
-    document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((linkEl) => {
-        if (linkEl.getAttribute('href') !== effectiveFavicon) {
-            linkEl.setAttribute('href', effectiveFavicon);
-        }
-    });
 
     if (updateDocumentTitle) {
         document.title = documentTitleSuffix ? `${appName} - ${documentTitleSuffix}` : appName;
