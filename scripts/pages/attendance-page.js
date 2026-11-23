@@ -2346,6 +2346,19 @@ const loadAnalytics = async ({ force = false } = {}) => {
             return compareByAdmNoAsc(a.student, b.student);
         });
 
+        if (classWorkingDays === 0 && grandTotal === 0) {
+            if (summaryBadge) {
+                summaryBadge.textContent = `Overall Average: -- (No attendance marked yet)`;
+            }
+            if (countBadge) {
+                countBadge.textContent = `0 Students`;
+            }
+            const noDataMsg = `<i class="fas fa-calendar-xmark mr-1.5 text-slate-300"></i> No attendance records have been marked yet for this period.`;
+            if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold bg-slate-50/40">${noDataMsg}</td></tr>`;
+            if (mobileList) mobileList.innerHTML = `<div class="p-6 text-center text-slate-400 font-bold text-xs bg-slate-50/40">${noDataMsg}</div>`;
+            return;
+        }
+
         const averagePct = grandTotal > 0 ? Math.round((grandPresent / grandTotal) * 100) : 0;
         if (summaryBadge) {
             summaryBadge.textContent = `Overall Average: ${averagePct}% (${relevantStudents.length} Students Evaluated)`;

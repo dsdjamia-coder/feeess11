@@ -117,10 +117,7 @@ const normalizeTimeTo24h = (str) => {
     return `${String(hours).padStart(2, '0')}:${mins}`;
 };
 
-const getDefaultClassSlots = () => [
-    { slotId: 'period_1', slotNum: 1, label: 'Period 1', startTime: '07:00', endTime: '08:00', isBreak: false },
-    { slotId: 'period_2', slotNum: 2, label: 'Period 2', startTime: '08:00', endTime: '09:00', isBreak: false }
-];
+const getDefaultClassSlots = () => [];
 
 let timetableConfig = {
     workingDays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Saturday'],
@@ -1927,9 +1924,9 @@ const renderTimetableMatrixUI = () => {
 
     const instOffDays = getOffDaysFromWeekendDays(attendanceConfig.weekendDays || [5]);
 
-    const slots = (selectedTtClass !== 'all' && Array.isArray(currentClassSlots) && currentClassSlots.length > 0)
+    const slots = (selectedTtClass !== 'all' && Array.isArray(currentClassSlots))
         ? currentClassSlots
-        : normalizeTimetableSlots(timetableConfig);
+        : [];
     const teachingSlotsCount = slots.filter(s => !s.isBreak).length;
 
     const activeWorkingDaysCount = ALL_WEEKDAYS.filter(d => {
@@ -1957,7 +1954,27 @@ const renderTimetableMatrixUI = () => {
             const cData = allClassesTimetables[cls] || { matrix: {}, subjects: [], slots: [], dayStatuses: {} };
             const matrix = cData.matrix || {};
             const dayStatuses = cData.dayStatuses || {};
-            const cSlots = (Array.isArray(cData.slots) && cData.slots.length > 0) ? cData.slots : slots;
+            const cSlots = Array.isArray(cData.slots) ? cData.slots : [];
+
+            if (!cSlots.length) {
+                return `
+                    <div class="mb-6 bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
+                        <div class="p-3.5 bg-gradient-to-r from-slate-50 to-indigo-50/50 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-xs">${escapeHtml(cls)}</span>
+                                <h4 class="font-black text-sm text-slate-900">Class ${escapeHtml(cls)} Routine Timetable</h4>
+                            </div>
+                            <button type="button" class="btn-goto-class-tt px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black cursor-pointer transition shadow-2xs inline-flex items-center gap-1.5" data-class="${escapeHtml(cls)}">
+                                <i class="fas fa-plus"></i> Setup Class ${escapeHtml(cls)}
+                            </button>
+                        </div>
+                        <div class="p-8 text-center text-slate-400 font-bold text-xs">
+                            <i class="fas fa-calendar-days text-2xl text-slate-300 mb-2 block"></i>
+                            No timetable periods configured for Class ${escapeHtml(cls)} yet.
+                        </div>
+                    </div>
+                `;
+            }
 
             return `
                 <div class="mb-8 bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
@@ -2037,7 +2054,7 @@ const renderTimetableMatrixUI = () => {
                                                     return `
                                                         <td class="p-2 border-r border-slate-200 align-top bg-amber-50/20">
                                                             <select class="tt-cell-subject w-full p-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 outline-none mb-1 bg-white" data-class="${escapeHtml(cls)}" data-day="${day}" data-slot="${s.slotId}" data-period="${p}">
-                                                                <option value="">-- Free / Recess --</option>
+                                                                <option value="">-- Select Subject --</option>
                                                                 ${cData.subjects.map(subj => `
                                                                     <option value="${subj.id}" ${(sData.subjectId === subj.id || sData.subjectName === subj.name) ? 'selected' : ''}>
                                                                         ${escapeHtml(subj.name)}
@@ -2063,9 +2080,9 @@ const renderTimetableMatrixUI = () => {
                                                         ${sData.subjectName ? `
                                                             <div class="p-2 rounded-xl bg-indigo-50/70 border border-indigo-200/80">
                                                                 <div class="font-black text-xs text-slate-900 leading-tight">${escapeHtml(sData.subjectName)}</div>
-                                                                <div class="text-[11px] text-indigo-800 font-semibold mt-1 truncate"><i class="fas fa-user-tie text-[9px] mr-1 opacity-70"></i>${escapeHtml(sData.teacher || 'Ustad')}</div>
+                                                                ${sData.teacher ? `<div class="text-[11px] text-indigo-800 font-semibold mt-1 truncate"><i class="fas fa-user-tie text-[9px] mr-1 opacity-70"></i>${escapeHtml(sData.teacher)}</div>` : ''}
                                                             </div>
-                                                        ` : `<span class="text-[10px] text-slate-400 italic block text-center py-2">-- Free --</span>`}
+                                                        ` : `<span class="text-xs text-slate-300 font-bold block text-center py-2">—</span>`}
                                                     </td>`;
                                             }).join('')}
                                         </tr>
@@ -2082,6 +2099,22 @@ const renderTimetableMatrixUI = () => {
 
     if (!selectedTtClass) {
         grid.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">Please select a class to view routine timetable.</div>`;
+        return;
+    }
+
+    if (!slots.length) {
+        grid.innerHTML = `
+            <div class="p-10 text-center bg-white rounded-2xl border border-slate-200 space-y-3">
+                <i class="fas fa-calendar-days text-3xl text-slate-300 block"></i>
+                <div>
+                    <p class="text-sm font-black text-slate-700">No timetable configured for Class ${escapeHtml(selectedTtClass)} yet.</p>
+                    <p class="text-xs font-medium text-slate-500 mt-1">Turn on Edit Mode and add your first period or break slot to start building the class routine.</p>
+                </div>
+                <button type="button" id="btn-add-tt-slot-empty" class="btn-add-tt-slot inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black cursor-pointer shadow-xs transition">
+                    <i class="fas fa-plus"></i> Add Period / Break
+                </button>
+            </div>
+        `;
         return;
     }
 
@@ -2181,7 +2214,7 @@ const renderTimetableMatrixUI = () => {
                 html += `
                     <td class="p-2 border-r border-slate-200 align-top bg-amber-50/20">
                         <select class="tt-cell-subject w-full p-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 outline-none mb-1 bg-white" data-day="${day}" data-slot="${slot.slotId}" data-period="${p}">
-                            <option value="">-- Free / Recess --</option>
+                            <option value="">-- Select Subject --</option>
                             ${classSubjectsList.map(s => `
                                 <option value="${s.id}" ${(slotData.subjectId === s.id || slotData.subjectName === s.name) ? 'selected' : ''}>
                                     ${escapeHtml(s.name)}
@@ -2207,15 +2240,15 @@ const renderTimetableMatrixUI = () => {
                         ${slotData.subjectName ? `
                             <div class="p-2 rounded-xl bg-indigo-50/70 border border-indigo-200/80 shadow-2xs">
                                 <div class="font-extrabold text-xs text-slate-900 leading-tight">${escapeHtml(slotData.subjectName)}</div>
-                                <div class="text-[11px] text-indigo-800 font-semibold mt-1 truncate">
-                                    <i class="fas fa-user-tie text-[9px] mr-1 opacity-70"></i>${escapeHtml(slotData.teacher || 'Assigned Ustad')}
-                                </div>
+                                ${slotData.teacher ? `
+                                    <div class="text-[11px] text-indigo-800 font-semibold mt-1 truncate">
+                                        <i class="fas fa-user-tie text-[9px] mr-1 opacity-70"></i>${escapeHtml(slotData.teacher)}
+                                    </div>
+                                ` : ''}
                                 ${slotData.room ? `<div class="text-[10px] text-slate-500 font-bold mt-0.5"><i class="fas fa-location-dot text-[9px] mr-1 text-slate-400"></i>${escapeHtml(slotData.room)}</div>` : ''}
                             </div>
                         ` : `
-                            <div class="p-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/40 text-center text-slate-400 font-bold text-[11px] py-3">
-                                Free Period
-                            </div>
+                            <div class="text-center text-slate-300 font-bold text-xs py-3 select-none">—</div>
                         `}
                     </td>`;
             }
@@ -4096,7 +4129,7 @@ const saveTaughtPortionModal = async () => {
         const cData = allClassesTimetables[classLabel] || {};
         const cSlots = (Array.isArray(cData.slots) && cData.slots.length > 0)
             ? cData.slots
-            : ((classLabel === selectedTtClass && Array.isArray(currentClassSlots) && currentClassSlots.length > 0) ? currentClassSlots : normalizeTimetableSlots(timetableConfig));
+            : ((classLabel === selectedTtClass && Array.isArray(currentClassSlots) && currentClassSlots.length > 0) ? currentClassSlots : []);
         const matrix = cData.matrix || (classLabel === selectedTtClass ? timetableMatrix : {});
         const periods = cSlots.filter(s => !s.isBreak).map(s => {
             const ttCell = matrix[`${dayName}_${s.slotId}`] || matrix[`${dayName}_${s.slotNum}`] || {};
@@ -4250,7 +4283,7 @@ const saveTeacherRemarksModal = async () => {
         const cData = allClassesTimetables[classLabel] || {};
         const cSlots = (Array.isArray(cData.slots) && cData.slots.length > 0)
             ? cData.slots
-            : ((classLabel === selectedTtClass && Array.isArray(currentClassSlots) && currentClassSlots.length > 0) ? currentClassSlots : normalizeTimetableSlots(timetableConfig));
+            : ((classLabel === selectedTtClass && Array.isArray(currentClassSlots) && currentClassSlots.length > 0) ? currentClassSlots : []);
         const matrix = cData.matrix || (classLabel === selectedTtClass ? timetableMatrix : {});
         const periods = cSlots.filter(s => !s.isBreak).map(s => {
             const ttCell = matrix[`${dayName}_${s.slotId}`] || matrix[`${dayName}_${s.slotNum}`] || {};
@@ -4341,8 +4374,18 @@ const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData) => {
         ? cData.slots
         : ((cls === selectedTtClass && Array.isArray(currentClassSlots) && currentClassSlots.length > 0)
             ? currentClassSlots
-            : normalizeTimetableSlots(timetableConfig));
+            : []);
     const teachingSlots = cSlots.filter(s => !s.isBreak);
+
+    if (!teachingSlots.length) {
+        return `
+            <div class="p-10 text-center bg-white rounded-2xl border border-slate-200">
+                <i class="fas fa-calendar-times text-3xl text-slate-300 mb-2.5 block"></i>
+                <p class="text-sm font-black text-slate-700">No Timetable Periods Configured</p>
+                <p class="text-xs font-medium text-slate-400 mt-1">Configure teaching periods for Class ${escapeHtml(cls)} in the Timetable tab to track daily syllabus progress.</p>
+            </div>
+        `;
+    }
 
     const matrix = cData.matrix || (cls === selectedTtClass ? timetableMatrix : {});
     const cDayStatuses = cData.dayStatuses || (cls === selectedTtClass ? currentClassDayStatuses : {});
@@ -4458,7 +4501,7 @@ const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData) => {
             const defaultSubjId = ttCell.subjectId || '';
             const defaultSubjName = ttCell.subjectName || '';
             const effectiveSubjId = p?.subjectId || defaultSubjId;
-            const effectiveSubjName = p?.subjectName || defaultSubjName || (defaultSubjId ? 'Subject' : 'Free');
+            const effectiveSubjName = p?.subjectName || defaultSubjName || (defaultSubjId ? 'Subject' : '—');
 
             const cumPct = (effectiveSubjId && cumProgressByDate[dateStr] && typeof cumProgressByDate[dateStr][effectiveSubjId] === 'number')
                 ? cumProgressByDate[dateStr][effectiveSubjId]
@@ -4795,6 +4838,12 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
                 });
             }
 
+            visibleSubjs = visibleSubjs.filter(s => {
+                const key = `${activeMonth}__${s.id}`;
+                const cell = grid[key] || {};
+                return Boolean(String(cell.lessonNo || '').trim() || String(cell.topic || '').trim());
+            });
+
             if (!visibleSubjs.length) return;
             totalCards += visibleSubjs.length;
 
@@ -4805,7 +4854,7 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
                             <i class="fas fa-chalkboard text-indigo-600"></i>
                             <span>Class ${escapeHtml(c)}</span>
                         </div>
-                        <span class="text-[10px] font-bold text-slate-500">${visibleSubjs.length} Subjects</span>
+                        <span class="text-[10px] font-bold text-slate-500">${visibleSubjs.length} Planned</span>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5">
             `;
@@ -4815,11 +4864,10 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
                 const cell = grid[key] || {};
                 const lessonNo = cell.lessonNo || '';
                 const topic = cell.topic || '';
-                const hasPlan = Boolean(lessonNo || topic);
                 const progress = typeof cell.progressPercent === 'number' ? cell.progressPercent : 0;
 
                 html += `
-                    <div class="p-2.5 rounded-xl border ${hasPlan ? 'border-slate-300 bg-white shadow-2xs hover:border-indigo-300' : 'border-dashed border-slate-200 bg-white/50'} transition flex flex-col justify-between gap-1.5">
+                    <div class="p-2.5 rounded-xl border border-slate-300 bg-white shadow-2xs hover:border-indigo-300 transition flex flex-col justify-between gap-1.5">
                         <div>
                             <div class="flex items-start justify-between gap-1 mb-1">
                                 <span class="font-black text-xs text-slate-900 leading-tight">${escapeHtml(s.name)}</span>
@@ -4828,7 +4876,7 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
                                         ${progress}%
                                     </span>
                                 ` : `
-                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold text-slate-400 bg-slate-100 shrink-0">
+                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-bold text-slate-500 bg-slate-100 shrink-0">
                                         Planned
                                     </span>
                                 `}
@@ -4839,9 +4887,7 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
                                     <span>${escapeHtml(lessonNo)}</span>
                                 </div>
                             ` : ''}
-                            <div class="text-xs font-semibold ${topic ? 'text-slate-800' : 'text-slate-400 italic'} line-clamp-2 leading-snug">
-                                ${topic ? escapeHtml(topic) : 'No lesson name planned'}
-                            </div>
+                            ${topic ? `<div class="text-xs font-semibold text-slate-800 line-clamp-2 leading-snug">${escapeHtml(topic)}</div>` : ''}
                         </div>
                         <button type="button" class="btn-st-card-update-prog mt-2 w-full py-1.5 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
                             data-class="${escapeHtml(c)}"
@@ -4863,7 +4909,7 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
         });
 
         if (totalCards === 0) {
-            html += `<div class="text-xs text-slate-400 italic py-2 text-center">No planned subjects match the selected filters for ${escapeHtml(activeMonth)}.</div>`;
+            html += `<div class="text-xs text-slate-400 font-bold py-6 text-center"><i class="fas fa-book-open text-2xl text-slate-300 mb-1.5 block"></i>No syllabus portions planned for ${escapeHtml(activeMonth)} yet.</div>`;
         }
 
         html += `</div>`;
@@ -4909,20 +4955,25 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
             </div>
         `;
 
-        if (!visibleSubjs.length) {
-            html += `<div class="text-xs text-slate-400 italic py-2 text-center">No subjects found for Class ${escapeHtml(cls)}.</div>`;
+        const plannedSubjs = visibleSubjs.filter(s => {
+            const key = `${activeMonth}__${s.id}`;
+            const cell = grid[key] || {};
+            return Boolean(String(cell.lessonNo || '').trim() || String(cell.topic || '').trim());
+        });
+
+        if (!plannedSubjs.length) {
+            html += `<div class="text-xs text-slate-400 font-bold py-6 text-center"><i class="fas fa-book-open text-2xl text-slate-300 mb-1.5 block"></i>No syllabus portions planned for Class ${escapeHtml(cls)} in ${escapeHtml(activeMonth)} yet.</div>`;
         } else {
             html += `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5 pt-1">`;
-            visibleSubjs.forEach(s => {
+            plannedSubjs.forEach(s => {
                 const key = `${activeMonth}__${s.id}`;
                 const cell = grid[key] || {};
                 const lessonNo = cell.lessonNo || '';
                 const topic = cell.topic || '';
-                const hasPlan = Boolean(lessonNo || topic);
                 const progress = typeof cell.progressPercent === 'number' ? cell.progressPercent : 0;
 
                 html += `
-                    <div class="p-3 rounded-xl border ${hasPlan ? 'border-slate-300 bg-slate-50/40 hover:bg-white hover:border-indigo-300' : 'border-dashed border-slate-200 bg-slate-50/20'} transition shadow-2xs flex flex-col justify-between gap-1.5">
+                    <div class="p-3 rounded-xl border border-slate-300 bg-slate-50/40 hover:bg-white hover:border-indigo-300 transition shadow-2xs flex flex-col justify-between gap-1.5">
                         <div>
                             <div class="flex items-start justify-between gap-1 mb-1.5">
                                 <span class="font-black text-xs text-slate-900 leading-tight">${escapeHtml(s.name)}</span>
@@ -4931,7 +4982,7 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
                                         ${progress}%
                                     </span>
                                 ` : `
-                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-400 bg-slate-100 shrink-0">
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-500 bg-slate-100 shrink-0">
                                         Planned
                                     </span>
                                 `}
@@ -4942,9 +4993,7 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
                                     <span>${escapeHtml(lessonNo)}</span>
                                 </div>
                             ` : ''}
-                            <div class="text-xs font-semibold ${topic ? 'text-slate-800' : 'text-slate-400 italic'} line-clamp-2 leading-snug">
-                                ${topic ? escapeHtml(topic) : 'No lesson name planned'}
-                            </div>
+                            ${topic ? `<div class="text-xs font-semibold text-slate-800 line-clamp-2 leading-snug">${escapeHtml(topic)}</div>` : ''}
                         </div>
                         <button type="button" class="btn-st-card-update-prog mt-2 w-full py-1.5 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
                             data-class="${escapeHtml(cls)}"
@@ -5001,7 +5050,7 @@ const renderSyllabusTrackerUI = () => {
         allowed.forEach(cls => {
             const cTt = allClassesTimetables[cls] || {};
             const cDayStatuses = cTt.dayStatuses || {};
-            const cSlots = (Array.isArray(cTt.slots) && cTt.slots.length > 0) ? cTt.slots : normalizeTimetableSlots(timetableConfig);
+            const cSlots = Array.isArray(cTt.slots) ? cTt.slots : [];
             const teachingCount = cSlots.filter(s => !s.isBreak).length;
 
             for (let d = 1; d <= daysInMonth; d++) {
@@ -5108,9 +5157,7 @@ const renderSyllabusTrackerUI = () => {
     // Single Class Register Calculation & Render
     let totalWorkingDays = 0;
     let daysTaught = 0;
-    const cSlots = (Array.isArray(currentClassSlots) && currentClassSlots.length > 0)
-        ? currentClassSlots
-        : normalizeTimetableSlots(timetableConfig);
+    const cSlots = Array.isArray(currentClassSlots) ? currentClassSlots : [];
     const teachingSlotsCount = cSlots.filter(s => !s.isBreak).length;
     let totalPeriodsScheduled = 0;
     let totalPeriodsTaught = 0;

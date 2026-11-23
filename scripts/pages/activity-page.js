@@ -1143,15 +1143,7 @@ const loadDashboardView = async () => {
 // =========================================================================
 // MODULE 2: MANAGE & ADD TASKS LOGIC (WITH EDIT & DELETE + CONFIRMATION)
 // =========================================================================
-const getDefaultTasksList = () => [
-    { id: 'task_d1', title: 'Morning Adhkar & Duas', cadence: 'daily', dayOfWeek: '', dayOfMonth: '', points: 5 },
-    { id: 'task_d2', title: 'Uniform & Personal Cleanliness', cadence: 'daily', dayOfWeek: '', dayOfMonth: '', points: 5 },
-    { id: 'task_d3', title: 'Class Kit & Books Prepared', cadence: 'daily', dayOfWeek: '', dayOfMonth: '', points: 5 },
-    { id: 'task_w1', title: 'Surah Al-Kahf Friday Recitation', cadence: 'weekly', dayOfWeek: 'Friday', dayOfMonth: '', points: 15 },
-    { id: 'task_w2', title: 'Weekly Hifz Review (Dhor)', cadence: 'weekly', dayOfWeek: '', dayOfMonth: '', points: 10 },
-    { id: 'task_m1', title: 'Monthly Charity (Sadaqah Drive)', cadence: 'monthly', dayOfWeek: '', dayOfMonth: '', points: 20 },
-    { id: 'task_m2', title: 'Family Seerah Reading Project', cadence: 'monthly', dayOfWeek: '', dayOfMonth: '1st of Month', points: 25 }
-];
+const getDefaultTasksList = () => [];
 
 const updateCadenceButtonLabels = () => {
     const weeklyTasksWithDay = taskDefsList.filter(t => t.cadence === 'weekly' && t.dayOfWeek);
@@ -1189,7 +1181,10 @@ const loadTaskDefsTable = () => {
     }
 
     if (!filtered.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">No tasks found for this filter.</td></tr>`;
+        const emptyMsg = taskDefsList.length === 0
+            ? 'No activity tasks created yet. Click <strong>Add New Task</strong> to configure your first routine activity.'
+            : 'No tasks found for this filter.';
+        tbody.innerHTML = `<tr><td colspan="6" class="p-10 text-center text-slate-400 font-bold"><i class="fas fa-clipboard-list text-2xl text-slate-300 mb-2 block"></i><span class="text-xs">${emptyMsg}</span></td></tr>`;
         return;
     }
 
@@ -1370,6 +1365,17 @@ const loadTasksRoster = async () => {
         }
     } catch (_) {
         taskCompletionsMap = {};
+    }
+
+    if (!currentCadenceTasks.length) {
+        if (thead) thead.innerHTML = '';
+        if (tbody) {
+            const emptyMsg = taskDefsList.length === 0
+                ? 'No activity tasks configured yet. Open <strong>Manage Tasks</strong> to add your first task.'
+                : `No ${escapeHtml(currentTaskCadence)} tasks configured yet.`;
+            tbody.innerHTML = `<tr><td colspan="6" class="p-10 text-center text-slate-400 font-bold"><i class="fas fa-clipboard-list text-2xl text-slate-300 mb-2 block"></i><span class="text-xs">${emptyMsg}</span></td></tr>`;
+        }
+        return;
     }
 
     if (thead) {

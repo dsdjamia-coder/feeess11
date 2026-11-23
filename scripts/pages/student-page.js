@@ -74,15 +74,24 @@ registerServiceWorker();
         hardenExternalLinks();
         enableSmartSelectWindowing(document, { visibleCount: 6 });
 
-        // Hamburger Menu Logic (Gracefully checks if toggle exists)
+        // Hamburger Menu Logic (Mobile/Tablet) & Desktop More Dropdown Logic
         const mobileToggle = document.getElementById('mobile-menu-btn');
         const navMenu = document.querySelector('.nav-menu');
+        const desktopMoreBtn = document.getElementById('student-desktop-more-btn');
+        const desktopMoreMenu = document.getElementById('student-desktop-more-menu');
+        const desktopMoreWrap = document.getElementById('student-desktop-more-wrap');
+
         const setMobileMenuState = (isOpen) => {
             if (navMenu) navMenu.classList.toggle('active', isOpen);
             if (mobileToggle) {
                 mobileToggle.classList.toggle('active-toggle', isOpen);
                 mobileToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             }
+        };
+
+        const setDesktopMoreState = (isOpen) => {
+            if (desktopMoreMenu) desktopMoreMenu.classList.toggle('hidden', !isOpen);
+            if (desktopMoreBtn) desktopMoreBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         };
 
         if (mobileToggle) {
@@ -92,10 +101,28 @@ registerServiceWorker();
             });
         }
 
+        if (desktopMoreBtn) {
+            desktopMoreBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isCurrentlyOpen = desktopMoreMenu && !desktopMoreMenu.classList.contains('hidden');
+                setDesktopMoreState(!isCurrentlyOpen);
+            });
+        }
+
         document.addEventListener('click', (e) => { 
             if (navMenu && !navMenu.contains(e.target) && (!mobileToggle || !mobileToggle.contains(e.target))) { 
                 setMobileMenuState(false);
-            } 
+            }
+            if (desktopMoreWrap && !desktopMoreWrap.contains(e.target)) {
+                setDesktopMoreState(false);
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                setMobileMenuState(false);
+                setDesktopMoreState(false);
+            }
         });
 
         const links = Array.from(document.querySelectorAll('.tab-link'));
@@ -123,6 +150,11 @@ registerServiceWorker();
                 link.classList.toggle('active', isActive);
                 link.setAttribute('aria-current', isActive ? 'page' : 'false');
             });
+            document.querySelectorAll('.student-desktop-tab-btn[data-target]').forEach((btn) => {
+                const isActive = btn.dataset.target === safeTargetId;
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
             pages.forEach((page) => page.classList.toggle('hidden', page.id !== safeTargetId));
             
             // Clean URL: Ensure no # hash is appended to the address bar
@@ -133,6 +165,7 @@ registerServiceWorker();
             }
 
             setMobileMenuState(false);
+            setDesktopMoreState(false);
             window.scrollTo(0,0);
             document.querySelectorAll('.student-bottom-nav-btn[data-target]').forEach((btn) => {
                 btn.classList.toggle('active', btn.dataset.target === safeTargetId);
@@ -220,6 +253,7 @@ registerServiceWorker();
         }
         window.logoutStudent = logoutStudent;
         document.getElementById('student-logout-btn')?.addEventListener('click', () => logoutStudent());
+        document.getElementById('student-desktop-logout-btn')?.addEventListener('click', () => logoutStudent());
         document.getElementById('student-public-btn')?.addEventListener('click', () => { window.location.href = getPageUrl('index.html?public=1'); });
         document.querySelectorAll('.student-bottom-nav-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -5422,14 +5456,14 @@ registerServiceWorker();
         const DEFAULT_PORTAL_ORDER = ['profile', 'fees', 'attendance', 'timetable', 'syllabus', 'results', 'activities', 'publicHome'];
 
         const PORTAL_TABS_REGISTRY = [
-            { key: 'profile', id: 'home-page', navId: 'student-nav-home', label: 'Profile', icon: 'fas fa-id-badge', moduleKey: null },
-            { key: 'fees', id: 'fees-page', navId: 'student-nav-fees', label: 'Fees', icon: 'fas fa-receipt', moduleKey: 'feeCollection' },
-            { key: 'attendance', id: 'attendance-page', navId: 'student-nav-attendance', label: 'Attendance', icon: 'fas fa-calendar-check', moduleKey: 'attendance' },
-            { key: 'timetable', id: 'timetable-page', navId: 'student-nav-timetable', label: 'Timetable', icon: 'fas fa-calendar-days', moduleKey: 'academicPlan' },
-            { key: 'syllabus', id: 'syllabus-page', navId: 'student-nav-syllabus', label: 'Syllabus', icon: 'fas fa-book-open', moduleKey: 'academicPlan' },
-            { key: 'results', id: 'results-page', navId: 'student-nav-results', label: 'Results', icon: 'fas fa-square-poll-vertical', moduleKey: 'resultCenter' },
-            { key: 'activities', id: 'activities-page', navId: 'student-nav-activities', label: 'Activities', icon: 'fas fa-award', moduleKey: 'activityTracker' },
-            { key: 'publicHome', id: 'public-home-nav', navId: 'student-nav-publichome', label: 'Public Page', icon: 'fas fa-globe', moduleKey: null, isExternal: true, url: getPageUrl('index.html?public=1') }
+            { key: 'profile', id: 'home-page', navId: 'student-nav-home', label: 'Profile', desktopLabel: 'My Profile', icon: 'fas fa-id-badge', moduleKey: null },
+            { key: 'fees', id: 'fees-page', navId: 'student-nav-fees', label: 'Fees', desktopLabel: 'Fee Details', icon: 'fas fa-file-invoice-dollar', moduleKey: 'feeCollection' },
+            { key: 'attendance', id: 'attendance-page', navId: 'student-nav-attendance', label: 'Attendance', desktopLabel: 'Attendance', icon: 'fas fa-calendar-check', moduleKey: 'attendance' },
+            { key: 'timetable', id: 'timetable-page', navId: 'student-nav-timetable', label: 'Timetable', desktopLabel: 'Timetable', icon: 'fas fa-calendar-days', moduleKey: 'academicPlan' },
+            { key: 'syllabus', id: 'syllabus-page', navId: 'student-nav-syllabus', label: 'Syllabus', desktopLabel: 'Syllabus Plan', icon: 'fas fa-book-open', moduleKey: 'academicPlan' },
+            { key: 'results', id: 'results-page', navId: 'student-nav-results', label: 'Results', desktopLabel: 'Results', icon: 'fas fa-square-poll-vertical', moduleKey: 'resultCenter' },
+            { key: 'activities', id: 'activities-page', navId: 'student-nav-activities', label: 'Activities', desktopLabel: 'Activities & Badges', icon: 'fas fa-award', moduleKey: 'activityTracker' },
+            { key: 'publicHome', id: 'public-home-nav', navId: 'student-nav-publichome', label: 'Public Page', desktopLabel: 'Public Page', icon: 'fas fa-globe', moduleKey: null, isExternal: true, url: getPageUrl('index.html?public=1') }
         ];
 
         let cachedStudentPortalConfig = {
@@ -5490,7 +5524,7 @@ registerServiceWorker();
                 return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
             });
 
-            // 1. Sync Desktop Navigation Menu & Reorder items in DOM
+            // 1. Sync Mobile Popover Navigation Menu & Reorder items in DOM
             const navMenu = document.querySelector('.nav-menu');
             const publicHomeItem = document.getElementById('student-nav-publichome');
 
@@ -5516,6 +5550,34 @@ registerServiceWorker();
                         }
                     }
                 });
+            }
+
+            // 1b. Sync Desktop Highlighted Student Tab Bar (Student Tabs Only; Public links stay in More dropdown)
+            const desktopTabsList = document.getElementById('student-desktop-tabs-list');
+            if (desktopTabsList) {
+                const currentActiveTarget = document.querySelector('.page-content:not(.hidden)')?.id || defaultTabId;
+                const desktopStudentTabs = activeTabs.filter((tab) => !tab.isExternal);
+                desktopTabsList.innerHTML = desktopStudentTabs.map((tab) => {
+                    const isCurrent = tab.id === currentActiveTarget;
+                    return `
+                        <button type="button" role="tab" class="student-desktop-tab-btn${isCurrent ? ' active' : ''}" data-target="${tab.id}" aria-selected="${isCurrent ? 'true' : 'false'}">
+                            <i class="${tab.icon}"></i>
+                            <span>${escapeHtml(tab.desktopLabel || tab.label)}</span>
+                        </button>
+                    `;
+                }).join('');
+
+                desktopTabsList.querySelectorAll('.student-desktop-tab-btn[data-target]').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        activateStudentTab(btn.dataset.target);
+                    });
+                });
+            }
+
+            const desktopPublicHomeLink = document.getElementById('student-desktop-publichome-link');
+            if (desktopPublicHomeLink) {
+                const showPublicHome = activeTabs.some((t) => t.key === 'publicHome');
+                desktopPublicHomeLink.classList.toggle('hidden', !showPublicHome);
             }
 
             // 2. Sync Mobile Bottom Navigation Bar & More Sheet
@@ -5635,12 +5697,15 @@ registerServiceWorker();
             }
         };
 
+        // Populate desktop & mobile navigation immediately before Firestore config arrives
+        applyStudentPortalNavigation(cachedStudentPortalConfig, cachedGlobalEnabledModules);
+
         // ----------------------------------------------------
         // MODULE: PERSONALIZED ATTENDANCE REGISTER
         // ----------------------------------------------------
         let selectedAttendanceAcademicYear = '';
         let selectedAttendanceMonth = '';
-        let studentAttendanceStats = { workingDays: 0, presentDays: 0, absentDays: 0, leaveDays: 0, rate: 0 };
+        let studentAttendanceStats = { workingDays: 0, presentDays: 0, absentDays: 0, leaveDays: 0, rate: null, hasRecords: false };
         let cachedAttendanceDocs = [];
         let cachedAttendanceConfig = { weekendDays: [5], weekendHistory: [], holidays: [], sessionSchedules: {} };
 
@@ -5811,6 +5876,32 @@ registerServiceWorker();
             });
         };
 
+        const buildPortalEmptyCard = ({ title, message, icon = 'fas fa-circle-info', accent = 'indigo' } = {}) => {
+            const headerLogo = document.getElementById('header-logo')?.getAttribute('src') || '';
+            const logo = sanitizeUrl(headerLogo) || '/assets/images/logo.png';
+            const themeMap = {
+                teal: { box: 'border-teal-100 from-white to-teal-50/60', heading: 'text-teal-900', iconWrap: 'bg-teal-50 text-teal-600 border-teal-100' },
+                indigo: { box: 'border-indigo-100 from-white to-indigo-50/60', heading: 'text-indigo-900', iconWrap: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
+                blue: { box: 'border-blue-100 from-white to-blue-50/60', heading: 'text-blue-900', iconWrap: 'bg-blue-50 text-blue-600 border-blue-100' },
+                amber: { box: 'border-amber-100 from-white to-amber-50/60', heading: 'text-amber-900', iconWrap: 'bg-amber-50 text-amber-600 border-amber-100' }
+            };
+            const theme = themeMap[accent] || themeMap.indigo;
+            return `
+                <div class="rounded-2xl border ${theme.box} bg-gradient-to-b px-5 py-9 text-center shadow-sm">
+                    <div class="relative mx-auto w-20 h-20 mb-4 flex items-center justify-center">
+                        <img src="${escapeHtml(logo)}" class="h-20 w-20 object-contain opacity-90" alt="Institution Logo" onerror="this.onerror=null;this.src='/assets/images/logo.png'">
+                        <span class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full border ${theme.iconWrap} flex items-center justify-center shadow-xs text-xs">
+                            <i class="${escapeHtml(icon)}"></i>
+                        </span>
+                    </div>
+                    <h3 class="text-lg font-extrabold ${theme.heading} mb-2">${escapeHtml(title)}</h3>
+                    <p class="text-sm font-semibold text-slate-600 leading-relaxed max-w-md mx-auto">
+                        ${escapeHtml(message)}
+                    </p>
+                </div>
+            `;
+        };
+
         const renderStudentAttendanceModule = async (profile, targetYear = '') => {
             const pageEl = document.getElementById('attendance-page');
             if (!pageEl || !profile) return;
@@ -5845,6 +5936,37 @@ registerServiceWorker();
                     if (d.academicYear) return d.academicYear === year;
                     return String(d.date || '').startsWith(String(year).split('-')[0]);
                 }).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
+                const overallEmptyEl = document.getElementById('stu-att-overall-empty');
+                const contentWrapEl = document.getElementById('stu-att-content-wrap');
+                const monthSelectWrapEl = document.getElementById('stu-att-month-select-wrap');
+
+                if (cachedAttendanceDocs.length === 0) {
+                    studentAttendanceStats = {
+                        workingDays: 0,
+                        presentDays: 0,
+                        absentDays: 0,
+                        leaveDays: 0,
+                        rate: null,
+                        hasRecords: false
+                    };
+                    if (contentWrapEl) contentWrapEl.classList.add('hidden');
+                    if (monthSelectWrapEl) monthSelectWrapEl.classList.add('hidden');
+                    if (overallEmptyEl) {
+                        overallEmptyEl.innerHTML = buildPortalEmptyCard({
+                            title: 'Attendance records have not been updated yet',
+                            message: `No attendance has been marked for ${year} yet. Once your class teacher begins recording daily attendance, your summary and monthly register will appear here.`,
+                            icon: 'fas fa-calendar-check',
+                            accent: 'teal'
+                        });
+                        overallEmptyEl.classList.remove('hidden');
+                    }
+                    return;
+                }
+
+                if (overallEmptyEl) overallEmptyEl.classList.add('hidden');
+                if (contentWrapEl) contentWrapEl.classList.remove('hidden');
+                if (monthSelectWrapEl) monthSelectWrapEl.classList.remove('hidden');
 
                 const sessionStartDate = getStudentSessionStartDate(year, cachedAttendanceConfig);
                 const sessionEndDate = getStudentSessionEndDate(year, cachedAttendanceConfig);
@@ -5884,13 +6006,14 @@ registerServiceWorker();
                 const calendarWorkingDays = calculateStudentWorkingDays(year, studentClass, cachedAttendanceConfig);
                 const workingCount = calendarWorkingDays > 0 ? calendarWorkingDays : recordedWorkingCount;
 
-                const rate = workingCount > 0 ? Math.min(100, Math.round((presCount / workingCount) * 100)) : 100;
+                const rate = workingCount > 0 ? Math.min(100, Math.round((presCount / workingCount) * 100)) : null;
                 studentAttendanceStats = {
                     workingDays: workingCount,
                     presentDays: presCount,
                     absentDays: absCount,
                     leaveDays: leaveCount,
-                    rate
+                    rate,
+                    hasRecords: recordedWorkingCount > 0
                 };
 
                 // Update Metric Cards
@@ -5904,9 +6027,12 @@ registerServiceWorker();
                 const absEl = document.getElementById('stu-att-absent-days');
                 const leaveEl = document.getElementById('stu-att-leave-days');
 
-                if (rateEl) rateEl.textContent = `${rate}%`;
+                if (rateEl) rateEl.textContent = rate !== null ? `${rate}%` : '--';
                 if (rateBadge) {
-                    if (rate >= 85) {
+                    if (rate === null) {
+                        rateBadge.className = 'mt-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-block self-start bg-slate-100 text-slate-600 border border-slate-200';
+                        rateBadge.textContent = 'Not Recorded Yet';
+                    } else if (rate >= 85) {
                         rateBadge.className = 'mt-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-block self-start bg-emerald-100 text-emerald-800 border border-emerald-300';
                         rateBadge.textContent = 'Excellent Attendance';
                     } else if (rate >= 75) {
@@ -6276,6 +6402,33 @@ registerServiceWorker();
                 cachedStructureDoc = structSnap?.exists() ? structSnap.data() : null;
                 cachedClassSubjects = subjSnap?.exists() && Array.isArray(subjSnap.data().subjects) ? subjSnap.data().subjects : [];
 
+                const ttEmptyWrap = document.getElementById('stu-tt-overall-empty');
+                const ttSubview = document.getElementById('stu-tt-subview');
+                const rawSlots = (Array.isArray(cachedTimetableDoc?.slots) && cachedTimetableDoc.slots.length)
+                    ? cachedTimetableDoc.slots
+                    : ((Array.isArray(cachedTimetableDoc?.config?.slots) && cachedTimetableDoc.config.slots.length)
+                        ? cachedTimetableDoc.config.slots
+                        : (Array.isArray(cachedStructureDoc?.slots) && cachedStructureDoc.slots.length ? cachedStructureDoc.slots : []));
+                const rawMatrix = cachedTimetableDoc?.matrix || {};
+                const hasAssignedAnyPeriod = Object.values(rawMatrix).some((entry) => Boolean(entry && (entry.subjectName || entry.subjectId)));
+
+                if (!cachedTimetableDoc || !rawSlots.length || !hasAssignedAnyPeriod) {
+                    if (ttSubview) ttSubview.classList.add('hidden');
+                    if (ttEmptyWrap) {
+                        ttEmptyWrap.innerHTML = buildPortalEmptyCard({
+                            title: 'Class timetable has not been published yet',
+                            message: `The weekly class routine for Class ${classLabel || '--'} (${year}) has not been configured yet. Once your teachers publish the timetable, your daily periods will appear here.`,
+                            icon: 'fas fa-calendar-days',
+                            accent: 'indigo'
+                        });
+                        ttEmptyWrap.classList.remove('hidden');
+                    }
+                    return;
+                }
+
+                if (ttEmptyWrap) ttEmptyWrap.classList.add('hidden');
+                if (ttSubview) ttSubview.classList.remove('hidden');
+
                 renderTimetableDayPills();
                 renderTimetablePeriodsForDay(selectedTimetableDay);
 
@@ -6303,9 +6456,31 @@ registerServiceWorker();
                 ]);
 
                 cachedYearPlanDoc = ypSnap?.exists() ? ypSnap.data() : null;
-                if (subjSnap?.exists() && Array.isArray(subjSnap.data().subjects)) {
-                    cachedClassSubjects = subjSnap.data().subjects;
+                cachedClassSubjects = (subjSnap?.exists() && Array.isArray(subjSnap.data().subjects))
+                    ? subjSnap.data().subjects
+                    : [];
+
+                const sylEmptyWrap = document.getElementById('stu-syllabus-overall-empty');
+                const sylSubview = document.getElementById('stu-syllabus-subview');
+                const grid = cachedYearPlanDoc?.grid || {};
+                const hasAnySyllabusTarget = Object.values(grid).some((cell) => Boolean(cell && (String(cell.topic || '').trim() || String(cell.lessonNo || '').trim())));
+
+                if (!cachedYearPlanDoc || !cachedClassSubjects.length || !hasAnySyllabusTarget) {
+                    if (sylSubview) sylSubview.classList.add('hidden');
+                    if (sylEmptyWrap) {
+                        sylEmptyWrap.innerHTML = buildPortalEmptyCard({
+                            title: 'Syllabus plan has not been published yet',
+                            message: `The academic year syllabus plan for Class ${classLabel || '--'} (${year}) has not been configured yet. Once your teachers add monthly lesson targets, they will appear here.`,
+                            icon: 'fas fa-book-open',
+                            accent: 'blue'
+                        });
+                        sylEmptyWrap.classList.remove('hidden');
+                    }
+                    return;
                 }
+
+                if (sylEmptyWrap) sylEmptyWrap.classList.add('hidden');
+                if (sylSubview) sylSubview.classList.remove('hidden');
 
                 renderSyllabusMonthPills();
                 renderSyllabusCards();
@@ -6357,7 +6532,9 @@ registerServiceWorker();
             if (dayTitle) dayTitle.textContent = `${weekdayObj.name} Routine Schedule`;
 
             const dayStatuses = cachedTimetableDoc?.dayStatuses || {};
-            const isDayOff = dayStatuses[dayNum]?.isOff === true;
+            const isDayOff = dayStatuses[weekdayObj.name] === 'off'
+                || dayStatuses[dayNum] === 'off'
+                || dayStatuses[dayNum]?.isOff === true;
 
             if (isDayOff) {
                 container.innerHTML = '';
@@ -6370,19 +6547,22 @@ registerServiceWorker();
             }
 
             let slots = [];
-            if (cachedTimetableDoc?.slots && Array.isArray(cachedTimetableDoc.slots) && cachedTimetableDoc.slots.length) {
+            if (Array.isArray(cachedTimetableDoc?.slots) && cachedTimetableDoc.slots.length) {
                 slots = cachedTimetableDoc.slots;
-            } else if (cachedStructureDoc?.slots && Array.isArray(cachedStructureDoc.slots) && cachedStructureDoc.slots.length) {
+            } else if (Array.isArray(cachedTimetableDoc?.config?.slots) && cachedTimetableDoc.config.slots.length) {
+                slots = cachedTimetableDoc.config.slots;
+            } else if (Array.isArray(cachedStructureDoc?.slots) && cachedStructureDoc.slots.length) {
                 slots = cachedStructureDoc.slots;
-            } else {
-                slots = [
-                    { slotNumber: 1, name: 'Period 1', startTime: '08:30 AM', endTime: '09:15 AM' },
-                    { slotNumber: 2, name: 'Period 2', startTime: '09:15 AM', endTime: '10:00 AM' },
-                    { slotNumber: 3, name: 'Period 3', startTime: '10:15 AM', endTime: '11:00 AM' },
-                    { slotNumber: 4, name: 'Period 4', startTime: '11:00 AM', endTime: '11:45 AM' },
-                    { slotNumber: 5, name: 'Period 5', startTime: '11:45 AM', endTime: '12:30 PM' },
-                    { slotNumber: 6, name: 'Period 6', startTime: '01:15 PM', endTime: '02:00 PM' }
-                ];
+            }
+
+            if (!slots.length) {
+                container.innerHTML = '';
+                if (emptyState) {
+                    emptyState.classList.remove('hidden');
+                    const emptyP = emptyState.querySelector('p');
+                    if (emptyP) emptyP.textContent = `No classes scheduled for ${weekdayObj.name}.`;
+                }
+                return;
             }
 
             const matrix = cachedTimetableDoc?.matrix || {};
@@ -6391,30 +6571,71 @@ registerServiceWorker();
                 subjectsMap[s.id] = s.name;
             });
 
-            const cardsHtml = slots.map((slot, idx) => {
-                const slotNum = slot.slotNumber || idx + 1;
-                const key1 = `${dayNum}_${slotNum}`;
-                const key2 = `${dayNum}_${idx + 1}`;
-                const entry = matrix[key1] || matrix[key2] || {};
-
+            const resolvedItems = slots.map((slot, idx) => {
+                const slotNum = slot.slotNum || slot.slotNumber || idx + 1;
+                const slotId = slot.slotId || '';
+                const entry = (slotId ? matrix[`${weekdayObj.name}_${slotId}`] : null)
+                    || matrix[`${weekdayObj.name}_${idx + 1}`]
+                    || matrix[`${weekdayObj.name}_${slotNum}`]
+                    || (slotId ? matrix[`${dayNum}_${slotId}`] : null)
+                    || matrix[`${dayNum}_${slotNum}`]
+                    || matrix[`${dayNum}_${idx + 1}`]
+                    || {};
                 const hasSubject = Boolean(entry.subjectName || entry.subjectId);
-                const subjName = entry.subjectName || subjectsMap[entry.subjectId] || entry.subjectId || 'Self Study / Free Period';
-                const teacherName = entry.teacher || (hasSubject ? 'Faculty' : 'Supervised Study');
-                const timeStr = (slot.startTime && slot.endTime) ? `${slot.startTime} - ${slot.endTime}` : (slot.name || `Period ${slotNum}`);
+                return { slot, idx, slotNum, entry, hasSubject };
+            });
+
+            const hasScheduledClassToday = resolvedItems.some((item) => !item.slot.isBreak && item.hasSubject);
+            if (!hasScheduledClassToday) {
+                container.innerHTML = '';
+                if (emptyState) {
+                    emptyState.classList.remove('hidden');
+                    const emptyP = emptyState.querySelector('p');
+                    if (emptyP) emptyP.textContent = `No classes scheduled for ${weekdayObj.name}.`;
+                }
+                return;
+            }
+
+            // Show ONLY assigned subject periods (and breaks between them) — hide unassigned blank periods
+            const visibleItems = resolvedItems.filter((item) => item.slot.isBreak || item.hasSubject);
+
+            const cardsHtml = visibleItems.map(({ slot, slotNum, entry }) => {
+                const timeStr = (slot.startTime && slot.endTime) ? `${slot.startTime} - ${slot.endTime}` : (slot.label || slot.name || `Period ${slotNum}`);
+                if (slot.isBreak) {
+                    return `
+                        <div class="p-2.5 sm:p-3 rounded-xl border border-amber-200/80 bg-amber-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-amber-100 border border-amber-200 text-amber-700 flex items-center justify-center text-xs shrink-0">
+                                    <i class="fas fa-mug-hot"></i>
+                                </div>
+                                <div class="font-extrabold text-xs sm:text-sm text-amber-900">${escapeHtml(slot.label || slot.name || 'Break')}</div>
+                            </div>
+                            <div class="flex items-center gap-1.5 text-[11px] sm:text-xs font-bold text-amber-800 bg-white/80 px-2.5 py-1 rounded-lg self-start sm:self-auto shrink-0">
+                                <i class="fas fa-clock text-amber-500 text-[10px]"></i>
+                                <span class="font-mono">${escapeHtml(timeStr)}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                const subjName = entry.subjectName || subjectsMap[entry.subjectId] || entry.subjectId || '';
+                const teacherName = String(entry.teacher || '').trim();
                 const roomStr = entry.room ? `Room ${entry.room}` : '';
 
                 return `
-                    <div class="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border ${hasSubject ? 'border-slate-200 bg-white hover:border-indigo-300' : 'border-slate-100 bg-slate-50/70'} flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 transition shadow-2xs">
+                    <div class="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 transition shadow-2xs">
                         <div class="flex items-center gap-2.5 sm:gap-3">
-                            <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl ${hasSubject ? 'bg-indigo-50 border border-indigo-200 text-indigo-700' : 'bg-slate-200 text-slate-500'} flex items-center justify-center font-black text-xs sm:text-sm shrink-0">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center font-black text-xs sm:text-sm shrink-0">
                                 P${slotNum}
                             </div>
                             <div>
-                                <div class="font-extrabold text-xs sm:text-sm ${hasSubject ? 'text-slate-900' : 'text-slate-500'}">${escapeHtml(subjName)}</div>
-                                <div class="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 font-semibold mt-0.5 flex-wrap">
-                                    <span class="flex items-center gap-1"><i class="fas fa-chalkboard-user text-indigo-600 text-[9px] sm:text-[10px]"></i> ${escapeHtml(teacherName)}</span>
-                                    ${roomStr ? `<span class="bg-slate-100 px-1.5 py-0.2 rounded-md text-[9px] sm:text-[10px] font-bold text-slate-600">${escapeHtml(roomStr)}</span>` : ''}
-                                </div>
+                                <div class="font-extrabold text-xs sm:text-sm text-slate-900">${escapeHtml(subjName)}</div>
+                                ${(teacherName || roomStr) ? `
+                                    <div class="flex items-center gap-2 text-[11px] sm:text-xs text-slate-500 font-semibold mt-0.5 flex-wrap">
+                                        ${teacherName ? `<span class="flex items-center gap-1"><i class="fas fa-chalkboard-user text-indigo-600 text-[9px] sm:text-[10px]"></i> ${escapeHtml(teacherName)}</span>` : ''}
+                                        ${roomStr ? `<span class="bg-slate-100 px-1.5 py-0.2 rounded-md text-[9px] sm:text-[10px] font-bold text-slate-600">${escapeHtml(roomStr)}</span>` : ''}
+                                    </div>
+                                ` : ''}
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5 text-[11px] sm:text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl self-start sm:self-auto shrink-0">
@@ -6470,24 +6691,34 @@ registerServiceWorker();
             if (heading) heading.textContent = `${selectedSyllabusMonth} Syllabus Curriculum`;
 
             const grid = cachedYearPlanDoc?.grid || {};
-            const subjects = cachedClassSubjects.length ? cachedClassSubjects : [{ id: 'general', name: 'General Curriculum' }];
-
-            let plannedCount = 0;
+            const subjects = Array.isArray(cachedClassSubjects) ? cachedClassSubjects : [];
             const mIdx = MONTHS_ORDER.indexOf(selectedSyllabusMonth);
 
-            const cardsHtml = subjects.map((subj) => {
-                const key1 = `${selectedSyllabusMonth}__${subj.id}`;
-                const key2 = `idx_${mIdx}__${subj.id}`;
-                const cell = grid[key1] || grid[key2] || {};
+            const plannedItems = subjects
+                .map((subj) => {
+                    const key1 = `${selectedSyllabusMonth}__${subj.id}`;
+                    const key2 = `idx_${mIdx}__${subj.id}`;
+                    const cell = grid[key1] || grid[key2] || {};
+                    const hasTarget = Boolean(String(cell.topic || '').trim() || String(cell.lessonNo || '').trim());
+                    return { subj, cell, hasTarget };
+                })
+                .filter((item) => item.hasTarget);
 
-                const hasTarget = Boolean(cell.topic || cell.lessonNo);
-                if (hasTarget) plannedCount++;
+            const plannedCount = plannedItems.length;
+            if (countBadge) countBadge.textContent = `${plannedCount} Subjects Planned`;
 
+            if (plannedCount === 0) {
+                container.innerHTML = '';
+                if (emptyState) emptyState.classList.remove('hidden');
+                return;
+            }
+
+            const cardsHtml = plannedItems.map(({ subj, cell }) => {
                 const progress = Number(cell.progressPercent || (cell.isCompleted ? 100 : 0));
                 const isDone = cell.isCompleted || progress === 100;
 
                 return `
-                    <div class="p-3 sm:p-4 rounded-xl sm:rounded-2xl border ${hasTarget ? 'border-slate-200 bg-white hover:border-indigo-300' : 'border-slate-100 bg-slate-50/60'} shadow-2xs space-y-2 sm:space-y-3 transition">
+                    <div class="p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 bg-white hover:border-indigo-300 shadow-2xs space-y-2 sm:space-y-3 transition">
                         <div class="flex items-center justify-between gap-2">
                             <span class="font-extrabold text-[11px] sm:text-xs uppercase tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">${escapeHtml(subj.name || 'Subject')}</span>
                             ${isDone ? `
@@ -6506,8 +6737,8 @@ registerServiceWorker();
                         </div>
 
                         <div>
-                            <div class="font-black text-xs sm:text-sm text-slate-900">${escapeHtml(cell.lessonNo ? `Lesson / Unit: ${cell.lessonNo}` : 'Lesson target')}</div>
-                            <div class="text-[11px] sm:text-xs text-slate-600 font-semibold mt-0.5">${escapeHtml(cell.topic || 'No topic designated for this month')}</div>
+                            ${cell.lessonNo ? `<div class="font-black text-xs sm:text-sm text-slate-900">${escapeHtml(`Lesson / Unit: ${cell.lessonNo}`)}</div>` : ''}
+                            ${cell.topic ? `<div class="text-[11px] sm:text-xs text-slate-600 font-semibold mt-0.5">${escapeHtml(cell.topic)}</div>` : ''}
                         </div>
 
                         <div class="space-y-1">
@@ -6523,10 +6754,8 @@ registerServiceWorker();
                 `;
             }).join('');
 
-            if (countBadge) countBadge.textContent = `${plannedCount} Subjects Planned`;
-
             container.innerHTML = cardsHtml;
-            if (emptyState) emptyState.classList.toggle('hidden', plannedCount > 0 || subjects.length > 0);
+            if (emptyState) emptyState.classList.add('hidden');
         };
 
         // ----------------------------------------------------
@@ -6736,14 +6965,10 @@ registerServiceWorker();
                     ? sunnahSnap.data().list
                     : [];
 
-                // Routine Tasks Definitions & Multi-Cadence Completions
+                // Routine Tasks Definitions & Multi-Cadence Completions (no hardcoded default tasks)
                 const rawTasks = (taskDefsSnap?.exists() && Array.isArray(taskDefsSnap.data().tasks))
                     ? taskDefsSnap.data().tasks
-                    : [
-                        { id: 'task_d1', title: 'Morning Adhkar & Duas', cadence: 'daily', points: 5 },
-                        { id: 'task_d2', title: 'Uniform & Personal Cleanliness', cadence: 'daily', points: 5 },
-                        { id: 'task_d3', title: 'Class Kit & Books Prepared', cadence: 'daily', points: 5 }
-                    ];
+                    : [];
 
                 const effectiveWeeklyComps = (weeklyCompsSnap?.exists())
                     ? (weeklyCompsSnap.data().completions || {})
@@ -6876,6 +7101,8 @@ registerServiceWorker();
                 let yearlyPrayerPts = 0;
                 let monthlyTasksPts = 0;
                 let yearlyTasksPts = 0;
+                let hasAnyPrayerLogInYear = false;
+                let hasAnyTaskCompInYear = false;
 
                 try {
                     const [rangeIbadahSnap, rangeTasksSnap] = await Promise.all([
@@ -6892,6 +7119,8 @@ registerServiceWorker();
                         if (itemYear === cleanY && itemClass === cleanC) {
                             const sRec = d.records?.[profile.id];
                             if (!sRec) return;
+                            const hasLoggedPrayer = Object.values(sRec).some((val) => val && val !== 'none');
+                            if (hasLoggedPrayer) hasAnyPrayerLogInYear = true;
                             let docPrayerPts = 0;
                             ['subh', 'zuhr', 'asr', 'maghrib', 'isha'].forEach(pKey => {
                                 const pSt = sRec[pKey];
@@ -6926,6 +7155,7 @@ registerServiceWorker();
                                 let docTaskPts = 0;
                                 Object.keys(comps).forEach(tId => {
                                     if (comps[tId]) {
+                                        hasAnyTaskCompInYear = true;
                                         const tDef = rawTasks.find(t => t.id === tId);
                                         docTaskPts += Number(tDef?.points || 5);
                                     }
@@ -6960,26 +7190,9 @@ registerServiceWorker();
                 const monthlyScore = monthlyAttPts + (isPrayerTrackingEnabled ? monthlyPrayerPts : 0) + monthlyTasksPts + monthlyBonusPts;
                 const yearlyScore = yearlyAttPts + (isPrayerTrackingEnabled ? yearlyPrayerPts : 0) + yearlyTasksPts + yearlyBonusPts;
 
-                // Update 3 Score Badges on Single Line
-                const dailyPtsEl = document.getElementById('stu-act-daily-points');
-                const monthlyPtsEl = document.getElementById('stu-act-monthly-points');
-                const totalPtsEl = document.getElementById('stu-act-total-points');
-                const tierEl = document.getElementById('stu-act-tier-badge');
-
-                if (dailyPtsEl) dailyPtsEl.textContent = dailyScore;
-                if (monthlyPtsEl) monthlyPtsEl.textContent = monthlyScore;
-                if (totalPtsEl) totalPtsEl.textContent = yearlyScore;
-
-                if (tierEl) {
-                    if (yearlyScore >= 500) tierEl.textContent = 'Gold Champion';
-                    else if (yearlyScore >= 300) tierEl.textContent = 'Silver Achiever';
-                    else if (yearlyScore >= 150) tierEl.textContent = 'Bronze Scholar';
-                    else tierEl.textContent = 'Star Student';
-                }
-
                 // 3. Aggregate Badges Showcase
                 const earnedBadges = [];
-                if (studentAttendanceStats.rate >= 85) {
+                if (studentAttendanceStats.hasRecords && studentAttendanceStats.workingDays > 0 && studentAttendanceStats.rate !== null && studentAttendanceStats.rate >= 85) {
                     earnedBadges.push({ title: 'Attendance Star', icon: 'fas fa-shield-check', color: 'teal', note: '85%+ Attendance Record' });
                 }
                 if (totalPoints >= 200) {
@@ -7011,32 +7224,87 @@ registerServiceWorker();
                     });
                 });
 
+                // Overall Activities Empty State (when nothing is configured/recorded yet AND self-logging is locked)
+                const actOverallEmptyEl = document.getElementById('stu-act-overall-empty');
+                const actContentWrapEl = document.getElementById('stu-act-content-wrap');
+                const hasAnyActivityData = rawTasks.length > 0
+                    || customPrayersList.length > 0
+                    || hasAnyPrayerLogInYear
+                    || hasAnyTaskCompInYear
+                    || customBadgesList.length > 0
+                    || earnedBadges.length > 0
+                    || bonusPointsList.length > 0;
+
+                if (!hasAnyActivityData && !isClassSelfLoggingAllowed) {
+                    if (actContentWrapEl) actContentWrapEl.classList.add('hidden');
+                    if (actOverallEmptyEl) {
+                        actOverallEmptyEl.innerHTML = buildPortalEmptyCard({
+                            title: 'Activities & achievements have not been recorded yet',
+                            message: 'No routine tasks, prayer records, or achievement badges have been added yet. Once your teachers start recording activities or enable self-logging, your progress will appear here.',
+                            icon: 'fas fa-award',
+                            accent: 'amber'
+                        });
+                        actOverallEmptyEl.classList.remove('hidden');
+                    }
+                    return;
+                }
+
+                if (actOverallEmptyEl) actOverallEmptyEl.classList.add('hidden');
+                if (actContentWrapEl) actContentWrapEl.classList.remove('hidden');
+
+                // Update 3 Score Badges on Single Line
+                const dailyPtsEl = document.getElementById('stu-act-daily-points');
+                const monthlyPtsEl = document.getElementById('stu-act-monthly-points');
+                const totalPtsEl = document.getElementById('stu-act-total-points');
+                const tierEl = document.getElementById('stu-act-tier-badge');
+
+                if (dailyPtsEl) dailyPtsEl.textContent = dailyScore;
+                if (monthlyPtsEl) monthlyPtsEl.textContent = monthlyScore;
+                if (totalPtsEl) totalPtsEl.textContent = yearlyScore;
+
+                if (tierEl) {
+                    if (yearlyScore >= 500) tierEl.textContent = 'Gold Champion';
+                    else if (yearlyScore >= 300) tierEl.textContent = 'Silver Achiever';
+                    else if (yearlyScore >= 150) tierEl.textContent = 'Bronze Scholar';
+                    else if (yearlyScore > 0) tierEl.textContent = 'Star Student';
+                    else tierEl.textContent = 'Getting Started';
+                }
+
                 const badgeCountEl = document.getElementById('stu-act-badges-count');
                 if (badgeCountEl) badgeCountEl.textContent = `${earnedBadges.length} Badges`;
 
                 const badgeGrid = document.getElementById('stu-act-badges-grid');
                 if (badgeGrid) {
-                    const colorMap = {
-                        teal: 'border-teal-200 bg-teal-50/70 text-teal-700',
-                        amber: 'border-amber-200 bg-amber-50/70 text-amber-700',
-                        rose: 'border-rose-200 bg-rose-50/70 text-rose-700',
-                        indigo: 'border-indigo-200 bg-indigo-50/70 text-indigo-700',
-                        blue: 'border-blue-200 bg-blue-50/70 text-blue-700',
-                        emerald: 'border-emerald-200 bg-emerald-50/70 text-emerald-700',
-                        violet: 'border-purple-200 bg-purple-50/70 text-purple-700'
-                    };
+                    if (earnedBadges.length === 0) {
+                        badgeGrid.innerHTML = `
+                            <div class="col-span-full p-5 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 text-center text-slate-400 font-bold text-xs">
+                                <i class="fas fa-medal text-xl text-slate-300 mb-1 block"></i>
+                                No badges earned yet.
+                            </div>
+                        `;
+                    } else {
+                        const colorMap = {
+                            teal: 'border-teal-200 bg-teal-50/70 text-teal-700',
+                            amber: 'border-amber-200 bg-amber-50/70 text-amber-700',
+                            rose: 'border-rose-200 bg-rose-50/70 text-rose-700',
+                            indigo: 'border-indigo-200 bg-indigo-50/70 text-indigo-700',
+                            blue: 'border-blue-200 bg-blue-50/70 text-blue-700',
+                            emerald: 'border-emerald-200 bg-emerald-50/70 text-emerald-700',
+                            violet: 'border-purple-200 bg-purple-50/70 text-purple-700'
+                        };
 
-                    badgeGrid.innerHTML = earnedBadges.map((b) => `
-                        <div class="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border ${colorMap[b.color] || colorMap.amber} shadow-2xs flex flex-col items-center text-center gap-1.5 sm:gap-2 transition hover:scale-102">
-                            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white shadow-2xs border border-current flex items-center justify-center text-base sm:text-xl">
-                                <i class="${b.icon}"></i>
+                        badgeGrid.innerHTML = earnedBadges.map((b) => `
+                            <div class="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border ${colorMap[b.color] || colorMap.amber} shadow-2xs flex flex-col items-center text-center gap-1.5 sm:gap-2 transition hover:scale-102">
+                                <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white shadow-2xs border border-current flex items-center justify-center text-base sm:text-xl">
+                                    <i class="${b.icon}"></i>
+                                </div>
+                                <div>
+                                    <div class="font-black text-[11px] sm:text-xs text-slate-900">${escapeHtml(b.title)}</div>
+                                    <div class="text-[9px] sm:text-[10px] font-semibold text-slate-500 mt-0.5">${escapeHtml(b.note)}</div>
+                                </div>
                             </div>
-                            <div>
-                                <div class="font-black text-[11px] sm:text-xs text-slate-900">${escapeHtml(b.title)}</div>
-                                <div class="text-[9px] sm:text-[10px] font-semibold text-slate-500 mt-0.5">${escapeHtml(b.note)}</div>
-                            </div>
-                        </div>
-                    `).join('');
+                        `).join('');
+                    }
                 }
 
                 // Rubric points subtext under 5 Daily Fard Prayers heading
@@ -7580,8 +7848,8 @@ registerServiceWorker();
                     const portalConfig = (conf.studentPortalConfig && typeof conf.studentPortalConfig === 'object')
                         ? conf.studentPortalConfig
                         : {
-                            tabs: { profile: true, fees: true, attendance: true, timetable: true, results: true, activities: true, publicHome: true },
-                            order: ['profile', 'fees', 'attendance', 'timetable', 'results', 'activities', 'publicHome']
+                            tabs: { profile: true, fees: true, attendance: true, timetable: true, syllabus: true, results: true, activities: true, publicHome: true },
+                            order: ['profile', 'fees', 'attendance', 'timetable', 'syllabus', 'results', 'activities', 'publicHome']
                         };
                     const enabledMods = (conf.enabledModules && typeof conf.enabledModules === 'object')
                         ? conf.enabledModules

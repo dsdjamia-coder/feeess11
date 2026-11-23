@@ -37,9 +37,9 @@
         </div>
     </div>
 
-    <!-- Unified Header Matches Public Page -->
-    <header>
-        <div class="nav-container flex justify-between items-center w-full h-full px-4">
+    <!-- Unified Header + Desktop Student Tab Bar -->
+    <header class="student-portal-header">
+        <div class="nav-container student-header-top flex justify-between items-center w-full px-4">
             <div class="header-logo-box">
                 <img id="header-logo" src="/assets/images/logo.png" alt="Logo">
             </div>
@@ -49,14 +49,20 @@
                 <p id="header-subtitle" class="hidden"><span id="header-regno"></span> <span id="header-sep" class="mx-1 hidden">|</span> <span id="header-place"></span></p>
             </div>
 
-            <div class="flex items-center gap-2 sm:gap-3 relative z-[1001] ml-auto">
+            <div class="flex items-center gap-2 sm:gap-3 relative z-[1001] ml-auto shrink-0">
                 <!-- Notification Bell -->
-                <button id="student-notify-trigger" class="relative text-slate-600 hover:text-blue-600 transition p-2 focus:outline-none rounded-full hover:bg-slate-50 cursor-pointer" title="Notifications">
+                <button id="student-notify-trigger" class="relative text-slate-600 hover:text-blue-600 transition p-2 focus:outline-none rounded-full hover:bg-slate-50 cursor-pointer" title="Notifications" type="button">
                     <i class="fas fa-bell text-[20px] sm:text-[22px]"></i>
                     <span id="student-notify-badge" class="absolute top-[2px] right-[2px] bg-red-500 text-white text-[9px] font-bold px-1.5 py-[2px] rounded-full border-2 border-white shadow-sm hidden"></span>
                 </button>
 
-                <!-- Hamburger Toggle Icon -->
+                <!-- Desktop Direct Logout Button -->
+                <button id="student-desktop-logout-btn" type="button" class="student-desktop-logout-btn" title="Log out">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
+
+                <!-- Mobile Hamburger Toggle Icon (Hidden on Desktop >= 1024px) -->
                 <button class="mobile-toggle" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" type="button">
                     <div class="menu-icon-wrapper">
                         <i class="fas fa-bars icon-bars"></i>
@@ -65,6 +71,7 @@
                 </button>
             </div>
             
+            <!-- Mobile / Tablet Popover Menu -->
             <ul class="nav-menu" aria-label="Primary navigation">
                 <li><a href="index.html?public=1" class="nav-link student-public-nav-link"><i class="fas fa-home text-lg w-6"></i> Home</a></li>
                 <li><a href="index.html?public=1#about" class="nav-link student-public-nav-link"><i class="fas fa-circle-info text-lg w-6"></i> About</a></li>
@@ -84,6 +91,30 @@
                 <li><button id="student-logout-btn" class="login-btn-nav btn-danger"><i class="fas fa-sign-out-alt"></i> Logout</button></li>
             </ul>
         </div>
+
+        <!-- Desktop Highlighted Student Tab Bar + Right-Side More Dropdown -->
+        <nav class="student-desktop-tabbar" aria-label="Student portal navigation">
+            <div class="student-desktop-tabbar-inner">
+                <div id="student-desktop-tabs-list" class="student-desktop-tabs-list" role="tablist">
+                    <!-- Dynamically populated & synced by applyStudentPortalNavigation() -->
+                </div>
+                <div id="student-desktop-more-wrap" class="student-desktop-more-wrap">
+                    <button id="student-desktop-more-btn" type="button" class="student-desktop-more-btn" aria-haspopup="true" aria-expanded="false" aria-controls="student-desktop-more-menu">
+                        <span>More</span>
+                        <i class="fas fa-chevron-down student-more-chevron"></i>
+                    </button>
+                    <div id="student-desktop-more-menu" class="student-desktop-more-menu hidden" role="menu" aria-label="Public website pages">
+                        <a href="index.html?public=1" class="student-more-menu-item student-public-nav-link" role="menuitem"><i class="fas fa-home"></i><span>Home</span></a>
+                        <a href="index.html?public=1#about" class="student-more-menu-item student-public-nav-link" role="menuitem"><i class="fas fa-circle-info"></i><span>About</span></a>
+                        <a href="index.html?public=1#teachers" class="student-more-menu-item student-public-nav-link" role="menuitem"><i class="fas fa-chalkboard-teacher"></i><span>Teachers</span></a>
+                        <a href="index.html?public=1#notices" class="student-more-menu-item student-public-nav-link" role="menuitem"><i class="fas fa-bullhorn"></i><span>Notices</span></a>
+                        <a href="index.html?public=1#gallery" class="student-more-menu-item student-public-nav-link" role="menuitem"><i class="fas fa-images"></i><span>Gallery</span></a>
+                        <div class="student-more-menu-divider" role="separator"></div>
+                        <a href="index.html?public=1" id="student-desktop-publichome-link" class="student-more-menu-item student-public-nav-link" role="menuitem"><i class="fas fa-globe"></i><span>Public Page</span></a>
+                    </div>
+                </div>
+            </div>
+        </nav>
     </header>
 
     <main class="w-full">
@@ -392,13 +423,17 @@
                             <i class="fas fa-calendar-alt text-teal-600 text-xs shrink-0"></i>
                             <select id="stu-att-year-select" class="w-full text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer truncate"></select>
                         </div>
-                        <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 sm:py-1.5 shadow-sm min-w-0">
+                        <div id="stu-att-month-select-wrap" class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 sm:py-1.5 shadow-sm min-w-0">
                             <i class="fas fa-calendar-day text-teal-600 text-xs shrink-0"></i>
                             <select id="stu-att-month-select" class="w-full text-xs font-bold text-slate-800 bg-transparent outline-none cursor-pointer truncate"></select>
                         </div>
                     </div>
                 </div>
 
+                <!-- Overall Empty State (when no attendance records exist for this academic year) -->
+                <div id="stu-att-overall-empty" class="hidden"></div>
+
+                <div id="stu-att-content-wrap" class="space-y-3.5 sm:space-y-5">
                 <!-- High-level Metric Cards Grid -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                     <!-- Overall Percentage -->
@@ -454,6 +489,7 @@
                         <p class="text-xs">No attendance marked for the selected month.</p>
                     </div>
                 </div>
+                </div>
             </div>
         </section>
 
@@ -468,6 +504,8 @@
                         <p class="text-xs text-slate-500 font-semibold mt-0.5">Daily period routine, timings &amp; subject schedules</p>
                     </div>
                 </div>
+
+                <div id="stu-tt-overall-empty" class="hidden"></div>
 
                 <div id="stu-tt-subview" class="space-y-3 sm:space-y-4">
                     <!-- Day of Week Selector Pills -->
@@ -492,8 +530,8 @@
                             <!-- Period Schedule Cards Injected by JS -->
                         </div>
                         <div id="stu-tt-empty-state" class="p-8 text-center text-slate-400 font-bold hidden">
-                            <i class="fas fa-mug-hot text-2xl mb-2 text-slate-300"></i>
-                            <p class="text-xs">No periods scheduled for this day (Holiday / Rest Day).</p>
+                            <i class="fas fa-calendar-xmark text-2xl mb-2 text-slate-300"></i>
+                            <p class="text-xs">No classes scheduled for this day.</p>
                         </div>
                     </div>
                 </div>
@@ -511,6 +549,8 @@
                         <p class="text-xs text-slate-500 font-semibold mt-0.5">Monthly course plan, textbook units &amp; syllabus completion targets</p>
                     </div>
                 </div>
+
+                <div id="stu-syllabus-overall-empty" class="hidden"></div>
 
                 <div id="stu-syllabus-subview" class="space-y-3 sm:space-y-4">
                     <!-- Month Selector Pills -->
@@ -535,8 +575,8 @@
                             <!-- Planned Subject Cards with Progress Bars Injected by JS -->
                         </div>
                         <div id="stu-syllabus-empty-state" class="p-8 text-center text-slate-400 font-bold hidden">
-                            <i class="fas fa-circle-check text-2xl mb-2 text-slate-300"></i>
-                            <p class="text-xs">No syllabus portions configured for this month.</p>
+                            <i class="fas fa-book-open text-2xl mb-2 text-slate-300"></i>
+                            <p class="text-xs">No syllabus portions scheduled for this month.</p>
                         </div>
                     </div>
                 </div>
@@ -546,6 +586,9 @@
         <!-- 6. ACTIVITIES & REWARDS TAB -->
         <section id="activities-page" class="page-content hidden">
             <div class="content-card p-2.5 sm:p-5 space-y-2.5 sm:space-y-4">
+                <div id="stu-act-overall-empty" class="hidden"></div>
+
+                <div id="stu-act-content-wrap" class="space-y-2.5 sm:space-y-4">
                 <!-- Self-Logging Permission Notice Banner -->
                 <div id="stu-act-logging-status-banner" class="p-2.5 sm:p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 text-xs font-bold flex items-center justify-between gap-2">
                     <span class="flex items-center gap-2">
@@ -695,8 +738,9 @@
                     </div>
                     <div id="stu-act-tasks-empty" class="p-5 text-center text-slate-400 font-bold text-xs hidden">
                         <i class="fas fa-clipboard-check text-2xl mb-1 text-slate-300"></i>
-                        <p>No activity tasks assigned for today.</p>
+                        <p>No activity tasks assigned yet.</p>
                     </div>
+                </div>
                 </div>
             </div>
         </section>
