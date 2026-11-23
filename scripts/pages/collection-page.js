@@ -10,7 +10,14 @@ const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) ||
 import { initCollectionEntryModule } from './collection/entry-module.js';
 import { initCollectionHistoryModule } from './collection/history-module.js';
 import { initCollectionReportsModule } from './collection/reports-module.js';
-import { initCollectionUploadModule } from './collection/upload-module.js';
+import {
+    initCollectionUploadModule,
+    buildBulkRosterWithGroups,
+    resolveActiveBulkFeeItems,
+    buildBulkSheetMatrixData,
+    evaluateCollectionBulkSheet,
+    buildBulkFirestorePaymentPayloads
+} from './collection/upload-module.js';
 import { initCollectionSettingsModule } from './collection/settings-module.js';
 import { initMasterLedgerModule, updateMasterLedgerData } from './collection/master-ledger-module.js';
 import { initSharedFeeModal, openFeeEntryEditModal } from './collection/shared-fee-modal.js';
@@ -4868,60 +4875,42 @@ document.getElementById('save-fee-btn')?.addEventListener('click', () => process
 document.getElementById('update-fee-btn')?.addEventListener('click', () => processPaymentSubmit(true));
 
 
-// --- BULK UPLOAD LOGIC (Multi-Format Templates & Editable Preview) ---
+// --- SMART BULK UPLOAD & IN-APP BLANK SHEET LOGIC ---
 let collectionBulkState = {
     columns: [],
     workingRows: [],
     parsedRows: [],
-    monthlyItems: [],
+    activeFeeItems: [],
+    rosterEntries: [],
+    paymentPlan: [],
+    groupSummaryMap: new Map(),
+    groupItemModes: new Map(),
+    totalCollectionAmount: 0,
     year: '',
     targetClass: '',
     isEditMode: false,
     fileName: '',
+    sheetSource: 'upload', // 'blank' | 'upload'
     duplicateReceiptMap: new Map(),
+    groupSharedReceiptSet: new Set(),
     existingDbReceiptSet: new Set()
 };
 
-const getBulkStudentsForClassAndYear = (targetClass = '', year = '') => {
-    const cleanClass = String(targetClass || '').trim().toUpperCase();
-    const cleanYear = String(year || currentWorkingAcademicYear || '').trim();
-    if (!cleanClass || !Array.isArray(allStudentsRaw)) return [];
-
-    return allStudentsRaw
-        .filter((student) => {
-            if (!student) return false;
-            const cls = String(student.class || '').trim().toLowerCase();
-            const st = String(student.status || '').trim().toLowerCase();
-            if (cls === 'alumni' || st === 'alumni' || st === 'graduated' || st === 'discontinued' || student.isAlumni === true) {
-                return false;
-            }
-            const yearEntry = cleanYear && student.academicYears && typeof student.academicYears[cleanYear] === 'object'
-                ? student.academicYears[cleanYear]
-                : null;
-            if (yearEntry) {
-                const entryCls = String(yearEntry.class || student.class || '').trim().toUpperCase();
-                const entrySt = String(yearEntry.status || student.status || '').trim().toLowerCase();
-                return entryCls === cleanClass && entrySt !== 'discontinued' && entrySt !== 'alumni' && entrySt !== 'graduated';
-            }
-            const studentYear = String(student.academicYear || currentWorkingAcademicYear || '').trim();
-            const studentCls = String(student.class || '').trim().toUpperCase();
-            return studentCls === cleanClass && (!cleanYear || studentYear === cleanYear);
-        })
-        .map((student) => {
-            const yearEntry = cleanYear && student.academicYears && typeof student.academicYears[cleanYear] === 'object'
-                ? student.academicYears[cleanYear]
-                : null;
-            if (!yearEntry) return student;
-            return {
-                ...student,
-                class: yearEntry.class || student.class,
-                studentClass: yearEntry.class || student.studentClass || student.class,
-                status: yearEntry.status || student.status
-            };
-        });
+const notifyBulkMessage = (message = '', type = 'error') => {
+    if (typeof showToast === 'function') {
+        showToast(message, type);
+    } else {
+        appLog(type === 'error' ? 'error' : 'info', 'collection.bulk', message);
+    }
 };
 
-const setCollectionBulkEditMode = (enabled) => {
+const formatBulkCurrency = (amt = 0) => {
+    const num = Number(amt || 0);
+    if (!Number.isFinite(num)) return '₹0';
+    return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+};
+
+const setCollectionBulkEditMode = (enabled, { skipRender = false } = {}) => {
     collectionBulkState.isEditMode = Boolean(enabled);
     const switchEl = document.getElementById('collection-bulk-edit-switch');
     if (switchEl && switchEl.checked !== collectionBulkState.isEditMode) {
@@ -4940,7 +4929,9 @@ const setCollectionBulkEditMode = (enabled) => {
             banner?.classList.add('hidden');
         }
     }
-    renderCollectionBulkPreviewTable();
+    if (!skipRender) {
+        renderCollectionBulkPreviewTable();
+    }
 };
 
 const setupBulkUploadUI = () => {
@@ -4951,8 +4942,6 @@ const setupBulkUploadUI = () => {
             selectedValue: currentWorkingAcademicYear
         });
     }
-    const defFeeInput = document.getElementById('bulk-default-fee');
-    if (defFeeInput) defFeeInput.value = defaultFee;
     document.getElementById('bulk-progress-container')?.classList.add('hidden');
     document.getElementById('bulk-preview-area')?.classList.add('hidden');
     document.getElementById('bulk-drop-zone')?.classList.remove('hidden');
@@ -4965,12 +4954,19 @@ const setupBulkUploadUI = () => {
         columns: [],
         workingRows: [],
         parsedRows: [],
-        monthlyItems: [],
+        activeFeeItems: [],
+        rosterEntries: [],
+        paymentPlan: [],
+        groupSummaryMap: new Map(),
+        groupItemModes: new Map(),
+        totalCollectionAmount: 0,
         year: '',
         targetClass: '',
         isEditMode: false,
         fileName: '',
+        sheetSource: 'upload',
         duplicateReceiptMap: new Map(),
+        groupSharedReceiptSet: new Set(),
         existingDbReceiptSet: new Set()
     };
     const switchEl = document.getElementById('collection-bulk-edit-switch');
@@ -4980,76 +4976,88 @@ const setupBulkUploadUI = () => {
         statusLabel.textContent = 'OFF';
         statusLabel.className = 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500 font-mono';
     }
+    const amtEl = document.getElementById('collection-stat-ready-amount');
+    if (amtEl) amtEl.textContent = '₹0';
     document.getElementById('collection-bulk-edit-banner')?.classList.add('hidden');
     window.bulkUploadParsedData = null;
 };
 
-const downloadCollectionBulkTemplate = (format = 'xlsx') => {
+// Collapsible Quick Guide in Step 1
+(() => {
+    const toggleBtn = document.getElementById('bulk-rules-guide-toggle');
+    const body = document.getElementById('bulk-rules-guide-body');
+    const chevron = document.getElementById('bulk-rules-guide-chevron');
+    if (!toggleBtn || !body) return;
+    toggleBtn.addEventListener('click', () => {
+        const isHidden = body.classList.toggle('hidden');
+        if (chevron) {
+            chevron.classList.toggle('rotate-180', isHidden);
+        }
+    });
+})();
+
+const resolveBulkSelectionContext = ({ requireRoster = true } = {}) => {
     const year = document.getElementById('bulk-academic-year')?.value || '';
     const targetClass = document.getElementById('bulk-class')?.value || '';
-    const defFee = document.getElementById('bulk-default-fee')?.value || '';
 
-    if (!year || !targetClass || !defFee) {
-        alert('Please provide Academic Year, Target Class, and Default Fee.');
-        return;
+    if (!year || !targetClass) {
+        notifyBulkMessage('Please select both Academic Year and Target Class.', 'error');
+        return null;
     }
 
     if (!isMasterSuperAdmin() && (!selectedDutyClasses.length || !isClassInDutyScope(targetClass, selectedDutyClasses))) {
-        alert('You do not have permission to download templates for this class.');
-        return;
+        notifyBulkMessage('You do not have permission to access bulk sheets for this class.', 'error');
+        return null;
     }
 
-    const filteredStudents = getBulkStudentsForClassAndYear(targetClass, year);
-    if (filteredStudents.length === 0) {
-        alert('No students found in this class for the selected academic year.');
-        return;
-    }
-
-    if (!defaultMonthlyFeeEnabled) {
-        alert('Default 12-Month Fee is currently disabled in Fee Settings & Setup. Bulk monthly upload template is unavailable while monthly fees are turned off.');
-        return;
-    }
-
-    const monthlyItems = sortMonthlyItemsByAcademicYear(
-        feeItems.filter(item => (item.type || 'month') === 'month' && (!item.academicYear || item.academicYear === year)),
-        year
-    );
-
-    if (monthlyItems.length === 0) {
-        alert('No monthly fee items found for this academic year.');
-        return;
-    }
-
-    const headers = ['Admission_No', 'Student_Name'];
-    monthlyItems.forEach(item => {
-        const safeName = normalizeFeeItemName(item.name).replace(/[^a-zA-Z0-9]/g, '_');
-        headers.push(`${safeName}_Amount`);
-        headers.push(`${safeName}_ReceiptNo`);
-        headers.push(`${safeName}_Date`);
+    const rosterEntries = buildBulkRosterWithGroups({
+        allStudents: allStudentsRaw,
+        studentGroups,
+        targetClass,
+        year,
+        fallbackYear: currentWorkingAcademicYear
     });
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const modelRow = ['1234', 'Model Student Name'];
-    monthlyItems.forEach(() => {
-        modelRow.push(defFee);
-        modelRow.push('1001');
-        modelRow.push(todayStr);
+    if (requireRoster && rosterEntries.length === 0) {
+        notifyBulkMessage(`No active students found in Class ${targetClass} for ${year}.`, 'error');
+        return null;
+    }
+
+    const rosterClasses = [...new Set([
+        targetClass,
+        ...rosterEntries.map((entry) => entry.studentClass).filter(Boolean)
+    ])];
+
+    const activeFeeItems = resolveActiveBulkFeeItems({
+        feeItems,
+        year,
+        defaultMonthlyFeeEnabled,
+        rosterClasses,
+        sortMonthlyFn: sortMonthlyItemsByAcademicYear
     });
 
-    const studentRows = [...filteredStudents]
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-        .map((student) => {
-            const rowData = [
-                student.adm || '',
-                student.name || ''
-            ];
-            monthlyItems.forEach(() => {
-                rowData.push(defFee);
-                rowData.push('');
-                rowData.push('');
-            });
-            return rowData;
-        });
+    if (activeFeeItems.length === 0) {
+        notifyBulkMessage(`No active fee items (Monthly or Custom) found for ${year}. Check Fee Settings & Setup.`, 'error');
+        return null;
+    }
+
+    return { year, targetClass, rosterEntries, rosterClasses, activeFeeItems };
+};
+
+const downloadCollectionBulkTemplate = (format = 'xlsx') => {
+    const ctx = resolveBulkSelectionContext({ requireRoster: true });
+    if (!ctx) return;
+
+    const { year, targetClass, rosterEntries, activeFeeItems } = ctx;
+    const { headers, rowsAsArrays } = buildBulkSheetMatrixData({
+        rosterEntries,
+        activeFeeItems,
+        year,
+        targetClass,
+        defaultFee,
+        allPayments,
+        includeModelRow: true
+    });
 
     const safeClassName = targetClass.replace(/[^a-zA-Z0-9]/g, '_');
     const filenameBase = `Bulk_Fee_Template_${safeClassName}_${year}`;
@@ -5057,18 +5065,110 @@ const downloadCollectionBulkTemplate = (format = 'xlsx') => {
     try {
         const savedName = downloadSpreadsheetRows({
             headers,
-            rows: [modelRow, ...studentRows],
+            rows: rowsAsArrays,
             filenameBase,
             format,
             sheetName: 'Fee_Template',
             xlsxLib: typeof XLSX !== 'undefined' ? XLSX : null
         });
-        showToast?.(`Downloaded template: ${savedName}`, 'success');
+        notifyBulkMessage(`Downloaded auto-priced template: ${savedName}`, 'success');
     } catch (e) {
         console.error('Template generation failed:', e);
-        alert(e?.message || 'Failed to generate template. Please try again.');
+        notifyBulkMessage(e?.message || 'Failed to generate template. Please try again.', 'error');
     }
 };
+
+const openCollectionBlankSheet = () => {
+    const ctx = resolveBulkSelectionContext({ requireRoster: true });
+    if (!ctx) return;
+
+    const { year, targetClass, rosterEntries, activeFeeItems } = ctx;
+    const { columns, workingRows } = buildBulkSheetMatrixData({
+        rosterEntries,
+        activeFeeItems,
+        year,
+        targetClass,
+        defaultFee,
+        allPayments,
+        includeModelRow: false
+    });
+
+    const displayLabel = `Blank Sheet — Class ${targetClass} (${year})`;
+    collectionBulkState = {
+        columns,
+        workingRows,
+        parsedRows: [],
+        activeFeeItems,
+        rosterEntries,
+        paymentPlan: [],
+        groupSummaryMap: new Map(),
+        groupItemModes: new Map(),
+        totalCollectionAmount: 0,
+        year,
+        targetClass,
+        isEditMode: true,
+        fileName: displayLabel,
+        sheetSource: 'blank',
+        duplicateReceiptMap: new Map(),
+        groupSharedReceiptSet: new Set(),
+        existingDbReceiptSet: new Set()
+    };
+    window.bulkUploadParsedData = collectionBulkState;
+
+    const fileIconEl = document.getElementById('collection-bulk-file-icon');
+    if (fileIconEl) {
+        fileIconEl.className = 'fas fa-pen-to-square text-indigo-600 text-lg';
+    }
+    const fileNameEl = document.getElementById('bulk-file-name');
+    if (fileNameEl) fileNameEl.textContent = displayLabel;
+
+    document.getElementById('bulk-drop-zone')?.classList.add('hidden');
+    document.getElementById('bulk-preview-area')?.classList.remove('hidden');
+    document.getElementById('bulk-progress-container')?.classList.add('hidden');
+
+    setCollectionBulkEditMode(true, { skipRender: true });
+    rebuildCollectionBulkStateAndRender();
+
+    const previewArea = document.getElementById('bulk-preview-area');
+    previewArea?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    notifyBulkMessage(`Blank sheet opened for Class ${targetClass} (${rosterEntries.length} students, ${activeFeeItems.length} fee items).`, 'success');
+};
+
+const exportCurrentBulkSheetToExcel = () => {
+    const { columns = [], workingRows = [], parsedRows = [], targetClass = '', year = '' } = collectionBulkState;
+    if (!columns.length || !workingRows.length) {
+        notifyBulkMessage('No active sheet data available to export.', 'error');
+        return;
+    }
+
+    const headers = columns.map((c) => c.header);
+    const exportRows = [];
+    workingRows.forEach((rowObj, idx) => {
+        if (parsedRows[idx]?.isSampleRow) return;
+        exportRows.push(columns.map((col) => (rowObj?.[col.id] ?? '')));
+    });
+
+    const safeClassName = String(targetClass || 'Class').replace(/[^a-zA-Z0-9]/g, '_');
+    const filenameBase = `Fee_Sheet_${safeClassName}_${year || 'Export'}`;
+
+    try {
+        const savedName = downloadSpreadsheetRows({
+            headers,
+            rows: exportRows,
+            filenameBase,
+            format: 'xlsx',
+            sheetName: 'Fee_Sheet',
+            xlsxLib: typeof XLSX !== 'undefined' ? XLSX : null
+        });
+        notifyBulkMessage(`Exported sheet: ${savedName}`, 'success');
+    } catch (e) {
+        console.error('Sheet export failed:', e);
+        notifyBulkMessage(e?.message || 'Failed to export Excel file.', 'error');
+    }
+};
+
+document.getElementById('bulk-open-blank-sheet-btn')?.addEventListener('click', openCollectionBlankSheet);
+document.getElementById('collection-bulk-export-xlsx-btn')?.addEventListener('click', exportCurrentBulkSheetToExcel);
 
 (() => {
     const dropdown = document.getElementById('collection-bulk-template-dropdown');
@@ -5106,17 +5206,20 @@ const downloadCollectionBulkTemplate = (format = 'xlsx') => {
     });
 })();
 
-const buildCollectionBulkMappingOptions = (monthlyItems = []) => {
+const buildCollectionBulkMappingOptions = (activeFeeItems = []) => {
     const options = [
         { key: 'adm', label: 'Admission No (Locked)' },
         { key: 'name', label: 'Student Name (Locked)' },
+        { key: 'className', label: 'Class (Locked)' },
+        { key: 'groupInfo', label: 'Group Info (Locked)' },
         { key: 'studentId', label: 'Student ID (Optional)' }
     ];
-    monthlyItems.forEach((item) => {
+    activeFeeItems.forEach((item) => {
         const labelBase = normalizeFeeItemName(item.name || item.key);
-        options.push({ key: `${item.key}::amount`, label: `${labelBase} - Amount` });
-        options.push({ key: `${item.key}::receiptNo`, label: `${labelBase} - Receipt No` });
-        options.push({ key: `${item.key}::date`, label: `${labelBase} - Date` });
+        const typeSuffix = item.type === 'custom' ? ' [Custom]' : '';
+        options.push({ key: `${item.key}::amount`, label: `${labelBase}${typeSuffix} - Amount` });
+        options.push({ key: `${item.key}::receiptNo`, label: `${labelBase}${typeSuffix} - Receipt No` });
+        options.push({ key: `${item.key}::date`, label: `${labelBase}${typeSuffix} - Date` });
     });
     options.push({ key: 'none', label: '-- Skip / Ignore --' });
     return options;
@@ -5128,19 +5231,25 @@ const isFeeEditableMappedField = (mappedField = '') => (
     mappedField.endsWith('::date')
 );
 
-const buildCollectionBulkColumns = (rawHeaders = [], monthlyItems = []) => {
+const getMappedItemKey = (mappedField = '') => {
+    if (!isFeeEditableMappedField(mappedField)) return '';
+    return mappedField.split('::')[0] || '';
+};
+
+const buildCollectionBulkColumns = (rawHeaders = [], activeFeeItems = []) => {
     const norm = (str = '') => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const usedTargets = new Set();
 
-    const itemMatchers = monthlyItems.map((item) => {
-        const cleanName = normalizeFeeItemName(item.name || '');
-        const safeName = cleanName.replace(/[^a-zA-Z0-9]/g, '_');
+    const itemMatchers = activeFeeItems.map((item) => {
+        const cleanName = normalizeFeeItemName(item.name || item.key || '');
+        const safeName = cleanName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
         return {
             itemKey: item.key,
             exactAmt: `${safeName}_Amount`,
             exactRcpt: `${safeName}_ReceiptNo`,
             exactDate: `${safeName}_Date`,
-            normBase: norm(cleanName)
+            normBase: norm(cleanName),
+            normKey: norm(item.key || '')
         };
     });
 
@@ -5155,23 +5264,39 @@ const buildCollectionBulkColumns = (rawHeaders = [], monthlyItems = []) => {
             mappedField = 'adm';
         } else if (['studentname', 'name', 'fullname', 'nameofstudent'].includes(nHeader) && !usedTargets.has('name')) {
             mappedField = 'name';
+        } else if (['class', 'classname', 'std', 'grade'].includes(nHeader) && !usedTargets.has('className')) {
+            mappedField = 'className';
+        } else if (['groupinfo', 'familygroup', 'group', 'feetype', 'category'].includes(nHeader) && !usedTargets.has('groupInfo')) {
+            mappedField = 'groupInfo';
         } else {
             for (const matcher of itemMatchers) {
-                if (headerStr === matcher.exactAmt || nHeader === `${matcher.normBase}amount` || nHeader === `${matcher.normBase}amt`) {
+                const baseMatchesAmt = headerStr === matcher.exactAmt
+                    || nHeader === `${matcher.normBase}amount`
+                    || nHeader === `${matcher.normBase}amt`
+                    || (matcher.normKey && nHeader === `${matcher.normKey}amount`);
+                if (baseMatchesAmt) {
                     const candidate = `${matcher.itemKey}::amount`;
                     if (!usedTargets.has(candidate)) {
                         mappedField = candidate;
                         break;
                     }
                 }
-                if (headerStr === matcher.exactRcpt || nHeader === `${matcher.normBase}receiptno` || nHeader === `${matcher.normBase}receipt` || nHeader === `${matcher.normBase}rcpt`) {
+                const baseMatchesRcpt = headerStr === matcher.exactRcpt
+                    || nHeader === `${matcher.normBase}receiptno`
+                    || nHeader === `${matcher.normBase}receipt`
+                    || nHeader === `${matcher.normBase}rcpt`
+                    || (matcher.normKey && nHeader === `${matcher.normKey}receiptno`);
+                if (baseMatchesRcpt) {
                     const candidate = `${matcher.itemKey}::receiptNo`;
                     if (!usedTargets.has(candidate)) {
                         mappedField = candidate;
                         break;
                     }
                 }
-                if (headerStr === matcher.exactDate || nHeader === `${matcher.normBase}date`) {
+                const baseMatchesDate = headerStr === matcher.exactDate
+                    || nHeader === `${matcher.normBase}date`
+                    || (matcher.normKey && nHeader === `${matcher.normKey}date`);
+                if (baseMatchesDate) {
                     const candidate = `${matcher.itemKey}::date`;
                     if (!usedTargets.has(candidate)) {
                         mappedField = candidate;
@@ -5205,11 +5330,8 @@ const getCollectionDuplicateMappedFields = () => {
     return dupes;
 };
 
-const validateCollectionBulkRow = (rowIdx, classStudents = null) => {
-    const { columns, workingRows, monthlyItems, year, targetClass } = collectionBulkState;
-    const workingRow = workingRows[rowIdx] || {};
-    const studentsScope = classStudents || getBulkStudentsForClassAndYear(targetClass, year);
-
+// Re-orders uploaded data rows so detected Family Group members sit adjacently
+const reorderUploadedRowsByFamilyGroup = (workingRows = [], columns = [], rosterEntries = []) => {
     const colByField = {};
     columns.forEach((c) => {
         if (c.mappedField && c.mappedField !== 'none' && !colByField[c.mappedField]) {
@@ -5217,213 +5339,81 @@ const validateCollectionBulkRow = (rowIdx, classStudents = null) => {
         }
     });
 
-    const studentIdVal = colByField.studentId ? String(workingRow[colByField.studentId] || '').trim() : '';
-    const admVal = colByField.adm ? String(workingRow[colByField.adm] || '').trim() : '';
-    const nameVal = colByField.name ? String(workingRow[colByField.name] || '').trim() : '';
+    const studentByAdm = new Map();
+    const studentById = new Map();
+    const studentByName = new Map();
+    const groupIdByStudentId = new Map();
 
-    const isSampleRow = studentIdVal === 'SAMPLE-ID-DO-NOT-DELETE' || (
-        nameVal.toLowerCase() === 'model student name' &&
-        (admVal === '1234' || admVal === '') &&
-        !studentsScope.some((s) => String(s.name || '').trim().toLowerCase() === 'model student name')
-    );
-
-    let matchedStudent = null;
-    let ambiguousNameError = false;
-    if (!isSampleRow) {
-        if (studentIdVal) {
-            matchedStudent = studentsScope.find((s) => s.id === studentIdVal) || null;
-        }
-        if (!matchedStudent && admVal) {
-            const normAdm = admVal.toUpperCase();
-            matchedStudent = studentsScope.find((s) => String(s.adm || '').trim().toUpperCase() === normAdm) || null;
-        }
-        if (!matchedStudent && !admVal && nameVal) {
-            const normName = nameVal.toLowerCase();
-            const nameMatches = studentsScope.filter((s) => String(s.name || '').trim().toLowerCase() === normName);
-            if (nameMatches.length === 1) {
-                matchedStudent = nameMatches[0];
-            } else if (nameMatches.length > 1) {
-                ambiguousNameError = true;
-            }
-        }
-    }
-
-    const cellStatuses = {};
-    columns.forEach((c) => {
-        if (!c.mappedField || c.mappedField === 'none') {
-            cellStatuses[c.id] = { status: 'skip', reason: 'Column skipped' };
-        } else if (!isFeeEditableMappedField(c.mappedField)) {
-            cellStatuses[c.id] = { status: 'locked', reason: 'Identity column is read-only' };
+    (Array.isArray(allStudentsRaw) ? allStudentsRaw : []).forEach((s) => {
+        if (!s?.id) return;
+        studentById.set(s.id, s);
+        if (s.adm) studentByAdm.set(String(s.adm).trim().toUpperCase(), s);
+        if (s.name) {
+            const key = String(s.name).trim().toLowerCase();
+            if (!studentByName.has(key)) studentByName.set(key, []);
+            studentByName.get(key).push(s);
         }
     });
-
-    if (isSampleRow) {
-        columns.forEach((c) => {
-            if (isFeeEditableMappedField(c.mappedField)) {
-                cellStatuses[c.id] = { status: 'sample', reason: 'Sample guide row (automatically skipped)' };
-            }
-        });
-        return {
-            rowIdx,
-            isSampleRow: true,
-            hasFatalError: false,
-            matchedStudent: null,
-            displayStudentId: studentIdVal,
-            displayAdm: admVal,
-            displayName: nameVal || 'Model Student Name',
-            readyEntries: [],
-            readyCount: 0,
-            errorCount: 0,
-            alreadyPaidCount: 0,
-            cellStatuses
-        };
-    }
-
-    if (!matchedStudent) {
-        const fatalReason = ambiguousNameError
-            ? `Multiple students named "${nameVal}" in Class ${targetClass} — enter Admission No`
-            : (!studentIdVal && !admVal && !nameVal)
-                ? `Missing Admission No or Student Name in Class ${targetClass} (${year})`
-                : `Student not found in Class ${targetClass} (${year})`;
-        columns.forEach((c) => {
-            if (!c.mappedField || c.mappedField === 'none') return;
-            cellStatuses[c.id] = {
-                status: 'error',
-                reason: fatalReason
-            };
-        });
-        return {
-            rowIdx,
-            isSampleRow: false,
-            hasFatalError: true,
-            fatalReason,
-            matchedStudent: null,
-            displayStudentId: studentIdVal,
-            displayAdm: admVal,
-            displayName: nameVal || '--',
-            readyEntries: [],
-            readyCount: 0,
-            errorCount: 1,
-            alreadyPaidCount: 0,
-            cellStatuses
-        };
-    }
-
-    const readyEntries = [];
-    let errorCount = 0;
-    let alreadyPaidCount = 0;
-
-    monthlyItems.forEach((item) => {
-        const amtColId = colByField[`${item.key}::amount`];
-        const rcptColId = colByField[`${item.key}::receiptNo`];
-        const dateColId = colByField[`${item.key}::date`];
-        if (!amtColId && !rcptColId && !dateColId) return;
-
-        const rawAmt = amtColId ? String(workingRow[amtColId] || '').trim() : '';
-        const rawRcpt = rcptColId ? String(workingRow[rcptColId] || '').trim() : '';
-        const rawDate = dateColId ? String(workingRow[dateColId] || '').trim() : '';
-
-        const isAlreadyPaid = allPayments.some((p) => (
-            p.studentId === matchedStudent.id &&
-            p.itemKey === item.key &&
-            (p.academicYear || '') === year
-        ));
-
-        if (isAlreadyPaid) {
-            alreadyPaidCount += 1;
-            const paidReason = `Already paid for ${normalizeFeeItemName(item.name)} (${year})`;
-            if (amtColId) cellStatuses[amtColId] = { status: 'paid', reason: paidReason };
-            if (rcptColId) cellStatuses[rcptColId] = { status: 'paid', reason: paidReason };
-            if (dateColId) cellStatuses[dateColId] = { status: 'paid', reason: paidReason };
-            return;
-        }
-
-        const normalizedDate = rawDate ? normalizeToIsoDate(rawDate) : '';
-        const parsedAmt = rawAmt !== '' ? parseFloat(rawAmt) : NaN;
-        const parsedRcptOk = !rawRcpt || (/^\d+$/.test(rawRcpt) && parseInt(rawRcpt, 10) > 0);
-
-        let monthHasError = false;
-
-        if (rawDate && !normalizedDate) {
-            if (dateColId) {
-                cellStatuses[dateColId] = { status: 'error', reason: 'Invalid date (use DD-MM-YYYY or YYYY-MM-DD)' };
-            }
-            monthHasError = true;
-            errorCount += 1;
-        }
-
-        if (rawRcpt && !parsedRcptOk) {
-            if (rcptColId) {
-                cellStatuses[rcptColId] = { status: 'error', reason: 'Receipt No must be a positive whole number' };
-            }
-            monthHasError = true;
-            errorCount += 1;
-        } else if (rawRcpt && !rawDate && dateColId) {
-            cellStatuses[dateColId] = { status: 'error', reason: 'Date is required when Receipt No is entered' };
-            monthHasError = true;
-            errorCount += 1;
-        }
-
-        if (normalizedDate && (rawAmt === '' || isNaN(parsedAmt) || parsedAmt <= 0)) {
-            if (amtColId) {
-                cellStatuses[amtColId] = { status: 'error', reason: 'Amount must be greater than 0 when Date is entered' };
-            }
-            monthHasError = true;
-            errorCount += 1;
-        } else if (rawAmt !== '' && (isNaN(parsedAmt) || parsedAmt < 0)) {
-            if (amtColId) {
-                cellStatuses[amtColId] = { status: 'error', reason: 'Amount must be a valid positive number' };
-            }
-            monthHasError = true;
-            errorCount += 1;
-        }
-
-        if (monthHasError) {
-            [amtColId, rcptColId, dateColId].forEach((cId) => {
-                if (cId && !cellStatuses[cId]) {
-                    cellStatuses[cId] = { status: 'blank', reason: '' };
-                }
-            });
-            return;
-        }
-
-        if (normalizedDate && !isNaN(parsedAmt) && parsedAmt > 0) {
-            readyEntries.push({
-                studentId: matchedStudent.id,
-                studentName: matchedStudent.name || '',
-                classLabel: matchedStudent.class || targetClass,
-                itemKey: item.key,
-                itemName: normalizeFeeItemName(item.name || item.key),
-                amount: parsedAmt,
-                receiptNo: rawRcpt ? parseInt(rawRcpt, 10) : null,
-                paymentDate: normalizedDate
-            });
-            const okTitle = `Ready to save: ${normalizeFeeItemName(item.name)} (₹${parsedAmt} on ${normalizedDate})`;
-            if (amtColId) cellStatuses[amtColId] = { status: 'ready', reason: okTitle };
-            if (rcptColId) cellStatuses[rcptColId] = { status: 'ready', reason: okTitle };
-            if (dateColId) cellStatuses[dateColId] = { status: 'ready', reason: okTitle };
-            return;
-        }
-
-        if (amtColId) cellStatuses[amtColId] = { status: 'blank', reason: 'No payment date entered (will be skipped)' };
-        if (rcptColId) cellStatuses[rcptColId] = { status: 'blank', reason: '' };
-        if (dateColId) cellStatuses[dateColId] = { status: 'blank', reason: 'Enter payment date to record fee' };
+    (Array.isArray(studentGroups) ? studentGroups : []).forEach((g) => {
+        if (!g?.id || !Array.isArray(g.memberIds) || g.memberIds.length < 2) return;
+        g.memberIds.forEach((id) => groupIdByStudentId.set(id, g.id));
     });
 
-    return {
-        rowIdx,
-        isSampleRow: false,
-        hasFatalError: false,
-        matchedStudent,
-        displayStudentId: matchedStudent.id,
-        displayAdm: matchedStudent.adm || admVal,
-        displayName: matchedStudent.name || nameVal || '--',
-        readyEntries,
-        readyCount: readyEntries.length,
-        errorCount,
-        alreadyPaidCount,
-        cellStatuses
+    const rosterOrder = new Map(rosterEntries.map((r, i) => [r.studentId, i]));
+
+    const detectRowMeta = (rowObj) => {
+        const stuId = colByField.studentId ? String(rowObj[colByField.studentId] || '').trim() : '';
+        const adm = colByField.adm ? String(rowObj[colByField.adm] || '').trim() : '';
+        const name = colByField.name ? String(rowObj[colByField.name] || '').trim() : '';
+        const isSample = stuId === 'SAMPLE-ID-DO-NOT-DELETE' || (name.toLowerCase() === 'model student name' && (adm === '1234' || adm === ''));
+        if (isSample) return { isSample: true, groupId: '', studentId: '' };
+
+        let matched = stuId ? studentById.get(stuId) : null;
+        if (!matched && adm) matched = studentByAdm.get(adm.toUpperCase()) || null;
+        if (!matched && !adm && name) {
+            const matches = studentByName.get(name.toLowerCase()) || [];
+            if (matches.length === 1) matched = matches[0];
+        }
+        const groupId = matched ? (groupIdByStudentId.get(matched.id) || '') : '';
+        return { isSample: false, groupId, studentId: matched?.id || '' };
     };
+
+    const sampleRows = [];
+    const groupedBuckets = new Map();
+    const orderTokens = [];
+
+    workingRows.forEach((rowObj, idx) => {
+        const meta = detectRowMeta(rowObj);
+        if (meta.isSample) {
+            sampleRows.push(rowObj);
+            return;
+        }
+        if (meta.groupId) {
+            if (!groupedBuckets.has(meta.groupId)) {
+                groupedBuckets.set(meta.groupId, []);
+                orderTokens.push({ type: 'group', groupId: meta.groupId });
+            }
+            groupedBuckets.get(meta.groupId).push({ rowObj, studentId: meta.studentId, origIdx: idx });
+        } else {
+            orderTokens.push({ type: 'single', rowObj });
+        }
+    });
+
+    const reordered = [...sampleRows];
+    orderTokens.forEach((tok) => {
+        if (tok.type === 'single') {
+            reordered.push(tok.rowObj);
+        } else {
+            const members = groupedBuckets.get(tok.groupId) || [];
+            members.sort((a, b) => {
+                const oa = rosterOrder.has(a.studentId) ? rosterOrder.get(a.studentId) : 99999 + a.origIdx;
+                const ob = rosterOrder.has(b.studentId) ? rosterOrder.get(b.studentId) : 99999 + b.origIdx;
+                return oa - ob;
+            });
+            members.forEach((m) => reordered.push(m.rowObj));
+        }
+    });
+    return reordered;
 };
 
 const getCollectionBulkRowBadgeHtml = (r) => {
@@ -5434,26 +5424,31 @@ const getCollectionBulkRowBadgeHtml = (r) => {
         return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-red-600 text-white shadow-xs" title="${escapeHtml(r.fatalReason || 'Student not found')}">UNMATCHED</span>`;
     }
     if (r.errorCount > 0 && r.readyCount > 0) {
-        return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-xs" title="${r.readyCount} valid payment(s), ${r.errorCount} field issue(s) skipped">${r.readyCount} READY • ${r.errorCount} ERR</span>`;
+        return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500 text-white shadow-xs" title="${r.readyCount} valid payment(s), ${r.errorCount} issue(s)">${r.readyCount} READY • ${r.errorCount} ERR</span>`;
     }
     if (r.errorCount > 0) {
-        return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white shadow-xs" title="${r.errorCount} field validation issue(s)">${r.errorCount} ISSUE(S)</span>`;
+        return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white shadow-xs" title="${r.errorCount} validation issue(s)">${r.errorCount} ISSUE(S)</span>`;
     }
     if (r.readyCount > 0) {
-        return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white shadow-xs" title="${r.readyCount} monthly payment(s) ready to save">READY (${r.readyCount})</span>`;
+        const hasGroupReady = r.readyEntries?.some((e) => e.billingMode === 'group');
+        return hasGroupReady
+            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-xs" title="${r.readyCount} payment(s) ready (includes Family Group billing)">READY (${r.readyCount})</span>`
+            : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white shadow-xs" title="${r.readyCount} payment(s) ready to save">READY (${r.readyCount})</span>`;
     }
     if (r.alreadyPaidCount > 0) {
-        return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white shadow-xs" title="All filled months already paid">ALREADY PAID</span>`;
+        return `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white shadow-xs" title="Existing settled fees locked as PAID">PAID (${r.alreadyPaidCount})</span>`;
     }
-    return `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-200 text-slate-700" title="No payment dates filled">NO ENTRIES</span>`;
+    return `<span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-200 text-slate-700" title="Enter Receipt No or Date to collect fee">IDLE</span>`;
 };
 
 const getCollectionBulkRowBgClass = (r) => {
+    const groupBorder = r.groupId ? 'border-l-4 border-l-indigo-500' : '';
     if (r.isSampleRow) return 'bg-slate-100/80 text-slate-500 italic border-b border-slate-200';
-    if (r.hasFatalError) return 'bg-red-100 hover:bg-red-200/80 font-semibold text-red-950 border-b border-red-300';
-    if (r.errorCount > 0) return 'bg-amber-50/90 hover:bg-amber-100/80 text-amber-950 border-b border-amber-200';
-    if (r.readyCount > 0) return 'bg-emerald-50/40 hover:bg-emerald-50/80 border-b border-slate-100';
-    if (r.alreadyPaidCount > 0) return 'bg-sky-50/40 hover:bg-sky-50/70 border-b border-slate-100';
+    if (r.hasFatalError) return `bg-red-100 hover:bg-red-200/80 font-semibold text-red-950 border-b border-red-300 ${groupBorder}`;
+    if (r.errorCount > 0) return `bg-amber-50/90 hover:bg-amber-100/80 text-amber-950 border-b border-amber-200 ${groupBorder}`;
+    if (r.readyCount > 0) return `${r.groupId ? 'bg-indigo-50/35 hover:bg-indigo-50/65' : 'bg-emerald-50/40 hover:bg-emerald-50/80'} border-b border-slate-100 ${groupBorder}`;
+    if (r.groupId) return `bg-indigo-50/20 hover:bg-indigo-50/45 border-b border-indigo-100 ${groupBorder}`;
+    if (r.alreadyPaidCount > 0) return 'bg-sky-50/30 hover:bg-sky-50/60 border-b border-slate-100';
     return 'hover:bg-slate-50 border-b border-slate-100';
 };
 
@@ -5466,13 +5461,21 @@ const getCollectionBulkCellVisual = (col, rowValidation) => {
     } else if (cellInfo.status === 'sample') {
         bgClass = 'bg-slate-100/70 text-slate-400';
     } else if (cellInfo.status === 'locked') {
-        bgClass = rowValidation.hasFatalError
-            ? 'bg-red-100/70 text-red-900 font-semibold'
-            : 'bg-slate-50/80 text-slate-700 font-semibold';
+        if (rowValidation.hasFatalError) {
+            bgClass = 'bg-red-100/70 text-red-900 font-semibold';
+        } else if (rowValidation.groupId) {
+            bgClass = 'bg-indigo-50/50 text-slate-800 font-semibold';
+        } else {
+            bgClass = 'bg-slate-50/80 text-slate-700 font-semibold';
+        }
     } else if (cellInfo.status === 'error') {
         bgClass = 'bg-red-200 text-red-950 border-2 border-red-500 font-black';
     } else if (cellInfo.status === 'paid') {
         bgClass = 'bg-sky-100 text-sky-900 border border-sky-300 font-semibold';
+    } else if (cellInfo.status === 'na') {
+        bgClass = 'bg-slate-100/90 text-slate-400 italic';
+    } else if (cellInfo.status === 'ready-group') {
+        bgClass = 'bg-indigo-100/85 text-indigo-950 border border-indigo-400 font-bold';
     } else if (cellInfo.status === 'ready') {
         bgClass = 'bg-emerald-100/80 text-emerald-950 border border-emerald-300 font-bold';
     } else if (isFeeCol) {
@@ -5491,7 +5494,9 @@ const recalculateCollectionBulkStats = () => {
         .reduce((sum, r) => sum + r.readyCount, 0);
     const fatalRowsCount = dataRows.filter((r) => r.hasFatalError).length;
     const cellErrorCount = dataRows.filter((r) => !r.hasFatalError).reduce((sum, r) => sum + r.errorCount, 0);
-    const totalPaidMonths = dataRows.reduce((sum, r) => sum + r.alreadyPaidCount, 0);
+    const totalPaidItems = dataRows.reduce((sum, r) => sum + r.alreadyPaidCount, 0);
+    const totalAmt = Number(collectionBulkState.totalCollectionAmount || 0);
+    const readyTxCount = (collectionBulkState.paymentPlan || []).length;
 
     const setTxt = (id, val) => {
         const el = document.getElementById(id);
@@ -5500,7 +5505,8 @@ const recalculateCollectionBulkStats = () => {
 
     setTxt('collection-stat-total', totalRowsCount);
     setTxt('collection-stat-ready', totalReadyEntries);
-    setTxt('collection-stat-paid', totalPaidMonths);
+    setTxt('collection-stat-ready-amount', formatBulkCurrency(totalAmt));
+    setTxt('collection-stat-paid', totalPaidItems);
 
     if (fatalRowsCount > 0 && cellErrorCount > 0) {
         setTxt('collection-stat-issues', `${fatalRowsCount} Unmatched (${cellErrorCount} errs)`);
@@ -5512,7 +5518,9 @@ const recalculateCollectionBulkStats = () => {
 
     const recordBadge = document.getElementById('bulk-record-count');
     if (recordBadge) {
-        recordBadge.textContent = `${totalRowsCount} student row(s) • ${totalReadyEntries} ready fee entry(s) for Class ${collectionBulkState.targetClass} (${collectionBulkState.year})`;
+        const groupCount = new Set(dataRows.map((r) => r.groupId).filter(Boolean)).size;
+        const groupTag = groupCount > 0 ? ` • ${groupCount} family group(s)` : '';
+        recordBadge.textContent = `${totalRowsCount} student(s)${groupTag} • ${readyTxCount} billing item(s) • Total ${formatBulkCurrency(totalAmt)} • Class ${collectionBulkState.targetClass} (${collectionBulkState.year})`;
     }
 
     const duplicateFields = getCollectionDuplicateMappedFields();
@@ -5527,21 +5535,21 @@ const recalculateCollectionBulkStats = () => {
 
     if (hasDuplicateMapping) {
         if (startBtn) startBtn.disabled = true;
-        if (startBtnText) startBtnText.textContent = 'Cannot Upload (Duplicate Column Mapped)';
+        if (startBtnText) startBtnText.textContent = 'Cannot Save (Duplicate Column Mapped)';
         if (skipBtn) {
             skipBtn.disabled = true;
             skipBtn.classList.add('hidden');
         }
     } else if (totalReadyEntries === 0) {
         if (startBtn) startBtn.disabled = true;
-        if (startBtnText) startBtnText.textContent = 'Upload All (0 Ready)';
+        if (startBtnText) startBtnText.textContent = 'Save Payments (0 Ready)';
         if (skipBtn) {
             skipBtn.classList.add('hidden');
             skipBtn.disabled = true;
         }
     } else {
         if (startBtn) startBtn.disabled = false;
-        if (startBtnText) startBtnText.textContent = `Upload All (${totalReadyEntries})`;
+        if (startBtnText) startBtnText.textContent = `Save Payments (${readyTxCount} • ${formatBulkCurrency(totalAmt)})`;
         if (skipBtn) {
             if (hasIssues) {
                 skipBtn.classList.remove('hidden');
@@ -5575,65 +5583,97 @@ const computeCollectionBulkDuplicateReceipts = () => {
     });
 
     const receiptCols = columns.filter((col) => col.mappedField && col.mappedField.endsWith('::receiptNo'));
-    const receiptCounts = new Map();
+    // Track occurrences by receipt key along with group/item context so siblings sharing a receipt get a friendly GRP tag
+    const occurrencesByKey = new Map();
 
     workingRows.forEach((rowObj, rowIdx) => {
-        if (parsedRows[rowIdx]?.isSampleRow) return;
+        const rowVal = parsedRows[rowIdx];
+        if (!rowVal || rowVal.isSampleRow) return;
         receiptCols.forEach((col) => {
+            const cellStatus = rowVal.cellStatuses?.[col.id]?.status;
+            if (cellStatus === 'paid' || cellStatus === 'na') return;
             const key = normalizeBulkReceiptKey(rowObj?.[col.id]);
             if (!key) return;
-            receiptCounts.set(key, (receiptCounts.get(key) || 0) + 1);
+            if (!occurrencesByKey.has(key)) occurrencesByKey.set(key, []);
+            occurrencesByKey.get(key).push({
+                rowIdx,
+                groupId: rowVal.groupId || '',
+                itemKey: getMappedItemKey(col.mappedField),
+                studentId: rowVal.matchedStudent?.id || `row_${rowIdx}`
+            });
         });
     });
 
     const duplicateReceiptMap = new Map();
+    const groupSharedReceiptSet = new Set();
     let groupNo = 1;
-    receiptCounts.forEach((count, key) => {
-        if (count >= 2) {
+
+    occurrencesByKey.forEach((occList, key) => {
+        if (occList.length < 2) return;
+        const distinctGroups = new Set(occList.map((o) => o.groupId).filter(Boolean));
+        const allSameFamilyGroup = occList.every((o) => Boolean(o.groupId)) && distinctGroups.size === 1;
+
+        if (allSameFamilyGroup) {
+            groupSharedReceiptSet.add(key);
+        } else {
             duplicateReceiptMap.set(key, {
                 groupNo: groupNo++,
-                count,
+                count: occList.length,
                 existsInDb: existingDbReceiptSet.has(key)
             });
         }
     });
 
     collectionBulkState.duplicateReceiptMap = duplicateReceiptMap;
+    collectionBulkState.groupSharedReceiptSet = groupSharedReceiptSet;
     collectionBulkState.existingDbReceiptSet = existingDbReceiptSet;
-    return { duplicateReceiptMap, existingDbReceiptSet };
+    return { duplicateReceiptMap, groupSharedReceiptSet, existingDbReceiptSet };
 };
 
 const getCollectionBulkReceiptBadgeInfo = (col, rowValidation, rawVal) => {
     if (!col?.mappedField?.endsWith('::receiptNo') || rowValidation?.isSampleRow) {
-        return { key: '', dupInfo: null, existsInDb: false, titleNote: '' };
+        return { key: '', dupInfo: null, isGroupShared: false, existsInDb: false, titleNote: '' };
+    }
+    const cellStatus = rowValidation?.cellStatuses?.[col.id]?.status;
+    if (cellStatus === 'paid' || cellStatus === 'na') {
+        return { key: '', dupInfo: null, isGroupShared: false, existsInDb: false, titleNote: '' };
     }
     const key = normalizeBulkReceiptKey(rawVal);
     if (!key) {
-        return { key: '', dupInfo: null, existsInDb: false, titleNote: '' };
+        return { key: '', dupInfo: null, isGroupShared: false, existsInDb: false, titleNote: '' };
     }
     const dupInfo = collectionBulkState.duplicateReceiptMap?.get(key) || null;
+    const isGroupShared = Boolean(collectionBulkState.groupSharedReceiptSet?.has(key));
     const existsInDb = Boolean(collectionBulkState.existingDbReceiptSet?.has(key));
     const notes = [];
-    if (dupInfo) {
+    if (isGroupShared) {
+        notes.push(`Shared Family Group Receipt #${key}`);
+    } else if (dupInfo) {
         notes.push(`Duplicate Receipt #${key} (${dupInfo.count} times in sheet • Group ${dupInfo.groupNo})`);
     }
     if (existsInDb) {
         notes.push(`Receipt #${key} also exists in saved payments`);
     }
-    return { key, dupInfo, existsInDb, titleNote: notes.join(' • ') };
+    return { key, dupInfo, isGroupShared, existsInDb, titleNote: notes.join(' • ') };
 };
 
 const buildCollectionBulkCellInnerHtml = ({ col, rowIdx, rowValidation, rawVal, canEditCell, badgeInfo }) => {
     const isReceiptCol = Boolean(col?.mappedField?.endsWith('::receiptNo'));
     if (!isReceiptCol) {
+        if (col.mappedField === 'name' && rowValidation?.studentClass && rowValidation.studentClass.toUpperCase() !== String(collectionBulkState.targetClass || '').toUpperCase() && !rowValidation.isSampleRow) {
+            return `<span class="inline-flex items-center gap-1.5"><span>${escapeHtml(rawVal)}</span><span class="px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-black uppercase">${escapeHtml(rowValidation.studentClass)}</span></span>`;
+        }
         return escapeHtml(rawVal);
     }
     const editorAttrs = canEditCell
         ? `contenteditable="true" class="collection-bulk-cell-editor block w-full min-h-[1.15rem] outline-none font-mono cursor-text"`
         : `class="collection-bulk-cell-editor block w-full min-h-[1.15rem]"`;
-    const badgeHtml = badgeInfo?.dupInfo
-        ? `<span class="collection-bulk-dup-badge" title="${escapeHtml(badgeInfo.titleNote)}">${badgeInfo.dupInfo.groupNo}</span>`
-        : '';
+    let badgeHtml = '';
+    if (badgeInfo?.isGroupShared) {
+        badgeHtml = `<span class="collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[9px]" title="${escapeHtml(badgeInfo.titleNote)}">GRP</span>`;
+    } else if (badgeInfo?.dupInfo) {
+        badgeHtml = `<span class="collection-bulk-dup-badge" title="${escapeHtml(badgeInfo.titleNote)}">${badgeInfo.dupInfo.groupNo}</span>`;
+    }
     return `<span ${editorAttrs} data-row-idx="${rowIdx}" data-col-id="${col.id}">${escapeHtml(rawVal)}</span>${badgeHtml}`;
 };
 
@@ -5661,11 +5701,109 @@ const updateCollectionBulkDuplicateSummaryDom = () => {
     }
 };
 
+// Build group banner inner cells (also reused for in-place DOM updates on blur without losing focus)
+const buildGroupBannerSegmentsHtml = (groupRowSample) => {
+    const { columns = [], groupSummaryMap = new Map(), groupItemModes = new Map() } = collectionBulkState;
+    const groupId = groupRowSample.groupId;
+    const groupName = groupRowSample.groupName || 'Family Group';
+    const memberCount = groupRowSample.groupMemberCount || 2;
+    const groupFee = Number(groupRowSample.groupFee || 0);
+    const feePill = groupFee > 0
+        ? `<span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-mono font-bold">${formatBulkCurrency(groupFee)}/mo</span>`
+        : '';
+
+    const segments = [];
+    let i = 0;
+    while (i < columns.length) {
+        const itemKey = getMappedItemKey(columns[i].mappedField);
+        if (!itemKey) {
+            let span = 1;
+            while (i + span < columns.length && !getMappedItemKey(columns[i + span].mappedField)) {
+                span += 1;
+            }
+            segments.push({ type: 'identity', span });
+            i += span;
+        } else {
+            let span = 1;
+            while (i + span < columns.length && getMappedItemKey(columns[i + span].mappedField) === itemKey) {
+                span += 1;
+            }
+            segments.push({ type: 'item', itemKey, span });
+            i += span;
+        }
+    }
+
+    let placedTitle = false;
+    const segHtml = segments.map((seg) => {
+        if (seg.type === 'identity') {
+            if (!placedTitle) {
+                placedTitle = true;
+                return `
+                    <td colspan="${seg.span}" class="px-2.5 py-1.5 bg-indigo-100/80 border-b border-r border-indigo-200 text-indigo-950">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="inline-flex items-center gap-1.5 font-extrabold text-[11px] text-indigo-900">
+                                <i class="fas fa-users text-indigo-600"></i>
+                                <span>${escapeHtml(groupName)}</span>
+                            </span>
+                            <span class="px-1.5 py-0.5 rounded bg-white text-indigo-700 border border-indigo-200 text-[10px] font-bold">${memberCount} Members</span>
+                            ${feePill}
+                        </div>
+                    </td>
+                `;
+            }
+            return `<td colspan="${seg.span}" class="px-2 py-1.5 bg-indigo-100/50 border-b border-r border-indigo-200"></td>`;
+        }
+
+        const bucketKey = `${groupId}::${seg.itemKey}`;
+        const currentMode = groupItemModes.get(bucketKey) || 'auto';
+        const summary = groupSummaryMap.get(bucketKey) || null;
+        let statusPillHtml = '<span class="text-[10px] font-semibold text-indigo-500/80">Auto</span>';
+        if (summary) {
+            if (summary.resolvedMode === 'group') {
+                statusPillHtml = `<span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-black font-mono whitespace-nowrap" title="Unified Family Group Payment (${summary.filledCount} members)">Group ${formatBulkCurrency(summary.totalAmount)}</span>`;
+            } else if (summary.resolvedMode === 'single') {
+                statusPillHtml = `<span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black font-mono whitespace-nowrap" title="Individual Single Payment(s) (${summary.filledCount} member${summary.filledCount > 1 ? 's' : ''})">Single ${formatBulkCurrency(summary.totalAmount)}</span>`;
+            } else if (summary.resolvedMode === 'error') {
+                statusPillHtml = `<span class="px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-black whitespace-nowrap" title="Amounts differ across group members">Mismatch!</span>`;
+            }
+        }
+
+        return `
+            <td colspan="${seg.span}" class="px-2 py-1.5 bg-indigo-50/95 border-b border-r border-indigo-200" data-group-item-cell="${escapeHtml(bucketKey)}">
+                <div class="flex items-center justify-between gap-1.5">
+                    <select class="collection-bulk-group-mode-select px-1.5 py-0.5 rounded border border-indigo-300 bg-white text-[10px] font-bold text-indigo-900 focus:ring-1 focus:ring-indigo-500 cursor-pointer" data-group-id="${escapeHtml(groupId)}" data-item-key="${escapeHtml(seg.itemKey)}" title="Choose billing mode for this group & fee item">
+                        <option value="auto" ${currentMode === 'auto' ? 'selected' : ''}>Mode: Auto</option>
+                        <option value="group" ${currentMode === 'group' ? 'selected' : ''}>Group Payment</option>
+                        <option value="single" ${currentMode === 'single' ? 'selected' : ''}>Single Payment</option>
+                    </select>
+                    ${statusPillHtml}
+                </div>
+            </td>
+        `;
+    }).join('');
+
+    return `
+        <td colspan="2" class="px-2 py-1.5 bg-indigo-100/90 border-b border-r border-indigo-200 text-center">
+            <span class="px-2 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider">FAMILY GROUP</span>
+        </td>
+        ${segHtml}
+    `;
+};
+
+function updateCollectionBulkGroupBannerDom(groupId = '') {
+    if (!groupId) return;
+    const bannerTr = document.querySelector(`tr.collection-bulk-group-banner[data-group-id="${CSS.escape(groupId)}"]`);
+    if (!bannerTr) return;
+    const sampleRow = collectionBulkState.parsedRows.find((r) => !r.isSampleRow && r.groupId === groupId);
+    if (!sampleRow) return;
+    bannerTr.innerHTML = buildGroupBannerSegmentsHtml(sampleRow);
+}
+
 function renderCollectionBulkPreviewTable() {
     const container = document.getElementById('collection-bulk-table-container');
     if (!container) return;
 
-    const { columns, workingRows, parsedRows, monthlyItems, isEditMode } = collectionBulkState;
+    const { columns, workingRows, parsedRows, activeFeeItems, isEditMode } = collectionBulkState;
     if (!parsedRows.length) {
         container.innerHTML = '';
         return;
@@ -5673,7 +5811,7 @@ function renderCollectionBulkPreviewTable() {
 
     const duplicateFields = getCollectionDuplicateMappedFields();
     const hasDuplicateMapping = duplicateFields.size > 0;
-    const mappingOptions = buildCollectionBulkMappingOptions(monthlyItems);
+    const mappingOptions = buildCollectionBulkMappingOptions(activeFeeItems);
     const duplicateLabels = Array.from(duplicateFields).map((f) => (
         mappingOptions.find((opt) => opt.key === f)?.label || f
     ));
@@ -5687,7 +5825,7 @@ function renderCollectionBulkPreviewTable() {
             <i class="fas fa-exclamation-triangle text-lg shrink-0"></i>
             <div>
                 <div class="font-black text-sm">Duplicate Column Mapping Detected!</div>
-                <div class="font-normal text-red-100 text-[11px]">The field(s) <b>${escapeHtml(duplicateLabels.join(', '))}</b> are assigned to multiple columns. Remap duplicate columns or set them to Skip before uploading.</div>
+                <div class="font-normal text-red-100 text-[11px]">The field(s) <b>${escapeHtml(duplicateLabels.join(', '))}</b> are assigned to multiple columns. Remap duplicate columns or set them to Skip before saving.</div>
             </div>
         </div>
     ` : '';
@@ -5696,16 +5834,16 @@ function renderCollectionBulkPreviewTable() {
         <div class="px-3 py-2 bg-slate-100/90 border-b border-slate-200 text-xs font-semibold text-slate-800 flex flex-wrap justify-between items-center gap-2">
             <div class="flex items-center gap-2 flex-wrap">
                 <i class="fas fa-table text-emerald-600"></i>
-                <span>Spreadsheet Preview (${parsedRows.length} rows)</span>
+                <span>Sheet Preview (${parsedRows.filter((r) => !r.isSampleRow).length} students • ${activeFeeItems.length} fee items)</span>
                 <span class="text-[11px] font-normal text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    ${mappedCount} Columns Mapped, ${skippedCount} Skipped
+                    ${mappedCount} Mapped, ${skippedCount} Skipped
                 </span>
-                <span id="collection-bulk-dup-summary" class="${dupSummaryHtml ? 'inline-flex' : 'hidden'} items-center gap-1.5 text-[11px] font-bold text-red-700 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200" title="Repeated receipt numbers are grouped with numbered red circles (1, 2, 3...)">${dupSummaryHtml}</span>
+                <span id="collection-bulk-dup-summary" class="${dupSummaryHtml ? 'inline-flex' : 'hidden'} items-center gap-1.5 text-[11px] font-bold text-red-700 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200" title="Repeated receipt numbers across unrelated students are highlighted with numbered red badges">${dupSummaryHtml}</span>
             </div>
             <div class="text-xs">
                 ${isEditMode
-                    ? '<span class="text-emerald-700 font-bold flex items-center gap-1.5"><i class="fas fa-edit"></i> Edit Mode ON: Amount, Receipt No & Date cells are editable</span>'
-                    : '<span class="text-slate-500 flex items-center gap-1.5"><i class="fas fa-lock text-slate-400"></i> View Only (Turn ON Edit & Mapping switch above to edit fee cells)</span>'}
+                    ? '<span class="text-emerald-700 font-bold flex items-center gap-1.5"><i class="fas fa-edit"></i> Edit Mode ON: Amount, Receipt No &amp; Date cells are editable</span>'
+                    : '<span class="text-slate-500 flex items-center gap-1.5"><i class="fas fa-lock text-slate-400"></i> View Only (Turn ON Edit &amp; Mapping switch above to edit cells)</span>'}
             </div>
         </div>
     `;
@@ -5744,12 +5882,12 @@ function renderCollectionBulkPreviewTable() {
                             : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : ''));
 
                     return `
-                        <th class="p-2 border-b border-r ${headerBg} min-w-[165px] max-w-[230px]">
+                        <th class="p-2 border-b border-r ${headerBg} min-w-[155px] max-w-[230px]">
                             <div class="flex items-center justify-between gap-1 mb-1">
                                 <span class="text-[11px] font-mono ${isDup ? 'text-white font-extrabold' : 'text-slate-700'} truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
                                 ${badgeIcon}
                             </div>
-                            <select data-smart-select="true" data-smart-floating="true" data-smart-min-width="210" data-smart-wrapper-class="collection-bulk-col-map-wrap" data-smart-placeholder="Search column..." class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
+                            <select data-smart-select="true" data-smart-floating="true" data-smart-min-width="220" data-smart-wrapper-class="collection-bulk-col-map-wrap" data-smart-placeholder="Search column..." class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
                                 ${mappingOptions.map((opt) => `
                                     <option value="${escapeHtml(opt.key)}" ${col.mappedField === opt.key ? 'selected' : ''}>${escapeHtml(opt.label)}</option>
                                 `).join('')}
@@ -5761,7 +5899,19 @@ function renderCollectionBulkPreviewTable() {
         </thead>
     `;
 
-    const tbodyHtml = parsedRows.map((rowVal, idx) => {
+    let prevGroupId = '';
+    const tbodyParts = [];
+
+    parsedRows.forEach((rowVal, idx) => {
+        if (!rowVal.isSampleRow && rowVal.groupId && rowVal.groupId !== prevGroupId) {
+            tbodyParts.push(`
+                <tr class="collection-bulk-group-banner border-t-2 border-indigo-400 border-l-4 border-l-indigo-600" data-group-id="${escapeHtml(rowVal.groupId)}">
+                    ${buildGroupBannerSegmentsHtml(rowVal)}
+                </tr>
+            `);
+        }
+        prevGroupId = !rowVal.isSampleRow ? (rowVal.groupId || '') : '';
+
         const workingRow = workingRows[idx] || {};
         const rowBg = getCollectionBulkRowBgClass(rowVal);
         const statusBadge = getCollectionBulkRowBadgeHtml(rowVal);
@@ -5770,11 +5920,11 @@ function renderCollectionBulkPreviewTable() {
             const rawVal = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
             const visual = getCollectionBulkCellVisual(col, rowVal);
             const isReceiptCol = Boolean(col.mappedField?.endsWith('::receiptNo'));
-            const canEditCell = isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid';
+            const canEditCell = isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid' && visual.status !== 'na';
             const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
             const combinedTitle = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
             const titleAttr = combinedTitle ? `title="${escapeHtml(combinedTitle)}"` : '';
-            const receiptPadClass = isReceiptCol ? 'relative pr-7' : '';
+            const receiptPadClass = isReceiptCol ? 'relative pr-9' : '';
 
             let tdAttrs = '';
             if (isReceiptCol) {
@@ -5799,23 +5949,23 @@ function renderCollectionBulkPreviewTable() {
             return `<td ${tdAttrs} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${innerHtml}</td>`;
         }).join('');
 
-        return `
-            <tr id="collection-bulk-row-${idx}" class="${rowBg} transition-colors">
+        tbodyParts.push(`
+            <tr id="collection-bulk-row-${idx}" class="${rowBg} transition-colors" data-group-id="${escapeHtml(rowVal.groupId || '')}">
                 <td class="p-2 text-center text-slate-500 border-b border-r border-slate-200 font-mono text-xs">${idx + 1}</td>
                 <td class="collection-bulk-status-cell p-2 border-b border-r border-slate-200 text-center whitespace-nowrap">${statusBadge}</td>
                 ${cellsHtml}
             </tr>
-        `;
-    }).join('');
+        `);
+    });
 
     container.innerHTML = `
         ${duplicateAlertHtml}
         ${headerBannerHtml}
-        <div class="overflow-x-auto max-h-[460px] overflow-y-auto">
+        <div class="overflow-x-auto max-h-[520px] overflow-y-auto">
             <table class="w-full text-xs text-left text-slate-700 border-collapse">
                 ${theadHtml}
                 <tbody class="divide-y divide-slate-100 font-sans">
-                    ${tbodyHtml}
+                    ${tbodyParts.join('')}
                 </tbody>
             </table>
         </div>
@@ -5842,8 +5992,21 @@ function refreshAllCollectionBulkDuplicateBadges() {
                 td.title = combinedTitle;
 
                 const existingBadge = td.querySelector('.collection-bulk-dup-badge');
-                if (badgeInfo.dupInfo) {
+                if (badgeInfo.isGroupShared) {
                     if (existingBadge) {
+                        existingBadge.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[9px]';
+                        existingBadge.textContent = 'GRP';
+                        existingBadge.title = badgeInfo.titleNote;
+                    } else {
+                        const badgeEl = document.createElement('span');
+                        badgeEl.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[9px]';
+                        badgeEl.title = badgeInfo.titleNote;
+                        badgeEl.textContent = 'GRP';
+                        td.appendChild(badgeEl);
+                    }
+                } else if (badgeInfo.dupInfo) {
+                    if (existingBadge) {
+                        existingBadge.className = 'collection-bulk-dup-badge';
                         existingBadge.textContent = String(badgeInfo.dupInfo.groupNo);
                         existingBadge.title = badgeInfo.titleNote;
                     } else {
@@ -5881,14 +6044,14 @@ function updateCollectionBulkRowDom(rowIdx) {
         const rawVal = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
         const visual = getCollectionBulkCellVisual(col, rowVal);
         const isReceiptCol = Boolean(col.mappedField?.endsWith('::receiptNo'));
-        const canEditCell = collectionBulkState.isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid';
+        const canEditCell = collectionBulkState.isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid' && visual.status !== 'na';
         const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
 
         if (isReceiptCol) {
             td.removeAttribute('contenteditable');
             td.className = canEditCell
-                ? `collection-bulk-cell relative pr-7 p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-all font-mono text-xs ${visual.bgClass}`
-                : `collection-bulk-cell relative pr-7 p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}`;
+                ? `collection-bulk-cell relative pr-9 p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-all font-mono text-xs ${visual.bgClass}`
+                : `collection-bulk-cell relative pr-9 p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}`;
             const editor = td.querySelector('.collection-bulk-cell-editor');
             if (editor) {
                 if (canEditCell) {
@@ -5910,17 +6073,36 @@ function updateCollectionBulkRowDom(rowIdx) {
         }
         td.title = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
     });
+}
 
+function runBulkSheetEvaluation() {
+    const evalResult = evaluateCollectionBulkSheet({
+        columns: collectionBulkState.columns,
+        workingRows: collectionBulkState.workingRows,
+        activeFeeItems: collectionBulkState.activeFeeItems,
+        rosterEntries: collectionBulkState.rosterEntries,
+        allStudents: allStudentsRaw,
+        studentGroups,
+        allPayments,
+        targetClass: collectionBulkState.targetClass,
+        year: collectionBulkState.year,
+        fallbackYear: currentWorkingAcademicYear,
+        defaultFee,
+        defaultReceiptMandatory,
+        groupItemModes: collectionBulkState.groupItemModes,
+        normalizeDateFn: normalizeToIsoDate
+    });
+
+    collectionBulkState.parsedRows = evalResult.parsedRows;
+    collectionBulkState.paymentPlan = evalResult.paymentPlan;
+    collectionBulkState.groupSummaryMap = evalResult.groupSummaryMap;
+    collectionBulkState.totalCollectionAmount = evalResult.totalCollectionAmount;
+    computeCollectionBulkDuplicateReceipts();
     recalculateCollectionBulkStats();
 }
 
 function rebuildCollectionBulkStateAndRender() {
-    const classStudents = getBulkStudentsForClassAndYear(collectionBulkState.targetClass, collectionBulkState.year);
-    collectionBulkState.parsedRows = collectionBulkState.workingRows.map((_, rowIdx) => (
-        validateCollectionBulkRow(rowIdx, classStudents)
-    ));
-    computeCollectionBulkDuplicateReceipts();
-    recalculateCollectionBulkStats();
+    runBulkSheetEvaluation();
     renderCollectionBulkPreviewTable();
 }
 
@@ -5928,18 +6110,20 @@ const handleBulkFileSelection = (file) => {
     if (!file) return;
     const year = document.getElementById('bulk-academic-year')?.value || '';
     const targetClass = document.getElementById('bulk-class')?.value || '';
-
-    if (!year || !targetClass) {
-        alert('Please select both Academic Year and Target Class before uploading.');
+    const resetFileInput = () => {
         const fi = document.getElementById('bulk-file-input');
         if (fi) fi.value = '';
+    };
+
+    if (!year || !targetClass) {
+        notifyBulkMessage('Please select both Academic Year and Target Class before uploading.', 'error');
+        resetFileInput();
         return;
     }
 
     if (!isMasterSuperAdmin() && (!selectedDutyClasses.length || !isClassInDutyScope(targetClass, selectedDutyClasses))) {
-        alert('You do not have permission to upload payments for this class.');
-        const fi = document.getElementById('bulk-file-input');
-        if (fi) fi.value = '';
+        notifyBulkMessage('You do not have permission to upload payments for this class.', 'error');
+        resetFileInput();
         return;
     }
 
@@ -5950,9 +6134,8 @@ const handleBulkFileSelection = (file) => {
     const isExcel = !isCsv && (ext === 'xlsx' || ext === 'xls' || mime.includes('spreadsheetml') || mime.includes('ms-excel'));
 
     if (!isCsv && !isExcel) {
-        alert('Unsupported file format. Please upload a .xlsx, .xls, or .csv file.');
-        const fi = document.getElementById('bulk-file-input');
-        if (fi) fi.value = '';
+        notifyBulkMessage('Unsupported file format. Please upload a .xlsx, .xls, or .csv file.', 'error');
+        resetFileInput();
         return;
     }
 
@@ -5964,14 +6147,14 @@ const handleBulkFileSelection = (file) => {
                 matrix = parseCsvArrayBufferToMatrix(e.target.result);
             } else {
                 if (typeof XLSX === 'undefined') {
-                    alert('Spreadsheet library is still loading. Please try again in a moment.');
+                    notifyBulkMessage('Spreadsheet library is still loading. Please try again in a moment.', 'error');
                     return;
                 }
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, { type: 'array', cellDates: true });
                 const firstSheetName = workbook.SheetNames?.[0];
                 if (!firstSheetName) {
-                    alert('No worksheets found in the uploaded file.');
+                    notifyBulkMessage('No worksheets found in the uploaded file.', 'error');
                     return;
                 }
                 const worksheet = workbook.Sheets[firstSheetName];
@@ -5982,35 +6165,53 @@ const handleBulkFileSelection = (file) => {
             }
 
             if (matrix.length < 2) {
-                alert('No fee rows found in the selected file.');
-                const fi = document.getElementById('bulk-file-input');
-                if (fi) fi.value = '';
+                notifyBulkMessage('No fee rows found in the selected file.', 'error');
+                resetFileInput();
                 return;
             }
 
-            if (!defaultMonthlyFeeEnabled) {
-                alert('Default 12-Month Fee is currently disabled in Fee Settings & Setup. Bulk monthly upload is unavailable while monthly fees are turned off.');
-                const fi = document.getElementById('bulk-file-input');
-                if (fi) fi.value = '';
-                return;
-            }
+            const rosterEntries = buildBulkRosterWithGroups({
+                allStudents: allStudentsRaw,
+                studentGroups,
+                targetClass,
+                year,
+                fallbackYear: currentWorkingAcademicYear
+            });
 
             const rawHeaders = matrix[0];
-            const monthlyItems = sortMonthlyItemsByAcademicYear(
-                feeItems.filter(item => (item.type || 'month') === 'month' && (!item.academicYear || item.academicYear === year)),
-                year
-            );
+            const classColIdx = rawHeaders.findIndex((h) => ['class', 'classname', 'std', 'grade'].includes(String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
+            const uploadedClasses = classColIdx >= 0
+                ? matrix.slice(1).map((r) => String(r[classColIdx] || '').trim()).filter(Boolean)
+                : [];
+            const rosterClasses = [...new Set([
+                targetClass,
+                ...rosterEntries.map((r) => r.studentClass).filter(Boolean),
+                ...uploadedClasses
+            ])];
 
-            const columns = buildCollectionBulkColumns(rawHeaders, monthlyItems);
-            const hasStudentIdentity = columns.some((c) => c.mappedField === 'adm' || c.mappedField === 'name' || c.mappedField === 'studentId');
-            if (!hasStudentIdentity) {
-                alert('Invalid file format. Could not detect Admission_No or Student_Name column. Please use the downloaded template.');
-                const fi = document.getElementById('bulk-file-input');
-                if (fi) fi.value = '';
+            const activeFeeItems = resolveActiveBulkFeeItems({
+                feeItems,
+                year,
+                defaultMonthlyFeeEnabled,
+                rosterClasses,
+                sortMonthlyFn: sortMonthlyItemsByAcademicYear
+            });
+
+            if (activeFeeItems.length === 0) {
+                notifyBulkMessage(`No active fee items found for ${year}. Check Fee Settings & Setup.`, 'error');
+                resetFileInput();
                 return;
             }
 
-            const workingRows = matrix.slice(1).map((cells) => {
+            const columns = buildCollectionBulkColumns(rawHeaders, activeFeeItems);
+            const hasStudentIdentity = columns.some((c) => c.mappedField === 'adm' || c.mappedField === 'name' || c.mappedField === 'studentId');
+            if (!hasStudentIdentity) {
+                notifyBulkMessage('Invalid file format. Could not detect Admission_No or Student_Name column.', 'error');
+                resetFileInput();
+                return;
+            }
+
+            const rawWorkingRows = matrix.slice(1).map((cells) => {
                 const rowObj = {};
                 columns.forEach((col, idx) => {
                     rowObj[col.id] = cells[idx] !== undefined && cells[idx] !== null ? String(cells[idx]).trim() : '';
@@ -6018,16 +6219,25 @@ const handleBulkFileSelection = (file) => {
                 return rowObj;
             });
 
+            const workingRows = reorderUploadedRowsByFamilyGroup(rawWorkingRows, columns, rosterEntries);
+
             collectionBulkState = {
                 columns,
                 workingRows,
                 parsedRows: [],
-                monthlyItems,
+                activeFeeItems,
+                rosterEntries,
+                paymentPlan: [],
+                groupSummaryMap: new Map(),
+                groupItemModes: new Map(),
+                totalCollectionAmount: 0,
                 year,
                 targetClass,
                 isEditMode: false,
                 fileName,
+                sheetSource: 'upload',
                 duplicateReceiptMap: new Map(),
+                groupSharedReceiptSet: new Set(),
                 existingDbReceiptSet: new Set()
             };
             window.bulkUploadParsedData = collectionBulkState;
@@ -6045,19 +6255,17 @@ const handleBulkFileSelection = (file) => {
             document.getElementById('bulk-preview-area')?.classList.remove('hidden');
             document.getElementById('bulk-progress-container')?.classList.add('hidden');
 
-            setCollectionBulkEditMode(false);
+            setCollectionBulkEditMode(false, { skipRender: true });
             rebuildCollectionBulkStateAndRender();
         } catch (error) {
             console.error('Parse Error:', error);
-            alert('Error reading file. Please ensure it is a valid .xlsx, .xls, or .csv file.');
-            const fi = document.getElementById('bulk-file-input');
-            if (fi) fi.value = '';
+            notifyBulkMessage('Error reading file. Please ensure it is a valid .xlsx, .xls, or .csv file.', 'error');
+            resetFileInput();
         }
     };
     reader.onerror = () => {
-        alert('Failed to read the selected file. Please try again.');
-        const fi = document.getElementById('bulk-file-input');
-        if (fi) fi.value = '';
+        notifyBulkMessage('Failed to read the selected file. Please try again.', 'error');
+        resetFileInput();
     };
     reader.readAsArrayBuffer(file);
 };
@@ -6069,6 +6277,24 @@ document.getElementById('collection-bulk-edit-switch')?.addEventListener('change
 const collectionBulkTableContainer = document.getElementById('collection-bulk-table-container');
 if (collectionBulkTableContainer) {
     collectionBulkTableContainer.addEventListener('change', (e) => {
+        const modeSelect = e.target.closest('.collection-bulk-group-mode-select');
+        if (modeSelect) {
+            const groupId = modeSelect.dataset.groupId || '';
+            const itemKey = modeSelect.dataset.itemKey || '';
+            if (groupId && itemKey) {
+                collectionBulkState.groupItemModes.set(`${groupId}::${itemKey}`, modeSelect.value || 'auto');
+                runBulkSheetEvaluation();
+                collectionBulkState.parsedRows.forEach((r, idx) => {
+                    if (!r.isSampleRow && r.groupId === groupId) {
+                        updateCollectionBulkRowDom(idx);
+                    }
+                });
+                updateCollectionBulkGroupBannerDom(groupId);
+                refreshAllCollectionBulkDuplicateBadges();
+            }
+            return;
+        }
+
         const select = e.target.closest('.collection-bulk-col-map');
         if (!select) return;
         const colId = select.dataset.colId;
@@ -6104,16 +6330,24 @@ if (collectionBulkTableContainer) {
         if (collectionBulkState.workingRows[rowIdx][colId] === newText) return;
         collectionBulkState.workingRows[rowIdx][colId] = newText;
 
-        const classStudents = getBulkStudentsForClassAndYear(collectionBulkState.targetClass, collectionBulkState.year);
-        collectionBulkState.parsedRows[rowIdx] = validateCollectionBulkRow(rowIdx, classStudents);
+        runBulkSheetEvaluation();
+
+        const editedRowVal = collectionBulkState.parsedRows[rowIdx];
+        const affectedGroupId = editedRowVal?.groupId || '';
+        if (affectedGroupId) {
+            collectionBulkState.parsedRows.forEach((r, idx) => {
+                if (!r.isSampleRow && r.groupId === affectedGroupId) {
+                    updateCollectionBulkRowDom(idx);
+                }
+            });
+            updateCollectionBulkGroupBannerDom(affectedGroupId);
+        } else {
+            updateCollectionBulkRowDom(rowIdx);
+        }
 
         const editedCol = collectionBulkState.columns.find((c) => c.id === colId);
         if (editedCol?.mappedField?.endsWith('::receiptNo')) {
-            computeCollectionBulkDuplicateReceipts();
-            updateCollectionBulkRowDom(rowIdx);
             refreshAllCollectionBulkDuplicateBadges();
-        } else {
-            updateCollectionBulkRowDom(rowIdx);
         }
     }, true);
 
@@ -6124,13 +6358,24 @@ if (collectionBulkTableContainer) {
             e.preventDefault();
             const rowIdx = parseInt(cell.dataset.rowIdx, 10);
             const colId = cell.dataset.colId;
-            const nextTd = collectionBulkTableContainer.querySelector(`.collection-bulk-cell[data-row-idx="${rowIdx + 1}"][data-col-id="${colId}"]`);
-            const nextEditor = nextTd?.querySelector('.collection-bulk-cell-editor[contenteditable="true"]');
-            if (nextEditor) {
-                nextEditor.focus();
-            } else if (nextTd && nextTd.getAttribute('contenteditable') === 'true') {
-                nextTd.focus();
-            } else {
+            let nextIdx = rowIdx + 1;
+            let moved = false;
+            while (nextIdx < collectionBulkState.workingRows.length) {
+                const nextTd = collectionBulkTableContainer.querySelector(`.collection-bulk-cell[data-row-idx="${nextIdx}"][data-col-id="${colId}"]`);
+                const nextEditor = nextTd?.querySelector('.collection-bulk-cell-editor[contenteditable="true"]');
+                if (nextEditor) {
+                    nextEditor.focus();
+                    moved = true;
+                    break;
+                }
+                if (nextTd && nextTd.getAttribute('contenteditable') === 'true') {
+                    nextTd.focus();
+                    moved = true;
+                    break;
+                }
+                nextIdx += 1;
+            }
+            if (!moved) {
                 const currentTarget = cell.querySelector('.collection-bulk-cell-editor[contenteditable="true"]') || cell;
                 currentTarget.blur();
             }
@@ -6159,19 +6404,18 @@ document.getElementById('bulk-cancel-btn')?.addEventListener('click', setupBulkU
 const executeCollectionBulkUpload = async ({ validOnly = false } = {}) => {
     const duplicateFields = getCollectionDuplicateMappedFields();
     if (duplicateFields.size > 0) {
-        alert('Duplicate column mappings detected. Please resolve them before uploading.');
+        notifyBulkMessage('Duplicate column mappings detected. Please resolve them before saving.', 'error');
         return;
     }
 
-    const { parsedRows, year, targetClass } = collectionBulkState;
+    // Re-evaluate right before saving to guarantee fresh state & prevent stale data
+    runBulkSheetEvaluation();
+
+    const { parsedRows, paymentPlan, year, targetClass, sheetSource } = collectionBulkState;
     const dataRows = parsedRows.filter((r) => !r.isSampleRow && !r.hasFatalError);
     const eligibleRows = validOnly ? dataRows.filter((r) => r.errorCount === 0) : dataRows;
+    const eligibleRowIndices = new Set(eligibleRows.map((r) => r.rowIdx));
 
-    const collectorName = getCurrentCollectorName();
-    const collectorUserKey = getCollectorKey();
-    let autoReceiptNo = getNextReceiptNoForStaff() || 1;
-
-    const paymentOperations = [];
     let skippedAlreadyPaid = 0;
     let skippedInvalid = parsedRows.filter((r) => !r.isSampleRow && r.hasFatalError).length;
 
@@ -6184,43 +6428,33 @@ const executeCollectionBulkUpload = async ({ validOnly = false } = {}) => {
         }
     });
 
-    eligibleRows.forEach((rowVal) => {
-        if (!rowVal.readyEntries.length) return;
-        const transactionId = Date.now().toString() + Math.random().toString(36).substring(2, 6);
-        rowVal.readyEntries.forEach((entry) => {
-            const isAlreadyPaid = allPayments.some((p) => (
-                p.studentId === entry.studentId &&
-                p.itemKey === entry.itemKey &&
-                (p.academicYear || '') === year
-            ));
-            if (isAlreadyPaid) {
-                skippedAlreadyPaid += 1;
-                return;
-            }
-            const finalReceiptNo = entry.receiptNo || autoReceiptNo++;
-            paymentOperations.push({
-                studentId: entry.studentId,
-                itemKey: entry.itemKey,
-                amount: entry.amount,
-                receiptNo: finalReceiptNo,
-                transactionId,
-                paymentDate: entry.paymentDate,
-                timestamp: new Date(entry.paymentDate).getTime() || Date.now(),
-                description: 'Bulk Upload',
-                collectedBy: collectorUserKey,
-                collectedByName: collectorName,
-                ...(normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '') ? { collectedByEmail: normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '') } : {}),
-                ...(auth?.currentUser?.uid ? { collectedByUid: String(auth.currentUser.uid).trim() } : {}),
-                academicYear: year,
-                classLabel: entry.classLabel || targetClass
-            });
-        });
+    const collectorName = getCurrentCollectorName();
+    const collectorUserKey = getCollectorKey();
+    const collectorEmail = normalizeEmail(getEffectiveStaffEmail() || auth?.currentUser?.email || '');
+    const collectorUid = auth?.currentUser?.uid ? String(auth.currentUser.uid).trim() : '';
+    const startingAutoReceiptNo = getNextReceiptNoForStaff() || 1;
+
+    const { payloads: paymentOperations, skippedAlreadyPaid: lateSkippedPaid } = buildBulkFirestorePaymentPayloads({
+        paymentPlan,
+        eligibleRowIndices,
+        allPayments,
+        year,
+        targetClass,
+        collectorUserKey,
+        collectorName,
+        collectorEmail,
+        collectorUid,
+        startingAutoReceiptNo,
+        description: sheetSource === 'blank' ? 'Bulk Blank Sheet' : 'Bulk Upload'
     });
+    skippedAlreadyPaid += lateSkippedPaid;
 
     if (paymentOperations.length === 0) {
-        alert('No valid unpaid fee entries found to upload.');
+        notifyBulkMessage('No valid unpaid fee entries found to save.', 'error');
         return;
     }
+
+    const savedTotalAmount = paymentOperations.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
     const startBtn = document.getElementById('bulk-start-upload-btn');
     const skipBtn = document.getElementById('collection-bulk-skip-issues-btn');
@@ -6253,12 +6487,12 @@ const executeCollectionBulkUpload = async ({ validOnly = false } = {}) => {
             const pct = Math.round((successCount / paymentOperations.length) * 100);
             if (progressBar) progressBar.style.width = `${pct}%`;
             if (progressPct) progressPct.textContent = `${pct}%`;
-            if (progressText) progressText.textContent = `Saving ${successCount} of ${paymentOperations.length} fee entries...`;
+            if (progressText) progressText.textContent = `Saving ${successCount} of ${paymentOperations.length} fee record(s)...`;
         }
 
         if (progressBar) progressBar.style.width = '100%';
         if (progressPct) progressPct.textContent = '100%';
-        if (progressText) progressText.textContent = 'Upload Complete!';
+        if (progressText) progressText.textContent = 'Save Complete!';
 
         const modal = document.getElementById('collection-bulk-status-modal');
         if (modal) {
@@ -6268,7 +6502,7 @@ const executeCollectionBulkUpload = async ({ validOnly = false } = {}) => {
             const skippedEl = document.getElementById('collection-bulk-result-skipped');
             const okBtn = document.getElementById('collection-bulk-result-ok-btn');
 
-            if (scopeEl) scopeEl.textContent = `Class ${targetClass} • ${year}`;
+            if (scopeEl) scopeEl.textContent = `Class ${targetClass} • ${year} • Total ${formatBulkCurrency(savedTotalAmount)}`;
             if (savedEl) savedEl.textContent = String(successCount);
             if (paidEl) paidEl.textContent = String(skippedAlreadyPaid);
             if (skippedEl) skippedEl.textContent = String(skippedInvalid);
@@ -6282,19 +6516,19 @@ const executeCollectionBulkUpload = async ({ validOnly = false } = {}) => {
                     modal.classList.remove('flex');
                     if (cancelBtn) cancelBtn.disabled = false;
                     setupBulkUploadUI();
-                    showToast?.(`Successfully recorded ${successCount} fee payments.`, 'success');
+                    notifyBulkMessage(`Successfully recorded ${successCount} fee record(s) totaling ${formatBulkCurrency(savedTotalAmount)}.`, 'success');
                     activateTab('dashboard-page');
                 };
             }
         } else {
-            showToast?.(`Success! ${successCount} fee records updated in the system.`, 'success');
+            notifyBulkMessage(`Success! ${successCount} fee record(s) totaling ${formatBulkCurrency(savedTotalAmount)} saved.`, 'success');
             if (cancelBtn) cancelBtn.disabled = false;
             setupBulkUploadUI();
             activateTab('dashboard-page');
         }
     } catch (error) {
         console.error('Bulk Upload Error:', error);
-        alert('An error occurred during upload: ' + (error?.message || 'Please check your network connection.'));
+        notifyBulkMessage('An error occurred while saving: ' + (error?.message || 'Please check your network connection.'), 'error');
         if (startBtn) startBtn.disabled = false;
         if (skipBtn) skipBtn.disabled = false;
         if (cancelBtn) cancelBtn.disabled = false;
