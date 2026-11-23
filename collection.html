@@ -1045,10 +1045,10 @@
                                     <div class="text-xs text-slate-500 mt-0.5" id="bulk-record-count">Review fee entries before saving payments</div>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <label for="collection-bulk-edit-switch" class="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-all shadow-xs border border-slate-300 cursor-pointer select-none">
-                                        <span class="flex items-center gap-1.5 text-slate-700 font-bold">
-                                            <i class="fas fa-sliders-h text-emerald-600"></i>
-                                            <span>Edit &amp; Mapping:</span>
+                                    <label for="collection-bulk-edit-switch" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-all shadow-xs border border-slate-300 cursor-pointer select-none">
+                                        <span class="flex items-center gap-1 text-slate-700 font-bold">
+                                            <i class="fas fa-pen text-emerald-600 text-[11px]"></i>
+                                            <span>Edit:</span>
                                         </span>
                                         <div class="relative inline-flex items-center cursor-pointer">
                                             <input type="checkbox" id="collection-bulk-edit-switch" class="sr-only peer">
@@ -1056,10 +1056,14 @@
                                         </div>
                                         <span id="collection-bulk-edit-status" class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 font-mono">OFF</span>
                                     </label>
-                                    <button type="button" id="collection-bulk-export-xlsx-btn" class="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer" title="Download current sheet as Excel (.xlsx)">
+                                    <button type="button" id="collection-bulk-map-toggle-btn" aria-pressed="false" class="px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer" title="Show or hide Excel column mapping dropdowns">
+                                        <i class="fas fa-columns text-slate-500 text-[11px]"></i>
+                                        <span>Map Columns</span>
+                                    </button>
+                                    <button type="button" id="collection-bulk-export-xlsx-btn" class="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer" title="Download current sheet as Excel (.xlsx)">
                                         <i class="fas fa-file-excel"></i> Export .xlsx
                                     </button>
-                                    <button type="button" id="bulk-cancel-btn" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
+                                    <button type="button" id="bulk-cancel-btn" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer">
                                         <i class="fas fa-times"></i> Close
                                     </button>
                                     <button type="button" id="collection-bulk-skip-issues-btn" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm hidden cursor-pointer">

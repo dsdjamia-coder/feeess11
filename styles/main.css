@@ -334,19 +334,24 @@ body.collection-shell .collection-bulk-col-map-wrap .smart-select-caret {
     padding: 7px 10px;
     font-size: 12px;
 }
+.collection-bulk-sticky-col {
+    position: sticky;
+    left: 0;
+    box-shadow: 2px 0 6px -2px rgba(15, 23, 42, 0.14);
+}
 .collection-bulk-dup-badge {
     position: absolute;
     top: 2px;
     right: 2px;
-    min-width: 17px;
-    height: 17px;
-    padding: 0 4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
     border-radius: 9999px;
     background-color: #dc2626;
     color: #ffffff;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 900;
-    line-height: 17px;
+    line-height: 14px;
     text-align: center;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     pointer-events: none;

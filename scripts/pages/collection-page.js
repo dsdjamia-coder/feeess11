@@ -4889,6 +4889,7 @@ let collectionBulkState = {
     year: '',
     targetClass: '',
     isEditMode: false,
+    isMappingMode: false,
     fileName: '',
     sheetSource: 'upload', // 'blank' | 'upload'
     duplicateReceiptMap: new Map(),
@@ -4908,6 +4909,22 @@ const formatBulkCurrency = (amt = 0) => {
     const num = Number(amt || 0);
     if (!Number.isFinite(num)) return '₹0';
     return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+};
+
+const setCollectionBulkMappingMode = (enabled, { skipRender = false } = {}) => {
+    collectionBulkState.isMappingMode = Boolean(enabled);
+    const btn = document.getElementById('collection-bulk-map-toggle-btn');
+    if (btn) {
+        btn.setAttribute('aria-pressed', collectionBulkState.isMappingMode ? 'true' : 'false');
+        if (collectionBulkState.isMappingMode) {
+            btn.className = 'px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-700 font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer';
+        } else {
+            btn.className = 'px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer';
+        }
+    }
+    if (!skipRender) {
+        renderCollectionBulkPreviewTable();
+    }
 };
 
 const setCollectionBulkEditMode = (enabled, { skipRender = false } = {}) => {
@@ -4963,6 +4980,7 @@ const setupBulkUploadUI = () => {
         year: '',
         targetClass: '',
         isEditMode: false,
+        isMappingMode: false,
         fileName: '',
         sheetSource: 'upload',
         duplicateReceiptMap: new Map(),
@@ -4976,6 +4994,7 @@ const setupBulkUploadUI = () => {
         statusLabel.textContent = 'OFF';
         statusLabel.className = 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500 font-mono';
     }
+    setCollectionBulkMappingMode(false, { skipRender: true });
     const amtEl = document.getElementById('collection-stat-ready-amount');
     if (amtEl) amtEl.textContent = '₹0';
     document.getElementById('collection-bulk-edit-banner')?.classList.add('hidden');
@@ -5107,6 +5126,7 @@ const openCollectionBlankSheet = () => {
         year,
         targetClass,
         isEditMode: true,
+        isMappingMode: false,
         fileName: displayLabel,
         sheetSource: 'blank',
         duplicateReceiptMap: new Map(),
@@ -5126,6 +5146,7 @@ const openCollectionBlankSheet = () => {
     document.getElementById('bulk-preview-area')?.classList.remove('hidden');
     document.getElementById('bulk-progress-container')?.classList.add('hidden');
 
+    setCollectionBulkMappingMode(false, { skipRender: true });
     setCollectionBulkEditMode(true, { skipRender: true });
     rebuildCollectionBulkStateAndRender();
 
@@ -5657,20 +5678,121 @@ const getCollectionBulkReceiptBadgeInfo = (col, rowValidation, rawVal) => {
     return { key, dupInfo, isGroupShared, existsInDb, titleNote: notes.join(' • ') };
 };
 
+const getCollectionBulkStickyCellBg = (r) => {
+    const groupLeftBar = r?.groupId ? 'border-l-4 border-l-indigo-500' : '';
+    if (r?.isSampleRow) return 'bg-slate-100 text-slate-500 italic';
+    if (r?.hasFatalError) return `bg-red-100 text-red-950 ${groupLeftBar}`;
+    if (r?.errorCount > 0) return `bg-amber-50 text-amber-950 ${groupLeftBar}`;
+    if (r?.groupId) return `bg-indigo-50 text-slate-900 ${groupLeftBar}`;
+    if (r?.readyCount > 0) return 'bg-emerald-50 text-slate-900';
+    if (r?.alreadyPaidCount > 0) return 'bg-sky-50 text-slate-900';
+    return 'bg-white text-slate-900';
+};
+
+const buildStickyStudentCellHtml = (rowVal) => {
+    const nameStr = String(rowVal?.displayName || '--').trim();
+    const stuClass = String(rowVal?.studentClass || '').trim();
+    const isCrossClass = Boolean(
+        stuClass &&
+        collectionBulkState.targetClass &&
+        stuClass.toUpperCase() !== String(collectionBulkState.targetClass).toUpperCase()
+    );
+
+    const pills = [];
+    if (rowVal?.isSampleRow) {
+        pills.push('<span class="px-1 py-0 rounded bg-slate-200 text-slate-600 text-[9px] font-bold leading-tight">Sample</span>');
+    } else if (rowVal?.hasFatalError) {
+        pills.push('<span class="px-1 py-0 rounded bg-red-600 text-white text-[9px] font-bold leading-tight">Unmatched</span>');
+    } else {
+        if (stuClass) {
+            pills.push(isCrossClass
+                ? `<span class="px-1 py-0 rounded bg-indigo-600 text-white text-[9px] font-extrabold leading-tight">${escapeHtml(stuClass)}</span>`
+                : `<span class="px-1 py-0 rounded bg-slate-200/90 text-slate-700 text-[9px] font-bold leading-tight">${escapeHtml(stuClass)}</span>`
+            );
+        }
+        if (rowVal?.groupId) {
+            const feeTag = Number(rowVal.groupFee || 0) > 0 ? ` ₹${rowVal.groupFee}` : '';
+            pills.push(`<span class="px-1 py-0 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-bold leading-tight" title="${escapeHtml(rowVal.groupName || 'Family Group')}">Grp${escapeHtml(feeTag)}</span>`);
+        } else if (rowVal?.concessionFee !== null && rowVal?.concessionFee !== undefined) {
+            pills.push(`<span class="px-1 py-0 rounded bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-bold leading-tight">Conc ₹${escapeHtml(String(rowVal.concessionFee))}</span>`);
+        }
+    }
+
+    const fullTitle = [
+        nameStr,
+        stuClass ? `Class ${stuClass}` : '',
+        rowVal?.displayAdm ? `Adm ${rowVal.displayAdm}` : '',
+        rowVal?.groupId ? `Group: ${rowVal.groupName}${rowVal.groupFee > 0 ? ` (₹${rowVal.groupFee})` : ''}` : ''
+    ].filter(Boolean).join(' • ');
+
+    return `
+        <div class="leading-tight" title="${escapeHtml(fullTitle)}">
+            <div class="font-bold text-[11px] sm:text-xs text-slate-900 truncate">${escapeHtml(nameStr)}</div>
+            ${pills.length ? `<div class="mt-0.5 flex items-center gap-1 flex-wrap">${pills.join('')}</div>` : ''}
+        </div>
+    `;
+};
+
+const getCompactColumnSubMeta = (mappedField = '') => {
+    if (mappedField.endsWith('::amount')) {
+        return { shortLabel: 'Amt', widthClass: 'w-[56px] min-w-[54px] max-w-[66px]', alignClass: 'text-right' };
+    }
+    if (mappedField.endsWith('::receiptNo')) {
+        return { shortLabel: 'Rcpt', widthClass: 'w-[62px] min-w-[58px] max-w-[74px]', alignClass: 'text-center' };
+    }
+    if (mappedField.endsWith('::date')) {
+        return { shortLabel: 'Date', widthClass: 'w-[82px] min-w-[78px] max-w-[94px]', alignClass: 'text-center' };
+    }
+    return { shortLabel: '', widthClass: 'w-[64px] min-w-[56px]', alignClass: 'text-left' };
+};
+
+const getCompactDisplayLayout = () => {
+    const { columns = [], activeFeeItems = [] } = collectionBulkState;
+    const itemByKey = new Map(activeFeeItems.map((it) => [it.key, it]));
+    const admCol = columns.find((c) => c.mappedField === 'adm') || null;
+    const feeCols = columns.filter((c) => isFeeEditableMappedField(c.mappedField));
+
+    const feeGroups = [];
+    feeCols.forEach((col) => {
+        const itemKey = getMappedItemKey(col.mappedField);
+        const lastGroup = feeGroups[feeGroups.length - 1];
+        if (lastGroup && lastGroup.itemKey === itemKey) {
+            lastGroup.cols.push(col);
+        } else {
+            const itemObj = itemByKey.get(itemKey) || null;
+            feeGroups.push({
+                itemKey,
+                itemObj,
+                label: normalizeFeeItemName(itemObj?.name || itemKey),
+                isCustom: itemObj?.type === 'custom',
+                cols: [col]
+            });
+        }
+    });
+
+    const groupEndColIds = new Set();
+    feeGroups.forEach((grp) => {
+        const lastCol = grp.cols[grp.cols.length - 1];
+        if (lastCol) groupEndColIds.add(lastCol.id);
+    });
+
+    return { admCol, feeCols, feeGroups, groupEndColIds };
+};
+
 const buildCollectionBulkCellInnerHtml = ({ col, rowIdx, rowValidation, rawVal, canEditCell, badgeInfo }) => {
     const isReceiptCol = Boolean(col?.mappedField?.endsWith('::receiptNo'));
     if (!isReceiptCol) {
         if (col.mappedField === 'name' && rowValidation?.studentClass && rowValidation.studentClass.toUpperCase() !== String(collectionBulkState.targetClass || '').toUpperCase() && !rowValidation.isSampleRow) {
-            return `<span class="inline-flex items-center gap-1.5"><span>${escapeHtml(rawVal)}</span><span class="px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-black uppercase">${escapeHtml(rowValidation.studentClass)}</span></span>`;
+            return `<span class="inline-flex items-center gap-1"><span>${escapeHtml(rawVal)}</span><span class="px-1 py-0 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-black uppercase">${escapeHtml(rowValidation.studentClass)}</span></span>`;
         }
         return escapeHtml(rawVal);
     }
     const editorAttrs = canEditCell
-        ? `contenteditable="true" class="collection-bulk-cell-editor block w-full min-h-[1.15rem] outline-none font-mono cursor-text"`
-        : `class="collection-bulk-cell-editor block w-full min-h-[1.15rem]"`;
+        ? `contenteditable="true" class="collection-bulk-cell-editor block w-full min-h-[1rem] outline-none font-mono cursor-text"`
+        : `class="collection-bulk-cell-editor block w-full min-h-[1rem]"`;
     let badgeHtml = '';
     if (badgeInfo?.isGroupShared) {
-        badgeHtml = `<span class="collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[9px]" title="${escapeHtml(badgeInfo.titleNote)}">GRP</span>`;
+        badgeHtml = `<span class="collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[8px]" title="${escapeHtml(badgeInfo.titleNote)}">GRP</span>`;
     } else if (badgeInfo?.dupInfo) {
         badgeHtml = `<span class="collection-bulk-dup-badge" title="${escapeHtml(badgeInfo.titleNote)}">${badgeInfo.dupInfo.groupNo}</span>`;
     }
@@ -5701,17 +5823,75 @@ const updateCollectionBulkDuplicateSummaryDom = () => {
     }
 };
 
-// Build group banner inner cells (also reused for in-place DOM updates on blur without losing focus)
+// Build Family Group banner cells (supports both Compact Mode and Mapping Mode)
 const buildGroupBannerSegmentsHtml = (groupRowSample) => {
-    const { columns = [], groupSummaryMap = new Map(), groupItemModes = new Map() } = collectionBulkState;
+    const { columns = [], groupSummaryMap = new Map(), groupItemModes = new Map(), isMappingMode = false } = collectionBulkState;
     const groupId = groupRowSample.groupId;
     const groupName = groupRowSample.groupName || 'Family Group';
     const memberCount = groupRowSample.groupMemberCount || 2;
     const groupFee = Number(groupRowSample.groupFee || 0);
     const feePill = groupFee > 0
-        ? `<span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-mono font-bold">${formatBulkCurrency(groupFee)}/mo</span>`
+        ? `<span class="px-1 py-0 rounded bg-indigo-600 text-white text-[9px] font-mono font-bold whitespace-nowrap">${formatBulkCurrency(groupFee)}/mo</span>`
         : '';
 
+    const renderGroupItemControlTd = (itemKey, span, isCompactStyle = true) => {
+        const bucketKey = `${groupId}::${itemKey}`;
+        const currentMode = groupItemModes.get(bucketKey) || 'auto';
+        const summary = groupSummaryMap.get(bucketKey) || null;
+        let statusPillHtml = '';
+        if (summary) {
+            if (summary.resolvedMode === 'group') {
+                statusPillHtml = `<span class="px-1 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black font-mono whitespace-nowrap leading-none" title="Unified Family Group Payment (${summary.filledCount} members)">Grp ${formatBulkCurrency(summary.totalAmount)}</span>`;
+            } else if (summary.resolvedMode === 'single') {
+                statusPillHtml = `<span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black font-mono whitespace-nowrap leading-none" title="Individual Single Payment(s) (${summary.filledCount} member${summary.filledCount > 1 ? 's' : ''})">Sgl ${formatBulkCurrency(summary.totalAmount)}</span>`;
+            } else if (summary.resolvedMode === 'error') {
+                statusPillHtml = `<span class="px-1 py-0.5 rounded bg-red-600 text-white text-[9px] font-black whitespace-nowrap leading-none" title="Amounts differ across group members">Mismatch!</span>`;
+            }
+        }
+        const rightBorder = isCompactStyle ? 'border-r-2 border-slate-300' : 'border-r border-indigo-200';
+        return `
+            <td colspan="${span}" class="px-1.5 py-1 bg-indigo-50 border-b ${rightBorder} border-indigo-200" data-group-item-cell="${escapeHtml(bucketKey)}">
+                <div class="flex items-center justify-between gap-1">
+                    <select class="collection-bulk-group-mode-select px-1 py-0.5 rounded border border-indigo-300 bg-white text-[10px] font-bold text-indigo-900 focus:ring-1 focus:ring-indigo-500 cursor-pointer" data-group-id="${escapeHtml(groupId)}" data-item-key="${escapeHtml(itemKey)}" title="Choose billing mode for this group & fee item">
+                        <option value="auto" ${currentMode === 'auto' ? 'selected' : ''}>Auto</option>
+                        <option value="group" ${currentMode === 'group' ? 'selected' : ''}>Group</option>
+                        <option value="single" ${currentMode === 'single' ? 'selected' : ''}>Single</option>
+                    </select>
+                    ${statusPillHtml}
+                </div>
+            </td>
+        `;
+    };
+
+    const stickyGroupLeftCell = `
+        <td class="collection-bulk-sticky-col z-20 px-2 py-1 bg-indigo-100 border-l-4 border-l-indigo-600 border-b border-r border-indigo-300 text-indigo-950 w-[138px] min-w-[138px] max-w-[158px] sm:w-[172px] sm:min-w-[172px] sm:max-w-[196px]">
+            <div class="leading-tight" title="${escapeHtml(groupName)} (${memberCount} Members)">
+                <div class="flex items-center gap-1 font-extrabold text-[11px] text-indigo-950 truncate">
+                    <i class="fas fa-users text-indigo-600 text-[10px] shrink-0"></i>
+                    <span class="truncate">${escapeHtml(groupName)}</span>
+                </div>
+                <div class="mt-0.5 flex items-center gap-1 flex-wrap">
+                    <span class="px-1 py-0 rounded bg-white text-indigo-700 border border-indigo-200 text-[9px] font-bold">${memberCount} Mem</span>
+                    ${feePill}
+                </div>
+            </div>
+        </td>
+    `;
+
+    if (!isMappingMode) {
+        const { admCol, feeGroups } = getCompactDisplayLayout();
+        const metaSpan = 2 + (admCol ? 1 : 0); // # + Status + optional Adm
+        const feeSegmentsHtml = feeGroups.map((grp) => renderGroupItemControlTd(grp.itemKey, grp.cols.length, true)).join('');
+        return `
+            ${stickyGroupLeftCell}
+            <td colspan="${metaSpan}" class="px-1.5 py-1 bg-indigo-100/80 border-b border-r-2 border-indigo-200 text-center">
+                <span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider whitespace-nowrap">FAMILY GROUP</span>
+            </td>
+            ${feeSegmentsHtml}
+        `;
+    }
+
+    // Mapping Mode: align across all raw columns
     const segments = [];
     let i = 0;
     while (i < columns.length) {
@@ -5733,58 +5913,17 @@ const buildGroupBannerSegmentsHtml = (groupRowSample) => {
         }
     }
 
-    let placedTitle = false;
     const segHtml = segments.map((seg) => {
         if (seg.type === 'identity') {
-            if (!placedTitle) {
-                placedTitle = true;
-                return `
-                    <td colspan="${seg.span}" class="px-2.5 py-1.5 bg-indigo-100/80 border-b border-r border-indigo-200 text-indigo-950">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="inline-flex items-center gap-1.5 font-extrabold text-[11px] text-indigo-900">
-                                <i class="fas fa-users text-indigo-600"></i>
-                                <span>${escapeHtml(groupName)}</span>
-                            </span>
-                            <span class="px-1.5 py-0.5 rounded bg-white text-indigo-700 border border-indigo-200 text-[10px] font-bold">${memberCount} Members</span>
-                            ${feePill}
-                        </div>
-                    </td>
-                `;
-            }
-            return `<td colspan="${seg.span}" class="px-2 py-1.5 bg-indigo-100/50 border-b border-r border-indigo-200"></td>`;
+            return `<td colspan="${seg.span}" class="px-2 py-1 bg-indigo-100/60 border-b border-r border-indigo-200"></td>`;
         }
-
-        const bucketKey = `${groupId}::${seg.itemKey}`;
-        const currentMode = groupItemModes.get(bucketKey) || 'auto';
-        const summary = groupSummaryMap.get(bucketKey) || null;
-        let statusPillHtml = '<span class="text-[10px] font-semibold text-indigo-500/80">Auto</span>';
-        if (summary) {
-            if (summary.resolvedMode === 'group') {
-                statusPillHtml = `<span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-black font-mono whitespace-nowrap" title="Unified Family Group Payment (${summary.filledCount} members)">Group ${formatBulkCurrency(summary.totalAmount)}</span>`;
-            } else if (summary.resolvedMode === 'single') {
-                statusPillHtml = `<span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black font-mono whitespace-nowrap" title="Individual Single Payment(s) (${summary.filledCount} member${summary.filledCount > 1 ? 's' : ''})">Single ${formatBulkCurrency(summary.totalAmount)}</span>`;
-            } else if (summary.resolvedMode === 'error') {
-                statusPillHtml = `<span class="px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-black whitespace-nowrap" title="Amounts differ across group members">Mismatch!</span>`;
-            }
-        }
-
-        return `
-            <td colspan="${seg.span}" class="px-2 py-1.5 bg-indigo-50/95 border-b border-r border-indigo-200" data-group-item-cell="${escapeHtml(bucketKey)}">
-                <div class="flex items-center justify-between gap-1.5">
-                    <select class="collection-bulk-group-mode-select px-1.5 py-0.5 rounded border border-indigo-300 bg-white text-[10px] font-bold text-indigo-900 focus:ring-1 focus:ring-indigo-500 cursor-pointer" data-group-id="${escapeHtml(groupId)}" data-item-key="${escapeHtml(seg.itemKey)}" title="Choose billing mode for this group & fee item">
-                        <option value="auto" ${currentMode === 'auto' ? 'selected' : ''}>Mode: Auto</option>
-                        <option value="group" ${currentMode === 'group' ? 'selected' : ''}>Group Payment</option>
-                        <option value="single" ${currentMode === 'single' ? 'selected' : ''}>Single Payment</option>
-                    </select>
-                    ${statusPillHtml}
-                </div>
-            </td>
-        `;
+        return renderGroupItemControlTd(seg.itemKey, seg.span, false);
     }).join('');
 
     return `
-        <td colspan="2" class="px-2 py-1.5 bg-indigo-100/90 border-b border-r border-indigo-200 text-center">
-            <span class="px-2 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider">FAMILY GROUP</span>
+        ${stickyGroupLeftCell}
+        <td colspan="2" class="px-1.5 py-1 bg-indigo-100/90 border-b border-r border-indigo-200 text-center">
+            <span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider">GROUP</span>
         </td>
         ${segHtml}
     `;
@@ -5811,6 +5950,11 @@ function renderCollectionBulkPreviewTable() {
 
     const duplicateFields = getCollectionDuplicateMappedFields();
     const hasDuplicateMapping = duplicateFields.size > 0;
+    if (hasDuplicateMapping && !collectionBulkState.isMappingMode) {
+        setCollectionBulkMappingMode(true, { skipRender: true });
+    }
+    const isMappingMode = Boolean(collectionBulkState.isMappingMode);
+
     const mappingOptions = buildCollectionBulkMappingOptions(activeFeeItems);
     const duplicateLabels = Array.from(duplicateFields).map((f) => (
         mappingOptions.find((opt) => opt.key === f)?.label || f
@@ -5821,91 +5965,179 @@ function renderCollectionBulkPreviewTable() {
     const dupSummaryHtml = getCollectionBulkDuplicateSummaryHtml();
 
     const duplicateAlertHtml = hasDuplicateMapping ? `
-        <div class="p-3 bg-red-600 text-white flex items-center gap-3 text-xs font-bold">
-            <i class="fas fa-exclamation-triangle text-lg shrink-0"></i>
+        <div class="p-2.5 bg-red-600 text-white flex items-center gap-2.5 text-xs font-bold">
+            <i class="fas fa-exclamation-triangle text-base shrink-0"></i>
             <div>
-                <div class="font-black text-sm">Duplicate Column Mapping Detected!</div>
-                <div class="font-normal text-red-100 text-[11px]">The field(s) <b>${escapeHtml(duplicateLabels.join(', '))}</b> are assigned to multiple columns. Remap duplicate columns or set them to Skip before saving.</div>
+                <div class="font-black text-xs sm:text-sm">Duplicate Column Mapping Detected!</div>
+                <div class="font-normal text-red-100 text-[11px]">The field(s) <b>${escapeHtml(duplicateLabels.join(', '))}</b> are assigned to multiple columns. Remap or Skip duplicates before saving.</div>
             </div>
         </div>
     ` : '';
 
     const headerBannerHtml = `
-        <div class="px-3 py-2 bg-slate-100/90 border-b border-slate-200 text-xs font-semibold text-slate-800 flex flex-wrap justify-between items-center gap-2">
+        <div class="px-2.5 py-1.5 bg-slate-100/90 border-b border-slate-200 text-[11px] font-semibold text-slate-800 flex flex-wrap justify-between items-center gap-2">
             <div class="flex items-center gap-2 flex-wrap">
                 <i class="fas fa-table text-emerald-600"></i>
-                <span>Sheet Preview (${parsedRows.filter((r) => !r.isSampleRow).length} students • ${activeFeeItems.length} fee items)</span>
-                <span class="text-[11px] font-normal text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    ${mappedCount} Mapped, ${skippedCount} Skipped
-                </span>
-                <span id="collection-bulk-dup-summary" class="${dupSummaryHtml ? 'inline-flex' : 'hidden'} items-center gap-1.5 text-[11px] font-bold text-red-700 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200" title="Repeated receipt numbers across unrelated students are highlighted with numbered red badges">${dupSummaryHtml}</span>
+                <span>${parsedRows.filter((r) => !r.isSampleRow).length} students • ${activeFeeItems.length} fee items</span>
+                ${isMappingMode ? `<span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">Mapping Mode (${mappedCount} Mapped, ${skippedCount} Skipped)</span>` : ''}
+                <span id="collection-bulk-dup-summary" class="${dupSummaryHtml ? 'inline-flex' : 'hidden'} items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200" title="Repeated receipt numbers across unrelated students are highlighted with numbered red badges">${dupSummaryHtml}</span>
             </div>
-            <div class="text-xs">
+            <div class="text-[11px]">
                 ${isEditMode
-                    ? '<span class="text-emerald-700 font-bold flex items-center gap-1.5"><i class="fas fa-edit"></i> Edit Mode ON: Amount, Receipt No &amp; Date cells are editable</span>'
-                    : '<span class="text-slate-500 flex items-center gap-1.5"><i class="fas fa-lock text-slate-400"></i> View Only (Turn ON Edit &amp; Mapping switch above to edit cells)</span>'}
+                    ? '<span class="text-emerald-700 font-bold flex items-center gap-1"><i class="fas fa-pen text-[10px]"></i> Edit ON — swipe horizontally; Name &amp; Class stay pinned</span>'
+                    : '<span class="text-slate-500 flex items-center gap-1"><i class="fas fa-lock text-slate-400 text-[10px]"></i> View Only (Turn ON Edit above to edit fee cells)</span>'}
             </div>
         </div>
     `;
 
-    const theadHtml = `
-        <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0 z-20 shadow-sm border-b-2 border-slate-300">
-            <tr>
-                <th class="p-2 border-b border-r bg-slate-100 text-center w-10 text-slate-500 font-mono">#</th>
-                <th class="p-2 border-b border-r bg-slate-100 text-center w-28">
-                    <span class="block text-[11px] uppercase tracking-wider text-slate-600">Status</span>
+    const stickyThClass = 'collection-bulk-sticky-col z-30 px-2 py-1.5 bg-slate-100 border-b-2 border-r border-slate-300 text-left w-[138px] min-w-[138px] max-w-[158px] sm:w-[172px] sm:min-w-[172px] sm:max-w-[196px]';
+
+    let theadHtml = '';
+    const compactLayout = !isMappingMode ? getCompactDisplayLayout() : null;
+
+    if (!isMappingMode) {
+        const { admCol, feeGroups } = compactLayout;
+        const groupHeaderRowHtml = feeGroups.map((grp, gIdx) => {
+            const bgCls = grp.isCustom
+                ? 'bg-violet-50 text-violet-950'
+                : (gIdx % 2 === 0 ? 'bg-slate-100 text-slate-800' : 'bg-blue-50/90 text-blue-950');
+            const customTag = grp.isCustom
+                ? ' <span class="px-1 py-0 rounded bg-violet-200/80 text-violet-800 text-[8px] font-black uppercase align-middle">Custom</span>'
+                : '';
+            return `
+                <th colspan="${grp.cols.length}" class="px-1.5 py-1 border-b border-r-2 border-slate-300 text-center text-[11px] font-extrabold whitespace-nowrap ${bgCls}" title="${escapeHtml(grp.label)}">
+                    ${escapeHtml(grp.label)}${customTag}
                 </th>
-                ${columns.map((col) => {
-                    const isDup = duplicateFields.has(col.mappedField);
-                    const isSkipped = col.mappedField === 'none';
-                    const isIdentityLocked = !isFeeEditableMappedField(col.mappedField) && !isSkipped;
-                    let headerBg = 'bg-slate-100 text-slate-800';
-                    let selectStyle = !isEditMode
-                        ? 'opacity-65 cursor-not-allowed pointer-events-none bg-slate-100 border-slate-200 text-slate-500'
-                        : 'border-blue-400 text-blue-900 font-bold bg-white';
+            `;
+        }).join('');
 
-                    if (isDup) {
-                        headerBg = 'bg-red-600 text-white border-2 border-red-700';
-                        selectStyle = 'bg-red-700 text-white border-2 border-white font-extrabold';
-                    } else if (isSkipped) {
-                        headerBg = 'bg-slate-50 text-slate-500';
-                        if (isEditMode) selectStyle = 'border-slate-300 text-slate-600 bg-white font-medium';
-                    } else if (isIdentityLocked) {
-                        headerBg = 'bg-slate-200/70 text-slate-800';
-                    }
+        const subHeaderRowHtml = feeGroups.map((grp, gIdx) => {
+            const bgCls = grp.isCustom
+                ? 'bg-violet-50/60 text-violet-800'
+                : (gIdx % 2 === 0 ? 'bg-slate-50 text-slate-600' : 'bg-blue-50/45 text-blue-900');
+            return grp.cols.map((col, cIdx) => {
+                const subMeta = getCompactColumnSubMeta(col.mappedField);
+                const isLastInGroup = cIdx === grp.cols.length - 1;
+                const rightBorder = isLastInGroup ? 'border-r-2 border-slate-300' : 'border-r border-slate-200';
+                return `<th class="px-1 py-0.5 border-b-2 ${rightBorder} border-b-slate-300 ${bgCls} ${subMeta.widthClass} ${subMeta.alignClass} text-[10px] font-bold uppercase tracking-tight whitespace-nowrap">${subMeta.shortLabel}</th>`;
+            }).join('');
+        }).join('');
 
-                    const disabledAttr = !isEditMode ? 'disabled' : '';
-                    const badgeIcon = isDup
-                        ? '<span class="text-[9px] px-1.5 py-0.5 bg-white text-red-700 font-black rounded uppercase">DUPLICATE</span>'
-                        : (isIdentityLocked
-                            ? '<span class="text-[9px] px-1.5 py-0.5 bg-slate-300 text-slate-700 font-bold rounded inline-flex items-center gap-1"><i class="fas fa-lock text-[8px]"></i> LOCKED</span>'
-                            : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : ''));
+        theadHtml = `
+            <thead class="text-slate-700 font-bold sticky top-0 z-20">
+                <tr>
+                    <th rowspan="2" class="${stickyThClass}">
+                        <span class="block text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-700 font-extrabold">Student &amp; Class</span>
+                    </th>
+                    <th rowspan="2" class="px-1 py-1.5 border-b-2 border-r border-slate-300 bg-slate-100 text-center w-7 min-w-[28px] text-[10px] text-slate-500 font-mono">#</th>
+                    <th rowspan="2" class="px-1 py-1.5 border-b-2 border-r border-slate-300 bg-slate-100 text-center w-[72px] min-w-[70px] text-[10px] uppercase tracking-wider text-slate-600">Status</th>
+                    ${admCol ? '<th rowspan="2" class="px-1 py-1.5 border-b-2 border-r-2 border-slate-300 bg-slate-100 text-center w-[58px] min-w-[54px] text-[10px] uppercase tracking-wider text-slate-600">Adm</th>' : ''}
+                    ${groupHeaderRowHtml}
+                </tr>
+                <tr>
+                    ${subHeaderRowHtml}
+                </tr>
+            </thead>
+        `;
+    } else {
+        theadHtml = `
+            <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0 z-20 shadow-sm">
+                <tr>
+                    <th class="${stickyThClass}">
+                        <span class="block text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-700 font-extrabold">Student &amp; Class</span>
+                    </th>
+                    <th class="p-1.5 border-b-2 border-r border-slate-300 bg-slate-100 text-center w-8 text-slate-500 font-mono">#</th>
+                    <th class="p-1.5 border-b-2 border-r border-slate-300 bg-slate-100 text-center w-24">
+                        <span class="block text-[10px] uppercase tracking-wider text-slate-600">Status</span>
+                    </th>
+                    ${columns.map((col) => {
+                        const isDup = duplicateFields.has(col.mappedField);
+                        const isSkipped = col.mappedField === 'none';
+                        const isIdentityLocked = !isFeeEditableMappedField(col.mappedField) && !isSkipped;
+                        let headerBg = 'bg-slate-100 text-slate-800';
+                        let selectStyle = 'border-blue-400 text-blue-900 font-bold bg-white';
 
-                    return `
-                        <th class="p-2 border-b border-r ${headerBg} min-w-[155px] max-w-[230px]">
-                            <div class="flex items-center justify-between gap-1 mb-1">
-                                <span class="text-[11px] font-mono ${isDup ? 'text-white font-extrabold' : 'text-slate-700'} truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
-                                ${badgeIcon}
-                            </div>
-                            <select data-smart-select="true" data-smart-floating="true" data-smart-min-width="220" data-smart-wrapper-class="collection-bulk-col-map-wrap" data-smart-placeholder="Search column..." class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}" ${disabledAttr}>
-                                ${mappingOptions.map((opt) => `
-                                    <option value="${escapeHtml(opt.key)}" ${col.mappedField === opt.key ? 'selected' : ''}>${escapeHtml(opt.label)}</option>
-                                `).join('')}
-                            </select>
-                        </th>
-                    `;
-                }).join('')}
-            </tr>
-        </thead>
-    `;
+                        if (isDup) {
+                            headerBg = 'bg-red-600 text-white border-2 border-red-700';
+                            selectStyle = 'bg-red-700 text-white border-2 border-white font-extrabold';
+                        } else if (isSkipped) {
+                            headerBg = 'bg-slate-50 text-slate-500';
+                            selectStyle = 'border-slate-300 text-slate-600 bg-white font-medium';
+                        } else if (isIdentityLocked) {
+                            headerBg = 'bg-slate-200/70 text-slate-800';
+                        }
+
+                        const badgeIcon = isDup
+                            ? '<span class="text-[9px] px-1 py-0.5 bg-white text-red-700 font-black rounded uppercase">DUP</span>'
+                            : (isIdentityLocked
+                                ? '<span class="text-[9px] px-1 py-0.5 bg-slate-300 text-slate-700 font-bold rounded inline-flex items-center gap-0.5"><i class="fas fa-lock text-[8px]"></i></span>'
+                                : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : ''));
+
+                        return `
+                            <th class="p-1.5 border-b-2 border-r border-slate-300 ${headerBg} min-w-[145px] max-w-[210px]">
+                                <div class="flex items-center justify-between gap-1 mb-1">
+                                    <span class="text-[10px] font-mono ${isDup ? 'text-white font-extrabold' : 'text-slate-700'} truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
+                                    ${badgeIcon}
+                                </div>
+                                <select data-smart-select="true" data-smart-floating="true" data-smart-min-width="210" data-smart-wrapper-class="collection-bulk-col-map-wrap" data-smart-placeholder="Search column..." class="collection-bulk-col-map w-full p-1 border ${selectStyle} rounded text-[11px] shadow-2xs focus:ring-1 focus:ring-blue-500" data-col-id="${col.id}">
+                                    ${mappingOptions.map((opt) => `
+                                        <option value="${escapeHtml(opt.key)}" ${col.mappedField === opt.key ? 'selected' : ''}>${escapeHtml(opt.label)}</option>
+                                    `).join('')}
+                                </select>
+                            </th>
+                        `;
+                    }).join('')}
+                </tr>
+            </thead>
+        `;
+    }
 
     let prevGroupId = '';
     const tbodyParts = [];
 
+    const renderDataCell = (col, rowVal, workingRow, idx, { compact = true, isGroupEnd = false } = {}) => {
+        const rawVal = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
+        const visual = getCollectionBulkCellVisual(col, rowVal);
+        const isReceiptCol = Boolean(col.mappedField?.endsWith('::receiptNo'));
+        const canEditCell = isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid' && visual.status !== 'na';
+        const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
+        const combinedTitle = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
+        const titleAttr = combinedTitle ? `title="${escapeHtml(combinedTitle)}"` : '';
+
+        const subMeta = compact && visual.isFeeCol ? getCompactColumnSubMeta(col.mappedField) : null;
+        const padCls = compact ? 'px-1.5 py-1' : 'p-1.5';
+        const rightBorder = isGroupEnd ? 'border-r-2 border-r-slate-300' : 'border-r border-slate-200';
+        const receiptPadClass = isReceiptCol ? (compact ? 'relative pr-5' : 'relative pr-7') : '';
+        const sizeAlignCls = subMeta ? `${subMeta.widthClass} ${subMeta.alignClass}` : '';
+        const groupEndAttr = isGroupEnd ? 'data-group-end="1"' : '';
+
+        let tdAttrs = '';
+        if (isReceiptCol) {
+            tdAttrs = canEditCell
+                ? `class="collection-bulk-cell ${receiptPadClass} ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-colors font-mono text-[11px] ${visual.bgClass}"`
+                : `class="collection-bulk-cell ${receiptPadClass} ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap font-mono text-[11px] ${visual.bgClass}"`;
+        } else {
+            tdAttrs = canEditCell
+                ? `contenteditable="true" class="collection-bulk-cell ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-colors font-mono text-[11px] ${visual.bgClass}"`
+                : `class="collection-bulk-cell ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap ${visual.isFeeCol ? 'font-mono' : ''} text-[11px] ${visual.bgClass}"`;
+        }
+
+        const innerHtml = buildCollectionBulkCellInnerHtml({
+            col,
+            rowIdx: idx,
+            rowValidation: rowVal,
+            rawVal,
+            canEditCell,
+            badgeInfo
+        });
+
+        return `<td ${tdAttrs} data-row-idx="${idx}" data-col-id="${col.id}" ${groupEndAttr} ${titleAttr}>${innerHtml}</td>`;
+    };
+
     parsedRows.forEach((rowVal, idx) => {
         if (!rowVal.isSampleRow && rowVal.groupId && rowVal.groupId !== prevGroupId) {
             tbodyParts.push(`
-                <tr class="collection-bulk-group-banner border-t-2 border-indigo-400 border-l-4 border-l-indigo-600" data-group-id="${escapeHtml(rowVal.groupId)}">
+                <tr class="collection-bulk-group-banner border-t-2 border-indigo-400" data-group-id="${escapeHtml(rowVal.groupId)}">
                     ${buildGroupBannerSegmentsHtml(rowVal)}
                 </tr>
             `);
@@ -5915,44 +6147,33 @@ function renderCollectionBulkPreviewTable() {
         const workingRow = workingRows[idx] || {};
         const rowBg = getCollectionBulkRowBgClass(rowVal);
         const statusBadge = getCollectionBulkRowBadgeHtml(rowVal);
+        const stickyBg = getCollectionBulkStickyCellBg(rowVal);
+        const stickyCellHtml = `
+            <td class="collection-bulk-sticky-student collection-bulk-sticky-col z-10 px-2 py-1 border-b border-r border-slate-300 w-[138px] min-w-[138px] max-w-[158px] sm:w-[172px] sm:min-w-[172px] sm:max-w-[196px] ${stickyBg}">
+                ${buildStickyStudentCellHtml(rowVal)}
+            </td>
+        `;
 
-        const cellsHtml = columns.map((col) => {
-            const rawVal = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
-            const visual = getCollectionBulkCellVisual(col, rowVal);
-            const isReceiptCol = Boolean(col.mappedField?.endsWith('::receiptNo'));
-            const canEditCell = isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid' && visual.status !== 'na';
-            const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
-            const combinedTitle = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
-            const titleAttr = combinedTitle ? `title="${escapeHtml(combinedTitle)}"` : '';
-            const receiptPadClass = isReceiptCol ? 'relative pr-9' : '';
-
-            let tdAttrs = '';
-            if (isReceiptCol) {
-                tdAttrs = canEditCell
-                    ? `class="collection-bulk-cell ${receiptPadClass} p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-all font-mono text-xs ${visual.bgClass}"`
-                    : `class="collection-bulk-cell ${receiptPadClass} p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}"`;
-            } else {
-                tdAttrs = canEditCell
-                    ? `contenteditable="true" class="collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-all font-mono text-xs ${visual.bgClass}"`
-                    : `class="collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}"`;
-            }
-
-            const innerHtml = buildCollectionBulkCellInnerHtml({
-                col,
-                rowIdx: idx,
-                rowValidation: rowVal,
-                rawVal,
-                canEditCell,
-                badgeInfo
-            });
-
-            return `<td ${tdAttrs} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${innerHtml}</td>`;
-        }).join('');
+        let cellsHtml = '';
+        if (!isMappingMode) {
+            const { admCol, feeCols, groupEndColIds } = compactLayout;
+            const admCellHtml = admCol
+                ? `<td class="px-1.5 py-1 border-b border-r-2 border-slate-200 border-r-slate-300 text-center font-mono text-[11px] text-slate-600 whitespace-nowrap">${escapeHtml(String(workingRow[admCol.id] ?? rowVal.displayAdm ?? ''))}</td>`
+                : '';
+            const feeCellsHtml = feeCols.map((col) => renderDataCell(col, rowVal, workingRow, idx, {
+                compact: true,
+                isGroupEnd: groupEndColIds.has(col.id)
+            })).join('');
+            cellsHtml = `${admCellHtml}${feeCellsHtml}`;
+        } else {
+            cellsHtml = columns.map((col) => renderDataCell(col, rowVal, workingRow, idx, { compact: false, isGroupEnd: false })).join('');
+        }
 
         tbodyParts.push(`
             <tr id="collection-bulk-row-${idx}" class="${rowBg} transition-colors" data-group-id="${escapeHtml(rowVal.groupId || '')}">
-                <td class="p-2 text-center text-slate-500 border-b border-r border-slate-200 font-mono text-xs">${idx + 1}</td>
-                <td class="collection-bulk-status-cell p-2 border-b border-r border-slate-200 text-center whitespace-nowrap">${statusBadge}</td>
+                ${stickyCellHtml}
+                <td class="px-1 py-1 text-center text-slate-400 border-b border-r border-slate-200 font-mono text-[10px]">${idx + 1}</td>
+                <td class="collection-bulk-status-cell px-1 py-1 border-b border-r border-slate-200 text-center whitespace-nowrap">${statusBadge}</td>
                 ${cellsHtml}
             </tr>
         `);
@@ -5961,18 +6182,20 @@ function renderCollectionBulkPreviewTable() {
     container.innerHTML = `
         ${duplicateAlertHtml}
         ${headerBannerHtml}
-        <div class="overflow-x-auto max-h-[520px] overflow-y-auto">
-            <table class="w-full text-xs text-left text-slate-700 border-collapse">
+        <div class="overflow-x-auto max-h-[540px] overflow-y-auto">
+            <table class="w-full text-[11px] text-left text-slate-700 border-separate border-spacing-0">
                 ${theadHtml}
-                <tbody class="divide-y divide-slate-100 font-sans">
+                <tbody class="font-sans">
                     ${tbodyParts.join('')}
                 </tbody>
             </table>
         </div>
     `;
 
-    enableSmartSelectWindowing(container, { visibleCount: 0 });
-    syncSmartSelectDisplay(container);
+    if (isMappingMode) {
+        enableSmartSelectWindowing(container, { visibleCount: 0 });
+        syncSmartSelectDisplay(container);
+    }
 }
 
 function refreshAllCollectionBulkDuplicateBadges() {
@@ -5994,12 +6217,12 @@ function refreshAllCollectionBulkDuplicateBadges() {
                 const existingBadge = td.querySelector('.collection-bulk-dup-badge');
                 if (badgeInfo.isGroupShared) {
                     if (existingBadge) {
-                        existingBadge.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[9px]';
+                        existingBadge.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[8px]';
                         existingBadge.textContent = 'GRP';
                         existingBadge.title = badgeInfo.titleNote;
                     } else {
                         const badgeEl = document.createElement('span');
-                        badgeEl.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[9px]';
+                        badgeEl.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[8px]';
                         badgeEl.title = badgeInfo.titleNote;
                         badgeEl.textContent = 'GRP';
                         td.appendChild(badgeEl);
@@ -6030,7 +6253,14 @@ function updateCollectionBulkRowDom(rowIdx) {
     const rowVal = collectionBulkState.parsedRows[rowIdx];
     if (!tr || !rowVal) return;
 
+    const isCompact = !collectionBulkState.isMappingMode;
     tr.className = `${getCollectionBulkRowBgClass(rowVal)} transition-colors`;
+
+    const stickyCell = tr.querySelector('.collection-bulk-sticky-student');
+    if (stickyCell) {
+        stickyCell.className = `collection-bulk-sticky-student collection-bulk-sticky-col z-10 px-2 py-1 border-b border-r border-slate-300 w-[138px] min-w-[138px] max-w-[158px] sm:w-[172px] sm:min-w-[172px] sm:max-w-[196px] ${getCollectionBulkStickyCellBg(rowVal)}`;
+    }
+
     const statusCell = tr.querySelector('.collection-bulk-status-cell');
     if (statusCell) {
         statusCell.innerHTML = getCollectionBulkRowBadgeHtml(rowVal);
@@ -6047,28 +6277,35 @@ function updateCollectionBulkRowDom(rowIdx) {
         const canEditCell = collectionBulkState.isEditMode && visual.isFeeCol && !rowVal.isSampleRow && !rowVal.hasFatalError && visual.status !== 'paid' && visual.status !== 'na';
         const badgeInfo = getCollectionBulkReceiptBadgeInfo(col, rowVal, rawVal);
 
+        const isGroupEnd = td.dataset.groupEnd === '1';
+        const subMeta = isCompact && visual.isFeeCol ? getCompactColumnSubMeta(col.mappedField) : null;
+        const padCls = isCompact ? 'px-1.5 py-1' : 'p-1.5';
+        const rightBorder = isGroupEnd ? 'border-r-2 border-r-slate-300' : 'border-r border-slate-200';
+        const receiptPadClass = isReceiptCol ? (isCompact ? 'relative pr-5' : 'relative pr-7') : '';
+        const sizeAlignCls = subMeta ? `${subMeta.widthClass} ${subMeta.alignClass}` : '';
+
         if (isReceiptCol) {
             td.removeAttribute('contenteditable');
             td.className = canEditCell
-                ? `collection-bulk-cell relative pr-9 p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-all font-mono text-xs ${visual.bgClass}`
-                : `collection-bulk-cell relative pr-9 p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}`;
+                ? `collection-bulk-cell ${receiptPadClass} ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap cursor-text focus-within:outline focus-within:outline-2 focus-within:outline-emerald-500 focus-within:bg-white focus-within:z-10 transition-colors font-mono text-[11px] ${visual.bgClass}`
+                : `collection-bulk-cell ${receiptPadClass} ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap font-mono text-[11px] ${visual.bgClass}`;
             const editor = td.querySelector('.collection-bulk-cell-editor');
             if (editor) {
                 if (canEditCell) {
                     editor.setAttribute('contenteditable', 'true');
-                    editor.className = 'collection-bulk-cell-editor block w-full min-h-[1.15rem] outline-none font-mono cursor-text';
+                    editor.className = 'collection-bulk-cell-editor block w-full min-h-[1rem] outline-none font-mono cursor-text';
                 } else {
                     editor.removeAttribute('contenteditable');
-                    editor.className = 'collection-bulk-cell-editor block w-full min-h-[1.15rem]';
+                    editor.className = 'collection-bulk-cell-editor block w-full min-h-[1rem]';
                 }
             }
         } else {
             if (canEditCell) {
                 td.setAttribute('contenteditable', 'true');
-                td.className = `collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-all font-mono text-xs ${visual.bgClass}`;
+                td.className = `collection-bulk-cell ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white focus:z-10 transition-colors font-mono text-[11px] ${visual.bgClass}`;
             } else {
                 td.removeAttribute('contenteditable');
-                td.className = `collection-bulk-cell p-2 border-b border-r border-slate-200 whitespace-nowrap text-xs ${visual.bgClass}`;
+                td.className = `collection-bulk-cell ${padCls} ${sizeAlignCls} border-b ${rightBorder} border-b-slate-200 whitespace-nowrap ${visual.isFeeCol ? 'font-mono' : ''} text-[11px] ${visual.bgClass}`;
             }
         }
         td.title = [visual.title, badgeInfo.titleNote].filter(Boolean).join(' | ');
@@ -6234,6 +6471,7 @@ const handleBulkFileSelection = (file) => {
                 year,
                 targetClass,
                 isEditMode: false,
+                isMappingMode: false,
                 fileName,
                 sheetSource: 'upload',
                 duplicateReceiptMap: new Map(),
@@ -6255,6 +6493,7 @@ const handleBulkFileSelection = (file) => {
             document.getElementById('bulk-preview-area')?.classList.remove('hidden');
             document.getElementById('bulk-progress-container')?.classList.add('hidden');
 
+            setCollectionBulkMappingMode(false, { skipRender: true });
             setCollectionBulkEditMode(false, { skipRender: true });
             rebuildCollectionBulkStateAndRender();
         } catch (error) {
@@ -6272,6 +6511,10 @@ const handleBulkFileSelection = (file) => {
 
 document.getElementById('collection-bulk-edit-switch')?.addEventListener('change', (e) => {
     setCollectionBulkEditMode(e.target.checked);
+});
+
+document.getElementById('collection-bulk-map-toggle-btn')?.addEventListener('click', () => {
+    setCollectionBulkMappingMode(!collectionBulkState.isMappingMode);
 });
 
 const collectionBulkTableContainer = document.getElementById('collection-bulk-table-container');
