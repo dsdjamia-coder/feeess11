@@ -1452,6 +1452,10 @@ function initializeDataListeners() {
                 const el = document.getElementById(id);
                 if (el) el.dataset.userChangedYear = 'false';
             });
+            if (prevCurrent && prevCurrent !== currentAcademicYear) {
+                if (typeof closeMarksReviewModal === 'function' && currentMarksReviewData) closeMarksReviewModal();
+                if (typeof closeSubjectReviewModal === 'function' && currentSubjectReviewData) closeSubjectReviewModal();
+            }
         }
         const rawYears = Array.isArray(payload.years) ? payload.years.filter(Boolean) : (payload.currentYear ? [payload.currentYear] : []);
         allConfiguredAcademicYears = rawYears;
@@ -5550,12 +5554,20 @@ function updateMarksDownloadAndUploadState() {
     const examVal = document.getElementById('entry-exam-select')?.value || '';
     const isBothSelected = Boolean(classVal && examVal);
 
+    const blankSheetBtn = document.getElementById('marks-open-blank-sheet-btn');
     const templateBtn = document.getElementById('marks-template-menu-btn');
     const templateMenu = document.getElementById('marks-template-menu');
     const fileInput = document.getElementById('marks-bulk-file');
     const uploadBtn = document.getElementById('marks-bulk-upload-btn');
     const fileLabel = document.getElementById('marks-file-picker-label');
     const filenameSpan = document.getElementById('marks-bulk-filename');
+
+    if (blankSheetBtn) {
+        blankSheetBtn.disabled = !isBothSelected;
+        blankSheetBtn.className = isBothSelected
+            ? 'marks-action-btn bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs flex items-center gap-2 transition cursor-pointer'
+            : 'marks-action-btn bg-slate-200 text-slate-400 px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-2 transition opacity-50 cursor-not-allowed';
+    }
 
     if (templateBtn) {
         templateBtn.disabled = !isBothSelected;
@@ -5795,7 +5807,8 @@ const evaluateMarksReviewRow = (rowIdx) => {
         fieldStatuses.total_attendance = { status: 'blank', value: '--' };
     }
 
-    if (rawPresAtt !== '') {
+    const hasPresentAtt = rawPresAtt !== '';
+    if (hasPresentAtt) {
         const parsedP = Number(rawPresAtt);
         if (!Number.isFinite(parsedP) || parsedP < 0) {
             hasFatalError = true;
@@ -5810,6 +5823,7 @@ const evaluateMarksReviewRow = (rowIdx) => {
     }
 
     const marks = {};
+    let hasAnyMark = false;
     subjectRows.forEach((sub) => {
         const mapKey = `sub::${sub.id}`;
         const val = String(extractedByKey[mapKey] ?? '').trim();
@@ -5818,6 +5832,7 @@ const evaluateMarksReviewRow = (rowIdx) => {
             fieldStatuses[sub.id] = { status: 'blank', value: '--' };
             blankFieldCount++;
         } else {
+            hasAnyMark = true;
             const upper = val.toUpperCase();
             const numeric = Number(val);
             const max = Number(sub.maxMarks || 100);
@@ -5838,6 +5853,9 @@ const evaluateMarksReviewRow = (rowIdx) => {
         }
     });
 
+    const hasEnteredData = hasAnyMark || hasPresentAtt;
+    const isEmptyRow = !hasFatalError && !hasEnteredData;
+
     return {
         rowIndex: rowIdx + 1,
         studentId,
@@ -5846,6 +5864,8 @@ const evaluateMarksReviewRow = (rowIdx) => {
         matchedStudent,
         isDuplicate,
         hasFatalError,
+        hasEnteredData,
+        isEmptyRow,
         blankFieldCount,
         rowIssues,
         marks,
@@ -5859,22 +5879,30 @@ const recalculateMarksReviewStats = () => {
     const rows = currentMarksReviewData.rows || [];
     const dupFields = getDuplicateMarksMappedFields(currentMarksReviewData.columns || []);
     const hasDupMap = dupFields.size > 0;
+    const isBlankSource = currentMarksReviewData.sheetSource === 'blank';
 
     let validCount = 0;
     let issueRowCount = 0;
+    let blankRowCount = 0;
     let totalBlankFields = 0;
     let existingRowCount = 0;
 
     rows.forEach((r) => {
         totalBlankFields += Number(r.blankFieldCount || 0);
-        if (r.isDuplicate) existingRowCount++;
-        if (r.hasFatalError) issueRowCount++;
-        else validCount++;
+        if (r.hasFatalError) {
+            issueRowCount++;
+        } else if (r.isEmptyRow) {
+            blankRowCount++;
+        } else {
+            validCount++;
+            if (r.isDuplicate) existingRowCount++;
+        }
     });
 
     currentMarksReviewData.totalRows = rows.length;
     currentMarksReviewData.validCount = validCount;
     currentMarksReviewData.issueRowCount = issueRowCount;
+    currentMarksReviewData.blankRowCount = blankRowCount;
     currentMarksReviewData.totalBlankFields = totalBlankFields;
     currentMarksReviewData.existingRowCount = existingRowCount;
 
@@ -5886,12 +5914,12 @@ const recalculateMarksReviewStats = () => {
     if (totalEl) totalEl.textContent = rows.length;
     if (validEl) validEl.textContent = validCount;
     if (issuesEl) issuesEl.textContent = issueRowCount;
-    if (blanksEl) blanksEl.textContent = totalBlankFields;
+    if (blanksEl) blanksEl.textContent = blankRowCount;
     if (existingEl) existingEl.textContent = existingRowCount;
 
     const conflictContainer = document.getElementById('marks-review-conflict-container');
     if (conflictContainer) {
-        conflictContainer.classList.toggle('opacity-50', existingRowCount === 0);
+        conflictContainer.classList.toggle('opacity-70', existingRowCount === 0);
     }
 
     const skipBtn = document.getElementById('marks-review-skip-issues-btn');
@@ -5908,7 +5936,8 @@ const recalculateMarksReviewStats = () => {
     const confirmBtn = document.getElementById('marks-review-confirm-upload-btn');
     const confirmLabel = document.getElementById('marks-review-confirm-upload-label');
     if (confirmBtn && confirmLabel) {
-        confirmLabel.textContent = hasDupMap ? 'Resolve Duplicate Mapping' : `Upload All (${validCount})`;
+        const primaryActionText = isBlankSource ? `Save Marks (${validCount})` : `Upload All (${validCount})`;
+        confirmLabel.textContent = hasDupMap ? 'Resolve Duplicate Mapping' : primaryActionText;
         const blocked = validCount === 0 || hasDupMap;
         confirmBtn.disabled = blocked;
         confirmBtn.classList.toggle('opacity-50', blocked);
@@ -5923,7 +5952,24 @@ const rebuildAllMarksReviewDataAndRender = () => {
     renderMarksReviewModalUI();
 };
 
-const setMarksReviewEditMode = (enabled) => {
+const syncMarksMappingToggleButton = () => {
+    const btn = document.getElementById('marks-review-map-toggle-btn');
+    if (!btn) return;
+    const active = Boolean(currentMarksReviewData?.isMappingMode);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.className = active
+        ? 'px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-300 font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer'
+        : 'px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer';
+};
+
+const setMarksReviewMappingMode = (enabled, { skipRender = false } = {}) => {
+    if (!currentMarksReviewData) return;
+    currentMarksReviewData.isMappingMode = Boolean(enabled);
+    syncMarksMappingToggleButton();
+    if (!skipRender) renderMarksReviewModalUI();
+};
+
+const setMarksReviewEditMode = (enabled, { skipRender = false } = {}) => {
     if (!currentMarksReviewData) return;
     currentMarksReviewData.isEditMode = Boolean(enabled);
     const toggle = document.getElementById('marks-review-edit-switch');
@@ -5933,23 +5979,22 @@ const setMarksReviewEditMode = (enabled) => {
     if (statusLabel) {
         statusLabel.textContent = currentMarksReviewData.isEditMode ? 'ON' : 'OFF';
         statusLabel.className = currentMarksReviewData.isEditMode
-            ? 'text-[11px] font-extrabold uppercase tracking-wider text-emerald-700'
-            : 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500';
+            ? 'text-[11px] font-extrabold uppercase tracking-wider text-emerald-700 font-mono'
+            : 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500 font-mono';
     }
     if (banner) {
         banner.classList.toggle('hidden', !currentMarksReviewData.isEditMode);
     }
-    renderMarksReviewModalUI();
+    if (!skipRender) renderMarksReviewModalUI();
 };
 
 const closeMarksReviewModal = () => {
-    const modal = document.getElementById('marks-upload-review-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-        modal.style.display = 'none';
+    const previewArea = document.getElementById('marks-bulk-preview-area');
+    if (previewArea) {
+        previewArea.classList.add('hidden');
     }
-    document.body.classList.remove('modal-scroll-lock');
+    const tableContainer = document.getElementById('marks-review-table-container');
+    if (tableContainer) tableContainer.innerHTML = '';
     currentMarksReviewData = null;
     const fileInput = document.getElementById('marks-bulk-file');
     if (fileInput) fileInput.value = '';
@@ -5961,13 +6006,40 @@ const closeMarksReviewModal = () => {
 };
 
 const openMarksReviewModal = () => {
-    const modal = document.getElementById('marks-upload-review-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        modal.style.display = 'flex';
+    const previewArea = document.getElementById('marks-bulk-preview-area');
+    if (previewArea) {
+        previewArea.classList.remove('hidden');
+        previewArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-    document.body.classList.add('modal-scroll-lock');
+};
+
+const getMarksRowVisualClasses = (r) => {
+    if (r.hasFatalError) {
+        return {
+            rowBg: 'bg-rose-50/80 hover:bg-rose-100/70',
+            stickyBg: 'bg-rose-50',
+            badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
+        };
+    }
+    if (r.isEmptyRow) {
+        return {
+            rowBg: 'bg-slate-50/50 hover:bg-slate-100/60',
+            stickyBg: 'bg-slate-50',
+            badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-200 text-slate-600" title="No marks or present attendance entered — will be skipped on save">BLANK</span>`
+        };
+    }
+    if (r.isDuplicate) {
+        return {
+            rowBg: 'bg-sky-50/70 hover:bg-sky-100/70',
+            stickyBg: 'bg-sky-50',
+            badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Marks already exist for this student">EXISTING</span>`
+        };
+    }
+    return {
+        rowBg: 'bg-white hover:bg-slate-50',
+        stickyBg: 'bg-white',
+        badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`
+    };
 };
 
 const updateMarksReviewRowDomAfterEdit = (rowIdx) => {
@@ -5976,29 +6048,18 @@ const updateMarksReviewRowDomAfterEdit = (rowIdx) => {
     const r = currentMarksReviewData.rows[rowIdx];
     if (!tr || !r) return;
 
-    if (r.hasFatalError) {
-        tr.className = 'bg-rose-50/80 hover:bg-rose-100/70 transition-colors';
-    } else if (r.isDuplicate) {
-        tr.className = 'bg-sky-50/70 hover:bg-sky-100/70 transition-colors';
-    } else {
-        tr.className = 'hover:bg-slate-50 transition-colors';
-    }
+    const visual = getMarksRowVisualClasses(r);
+    tr.className = `${visual.rowBg} transition-colors`;
 
     const statusCell = tr.querySelector('.marks-review-status-cell');
-    if (statusCell) {
-        if (r.hasFatalError) {
-            statusCell.innerHTML = `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`;
-        } else if (r.isDuplicate) {
-            statusCell.innerHTML = `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Marks already exist for this student">EXISTING</span>`;
-        } else {
-            statusCell.innerHTML = `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`;
-        }
-    }
+    if (statusCell) statusCell.innerHTML = visual.badgeHtml;
 
     const resolvedCell = tr.querySelector('.marks-review-matched-cell');
     if (resolvedCell) {
+        resolvedCell.classList.remove('bg-white', 'bg-rose-50', 'bg-sky-50', 'bg-slate-50');
+        resolvedCell.classList.add(visual.stickyBg);
         resolvedCell.innerHTML = r.matchedStudent
-            ? `<div class="font-bold text-slate-800 truncate max-w-[160px]">${escapeHtml(r.studentName)}</div><div class="text-[10px] text-slate-500 font-mono">${escapeHtml(r.admNo)}</div>`
+            ? `<div class="font-bold text-slate-800 truncate max-w-[165px]">${escapeHtml(r.studentName)}</div><div class="text-[10px] text-slate-500 font-mono">${escapeHtml(r.admNo)}</div>`
             : `<span class="text-rose-700 font-bold text-[11px]">Not matched</span>`;
     }
 
@@ -6006,7 +6067,7 @@ const updateMarksReviewRowDomAfterEdit = (rowIdx) => {
         const td = tr.querySelector(`.marks-review-cell[data-col-id="${col.id}"]`);
         if (!td) return;
         const mapped = col.mappedField;
-        td.classList.remove('bg-rose-100', 'text-rose-950', 'border-rose-400', 'font-bold', 'bg-amber-100', 'text-amber-950', 'border-amber-300', 'bg-slate-50/60', 'text-slate-400', 'italic');
+        td.classList.remove('bg-rose-100', 'text-rose-950', 'border-rose-400', 'font-bold', 'bg-amber-50', 'bg-amber-100', 'text-amber-950', 'border-amber-300', 'bg-slate-50/60', 'text-slate-400', 'italic');
         if (!mapped || mapped === 'none') {
             td.classList.add('bg-slate-50/60', 'text-slate-400', 'italic');
             td.title = 'Column skipped from import';
@@ -6016,9 +6077,9 @@ const updateMarksReviewRowDomAfterEdit = (rowIdx) => {
         if (fStatus?.status === 'error') {
             td.classList.add('bg-rose-100', 'text-rose-950', 'font-bold');
             td.title = fStatus.reason || 'Invalid value';
-        } else if (fStatus?.status === 'blank') {
-            td.classList.add('bg-amber-100', 'text-amber-950');
-            td.title = 'Blank / Not provided';
+        } else if (fStatus?.status === 'blank' && !r.isEmptyRow && mapped.startsWith('sub::')) {
+            td.classList.add('bg-amber-50', 'text-amber-950');
+            td.title = 'Blank subject mark';
         } else {
             td.title = '';
         }
@@ -6029,13 +6090,34 @@ const updateMarksReviewRowDomAfterEdit = (rowIdx) => {
 
 const renderMarksReviewModalUI = () => {
     if (!currentMarksReviewData) return;
-    const { className, subjectRows, columns, workingRows, rows, totalRows, isEditMode } = currentMarksReviewData;
+    const { className, subjectRows, columns, workingRows, rows, totalRows, isEditMode, sheetSource, sourceLabel } = currentMarksReviewData;
 
     const examTitle = currentExamContext?.label || currentExamContext?.key || 'Exam';
+    const isBlankSource = sheetSource === 'blank';
     const titleEl = document.getElementById('marks-review-modal-title');
     const subtitleEl = document.getElementById('marks-review-modal-subtitle');
-    if (titleEl) titleEl.textContent = `Review Marks Upload - ${className} (${examTitle})`;
-    if (subtitleEl) subtitleEl.textContent = `Academic Year: ${currentAcademicYear || 'N/A'} · ${totalRows} rows loaded · Edit & verify before saving.`;
+    const iconEl = document.getElementById('marks-review-source-icon');
+    const iconWrapEl = document.getElementById('marks-review-source-icon-wrap');
+
+    if (titleEl) {
+        titleEl.textContent = isBlankSource
+            ? `Blank Sheet — ${className} (${examTitle})`
+            : `Review Marks Upload — ${className} (${examTitle})`;
+    }
+    if (subtitleEl) {
+        subtitleEl.textContent = isBlankSource
+            ? `Academic Year: ${currentAcademicYear || 'N/A'} · ${totalRows} students · Pre-filled with existing marks where available.`
+            : `${sourceLabel || 'Spreadsheet'} · Academic Year: ${currentAcademicYear || 'N/A'} · ${totalRows} rows loaded.`;
+    }
+    if (iconEl && iconWrapEl) {
+        if (isBlankSource) {
+            iconEl.className = 'fas fa-pen-to-square';
+            iconWrapEl.className = 'w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm shadow-2xs shrink-0';
+        } else {
+            iconEl.className = 'fas fa-file-excel';
+            iconWrapEl.className = 'w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-sm shadow-2xs shrink-0';
+        }
+    }
 
     recalculateMarksReviewStats();
 
@@ -6043,16 +6125,26 @@ const renderMarksReviewModalUI = () => {
     if (!container) return;
 
     const fieldOptions = getMarksMappingFieldOptions(subjectRows);
+    const fieldLabelMap = new Map(fieldOptions.map((opt) => [opt.key, opt.label]));
     const duplicateFields = getDuplicateMarksMappedFields(columns);
     const hasDupMap = duplicateFields.size > 0;
-    const dupLabels = Array.from(duplicateFields).map((k) => fieldOptions.find((f) => f.key === k)?.label || k);
+    if (hasDupMap && !currentMarksReviewData.isMappingMode) {
+        currentMarksReviewData.isMappingMode = true;
+    }
+    syncMarksMappingToggleButton();
+    const isMappingMode = Boolean(currentMarksReviewData.isMappingMode);
+    const dupLabels = Array.from(duplicateFields).map((k) => fieldLabelMap.get(k) || k);
+
+    const visibleColumns = (!isMappingMode && isBlankSource)
+        ? columns.filter((col) => col.mappedField !== 'adm_no' && col.mappedField !== 'student_name' && col.mappedField !== 'student_id')
+        : columns;
 
     let dupAlertHtml = '';
     if (hasDupMap) {
         dupAlertHtml = `
             <div class="p-3 m-2 bg-red-600 text-white rounded-xl shadow-md flex items-center gap-2.5 text-xs font-bold">
                 <i class="fas fa-exclamation-triangle text-base shrink-0"></i>
-                <div>Duplicate Column Mapping Detected: <b>${escapeHtml(dupLabels.join(', '))}</b>. Turn ON Edit &amp; Mapping above and set duplicates to Skip or assign uniquely.</div>
+                <div>Duplicate Column Mapping Detected: <b>${escapeHtml(dupLabels.join(', '))}</b>. Turn ON Edit and set duplicate columns to Skip or assign uniquely.</div>
             </div>
         `;
     }
@@ -6063,14 +6155,27 @@ const renderMarksReviewModalUI = () => {
             <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0 z-20 shadow-xs border-b-2 border-slate-300">
                 <tr>
                     <th class="p-2 border-b border-r border-slate-200 text-center w-10 bg-slate-100">#</th>
-                    <th class="p-2 border-b border-r border-slate-200 min-w-[82px] text-center bg-slate-100">Status</th>
-                    <th class="p-2 border-b border-r border-slate-200 min-w-[155px] bg-slate-100">Matched Student</th>
-                    ${columns.map((col) => {
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[78px] text-center bg-slate-100">Status</th>
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[165px] bg-slate-100 sticky left-0 z-30 shadow-[2px_0_4px_-2px_rgba(15,23,42,0.12)]">Student</th>
+                    ${visibleColumns.map((col) => {
                         const isDup = duplicateFields.has(col.mappedField);
                         const isSkipped = !col.mappedField || col.mappedField === 'none';
                         const headerBg = isDup
                             ? 'bg-red-600 text-white border-red-700'
                             : (isSkipped ? 'bg-slate-50 text-slate-500' : 'bg-slate-100 text-slate-800');
+                        if (!isMappingMode) {
+                            const compactLabel = (!isSkipped && fieldLabelMap.get(col.mappedField)) ? fieldLabelMap.get(col.mappedField) : col.header;
+                            const minW = col.mappedField === 'total_attendance' || col.mappedField === 'present_attendance'
+                                ? 'min-w-[92px]'
+                                : (col.mappedField && col.mappedField.startsWith('sub::') ? 'min-w-[105px]' : 'min-w-[130px]');
+                            return `
+                            <th class="p-2 border-b border-r border-slate-200 ${minW} max-w-[200px] ${headerBg}">
+                                <div class="flex items-center justify-between gap-1">
+                                    <span class="text-[11px] font-bold truncate" title="${escapeHtml(compactLabel)}">${escapeHtml(compactLabel)}</span>
+                                    ${isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : ''}
+                                </div>
+                            </th>`;
+                        }
                         const selectClass = isDup
                             ? 'bg-red-700 text-white border border-white font-bold'
                             : (!isEditMode
@@ -6092,25 +6197,18 @@ const renderMarksReviewModalUI = () => {
             <tbody class="divide-y divide-slate-100 font-sans">
                 ${rows.map((r, idx) => {
                     const workingRow = workingRows[idx] || {};
-                    const rowBg = r.hasFatalError
-                        ? 'bg-rose-50/80 hover:bg-rose-100/70'
-                        : (r.isDuplicate ? 'bg-sky-50/70 hover:bg-sky-100/70' : 'hover:bg-slate-50');
-                    const statusBadge = r.hasFatalError
-                        ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
-                        : (r.isDuplicate
-                            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Marks already exist for this student">EXISTING</span>`
-                            : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`);
+                    const visual = getMarksRowVisualClasses(r);
 
                     return `
-                    <tr id="marks-review-row-${idx}" class="${rowBg} transition-colors">
+                    <tr id="marks-review-row-${idx}" class="${visual.rowBg} transition-colors">
                         <td class="p-2 text-center text-slate-400 border-b border-r border-slate-100 font-mono tabular-nums">${idx + 1}</td>
-                        <td class="marks-review-status-cell p-2 border-b border-r border-slate-100 text-center whitespace-nowrap">${statusBadge}</td>
-                        <td class="marks-review-matched-cell p-2 border-b border-r border-slate-100">
+                        <td class="marks-review-status-cell p-2 border-b border-r border-slate-100 text-center whitespace-nowrap">${visual.badgeHtml}</td>
+                        <td class="marks-review-matched-cell p-2 border-b border-r border-slate-200 sticky left-0 z-10 ${visual.stickyBg} shadow-[2px_0_4px_-2px_rgba(15,23,42,0.08)]">
                             ${r.matchedStudent
-                                ? `<div class="font-bold text-slate-800 truncate max-w-[160px]">${escapeHtml(r.studentName)}</div><div class="text-[10px] text-slate-500 font-mono">${escapeHtml(r.admNo)}</div>`
+                                ? `<div class="font-bold text-slate-800 truncate max-w-[165px]">${escapeHtml(r.studentName)}</div><div class="text-[10px] text-slate-500 font-mono">${escapeHtml(r.admNo)}</div>`
                                 : `<span class="text-rose-700 font-bold text-[11px]">Not matched</span>`}
                         </td>
-                        ${columns.map((col) => {
+                        ${visibleColumns.map((col) => {
                             const val = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
                             const mapped = col.mappedField;
                             const isSkipped = !mapped || mapped === 'none';
@@ -6124,14 +6222,17 @@ const renderMarksReviewModalUI = () => {
                                 if (fStatus?.status === 'error') {
                                     bgClass = 'bg-rose-100 text-rose-950 font-bold';
                                     titleAttr = `title="${escapeHtml(fStatus.reason || 'Invalid value')}"`;
-                                } else if (fStatus?.status === 'blank' || !val.trim()) {
-                                    bgClass = 'bg-amber-100 text-amber-950';
-                                    titleAttr = 'title="Blank / Not provided"';
+                                } else if (fStatus?.status === 'blank' && !r.isEmptyRow && mapped.startsWith('sub::')) {
+                                    bgClass = 'bg-amber-50 text-amber-950';
+                                    titleAttr = 'title="Blank subject mark"';
                                 }
                             }
+                            const alignClass = (mapped === 'total_attendance' || mapped === 'present_attendance' || (mapped && mapped.startsWith('sub::')))
+                                ? 'text-center'
+                                : 'text-left';
                             const editableAttr = isEditMode
-                                ? 'contenteditable="true" class="marks-review-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white font-mono text-xs ' + bgClass + '"'
-                                : 'class="marks-review-cell p-2 border-b border-r border-slate-100 whitespace-nowrap font-mono text-xs ' + bgClass + '"';
+                                ? `contenteditable="true" class="marks-review-cell p-2 border-b border-r border-slate-200 whitespace-nowrap cursor-text focus:outline focus:outline-2 focus:outline-indigo-500 focus:bg-white font-mono text-xs ${alignClass} ${bgClass}"`
+                                : `class="marks-review-cell p-2 border-b border-r border-slate-100 whitespace-nowrap font-mono text-xs ${alignClass} ${bgClass}"`;
                             return `<td ${editableAttr} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${escapeHtml(val)}</td>`;
                         }).join('')}
                     </tr>`;
@@ -6140,8 +6241,128 @@ const renderMarksReviewModalUI = () => {
         </table>
     `;
     container.innerHTML = html;
-    enableSmartSelectWindowing(container, { visibleCount: 0 });
-    syncSmartSelectDisplay(container);
+    if (isMappingMode) {
+        enableSmartSelectWindowing(container, { visibleCount: 0 });
+        syncSmartSelectDisplay(container);
+    }
+};
+
+const openMarksBlankSheet = () => {
+    const className = document.getElementById('entry-class-select')?.value || '';
+    const examId = document.getElementById('entry-exam-select')?.value || '';
+    if (!className || !examId) return alert('Select class and exam first.');
+    if (roleScope === 'staff' && (!teacherAssignedClasses.length || !isClassInDutyScope(className, teacherAssignedClasses))) {
+        return alert('You can only enter marks for your assigned classes.');
+    }
+    if (!currentExamSchema) return alert('Schema not loaded for selected exam.');
+
+    const subjectRows = getActiveHeaderSubjectRows(currentExamSchema, currentExamContext?.key || '');
+    if (!subjectRows.length) return alert('No subjects configured for this class and exam.');
+
+    const scopedStudents = students
+        .filter((s) => s.class === className && (s.academicYear === currentAcademicYear || !s.academicYear))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    if (!scopedStudents.length) return alert('No students found for selected class.');
+
+    const existingRecordMap = new Map();
+    examResultsCache.forEach((rec) => {
+        if (resultMatchesExam(rec, examId) && rec.classLabel === className && (!rec.academicYear || rec.academicYear === currentAcademicYear)) {
+            existingRecordMap.set(String(rec.studentId).trim(), rec);
+        }
+    });
+
+    const defaultTotalAtt = (document.getElementById('header-col-total-attendance')?.value || '').trim()
+        || resolveDefaultWorkingDays(className, examId, scopedStudents);
+
+    const columns = [
+        { id: 'mcol_0', header: 'adm_no', mappedField: 'adm_no' },
+        { id: 'mcol_1', header: 'student_name', mappedField: 'student_name' },
+        { id: 'mcol_2', header: 'total_attendance', mappedField: 'total_attendance' },
+        { id: 'mcol_3', header: 'present_attendance', mappedField: 'present_attendance' },
+        ...subjectRows.map((sub, idx) => ({
+            id: `mcol_${idx + 4}`,
+            header: sub.name,
+            mappedField: `sub::${sub.id}`
+        }))
+    ];
+
+    const workingRows = scopedStudents.map((student) => {
+        const existing = existingRecordMap.get(String(student.id).trim());
+        const existingWorking = Number(existing?.attendance?.workingDays);
+        const existingPresent = Number(existing?.attendance?.presentDays);
+        const obj = {
+            mcol_0: String(student.adm || student.admissionNo || student.uid || '').trim(),
+            mcol_1: String(student.name || '').trim(),
+            mcol_2: Number.isFinite(existingWorking) && existingWorking > 0 ? String(existingWorking) : String(defaultTotalAtt ?? '').trim(),
+            mcol_3: Number.isFinite(existingPresent) && existingPresent > 0 ? String(existingPresent) : ''
+        };
+        subjectRows.forEach((sub, idx) => {
+            obj[`mcol_${idx + 4}`] = existing ? getResultMark(existing.marks || {}, sub) : '';
+        });
+        return obj;
+    });
+
+    const mergeRadio = document.querySelector('input[name="marks-duplicate-action"][value="merge"]');
+    if (mergeRadio) mergeRadio.checked = true;
+
+    const examTitle = currentExamContext?.label || currentExamContext?.key || 'Exam';
+    currentMarksReviewData = {
+        className,
+        examId,
+        subjectRows,
+        columns,
+        workingRows,
+        isEditMode: true,
+        isMappingMode: false,
+        sheetSource: 'blank',
+        sourceLabel: `Blank Sheet — ${className} (${examTitle})`,
+        rows: [],
+        totalRows: workingRows.length,
+        validCount: 0,
+        blankRowCount: 0,
+        issueRowCount: 0,
+        totalBlankFields: 0,
+        existingRowCount: 0
+    };
+
+    setMarksReviewMappingMode(false, { skipRender: true });
+    setMarksReviewEditMode(true, { skipRender: true });
+    rebuildAllMarksReviewDataAndRender();
+    openMarksReviewModal();
+    updateBulkStatus(
+        `Blank sheet opened: ${scopedStudents.length} students (${currentMarksReviewData.existingRowCount} pre-filled).`,
+        100,
+        'success'
+    );
+    notify(`Blank sheet opened for ${className} (${examTitle}).`, 'success');
+};
+
+const exportCurrentMarksSheetToExcel = () => {
+    if (!currentMarksReviewData || !currentMarksReviewData.columns?.length || !currentMarksReviewData.workingRows?.length) {
+        return alert('No active marks sheet available to export.');
+    }
+    if (!window.XLSX) {
+        return alert('Spreadsheet library is still loading. Try again in a moment.');
+    }
+    const { className, columns, workingRows } = currentMarksReviewData;
+    const rowsForSheet = workingRows.map((rowObj) => {
+        const out = {};
+        columns.forEach((col) => {
+            out[col.header] = rowObj?.[col.id] ?? '';
+        });
+        if (!Object.keys(out).some((k) => k.toLowerCase() === 'class')) {
+            out.class = className || '';
+        }
+        return out;
+    });
+    const examLabel = (currentExamContext?.label || currentExamContext?.key || 'exam').replace(/\s+/g, '_');
+    const classLabel = String(className || 'class').replace(/\s+/g, '_');
+    const ws = XLSX.utils.json_to_sheet(rowsForSheet);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Marks_Sheet');
+    const fileName = `Marks_Sheet_${classLabel}_${examLabel}.xlsx`;
+    XLSX.writeFile(wb, fileName, { bookType: 'xlsx' });
+    notify(`Exported ${fileName}`, 'success');
 };
 
 const parseAndReviewBulkMarks = async () => {
@@ -6233,6 +6454,9 @@ const parseAndReviewBulkMarks = async () => {
         return obj;
     });
 
+    const mergeRadio = document.querySelector('input[name="marks-duplicate-action"][value="merge"]');
+    if (mergeRadio) mergeRadio.checked = true;
+
     currentMarksReviewData = {
         className,
         examId,
@@ -6240,19 +6464,24 @@ const parseAndReviewBulkMarks = async () => {
         columns,
         workingRows,
         isEditMode: false,
+        isMappingMode: false,
+        sheetSource: 'file',
+        sourceLabel: file.name || 'Spreadsheet',
         rows: [],
         totalRows: workingRows.length,
         validCount: 0,
+        blankRowCount: 0,
         issueRowCount: 0,
         totalBlankFields: 0,
         existingRowCount: 0
     };
 
-    setMarksReviewEditMode(false);
+    setMarksReviewMappingMode(false, { skipRender: true });
+    setMarksReviewEditMode(false, { skipRender: true });
     rebuildAllMarksReviewDataAndRender();
     openMarksReviewModal();
     updateBulkStatus(
-        `Spreadsheet parsed: ${currentMarksReviewData.validCount} ready, ${currentMarksReviewData.issueRowCount} issues found.`,
+        `Spreadsheet parsed: ${currentMarksReviewData.validCount} ready, ${currentMarksReviewData.blankRowCount} blank, ${currentMarksReviewData.issueRowCount} issues found.`,
         100,
         currentMarksReviewData.issueRowCount > 0 ? 'info' : 'success'
     );
@@ -6260,19 +6489,20 @@ const parseAndReviewBulkMarks = async () => {
 
 const executeConfirmedMarksUpload = async (skipIssues = false) => {
     if (!currentMarksReviewData) return;
-    const { className, examId, subjectRows, rows, columns } = currentMarksReviewData;
+    const { className, examId, subjectRows, rows, columns, sheetSource } = currentMarksReviewData;
 
     if (getDuplicateMarksMappedFields(columns || []).size > 0) {
-        return alert('Duplicate column mappings detected. Turn ON Edit & Mapping to fix duplicate columns before uploading.');
+        return alert('Duplicate column mappings detected. Turn ON Edit & Map Columns to fix duplicate columns before saving.');
     }
 
-    let targetRows = skipIssues ? rows.filter((r) => !r.hasFatalError) : rows;
+    const populatedRows = rows.filter((r) => !r.isEmptyRow);
+    let targetRows = skipIssues ? populatedRows.filter((r) => !r.hasFatalError) : populatedRows;
     if (!skipIssues && targetRows.some((r) => r.hasFatalError)) {
-        return alert('Please fix highlighted issues (turn ON Edit & Mapping) or click "Upload Valid Only" to skip problematic rows.');
+        return alert('Please fix highlighted issues (turn ON Edit) or click "Save Valid Only" to skip problematic rows.');
     }
 
     if (!targetRows.length) {
-        return alert('No valid student records to upload.');
+        return alert('Enter marks or present attendance for at least one student before saving.');
     }
 
     const duplicateAction = document.querySelector('input[name="marks-duplicate-action"]:checked')?.value || 'merge';
@@ -6280,7 +6510,7 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
         targetRows = targetRows.filter((r) => !r.isDuplicate);
         if (!targetRows.length) {
             closeMarksReviewModal();
-            return alert('All records in this file already exist in this class and you chose "Skip Existing". No new records were uploaded.');
+            return alert('All entered records already exist in this class and you chose "Skip Existing". No new records were saved.');
         }
     }
 
@@ -6290,7 +6520,7 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
     const oldSkipHtml = skipBtn ? skipBtn.innerHTML : '';
     if (confirmBtn) {
         confirmBtn.disabled = true;
-        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
     }
     if (skipBtn) {
         skipBtn.disabled = true;
@@ -6321,7 +6551,7 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
                 const docId = sanitizeBulkDocId(`${currentExamSchema.id}_${examKey}_${entry.studentId}`);
                 let finalMarks = entry.marks;
 
-                if (duplicateAction === 'merge' && entry.isDuplicate) {
+                if (duplicateAction === 'merge' && entry.isDuplicate && sheetSource !== 'blank') {
                     const existingRec = examResultsCache.find((r) => resultMatchesExam(r, examId) && r.studentId === entry.studentId);
                     if (existingRec && existingRec.marks) {
                         finalMarks = Object.assign({}, existingRec.marks, entry.marks);
@@ -6354,7 +6584,7 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
 
             await batch.commit();
             const pct = Math.round(((i + chunk.length) / targetRows.length) * 100);
-            updateBulkStatus(`Uploaded ${committedCount} of ${targetRows.length}...`, pct);
+            updateBulkStatus(`Saved ${committedCount} of ${targetRows.length}...`, pct);
         }
 
         // Synchronously update local cache so Manual Entry renders all uploaded marks immediately at 100%
@@ -6371,14 +6601,14 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
         const headerAttInp = document.getElementById('header-col-total-attendance');
         if (headerAttInp) headerAttInp.value = '';
 
-        updateBulkStatus(`Uploaded ${committedCount} row(s) successfully as draft.`, 100, 'success');
+        updateBulkStatus(`Saved ${committedCount} student record(s) successfully as draft.`, 100, 'success');
         closeMarksReviewModal();
         setMarksEntryMode('manual');
         loadMarksTable({ preserveUnsavedInputs: false });
-        notify(`Successfully uploaded ${committedCount} result record(s) into Draft for ${className}!`, 'success');
+        notify(`Successfully saved ${committedCount} result record(s) into Draft for ${className}!`, 'success');
     } catch (err) {
         console.error('Error committing marks', err);
-        alert('Upload failed: ' + (err.message || 'Please check your connection and try again.'));
+        alert('Save failed: ' + (err.message || 'Please check your connection and try again.'));
     } finally {
         if (confirmBtn) {
             confirmBtn.disabled = false;
@@ -6391,7 +6621,7 @@ const executeConfirmedMarksUpload = async (skipIssues = false) => {
     }
 };
 
-// Event Listeners for Marks Entry controls & review modal
+// Event Listeners for Marks Entry controls & inline review workspace
 document.getElementById('marks-tab-manual')?.addEventListener('click', () => {
     setMarksEntryMode('manual');
 });
@@ -6400,14 +6630,22 @@ document.getElementById('marks-tab-bulk')?.addEventListener('click', () => {
 });
 
 document.getElementById('entry-exam-select')?.addEventListener('change', () => {
+    const nextExam = document.getElementById('entry-exam-select')?.value || '';
+    if (currentMarksReviewData && currentMarksReviewData.examId !== nextExam) {
+        closeMarksReviewModal();
+    }
     updateMarksDownloadAndUploadState();
     loadMarksTable();
 });
 
 document.getElementById('entry-class-select')?.addEventListener('change', () => {
+    const nextClass = document.getElementById('entry-class-select')?.value || '';
+    if (currentMarksReviewData && currentMarksReviewData.className !== nextClass) {
+        closeMarksReviewModal();
+    }
     const examSelect = document.getElementById('entry-exam-select');
     const prevExam = examSelect?.value || '';
-    renderExamSelectOptions(examSelect, document.getElementById('entry-class-select')?.value || '', currentAcademicYear);
+    renderExamSelectOptions(examSelect, nextClass, currentAcademicYear);
     if (examSelect) {
         const optionExists = Array.from(examSelect.options).some(opt => opt.value === prevExam && opt.value !== '');
         if (optionExists) {
@@ -6419,6 +6657,8 @@ document.getElementById('entry-class-select')?.addEventListener('change', () => 
     updateMarksDownloadAndUploadState();
     loadMarksTable();
 });
+
+document.getElementById('marks-open-blank-sheet-btn')?.addEventListener('click', openMarksBlankSheet);
 
 // Admin-style Download Template Dropdown (Marks)
 const marksTemplateMenuBtn = document.getElementById('marks-template-menu-btn');
@@ -6473,6 +6713,11 @@ document.getElementById('marks-bulk-upload-btn')?.addEventListener('click', asyn
 document.getElementById('marks-review-edit-switch')?.addEventListener('change', (e) => {
     setMarksReviewEditMode(e.target.checked);
 });
+document.getElementById('marks-review-map-toggle-btn')?.addEventListener('click', () => {
+    if (!currentMarksReviewData) return;
+    setMarksReviewMappingMode(!currentMarksReviewData.isMappingMode);
+});
+document.getElementById('marks-review-export-xlsx-btn')?.addEventListener('click', exportCurrentMarksSheetToExcel);
 
 const marksReviewTableContainer = document.getElementById('marks-review-table-container');
 if (marksReviewTableContainer) {
@@ -6509,7 +6754,6 @@ if (marksReviewTableContainer) {
     });
 }
 
-document.getElementById('marks-review-modal-close-x')?.addEventListener('click', closeMarksReviewModal);
 document.getElementById('marks-review-cancel-btn')?.addEventListener('click', closeMarksReviewModal);
 document.getElementById('marks-review-skip-issues-btn')?.addEventListener('click', () => executeConfirmedMarksUpload(true));
 document.getElementById('marks-review-confirm-upload-btn')?.addEventListener('click', () => executeConfirmedMarksUpload(false));
@@ -7893,13 +8137,14 @@ const evaluateSubjectReviewRow = (rowIdx) => {
 
     const parsedSubjects = parseCommaList(extracted.subjects);
     const parsedExams = parseCommaList(extracted.customExams);
+    const hasEnteredData = parsedSubjects.length > 0 || parsedExams.length > 0;
+    const isEmptyRow = !hasFatalError && !hasEnteredData;
 
-    if (!parsedSubjects.length && !parsedExams.length) {
-        hasFatalError = true;
-        rowIssues.push('Enter at least one Subject or Custom Exam');
-        fieldStatuses.subjects = { status: 'error', reason: 'No subjects or exams provided' };
-    } else if (!parsedSubjects.length) {
-        fieldStatuses.subjects = { status: 'blank', reason: 'No subjects entered in this row' };
+    if (!parsedSubjects.length) {
+        fieldStatuses.subjects = {
+            status: 'blank',
+            reason: isEmptyRow ? 'Empty row — will be skipped on save' : 'No subjects entered in this row'
+        };
     } else {
         fieldStatuses.subjects = { status: 'valid', value: parsedSubjects };
     }
@@ -7922,6 +8167,8 @@ const evaluateSubjectReviewRow = (rowIdx) => {
         existingSchema,
         isDuplicate,
         hasFatalError,
+        hasEnteredData,
+        isEmptyRow,
         rowIssues,
         fieldStatuses
     };
@@ -7932,33 +8179,43 @@ const recalculateSubjectReviewStats = () => {
     const rows = currentSubjectReviewData.rows || [];
     const dupFields = getDuplicateSubjectMappedFields(currentSubjectReviewData.columns || []);
     const hasDupMap = dupFields.size > 0;
+    const isBlankSource = currentSubjectReviewData.sheetSource === 'blank';
 
     let validCount = 0;
+    let blankRowCount = 0;
     let issueRowCount = 0;
     let existingRowCount = 0;
     rows.forEach((r) => {
-        if (r.isDuplicate) existingRowCount++;
-        if (r.hasFatalError) issueRowCount++;
-        else validCount++;
+        if (r.hasFatalError) {
+            issueRowCount++;
+        } else if (r.isEmptyRow) {
+            blankRowCount++;
+        } else {
+            validCount++;
+            if (r.isDuplicate) existingRowCount++;
+        }
     });
 
     currentSubjectReviewData.totalRows = rows.length;
     currentSubjectReviewData.validCount = validCount;
+    currentSubjectReviewData.blankRowCount = blankRowCount;
     currentSubjectReviewData.issueRowCount = issueRowCount;
     currentSubjectReviewData.existingRowCount = existingRowCount;
 
     const totalEl = document.getElementById('subject-review-stat-total');
     const validEl = document.getElementById('subject-review-stat-valid');
+    const blanksEl = document.getElementById('subject-review-stat-blanks');
     const issuesEl = document.getElementById('subject-review-stat-issues');
     const existingEl = document.getElementById('subject-review-stat-existing');
     if (totalEl) totalEl.textContent = rows.length;
     if (validEl) validEl.textContent = validCount;
+    if (blanksEl) blanksEl.textContent = blankRowCount;
     if (issuesEl) issuesEl.textContent = issueRowCount;
     if (existingEl) existingEl.textContent = existingRowCount;
 
     const conflictContainer = document.getElementById('subject-review-conflict-container');
     if (conflictContainer) {
-        conflictContainer.classList.toggle('opacity-50', existingRowCount === 0);
+        conflictContainer.classList.toggle('opacity-70', existingRowCount === 0);
     }
 
     const skipBtn = document.getElementById('subject-review-skip-issues-btn');
@@ -7975,7 +8232,8 @@ const recalculateSubjectReviewStats = () => {
     const confirmBtn = document.getElementById('subject-review-confirm-upload-btn');
     const confirmLabel = document.getElementById('subject-review-confirm-upload-label');
     if (confirmBtn && confirmLabel) {
-        confirmLabel.textContent = hasDupMap ? 'Resolve Duplicate Mapping' : `Upload All (${validCount})`;
+        const primaryActionText = isBlankSource ? `Save Classes (${validCount})` : `Upload All (${validCount})`;
+        confirmLabel.textContent = hasDupMap ? 'Resolve Duplicate Mapping' : primaryActionText;
         const blocked = validCount === 0 || hasDupMap;
         confirmBtn.disabled = blocked;
         confirmBtn.classList.toggle('opacity-50', blocked);
@@ -7993,6 +8251,7 @@ const applyInFileDuplicateClassChecks = (rows = []) => {
             const firstRowNum = firstSeenByClass.get(key);
             const reason = `Duplicate class "${r.classLabel}" (already listed on Row ${firstRowNum})`;
             r.hasFatalError = true;
+            r.isEmptyRow = false;
             if (!r.rowIssues.includes(reason)) r.rowIssues.push(reason);
             r.fieldStatuses.classLabel = { status: 'error', reason };
         } else {
@@ -8009,7 +8268,24 @@ const rebuildAllSubjectReviewDataAndRender = () => {
     renderSubjectReviewModalUI();
 };
 
-const setSubjectReviewEditMode = (enabled) => {
+const syncSubjectMappingToggleButton = () => {
+    const btn = document.getElementById('subject-review-map-toggle-btn');
+    if (!btn) return;
+    const active = Boolean(currentSubjectReviewData?.isMappingMode);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.className = active
+        ? 'px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-300 font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer'
+        : 'px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer';
+};
+
+const setSubjectReviewMappingMode = (enabled, { skipRender = false } = {}) => {
+    if (!currentSubjectReviewData) return;
+    currentSubjectReviewData.isMappingMode = Boolean(enabled);
+    syncSubjectMappingToggleButton();
+    if (!skipRender) renderSubjectReviewModalUI();
+};
+
+const setSubjectReviewEditMode = (enabled, { skipRender = false } = {}) => {
     if (!currentSubjectReviewData) return;
     currentSubjectReviewData.isEditMode = Boolean(enabled);
     const toggle = document.getElementById('subject-review-edit-switch');
@@ -8019,23 +8295,22 @@ const setSubjectReviewEditMode = (enabled) => {
     if (statusLabel) {
         statusLabel.textContent = currentSubjectReviewData.isEditMode ? 'ON' : 'OFF';
         statusLabel.className = currentSubjectReviewData.isEditMode
-            ? 'text-[11px] font-extrabold uppercase tracking-wider text-emerald-700'
-            : 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500';
+            ? 'text-[11px] font-extrabold uppercase tracking-wider text-emerald-700 font-mono'
+            : 'text-[11px] font-extrabold uppercase tracking-wider text-slate-500 font-mono';
     }
     if (banner) {
         banner.classList.toggle('hidden', !currentSubjectReviewData.isEditMode);
     }
-    renderSubjectReviewModalUI();
+    if (!skipRender) renderSubjectReviewModalUI();
 };
 
 const closeSubjectReviewModal = () => {
-    const modal = document.getElementById('subject-upload-review-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-        modal.style.display = 'none';
+    const previewArea = document.getElementById('subject-bulk-preview-area');
+    if (previewArea) {
+        previewArea.classList.add('hidden');
     }
-    document.body.classList.remove('modal-scroll-lock');
+    const tableContainer = document.getElementById('subject-review-table-container');
+    if (tableContainer) tableContainer.innerHTML = '';
     currentSubjectReviewData = null;
     const fileInput = document.getElementById('subject-bulk-file');
     if (fileInput) fileInput.value = '';
@@ -8047,13 +8322,40 @@ const closeSubjectReviewModal = () => {
 };
 
 const openSubjectReviewModal = () => {
-    const modal = document.getElementById('subject-upload-review-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        modal.style.display = 'flex';
+    const previewArea = document.getElementById('subject-bulk-preview-area');
+    if (previewArea) {
+        previewArea.classList.remove('hidden');
+        previewArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-    document.body.classList.add('modal-scroll-lock');
+};
+
+const getSubjectRowVisualClasses = (r) => {
+    if (r.hasFatalError) {
+        return {
+            rowBg: 'bg-rose-50/80 hover:bg-rose-100/70',
+            stickyBg: 'bg-rose-50',
+            badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
+        };
+    }
+    if (r.isEmptyRow) {
+        return {
+            rowBg: 'bg-slate-50/50 hover:bg-slate-100/60',
+            stickyBg: 'bg-slate-50',
+            badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-200 text-slate-600" title="No subjects or custom exams entered — will be skipped on save">BLANK</span>`
+        };
+    }
+    if (r.isDuplicate) {
+        return {
+            rowBg: 'bg-sky-50/70 hover:bg-sky-100/70',
+            stickyBg: 'bg-sky-50',
+            badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Class already has saved subjects">EXISTING</span>`
+        };
+    }
+    return {
+        rowBg: 'bg-white hover:bg-slate-50',
+        stickyBg: 'bg-white',
+        badgeHtml: `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`
+    };
 };
 
 const updateSubjectReviewRowDomAfterEdit = (rowIdx) => {
@@ -8062,18 +8364,11 @@ const updateSubjectReviewRowDomAfterEdit = (rowIdx) => {
     const r = currentSubjectReviewData.rows[rowIdx];
     if (!tr || !r) return;
 
-    tr.className = r.hasFatalError
-        ? 'bg-rose-50/80 hover:bg-rose-100/70 transition-colors'
-        : (r.isDuplicate ? 'bg-sky-50/70 hover:bg-sky-100/70 transition-colors' : 'hover:bg-slate-50 transition-colors');
+    const visual = getSubjectRowVisualClasses(r);
+    tr.className = `${visual.rowBg} transition-colors`;
 
     const statusCell = tr.querySelector('.subject-review-status-cell');
-    if (statusCell) {
-        statusCell.innerHTML = r.hasFatalError
-            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
-            : (r.isDuplicate
-                ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Class already has saved subjects">EXISTING</span>`
-                : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`);
-    }
+    if (statusCell) statusCell.innerHTML = visual.badgeHtml;
 
     const parsedSummaryCell = tr.querySelector('.subject-review-summary-cell');
     if (parsedSummaryCell) {
@@ -8084,7 +8379,11 @@ const updateSubjectReviewRowDomAfterEdit = (rowIdx) => {
         const td = tr.querySelector(`.subject-review-cell[data-col-id="${col.id}"]`);
         if (!td) return;
         const mapped = col.mappedField;
-        td.classList.remove('bg-rose-100', 'text-rose-950', 'font-bold', 'bg-amber-100', 'text-amber-950', 'bg-slate-50/60', 'text-slate-400', 'italic');
+        td.classList.remove('bg-rose-100', 'text-rose-950', 'font-bold', 'bg-amber-50', 'bg-amber-100', 'text-amber-950', 'bg-slate-50/60', 'text-slate-400', 'italic');
+        if (td.classList.contains('subject-review-sticky-class')) {
+            td.classList.remove('bg-white', 'bg-rose-50', 'bg-sky-50', 'bg-slate-50');
+            td.classList.add(visual.stickyBg);
+        }
         if (!mapped || mapped === 'none') {
             td.classList.add('bg-slate-50/60', 'text-slate-400', 'italic');
             td.title = 'Column skipped';
@@ -8094,8 +8393,8 @@ const updateSubjectReviewRowDomAfterEdit = (rowIdx) => {
         if (fStatus?.status === 'error') {
             td.classList.add('bg-rose-100', 'text-rose-950', 'font-bold');
             td.title = fStatus.reason || 'Error';
-        } else if (fStatus?.status === 'blank') {
-            td.classList.add('bg-amber-100', 'text-amber-950');
+        } else if (fStatus?.status === 'blank' && !r.isEmptyRow && mapped === 'subjects') {
+            td.classList.add('bg-amber-50', 'text-amber-950');
             td.title = fStatus.reason || 'Blank';
         } else {
             td.title = '';
@@ -8107,21 +8406,48 @@ const updateSubjectReviewRowDomAfterEdit = (rowIdx) => {
 
 const renderSubjectReviewModalUI = () => {
     if (!currentSubjectReviewData) return;
-    const { columns, workingRows, rows, totalRows, isEditMode } = currentSubjectReviewData;
+    const { columns, workingRows, rows, totalRows, isEditMode, sheetSource, sourceLabel } = currentSubjectReviewData;
+    const isBlankSource = sheetSource === 'blank';
 
     const titleEl = document.getElementById('subject-review-modal-title');
     const subtitleEl = document.getElementById('subject-review-modal-subtitle');
-    if (titleEl) titleEl.textContent = `Review All-Classes Subjects & Exams (${currentAcademicYear || 'Current'})`;
-    if (subtitleEl) subtitleEl.textContent = `${totalRows} class row(s) parsed · Inspect subjects, exams, or toggle Edit Mode to refine.`;
+    const iconEl = document.getElementById('subject-review-source-icon');
+    const iconWrapEl = document.getElementById('subject-review-source-icon-wrap');
+
+    if (titleEl) {
+        titleEl.textContent = isBlankSource
+            ? `Blank Sheet — All Classes Subjects & Exams (${currentAcademicYear || 'Current'})`
+            : `Review All-Classes Subjects & Exams (${currentAcademicYear || 'Current'})`;
+    }
+    if (subtitleEl) {
+        subtitleEl.textContent = isBlankSource
+            ? `${totalRows} active class(es) loaded · Pre-filled with existing subjects & custom exams where configured.`
+            : `${sourceLabel || 'Spreadsheet'} · ${totalRows} class row(s) parsed · Toggle Edit or Map Columns to refine.`;
+    }
+    if (iconEl && iconWrapEl) {
+        if (isBlankSource) {
+            iconEl.className = 'fas fa-pen-to-square';
+            iconWrapEl.className = 'w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm shadow-2xs shrink-0';
+        } else {
+            iconEl.className = 'fas fa-file-excel';
+            iconWrapEl.className = 'w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-sm shadow-2xs shrink-0';
+        }
+    }
 
     recalculateSubjectReviewStats();
 
     const container = document.getElementById('subject-review-table-container');
     if (!container) return;
 
+    const fieldLabelMap = new Map(SUBJECT_BULK_FIELD_OPTIONS.map((opt) => [opt.key, opt.label]));
     const dupFields = getDuplicateSubjectMappedFields(columns);
     const hasDupMap = dupFields.size > 0;
-    const dupLabels = Array.from(dupFields).map((k) => SUBJECT_BULK_FIELD_OPTIONS.find((f) => f.key === k)?.label || k);
+    if (hasDupMap && !currentSubjectReviewData.isMappingMode) {
+        currentSubjectReviewData.isMappingMode = true;
+    }
+    syncSubjectMappingToggleButton();
+    const isMappingMode = Boolean(currentSubjectReviewData.isMappingMode);
+    const dupLabels = Array.from(dupFields).map((k) => fieldLabelMap.get(k) || k);
 
     const dupAlertHtml = hasDupMap
         ? `<div class="p-3 m-2 bg-red-600 text-white rounded-xl shadow-md flex items-center gap-2.5 text-xs font-bold">
@@ -8136,19 +8462,31 @@ const renderSubjectReviewModalUI = () => {
             <thead class="bg-slate-100 text-slate-700 font-bold sticky top-0 z-20 shadow-xs border-b-2 border-slate-300">
                 <tr>
                     <th class="p-2 border-b border-r border-slate-200 text-center w-10 bg-slate-100">#</th>
-                    <th class="p-2 border-b border-r border-slate-200 min-w-[82px] text-center bg-slate-100">Status</th>
-                    <th class="p-2 border-b border-r border-slate-200 min-w-[120px] bg-slate-100">Parsed Summary</th>
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[78px] text-center bg-slate-100">Status</th>
+                    <th class="p-2 border-b border-r border-slate-200 min-w-[115px] bg-slate-100">Summary</th>
                     ${columns.map((col) => {
                         const isDup = dupFields.has(col.mappedField);
                         const isSkipped = !col.mappedField || col.mappedField === 'none';
+                        const isClassCol = col.mappedField === 'classLabel';
                         const headerBg = isDup ? 'bg-red-600 text-white' : (isSkipped ? 'bg-slate-50 text-slate-500' : 'bg-slate-100 text-slate-800');
+                        const stickyHeader = isClassCol ? 'sticky left-0 z-30 shadow-[2px_0_4px_-2px_rgba(15,23,42,0.12)] min-w-[110px]' : 'min-w-[220px]';
+                        if (!isMappingMode) {
+                            const compactLabel = (!isSkipped && fieldLabelMap.get(col.mappedField)) ? fieldLabelMap.get(col.mappedField) : col.header;
+                            return `
+                            <th class="p-2 border-b border-r border-slate-200 ${stickyHeader} ${headerBg}">
+                                <div class="flex items-center justify-between gap-1">
+                                    <span class="text-[11px] font-bold truncate" title="${escapeHtml(compactLabel)}">${escapeHtml(compactLabel)}</span>
+                                    ${isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : ''}
+                                </div>
+                            </th>`;
+                        }
                         const selectClass = isDup
                             ? 'bg-red-700 text-white border border-white font-bold'
                             : (!isEditMode
                                 ? 'opacity-65 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-500'
                                 : 'bg-white border-indigo-300 text-slate-800 font-bold');
                         return `
-                        <th class="p-2 border-b border-r border-slate-200 min-w-[180px] ${headerBg}">
+                        <th class="p-2 border-b border-r border-slate-200 min-w-[180px] ${isClassCol ? 'sticky left-0 z-30 shadow-[2px_0_4px_-2px_rgba(15,23,42,0.12)]' : ''} ${headerBg}">
                             <div class="flex items-center justify-between gap-1 mb-1">
                                 <span class="text-[11px] font-mono truncate" title="${escapeHtml(col.header)}">${escapeHtml(col.header)}</span>
                                 ${isDup ? '<span class="text-[9px] px-1 py-0.5 bg-white text-red-700 font-black rounded">DUP</span>' : (isSkipped ? '<span class="text-[9px] px-1 bg-slate-200 text-slate-600 rounded">SKIP</span>' : '')}
@@ -8163,19 +8501,12 @@ const renderSubjectReviewModalUI = () => {
             <tbody class="divide-y divide-slate-100 font-sans">
                 ${rows.map((r, idx) => {
                     const workingRow = workingRows[idx] || {};
-                    const rowBg = r.hasFatalError
-                        ? 'bg-rose-50/80 hover:bg-rose-100/70'
-                        : (r.isDuplicate ? 'bg-sky-50/70 hover:bg-sky-100/70' : 'hover:bg-slate-50');
-                    const statusBadge = r.hasFatalError
-                        ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white" title="${escapeHtml(r.rowIssues.join('; '))}">ISSUE</span>`
-                        : (r.isDuplicate
-                            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-600 text-white" title="Class already has saved subjects">EXISTING</span>`
-                            : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white">READY</span>`);
+                    const visual = getSubjectRowVisualClasses(r);
 
                     return `
-                    <tr id="subject-review-row-${idx}" class="${rowBg} transition-colors">
+                    <tr id="subject-review-row-${idx}" class="${visual.rowBg} transition-colors">
                         <td class="p-2 text-center text-slate-400 border-b border-r border-slate-100 font-mono tabular-nums">${idx + 1}</td>
-                        <td class="subject-review-status-cell p-2 border-b border-r border-slate-100 text-center whitespace-nowrap">${statusBadge}</td>
+                        <td class="subject-review-status-cell p-2 border-b border-r border-slate-100 text-center whitespace-nowrap">${visual.badgeHtml}</td>
                         <td class="subject-review-summary-cell p-2 border-b border-r border-slate-100 whitespace-nowrap text-[11px] text-slate-600">
                             <span class="font-bold text-slate-700">${r.subjects.length}</span> subs · <span class="font-bold text-indigo-700">${r.customExams.length}</span> exams
                         </td>
@@ -8183,6 +8514,8 @@ const renderSubjectReviewModalUI = () => {
                             const val = workingRow[col.id] !== undefined && workingRow[col.id] !== null ? String(workingRow[col.id]) : '';
                             const mapped = col.mappedField;
                             const isSkipped = !mapped || mapped === 'none';
+                            const isClassCol = mapped === 'classLabel';
+                            const lockClassInBlankCompact = isBlankSource && !isMappingMode && isClassCol;
                             let bgClass = '';
                             let titleAttr = '';
                             if (isSkipped) {
@@ -8193,14 +8526,18 @@ const renderSubjectReviewModalUI = () => {
                                 if (fStatus?.status === 'error') {
                                     bgClass = 'bg-rose-100 text-rose-950 font-bold';
                                     titleAttr = `title="${escapeHtml(fStatus.reason || 'Error')}"`;
-                                } else if (fStatus?.status === 'blank' || !val.trim()) {
-                                    bgClass = 'bg-amber-100 text-amber-950';
+                                } else if (fStatus?.status === 'blank' && !r.isEmptyRow && mapped === 'subjects') {
+                                    bgClass = 'bg-amber-50 text-amber-950';
                                     titleAttr = `title="${escapeHtml(fStatus?.reason || 'Blank')}"`;
                                 }
                             }
-                            const editableAttr = isEditMode
-                                ? 'contenteditable="true" class="subject-review-cell p-2 border-b border-r border-slate-200 cursor-text focus:outline focus:outline-2 focus:outline-emerald-500 focus:bg-white text-xs ' + bgClass + '"'
-                                : 'class="subject-review-cell p-2 border-b border-r border-slate-100 text-xs ' + bgClass + '"';
+                            const stickyCellClass = isClassCol
+                                ? `subject-review-sticky-class sticky left-0 z-10 font-bold text-slate-800 whitespace-nowrap shadow-[2px_0_4px_-2px_rgba(15,23,42,0.08)] ${bgClass ? '' : visual.stickyBg}`
+                                : '';
+                            const cellEditable = isEditMode && !lockClassInBlankCompact;
+                            const editableAttr = cellEditable
+                                ? `contenteditable="true" class="subject-review-cell p-2 border-b border-r border-slate-200 cursor-text focus:outline focus:outline-2 focus:outline-indigo-500 focus:bg-white text-xs ${stickyCellClass} ${bgClass}"`
+                                : `class="subject-review-cell p-2 border-b border-r border-slate-200 text-xs ${stickyCellClass} ${bgClass}"`;
                             return `<td ${editableAttr} data-row-idx="${idx}" data-col-id="${col.id}" ${titleAttr}>${escapeHtml(val)}</td>`;
                         }).join('')}
                     </tr>`;
@@ -8208,8 +8545,92 @@ const renderSubjectReviewModalUI = () => {
             </tbody>
         </table>
     `;
-    enableSmartSelectWindowing(container, { visibleCount: 0 });
-    syncSmartSelectDisplay(container);
+    if (isMappingMode) {
+        enableSmartSelectWindowing(container, { visibleCount: 0 });
+        syncSmartSelectDisplay(container);
+    }
+};
+
+const openSubjectBlankSheet = () => {
+    if (!hasResultAccess) return alert('You do not have access to configure subjects.');
+    if (!currentAcademicYear) return alert('Set the current academic year first.');
+    const accessibleClasses = getAccessibleClassesSorted();
+    if (!accessibleClasses.length) {
+        return alert('No active classes found for the current academic year.');
+    }
+
+    const columns = [
+        { id: 'scol_0', header: 'Class', mappedField: 'classLabel' },
+        { id: 'scol_1', header: 'Subjects', mappedField: 'subjects' },
+        { id: 'scol_2', header: 'Custom Exams', mappedField: 'customExams' }
+    ];
+
+    const workingRows = accessibleClasses.map((cls) => {
+        const schema = getSchemaForClass(currentAcademicYear, cls);
+        const subNames = schema ? getSchemaSubjectRows(schema).map((s) => s.name).join(', ') : '';
+        const customExamNames = schema
+            ? Object.values(getCustomExamConfigs(schema.examConfigs || {})).map((cfg) => cfg?.label || '').filter(Boolean).join(', ')
+            : '';
+        return {
+            scol_0: cls,
+            scol_1: subNames,
+            scol_2: customExamNames
+        };
+    });
+
+    const replaceRadio = document.querySelector('input[name="subject-duplicate-action"][value="replace"]');
+    if (replaceRadio) replaceRadio.checked = true;
+
+    currentSubjectReviewData = {
+        columns,
+        workingRows,
+        isEditMode: true,
+        isMappingMode: false,
+        sheetSource: 'blank',
+        sourceLabel: `Blank Sheet (${currentAcademicYear})`,
+        rows: [],
+        totalRows: workingRows.length,
+        validCount: 0,
+        blankRowCount: 0,
+        issueRowCount: 0,
+        existingRowCount: 0
+    };
+
+    setSubjectReviewMappingMode(false, { skipRender: true });
+    setSubjectReviewEditMode(true, { skipRender: true });
+    rebuildAllSubjectReviewDataAndRender();
+    openSubjectReviewModal();
+
+    const statusEl = document.getElementById('subject-bulk-status');
+    if (statusEl) {
+        statusEl.textContent = `Blank sheet opened for ${accessibleClasses.length} class(es) (${currentSubjectReviewData.existingRowCount} pre-filled).`;
+        statusEl.classList.remove('hidden');
+    }
+    notify(`Blank sheet opened for ${accessibleClasses.length} class(es).`, 'success');
+};
+
+const exportCurrentSubjectSheetToExcel = () => {
+    if (!currentSubjectReviewData || !currentSubjectReviewData.columns?.length || !currentSubjectReviewData.workingRows?.length) {
+        return alert('No active subjects sheet available to export.');
+    }
+    if (!window.XLSX) {
+        return alert('Spreadsheet library is still loading. Try again in a moment.');
+    }
+    const { columns, workingRows } = currentSubjectReviewData;
+    const rowsForSheet = workingRows.map((rowObj) => {
+        const out = {};
+        columns.forEach((col) => {
+            out[col.header] = rowObj?.[col.id] ?? '';
+        });
+        return out;
+    });
+    const yearTag = String(currentAcademicYear || 'current').replace(/[^\w-]/g, '_');
+    const ws = XLSX.utils.json_to_sheet(rowsForSheet);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Subjects_Setup');
+    const fileName = `Subjects_Sheet_${yearTag}.xlsx`;
+    XLSX.writeFile(wb, fileName, { bookType: 'xlsx' });
+    notify(`Exported ${fileName}`, 'success');
 };
 
 const parseAndReviewBulkSubjects = async () => {
@@ -8276,22 +8697,30 @@ const parseAndReviewBulkSubjects = async () => {
         return obj;
     });
 
+    const mergeRadio = document.querySelector('input[name="subject-duplicate-action"][value="merge"]');
+    if (mergeRadio) mergeRadio.checked = true;
+
     currentSubjectReviewData = {
         columns,
         workingRows,
         isEditMode: false,
+        isMappingMode: false,
+        sheetSource: 'file',
+        sourceLabel: file.name || 'Spreadsheet',
         rows: [],
         totalRows: workingRows.length,
         validCount: 0,
+        blankRowCount: 0,
         issueRowCount: 0,
         existingRowCount: 0
     };
 
-    setSubjectReviewEditMode(false);
+    setSubjectReviewMappingMode(false, { skipRender: true });
+    setSubjectReviewEditMode(false, { skipRender: true });
     rebuildAllSubjectReviewDataAndRender();
     openSubjectReviewModal();
     if (statusEl) {
-        statusEl.textContent = `Loaded ${currentSubjectReviewData.totalRows} rows (${currentSubjectReviewData.validCount} ready, ${currentSubjectReviewData.issueRowCount} issues).`;
+        statusEl.textContent = `Loaded ${currentSubjectReviewData.totalRows} rows (${currentSubjectReviewData.validCount} ready, ${currentSubjectReviewData.blankRowCount} blank, ${currentSubjectReviewData.issueRowCount} issues).`;
     }
 };
 
@@ -8299,21 +8728,22 @@ const executeConfirmedSubjectUpload = async (skipIssues = false) => {
     if (!currentSubjectReviewData) return;
     const { rows, columns } = currentSubjectReviewData;
     if (getDuplicateSubjectMappedFields(columns || []).size > 0) {
-        return alert('Duplicate column mappings detected. Turn ON Edit & Mapping to fix duplicate columns before uploading.');
+        return alert('Duplicate column mappings detected. Turn ON Edit & Map Columns to fix duplicate columns before saving.');
     }
 
-    let targetRows = skipIssues ? rows.filter((r) => !r.hasFatalError) : rows;
+    const populatedRows = rows.filter((r) => !r.isEmptyRow);
+    let targetRows = skipIssues ? populatedRows.filter((r) => !r.hasFatalError) : populatedRows;
     if (!skipIssues && targetRows.some((r) => r.hasFatalError)) {
-        return alert('Please fix highlighted issues or click "Upload Valid Only" to skip problematic rows.');
+        return alert('Please fix highlighted issues or click "Save Valid Only" to skip problematic rows.');
     }
-    if (!targetRows.length) return alert('No valid class rows to upload.');
+    if (!targetRows.length) return alert('Enter subjects or custom exams for at least one class before saving.');
 
     const conflictPolicy = document.querySelector('input[name="subject-duplicate-action"]:checked')?.value || 'merge';
     if (conflictPolicy === 'skip') {
         targetRows = targetRows.filter((r) => !r.isDuplicate);
         if (!targetRows.length) {
             closeSubjectReviewModal();
-            return alert('All classes in this file already have saved subjects and you chose "Skip Existing".');
+            return alert('All entered classes already have saved subjects and you chose "Skip Existing".');
         }
     }
 
@@ -8389,12 +8819,12 @@ const executeConfirmedSubjectUpload = async (skipIssues = false) => {
         notify(`Saved subjects & exams for ${savedCount} class(es).`, 'success');
         const statusEl = document.getElementById('subject-bulk-status');
         if (statusEl) {
-            statusEl.textContent = `Uploaded ${savedCount} class configuration(s) successfully.`;
+            statusEl.textContent = `Saved ${savedCount} class configuration(s) successfully.`;
             statusEl.classList.remove('hidden');
         }
     } catch (err) {
         console.error('Error committing subjects bulk upload:', err);
-        alert('Upload failed: ' + (err?.message || 'Check permissions and try again.'));
+        alert('Save failed: ' + (err?.message || 'Check permissions and try again.'));
     } finally {
         if (confirmBtn) {
             confirmBtn.disabled = false;
@@ -8403,7 +8833,9 @@ const executeConfirmedSubjectUpload = async (skipIssues = false) => {
     }
 };
 
-// Wire All-Classes Subjects Template & Bulk Review Controls
+// Wire All-Classes Subjects Template, Blank Sheet & Inline Review Controls
+document.getElementById('subject-open-blank-sheet-btn')?.addEventListener('click', openSubjectBlankSheet);
+
 const subjectTemplateMenuBtn = document.getElementById('subject-template-menu-btn');
 const subjectTemplateMenu = document.getElementById('subject-template-menu');
 const subjectTemplateChevron = document.getElementById('subject-template-chevron');
@@ -8445,6 +8877,12 @@ document.getElementById('subject-bulk-upload-btn')?.addEventListener('click', pa
 document.getElementById('subject-review-edit-switch')?.addEventListener('change', (e) => {
     setSubjectReviewEditMode(e.target.checked);
 });
+document.getElementById('subject-review-map-toggle-btn')?.addEventListener('click', () => {
+    if (!currentSubjectReviewData) return;
+    setSubjectReviewMappingMode(!currentSubjectReviewData.isMappingMode);
+});
+document.getElementById('subject-review-export-xlsx-btn')?.addEventListener('click', exportCurrentSubjectSheetToExcel);
+
 const subjectReviewTableContainer = document.getElementById('subject-review-table-container');
 if (subjectReviewTableContainer) {
     subjectReviewTableContainer.addEventListener('change', (e) => {
@@ -8487,7 +8925,6 @@ if (subjectReviewTableContainer) {
         }
     });
 }
-document.getElementById('subject-review-modal-close-x')?.addEventListener('click', closeSubjectReviewModal);
 document.getElementById('subject-review-cancel-btn')?.addEventListener('click', closeSubjectReviewModal);
 document.getElementById('subject-review-skip-issues-btn')?.addEventListener('click', () => executeConfirmedSubjectUpload(true));
 document.getElementById('subject-review-confirm-upload-btn')?.addEventListener('click', () => executeConfirmedSubjectUpload(false));
