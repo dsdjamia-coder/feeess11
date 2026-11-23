@@ -4042,7 +4042,7 @@ const populateFeeItemSelection = () => {
     const container = document.getElementById('fee-item-selection-container');
 
     if(!st) {
-        container.innerHTML = '<div class="col-span-3 text-center text-xs font-semibold text-gray-400 py-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">Search and select a student first</div>';
+        container.innerHTML = '<div class="col-span-full text-center text-xs font-semibold text-gray-400 py-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">Search and select a student first</div>';
         document.getElementById('total-amount').value = 0;
         const dueNotice = document.getElementById('fee-due-notice');
         if (dueNotice) {
@@ -4101,7 +4101,7 @@ const populateFeeItemSelection = () => {
          const emptyMsg = !defaultMonthlyFeeEnabled
              ? 'Default 12-Month Fee is disabled and no custom fee items are configured for this academic year.'
              : 'No fee items available';
-         container.innerHTML = `<div class="col-span-3 text-center text-xs font-semibold text-gray-500 py-4 px-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">${emptyMsg}</div>`;
+         container.innerHTML = `<div class="col-span-full text-center text-xs font-semibold text-gray-500 py-4 px-3 bg-gray-50 rounded-lg border border-dashed border-gray-300">${emptyMsg}</div>`;
          document.getElementById('total-amount').value = 0;
          return;
     }
@@ -4151,7 +4151,7 @@ const populateFeeItemSelection = () => {
     const otherItems = visibleItems.filter((item) => (item.type || 'month') === 'custom' && item.key !== STUDENT_DONATION_ITEM_KEY);
     const buildSection = (title, items, tone = 'text-gray-500') => {
         if (!items.length) return '';
-        return `<div class="col-span-3 mt-1.5 sm:mt-2"><div class="text-[10px] uppercase tracking-widest font-bold ${tone} mb-1.5 sm:mb-2">${title}</div><div class="grid grid-cols-3 gap-1.5 sm:gap-2">${items.map(renderFeeOption).join('')}</div></div>`;
+        return `<div class="col-span-full mt-1.5 sm:mt-2"><div class="text-[10px] uppercase tracking-widest font-bold ${tone} mb-1.5 sm:mb-2">${title}</div><div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1.5 sm:gap-2">${items.map(renderFeeOption).join('')}</div></div>`;
     };
     container.innerHTML = [
         buildSection('Monthly Fees', monthlyItems, 'text-blue-600'),
@@ -4876,6 +4876,125 @@ document.getElementById('update-fee-btn')?.addEventListener('click', () => proce
 
 
 // --- SMART BULK UPLOAD & IN-APP BLANK SHEET LOGIC ---
+const BULK_FAMILY_GROUP_PALETTES = [
+    {
+        name: 'indigo',
+        bannerRowBorder: 'border-t-2 border-indigo-400',
+        bannerStickyCell: 'bg-indigo-100 border-l-4 border-l-indigo-600 border-b border-r border-indigo-300 text-indigo-950',
+        bannerTitleText: 'text-indigo-950',
+        bannerIcon: 'text-indigo-600',
+        bannerMemberChip: 'bg-white text-indigo-700 border border-indigo-200',
+        bannerFeePill: 'bg-indigo-600 text-white',
+        bannerMetaCellCompact: 'bg-indigo-100/80 border-b border-r-2 border-indigo-200',
+        bannerMetaCellMapping: 'bg-indigo-100/90 border-b border-r border-indigo-200',
+        bannerIdentityCellMapping: 'bg-indigo-100/60 border-b border-r border-indigo-200',
+        bannerBadge: 'bg-indigo-600 text-white',
+        bannerItemCellBg: 'bg-indigo-50',
+        bannerItemCellBorder: 'border-indigo-200',
+        bannerItemCellRightBorderMapping: 'border-r border-indigo-200',
+        bannerSelect: 'border-indigo-300 text-indigo-900 focus:ring-indigo-500',
+        bannerGroupStatusPill: 'bg-indigo-600 text-white',
+        rowLeftBorder: 'border-l-4 border-l-indigo-500',
+        rowReadyBg: 'bg-indigo-50/40 hover:bg-indigo-50/70',
+        rowIdleBg: 'bg-indigo-50/25 hover:bg-indigo-50/50 border-b border-indigo-100',
+        stickyCellBg: 'bg-indigo-50 text-slate-900',
+        stickyCrossClassPill: 'bg-indigo-600 text-white',
+        stickyGroupPill: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
+        lockedCellBg: 'bg-indigo-50/60 text-slate-800 font-semibold',
+        readyGroupCellBg: 'bg-indigo-100/85 text-indigo-950 border border-indigo-400 font-bold',
+        rowReadyBadge: 'bg-indigo-600 text-white',
+        sharedReceiptBadge: '!bg-indigo-600 !text-white',
+        nameCrossClassPill: 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+    },
+    {
+        name: 'teal',
+        bannerRowBorder: 'border-t-2 border-teal-400',
+        bannerStickyCell: 'bg-teal-100 border-l-4 border-l-teal-600 border-b border-r border-teal-300 text-teal-950',
+        bannerTitleText: 'text-teal-950',
+        bannerIcon: 'text-teal-600',
+        bannerMemberChip: 'bg-white text-teal-700 border border-teal-200',
+        bannerFeePill: 'bg-teal-600 text-white',
+        bannerMetaCellCompact: 'bg-teal-100/80 border-b border-r-2 border-teal-200',
+        bannerMetaCellMapping: 'bg-teal-100/90 border-b border-r border-teal-200',
+        bannerIdentityCellMapping: 'bg-teal-100/60 border-b border-r border-teal-200',
+        bannerBadge: 'bg-teal-600 text-white',
+        bannerItemCellBg: 'bg-teal-50',
+        bannerItemCellBorder: 'border-teal-200',
+        bannerItemCellRightBorderMapping: 'border-r border-teal-200',
+        bannerSelect: 'border-teal-300 text-teal-900 focus:ring-teal-500',
+        bannerGroupStatusPill: 'bg-teal-600 text-white',
+        rowLeftBorder: 'border-l-4 border-l-teal-500',
+        rowReadyBg: 'bg-teal-50/40 hover:bg-teal-50/70',
+        rowIdleBg: 'bg-teal-50/25 hover:bg-teal-50/50 border-b border-teal-100',
+        stickyCellBg: 'bg-teal-50 text-slate-900',
+        stickyCrossClassPill: 'bg-teal-600 text-white',
+        stickyGroupPill: 'bg-teal-100 text-teal-800 border border-teal-200',
+        lockedCellBg: 'bg-teal-50/60 text-slate-800 font-semibold',
+        readyGroupCellBg: 'bg-teal-100/85 text-teal-950 border border-teal-400 font-bold',
+        rowReadyBadge: 'bg-teal-600 text-white',
+        sharedReceiptBadge: '!bg-teal-600 !text-white',
+        nameCrossClassPill: 'bg-teal-100 text-teal-800 border border-teal-200'
+    },
+    {
+        name: 'amber',
+        bannerRowBorder: 'border-t-2 border-amber-400',
+        bannerStickyCell: 'bg-amber-100 border-l-4 border-l-amber-600 border-b border-r border-amber-300 text-amber-950',
+        bannerTitleText: 'text-amber-950',
+        bannerIcon: 'text-amber-700',
+        bannerMemberChip: 'bg-white text-amber-800 border border-amber-200',
+        bannerFeePill: 'bg-amber-600 text-white',
+        bannerMetaCellCompact: 'bg-amber-100/80 border-b border-r-2 border-amber-200',
+        bannerMetaCellMapping: 'bg-amber-100/90 border-b border-r border-amber-200',
+        bannerIdentityCellMapping: 'bg-amber-100/60 border-b border-r border-amber-200',
+        bannerBadge: 'bg-amber-600 text-white',
+        bannerItemCellBg: 'bg-amber-50',
+        bannerItemCellBorder: 'border-amber-200',
+        bannerItemCellRightBorderMapping: 'border-r border-amber-200',
+        bannerSelect: 'border-amber-300 text-amber-900 focus:ring-amber-500',
+        bannerGroupStatusPill: 'bg-amber-600 text-white',
+        rowLeftBorder: 'border-l-4 border-l-amber-500',
+        rowReadyBg: 'bg-amber-50/40 hover:bg-amber-50/70',
+        rowIdleBg: 'bg-amber-50/25 hover:bg-amber-50/50 border-b border-amber-100',
+        stickyCellBg: 'bg-amber-50 text-slate-900',
+        stickyCrossClassPill: 'bg-amber-600 text-white',
+        stickyGroupPill: 'bg-amber-100 text-amber-800 border border-amber-200',
+        lockedCellBg: 'bg-amber-50/60 text-slate-800 font-semibold',
+        readyGroupCellBg: 'bg-amber-100/85 text-amber-950 border border-amber-400 font-bold',
+        rowReadyBadge: 'bg-amber-600 text-white',
+        sharedReceiptBadge: '!bg-amber-600 !text-white',
+        nameCrossClassPill: 'bg-amber-100 text-amber-800 border border-amber-200'
+    },
+    {
+        name: 'rose',
+        bannerRowBorder: 'border-t-2 border-rose-400',
+        bannerStickyCell: 'bg-rose-100 border-l-4 border-l-rose-600 border-b border-r border-rose-300 text-rose-950',
+        bannerTitleText: 'text-rose-950',
+        bannerIcon: 'text-rose-600',
+        bannerMemberChip: 'bg-white text-rose-700 border border-rose-200',
+        bannerFeePill: 'bg-rose-600 text-white',
+        bannerMetaCellCompact: 'bg-rose-100/80 border-b border-r-2 border-rose-200',
+        bannerMetaCellMapping: 'bg-rose-100/90 border-b border-r border-rose-200',
+        bannerIdentityCellMapping: 'bg-rose-100/60 border-b border-r border-rose-200',
+        bannerBadge: 'bg-rose-600 text-white',
+        bannerItemCellBg: 'bg-rose-50',
+        bannerItemCellBorder: 'border-rose-200',
+        bannerItemCellRightBorderMapping: 'border-r border-rose-200',
+        bannerSelect: 'border-rose-300 text-rose-900 focus:ring-rose-500',
+        bannerGroupStatusPill: 'bg-rose-600 text-white',
+        rowLeftBorder: 'border-l-4 border-l-rose-500',
+        rowReadyBg: 'bg-rose-50/40 hover:bg-rose-50/70',
+        rowIdleBg: 'bg-rose-50/25 hover:bg-rose-50/50 border-b border-rose-100',
+        stickyCellBg: 'bg-rose-50 text-slate-900',
+        stickyCrossClassPill: 'bg-rose-600 text-white',
+        stickyGroupPill: 'bg-rose-100 text-rose-800 border border-rose-200',
+        lockedCellBg: 'bg-rose-50/60 text-slate-800 font-semibold',
+        readyGroupCellBg: 'bg-rose-100/85 text-rose-950 border border-rose-400 font-bold',
+        rowReadyBadge: 'bg-rose-600 text-white',
+        sharedReceiptBadge: '!bg-rose-600 !text-white',
+        nameCrossClassPill: 'bg-rose-100 text-rose-800 border border-rose-200'
+    }
+];
+
 let collectionBulkState = {
     columns: [],
     workingRows: [],
@@ -4884,6 +5003,7 @@ let collectionBulkState = {
     rosterEntries: [],
     paymentPlan: [],
     groupSummaryMap: new Map(),
+    groupPaletteMap: new Map(),
     groupItemModes: new Map(),
     totalCollectionAmount: 0,
     year: '',
@@ -4895,6 +5015,13 @@ let collectionBulkState = {
     duplicateReceiptMap: new Map(),
     groupSharedReceiptSet: new Set(),
     existingDbReceiptSet: new Set()
+};
+
+const getBulkGroupPalette = (groupId = '') => {
+    if (!groupId) return BULK_FAMILY_GROUP_PALETTES[0];
+    const idx = collectionBulkState.groupPaletteMap?.get(groupId);
+    const safeIdx = Number.isInteger(idx) && idx >= 0 ? (idx % BULK_FAMILY_GROUP_PALETTES.length) : 0;
+    return BULK_FAMILY_GROUP_PALETTES[safeIdx];
 };
 
 const notifyBulkMessage = (message = '', type = 'error') => {
@@ -4975,6 +5102,7 @@ const setupBulkUploadUI = () => {
         rosterEntries: [],
         paymentPlan: [],
         groupSummaryMap: new Map(),
+        groupPaletteMap: new Map(),
         groupItemModes: new Map(),
         totalCollectionAmount: 0,
         year: '',
@@ -5121,6 +5249,7 @@ const openCollectionBlankSheet = () => {
         rosterEntries,
         paymentPlan: [],
         groupSummaryMap: new Map(),
+        groupPaletteMap: new Map(),
         groupItemModes: new Map(),
         totalCollectionAmount: 0,
         year,
@@ -5452,8 +5581,9 @@ const getCollectionBulkRowBadgeHtml = (r) => {
     }
     if (r.readyCount > 0) {
         const hasGroupReady = r.readyEntries?.some((e) => e.billingMode === 'group');
+        const palette = r.groupId ? getBulkGroupPalette(r.groupId) : null;
         return hasGroupReady
-            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-600 text-white shadow-xs" title="${r.readyCount} payment(s) ready (includes Family Group billing)">READY (${r.readyCount})</span>`
+            ? `<span class="px-2 py-0.5 rounded-md text-[10px] font-black ${palette ? palette.rowReadyBadge : 'bg-indigo-600 text-white'} shadow-xs" title="${r.readyCount} payment(s) ready (includes Family Group billing)">READY (${r.readyCount})</span>`
             : `<span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-600 text-white shadow-xs" title="${r.readyCount} payment(s) ready to save">READY (${r.readyCount})</span>`;
     }
     if (r.alreadyPaidCount > 0) {
@@ -5463,12 +5593,13 @@ const getCollectionBulkRowBadgeHtml = (r) => {
 };
 
 const getCollectionBulkRowBgClass = (r) => {
-    const groupBorder = r.groupId ? 'border-l-4 border-l-indigo-500' : '';
+    const palette = r.groupId ? getBulkGroupPalette(r.groupId) : null;
+    const groupBorder = palette ? palette.rowLeftBorder : '';
     if (r.isSampleRow) return 'bg-slate-100/80 text-slate-500 italic border-b border-slate-200';
     if (r.hasFatalError) return `bg-red-100 hover:bg-red-200/80 font-semibold text-red-950 border-b border-red-300 ${groupBorder}`;
     if (r.errorCount > 0) return `bg-amber-50/90 hover:bg-amber-100/80 text-amber-950 border-b border-amber-200 ${groupBorder}`;
-    if (r.readyCount > 0) return `${r.groupId ? 'bg-indigo-50/35 hover:bg-indigo-50/65' : 'bg-emerald-50/40 hover:bg-emerald-50/80'} border-b border-slate-100 ${groupBorder}`;
-    if (r.groupId) return `bg-indigo-50/20 hover:bg-indigo-50/45 border-b border-indigo-100 ${groupBorder}`;
+    if (r.readyCount > 0) return `${palette ? palette.rowReadyBg : 'bg-emerald-50/40 hover:bg-emerald-50/80'} border-b border-slate-100 ${groupBorder}`;
+    if (palette) return `${palette.rowIdleBg} ${groupBorder}`;
     if (r.alreadyPaidCount > 0) return 'bg-sky-50/30 hover:bg-sky-50/60 border-b border-slate-100';
     return 'hover:bg-slate-50 border-b border-slate-100';
 };
@@ -5476,6 +5607,7 @@ const getCollectionBulkRowBgClass = (r) => {
 const getCollectionBulkCellVisual = (col, rowValidation) => {
     const cellInfo = rowValidation.cellStatuses?.[col.id] || { status: 'blank', reason: '' };
     const isFeeCol = isFeeEditableMappedField(col.mappedField);
+    const palette = rowValidation?.groupId ? getBulkGroupPalette(rowValidation.groupId) : null;
     let bgClass = '';
     if (cellInfo.status === 'skip') {
         bgClass = 'bg-slate-50/60 text-slate-400 italic';
@@ -5484,8 +5616,8 @@ const getCollectionBulkCellVisual = (col, rowValidation) => {
     } else if (cellInfo.status === 'locked') {
         if (rowValidation.hasFatalError) {
             bgClass = 'bg-red-100/70 text-red-900 font-semibold';
-        } else if (rowValidation.groupId) {
-            bgClass = 'bg-indigo-50/50 text-slate-800 font-semibold';
+        } else if (palette) {
+            bgClass = palette.lockedCellBg;
         } else {
             bgClass = 'bg-slate-50/80 text-slate-700 font-semibold';
         }
@@ -5496,7 +5628,7 @@ const getCollectionBulkCellVisual = (col, rowValidation) => {
     } else if (cellInfo.status === 'na') {
         bgClass = 'bg-slate-100/90 text-slate-400 italic';
     } else if (cellInfo.status === 'ready-group') {
-        bgClass = 'bg-indigo-100/85 text-indigo-950 border border-indigo-400 font-bold';
+        bgClass = palette ? palette.readyGroupCellBg : 'bg-indigo-100/85 text-indigo-950 border border-indigo-400 font-bold';
     } else if (cellInfo.status === 'ready') {
         bgClass = 'bg-emerald-100/80 text-emerald-950 border border-emerald-300 font-bold';
     } else if (isFeeCol) {
@@ -5679,11 +5811,12 @@ const getCollectionBulkReceiptBadgeInfo = (col, rowValidation, rawVal) => {
 };
 
 const getCollectionBulkStickyCellBg = (r) => {
-    const groupLeftBar = r?.groupId ? 'border-l-4 border-l-indigo-500' : '';
+    const palette = r?.groupId ? getBulkGroupPalette(r.groupId) : null;
+    const groupLeftBar = palette ? palette.rowLeftBorder : '';
     if (r?.isSampleRow) return 'bg-slate-100 text-slate-500 italic';
     if (r?.hasFatalError) return `bg-red-100 text-red-950 ${groupLeftBar}`;
-    if (r?.errorCount > 0) return `bg-amber-50 text-amber-950 ${groupLeftBar}`;
-    if (r?.groupId) return `bg-indigo-50 text-slate-900 ${groupLeftBar}`;
+    if (r?.errorCount > 0) return `bg-red-50 text-red-950 ${groupLeftBar}`;
+    if (palette) return `${palette.stickyCellBg} ${groupLeftBar}`;
     if (r?.readyCount > 0) return 'bg-emerald-50 text-slate-900';
     if (r?.alreadyPaidCount > 0) return 'bg-sky-50 text-slate-900';
     return 'bg-white text-slate-900';
@@ -5697,6 +5830,7 @@ const buildStickyStudentCellHtml = (rowVal) => {
         collectionBulkState.targetClass &&
         stuClass.toUpperCase() !== String(collectionBulkState.targetClass).toUpperCase()
     );
+    const palette = rowVal?.groupId ? getBulkGroupPalette(rowVal.groupId) : null;
 
     const pills = [];
     if (rowVal?.isSampleRow) {
@@ -5706,13 +5840,13 @@ const buildStickyStudentCellHtml = (rowVal) => {
     } else {
         if (stuClass) {
             pills.push(isCrossClass
-                ? `<span class="px-1 py-0 rounded bg-indigo-600 text-white text-[9px] font-extrabold leading-tight">${escapeHtml(stuClass)}</span>`
+                ? `<span class="px-1 py-0 rounded ${palette ? palette.stickyCrossClassPill : 'bg-indigo-600 text-white'} text-[9px] font-extrabold leading-tight">${escapeHtml(stuClass)}</span>`
                 : `<span class="px-1 py-0 rounded bg-slate-200/90 text-slate-700 text-[9px] font-bold leading-tight">${escapeHtml(stuClass)}</span>`
             );
         }
         if (rowVal?.groupId) {
             const feeTag = Number(rowVal.groupFee || 0) > 0 ? ` ₹${rowVal.groupFee}` : '';
-            pills.push(`<span class="px-1 py-0 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-bold leading-tight" title="${escapeHtml(rowVal.groupName || 'Family Group')}">Grp${escapeHtml(feeTag)}</span>`);
+            pills.push(`<span class="px-1 py-0 rounded ${palette.stickyGroupPill} text-[9px] font-bold leading-tight" title="${escapeHtml(rowVal.groupName || 'Family Group')}">Grp${escapeHtml(feeTag)}</span>`);
         } else if (rowVal?.concessionFee !== null && rowVal?.concessionFee !== undefined) {
             pills.push(`<span class="px-1 py-0 rounded bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-bold leading-tight">Conc ₹${escapeHtml(String(rowVal.concessionFee))}</span>`);
         }
@@ -5781,9 +5915,11 @@ const getCompactDisplayLayout = () => {
 
 const buildCollectionBulkCellInnerHtml = ({ col, rowIdx, rowValidation, rawVal, canEditCell, badgeInfo }) => {
     const isReceiptCol = Boolean(col?.mappedField?.endsWith('::receiptNo'));
+    const palette = rowValidation?.groupId ? getBulkGroupPalette(rowValidation.groupId) : null;
     if (!isReceiptCol) {
         if (col.mappedField === 'name' && rowValidation?.studentClass && rowValidation.studentClass.toUpperCase() !== String(collectionBulkState.targetClass || '').toUpperCase() && !rowValidation.isSampleRow) {
-            return `<span class="inline-flex items-center gap-1"><span>${escapeHtml(rawVal)}</span><span class="px-1 py-0 rounded bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-black uppercase">${escapeHtml(rowValidation.studentClass)}</span></span>`;
+            const pillCls = palette ? palette.nameCrossClassPill : 'bg-indigo-100 text-indigo-800 border border-indigo-200';
+            return `<span class="inline-flex items-center gap-1"><span>${escapeHtml(rawVal)}</span><span class="px-1 py-0 rounded ${pillCls} text-[9px] font-black uppercase">${escapeHtml(rowValidation.studentClass)}</span></span>`;
         }
         return escapeHtml(rawVal);
     }
@@ -5792,7 +5928,8 @@ const buildCollectionBulkCellInnerHtml = ({ col, rowIdx, rowValidation, rawVal, 
         : `class="collection-bulk-cell-editor block w-full min-h-[1rem]"`;
     let badgeHtml = '';
     if (badgeInfo?.isGroupShared) {
-        badgeHtml = `<span class="collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[8px]" title="${escapeHtml(badgeInfo.titleNote)}">GRP</span>`;
+        const sharedCls = palette ? palette.sharedReceiptBadge : '!bg-indigo-600 !text-white';
+        badgeHtml = `<span class="collection-bulk-dup-badge ${sharedCls} !w-auto !px-1 !rounded text-[8px]" title="${escapeHtml(badgeInfo.titleNote)}">GRP</span>`;
     } else if (badgeInfo?.dupInfo) {
         badgeHtml = `<span class="collection-bulk-dup-badge" title="${escapeHtml(badgeInfo.titleNote)}">${badgeInfo.dupInfo.groupNo}</span>`;
     }
@@ -5827,11 +5964,12 @@ const updateCollectionBulkDuplicateSummaryDom = () => {
 const buildGroupBannerSegmentsHtml = (groupRowSample) => {
     const { columns = [], groupSummaryMap = new Map(), groupItemModes = new Map(), isMappingMode = false } = collectionBulkState;
     const groupId = groupRowSample.groupId;
+    const palette = getBulkGroupPalette(groupId);
     const groupName = groupRowSample.groupName || 'Family Group';
     const memberCount = groupRowSample.groupMemberCount || 2;
     const groupFee = Number(groupRowSample.groupFee || 0);
     const feePill = groupFee > 0
-        ? `<span class="px-1 py-0 rounded bg-indigo-600 text-white text-[9px] font-mono font-bold whitespace-nowrap">${formatBulkCurrency(groupFee)}/mo</span>`
+        ? `<span class="px-1 py-0 rounded ${palette.bannerFeePill} text-[9px] font-mono font-bold whitespace-nowrap">${formatBulkCurrency(groupFee)}/mo</span>`
         : '';
 
     const renderGroupItemControlTd = (itemKey, span, isCompactStyle = true) => {
@@ -5841,18 +5979,18 @@ const buildGroupBannerSegmentsHtml = (groupRowSample) => {
         let statusPillHtml = '';
         if (summary) {
             if (summary.resolvedMode === 'group') {
-                statusPillHtml = `<span class="px-1 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black font-mono whitespace-nowrap leading-none" title="Unified Family Group Payment (${summary.filledCount} members)">Grp ${formatBulkCurrency(summary.totalAmount)}</span>`;
+                statusPillHtml = `<span class="px-1 py-0.5 rounded ${palette.bannerGroupStatusPill} text-[9px] font-black font-mono whitespace-nowrap leading-none" title="Unified Family Group Payment (${summary.filledCount} members)">Grp ${formatBulkCurrency(summary.totalAmount)}</span>`;
             } else if (summary.resolvedMode === 'single') {
                 statusPillHtml = `<span class="px-1 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black font-mono whitespace-nowrap leading-none" title="Individual Single Payment(s) (${summary.filledCount} member${summary.filledCount > 1 ? 's' : ''})">Sgl ${formatBulkCurrency(summary.totalAmount)}</span>`;
             } else if (summary.resolvedMode === 'error') {
                 statusPillHtml = `<span class="px-1 py-0.5 rounded bg-red-600 text-white text-[9px] font-black whitespace-nowrap leading-none" title="Amounts differ across group members">Mismatch!</span>`;
             }
         }
-        const rightBorder = isCompactStyle ? 'border-r-2 border-slate-300' : 'border-r border-indigo-200';
+        const rightBorder = isCompactStyle ? 'border-r-2 border-slate-300' : palette.bannerItemCellRightBorderMapping;
         return `
-            <td colspan="${span}" class="px-1.5 py-1 bg-indigo-50 border-b ${rightBorder} border-indigo-200" data-group-item-cell="${escapeHtml(bucketKey)}">
+            <td colspan="${span}" class="px-1.5 py-1 ${palette.bannerItemCellBg} border-b ${rightBorder} ${palette.bannerItemCellBorder}" data-group-item-cell="${escapeHtml(bucketKey)}">
                 <div class="flex items-center justify-between gap-1">
-                    <select class="collection-bulk-group-mode-select px-1 py-0.5 rounded border border-indigo-300 bg-white text-[10px] font-bold text-indigo-900 focus:ring-1 focus:ring-indigo-500 cursor-pointer" data-group-id="${escapeHtml(groupId)}" data-item-key="${escapeHtml(itemKey)}" title="Choose billing mode for this group & fee item">
+                    <select class="collection-bulk-group-mode-select px-1 py-0.5 rounded border ${palette.bannerSelect} bg-white text-[10px] font-bold focus:ring-1 cursor-pointer" data-group-id="${escapeHtml(groupId)}" data-item-key="${escapeHtml(itemKey)}" title="Choose billing mode for this group & fee item">
                         <option value="auto" ${currentMode === 'auto' ? 'selected' : ''}>Auto</option>
                         <option value="group" ${currentMode === 'group' ? 'selected' : ''}>Group</option>
                         <option value="single" ${currentMode === 'single' ? 'selected' : ''}>Single</option>
@@ -5864,14 +6002,14 @@ const buildGroupBannerSegmentsHtml = (groupRowSample) => {
     };
 
     const stickyGroupLeftCell = `
-        <td class="collection-bulk-sticky-col z-20 px-2 py-1 bg-indigo-100 border-l-4 border-l-indigo-600 border-b border-r border-indigo-300 text-indigo-950 w-[138px] min-w-[138px] max-w-[158px] sm:w-[172px] sm:min-w-[172px] sm:max-w-[196px]">
+        <td class="collection-bulk-sticky-col z-20 px-2 py-1 ${palette.bannerStickyCell} w-[138px] min-w-[138px] max-w-[158px] sm:w-[172px] sm:min-w-[172px] sm:max-w-[196px]">
             <div class="leading-tight" title="${escapeHtml(groupName)} (${memberCount} Members)">
-                <div class="flex items-center gap-1 font-extrabold text-[11px] text-indigo-950 truncate">
-                    <i class="fas fa-users text-indigo-600 text-[10px] shrink-0"></i>
+                <div class="flex items-center gap-1 font-extrabold text-[11px] ${palette.bannerTitleText} truncate">
+                    <i class="fas fa-users ${palette.bannerIcon} text-[10px] shrink-0"></i>
                     <span class="truncate">${escapeHtml(groupName)}</span>
                 </div>
                 <div class="mt-0.5 flex items-center gap-1 flex-wrap">
-                    <span class="px-1 py-0 rounded bg-white text-indigo-700 border border-indigo-200 text-[9px] font-bold">${memberCount} Mem</span>
+                    <span class="px-1 py-0 rounded ${palette.bannerMemberChip} text-[9px] font-bold">${memberCount} Mem</span>
                     ${feePill}
                 </div>
             </div>
@@ -5884,8 +6022,8 @@ const buildGroupBannerSegmentsHtml = (groupRowSample) => {
         const feeSegmentsHtml = feeGroups.map((grp) => renderGroupItemControlTd(grp.itemKey, grp.cols.length, true)).join('');
         return `
             ${stickyGroupLeftCell}
-            <td colspan="${metaSpan}" class="px-1.5 py-1 bg-indigo-100/80 border-b border-r-2 border-indigo-200 text-center">
-                <span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider whitespace-nowrap">FAMILY GROUP</span>
+            <td colspan="${metaSpan}" class="px-1.5 py-1 ${palette.bannerMetaCellCompact} text-center">
+                <span class="px-1.5 py-0.5 rounded ${palette.bannerBadge} text-[9px] font-black uppercase tracking-wider whitespace-nowrap">FAMILY GROUP</span>
             </td>
             ${feeSegmentsHtml}
         `;
@@ -5915,15 +6053,15 @@ const buildGroupBannerSegmentsHtml = (groupRowSample) => {
 
     const segHtml = segments.map((seg) => {
         if (seg.type === 'identity') {
-            return `<td colspan="${seg.span}" class="px-2 py-1 bg-indigo-100/60 border-b border-r border-indigo-200"></td>`;
+            return `<td colspan="${seg.span}" class="px-2 py-1 ${palette.bannerIdentityCellMapping}"></td>`;
         }
         return renderGroupItemControlTd(seg.itemKey, seg.span, false);
     }).join('');
 
     return `
         ${stickyGroupLeftCell}
-        <td colspan="2" class="px-1.5 py-1 bg-indigo-100/90 border-b border-r border-indigo-200 text-center">
-            <span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider">GROUP</span>
+        <td colspan="2" class="px-1.5 py-1 ${palette.bannerMetaCellMapping} text-center">
+            <span class="px-1.5 py-0.5 rounded ${palette.bannerBadge} text-[9px] font-black uppercase tracking-wider">GROUP</span>
         </td>
         ${segHtml}
     `;
@@ -5935,6 +6073,8 @@ function updateCollectionBulkGroupBannerDom(groupId = '') {
     if (!bannerTr) return;
     const sampleRow = collectionBulkState.parsedRows.find((r) => !r.isSampleRow && r.groupId === groupId);
     if (!sampleRow) return;
+    const palette = getBulkGroupPalette(groupId);
+    bannerTr.className = `collection-bulk-group-banner ${palette.bannerRowBorder}`;
     bannerTr.innerHTML = buildGroupBannerSegmentsHtml(sampleRow);
 }
 
@@ -6136,8 +6276,9 @@ function renderCollectionBulkPreviewTable() {
 
     parsedRows.forEach((rowVal, idx) => {
         if (!rowVal.isSampleRow && rowVal.groupId && rowVal.groupId !== prevGroupId) {
+            const bannerPalette = getBulkGroupPalette(rowVal.groupId);
             tbodyParts.push(`
-                <tr class="collection-bulk-group-banner border-t-2 border-indigo-400" data-group-id="${escapeHtml(rowVal.groupId)}">
+                <tr class="collection-bulk-group-banner ${bannerPalette.bannerRowBorder}" data-group-id="${escapeHtml(rowVal.groupId)}">
                     ${buildGroupBannerSegmentsHtml(rowVal)}
                 </tr>
             `);
@@ -6216,13 +6357,15 @@ function refreshAllCollectionBulkDuplicateBadges() {
 
                 const existingBadge = td.querySelector('.collection-bulk-dup-badge');
                 if (badgeInfo.isGroupShared) {
+                    const sharedPalette = rowVal?.groupId ? getBulkGroupPalette(rowVal.groupId) : null;
+                    const sharedCls = sharedPalette ? sharedPalette.sharedReceiptBadge : '!bg-indigo-600 !text-white';
                     if (existingBadge) {
-                        existingBadge.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[8px]';
+                        existingBadge.className = `collection-bulk-dup-badge ${sharedCls} !w-auto !px-1 !rounded text-[8px]`;
                         existingBadge.textContent = 'GRP';
                         existingBadge.title = badgeInfo.titleNote;
                     } else {
                         const badgeEl = document.createElement('span');
-                        badgeEl.className = 'collection-bulk-dup-badge !bg-indigo-600 !text-white !w-auto !px-1 !rounded text-[8px]';
+                        badgeEl.className = `collection-bulk-dup-badge ${sharedCls} !w-auto !px-1 !rounded text-[8px]`;
                         badgeEl.title = badgeInfo.titleNote;
                         badgeEl.textContent = 'GRP';
                         td.appendChild(badgeEl);
@@ -6333,6 +6476,7 @@ function runBulkSheetEvaluation() {
     collectionBulkState.parsedRows = evalResult.parsedRows;
     collectionBulkState.paymentPlan = evalResult.paymentPlan;
     collectionBulkState.groupSummaryMap = evalResult.groupSummaryMap;
+    collectionBulkState.groupPaletteMap = evalResult.groupPaletteMap || new Map();
     collectionBulkState.totalCollectionAmount = evalResult.totalCollectionAmount;
     computeCollectionBulkDuplicateReceipts();
     recalculateCollectionBulkStats();
@@ -6466,6 +6610,7 @@ const handleBulkFileSelection = (file) => {
                 rosterEntries,
                 paymentPlan: [],
                 groupSummaryMap: new Map(),
+                groupPaletteMap: new Map(),
                 groupItemModes: new Map(),
                 totalCollectionAmount: 0,
                 year,
@@ -6688,7 +6833,7 @@ const executeCollectionBulkUpload = async ({ validOnly = false } = {}) => {
         collectorEmail,
         collectorUid,
         startingAutoReceiptNo,
-        description: sheetSource === 'blank' ? 'Bulk Blank Sheet' : 'Bulk Upload'
+        description: ''
     });
     skippedAlreadyPaid += lateSkippedPaid;
 

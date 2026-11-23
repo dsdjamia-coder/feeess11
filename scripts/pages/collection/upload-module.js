@@ -964,14 +964,34 @@ export const evaluateCollectionBulkSheet = ({
     const totalCollectionAmount = roundMoney(
         paymentPlan.reduce((sum, p) => sum + Number(p.effectiveAmount || 0), 0)
     );
+    const groupPaletteMap = buildBulkGroupPaletteIndexMap(parsedRows, 4);
 
     return {
         parsedRows,
         paymentPlan,
         groupSummaryMap,
+        groupPaletteMap,
         totalReadyTransactions: paymentPlan.length,
         totalCollectionAmount
     };
+};
+
+/**
+ * Assigns a deterministic repeating palette index (0..paletteCount-1) to each distinct
+ * family group in order of first appearance so adjacent family groups stay visually distinct.
+ */
+export const buildBulkGroupPaletteIndexMap = (parsedRows = [], paletteCount = 4) => {
+    const map = new Map();
+    const safeCount = Math.max(1, Number(paletteCount) || 4);
+    let nextIdx = 0;
+    (Array.isArray(parsedRows) ? parsedRows : []).forEach((row) => {
+        if (!row || row.isSampleRow || !row.groupId) return;
+        if (!map.has(row.groupId)) {
+            map.set(row.groupId, nextIdx % safeCount);
+            nextIdx += 1;
+        }
+    });
+    return map;
 };
 
 /**
@@ -989,7 +1009,7 @@ export const buildBulkFirestorePaymentPayloads = ({
     collectorEmail = '',
     collectorUid = '',
     startingAutoReceiptNo = 1,
-    description = 'Bulk Upload'
+    description = ''
 } = {}) => {
     const cleanYear = String(year || '').trim();
     let autoReceiptNo = Math.max(1, parseInt(startingAutoReceiptNo, 10) || 1);

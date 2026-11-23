@@ -793,7 +793,7 @@
             <!-- 2. Fee Collection (Manual / Bulk / Donation) -->
             <section id="home-page" class="page-content hidden">
                 <!-- Top Underline Sub-Tab Navigation -->
-                <div class="collection-subtab-bar max-w-4xl mx-auto mb-2.5 sm:mb-4" role="tablist" aria-label="Fee Collection Views">
+                <div class="collection-subtab-bar max-w-5xl mx-auto mb-2.5 sm:mb-4" role="tablist" aria-label="Fee Collection Views">
                     <button type="button" role="tab" aria-selected="true" class="collection-subtab-btn fee-collection-subtab-btn active" data-collection-subtab="entry">
                         <i class="fas fa-edit"></i> <span>Fee Entry</span>
                     </button>
@@ -807,8 +807,8 @@
 
                 <!-- Sub-View 1: Standard Fee Entry Form -->
                 <div id="subview-fee-entry">
-                    <div id="fee-entry-card" class="card p-3.5 sm:p-5 mb-4 sm:mb-6 shadow-sm transition-all duration-300 max-w-4xl mx-auto">
-                        <div class="flex flex-row justify-between items-center mb-3 sm:mb-5 border-b pb-2 gap-2">
+                    <div id="fee-entry-card" class="card p-3.5 sm:p-5 mb-4 sm:mb-6 shadow-sm transition-all duration-300 max-w-5xl mx-auto">
+                        <div class="flex flex-row justify-between items-center mb-3 sm:mb-4 border-b pb-2 gap-2">
                             <div class="flex items-center gap-1.5 sm:gap-2">
                                 <h2 id="fee-entry-title" class="text-base sm:text-xl font-bold text-gray-800">Fee Entry</h2>
                                 <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Record regular monthly tuition, arrears, and optional fee collections for enrolled students." title="Record regular monthly tuition, arrears, and optional fee collections for enrolled students.">
@@ -839,38 +839,54 @@
                             </div>
                             <div id="multi-entry-list" class="mt-2 sm:mt-3 space-y-1.5 sm:space-y-2"></div>
                         </div>
-                        <div class="space-y-3 sm:space-y-4">
-                            <div class="grid grid-cols-2 gap-2.5 sm:gap-4">
-                                <div><label class="block text-sm font-semibold mb-1 text-gray-700">Class</label><select id="entry-class" data-smart-select="true" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white"><option value="" selected>-- Select Class --</option><option value="all">All Classes</option></select></div>
-                                <div><label class="block text-sm font-semibold mb-1 text-gray-700">Gender</label><select id="entry-gender" data-smart-select="true" class="w-full p-2.5 rounded-lg border border-gray-300 bg-white"><option value="all">All Genders</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold mb-1 text-gray-700 flex items-center gap-1.5">
-                                    <span>Student</span>
-                                    <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Search by Student Name, Admission Number, or Registered Mobile Number." title="Search by Student Name, Admission Number, or Registered Mobile Number.">
-                                        <i class="fas fa-info-circle"></i>
-                                    </button>
-                                </label>
-                                <div class="relative" id="student-combobox-container">
-                                    <input type="text" id="entry-student-input" class="w-full p-2.5 pr-10 rounded-lg" placeholder="Type name or Adm No..." autocomplete="off">
-                                    <button id="entry-student-clear-btn" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 hidden" title="Clear student input"><i class="fas fa-times text-xs"></i></button>
-                                    <div id="student-suggestions" class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl hidden max-h-60 overflow-y-auto"></div>
+                        <div class="space-y-2.5 sm:space-y-3.5">
+                            <!-- Line 1 (Desktop 12-Col): Class (3) + Gender (2) + Student Search (7) -->
+                            <div class="grid grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3.5 items-start">
+                                <div class="col-span-1 lg:col-span-3">
+                                    <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Class</label>
+                                    <select id="entry-class" data-smart-select="true" class="w-full p-2 sm:p-2.5 rounded-lg border border-gray-300 bg-white text-xs sm:text-sm"><option value="" selected>-- Select Class --</option><option value="all">All Classes</option></select>
                                 </div>
-                                <div id="grouped-students-panel" class="hidden mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm"></div>
+                                <div class="col-span-1 lg:col-span-2">
+                                    <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Gender</label>
+                                    <select id="entry-gender" data-smart-select="true" class="w-full p-2 sm:p-2.5 rounded-lg border border-gray-300 bg-white text-xs sm:text-sm"><option value="all">All Genders</option><option value="Male">Male</option><option value="Female">Female</option></select>
+                                </div>
+                                <div class="col-span-2 lg:col-span-7">
+                                    <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700 flex items-center gap-1.5">
+                                        <span>Student</span>
+                                        <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Search by Student Name, Admission Number, or Registered Mobile Number." title="Search by Student Name, Admission Number, or Registered Mobile Number.">
+                                            <i class="fas fa-info-circle"></i>
+                                        </button>
+                                    </label>
+                                    <div class="relative" id="student-combobox-container">
+                                        <input type="text" id="entry-student-input" class="w-full p-2 sm:p-2.5 pr-10 rounded-lg text-xs sm:text-sm" placeholder="Type name or Adm No..." autocomplete="off">
+                                        <button id="entry-student-clear-btn" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 hidden" title="Clear student input"><i class="fas fa-times text-xs"></i></button>
+                                        <div id="student-suggestions" class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl hidden max-h-60 overflow-y-auto"></div>
+                                    </div>
+                                </div>
+                                <div id="grouped-students-panel" class="hidden col-span-2 lg:col-span-12 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 sm:p-3 text-sm"></div>
                             </div>
-                            <div class="grid grid-cols-2 gap-2.5 sm:gap-4">
-                                <div>
-                                    <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700 flex justify-between">
+
+                            <!-- Line 2 (Desktop 12-Col): Receipt No. (3) + Date (3) + Description (6) -->
+                            <div class="grid grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3.5 items-start">
+                                <div class="col-span-1 lg:col-span-3">
+                                    <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700 flex justify-between items-center">
                                         <span>Receipt No. <span id="receipt-req-star" class="text-red-500 font-bold hidden">*</span></span>
                                         <span class="text-[10px] text-gray-400 font-normal">(Auto)</span>
                                     </label>
-                                    <input type="number" id="entry-receipt" class="w-full p-2 sm:p-2.5 font-mono text-base sm:text-lg font-bold text-blue-700 rounded-lg" placeholder="Number">
+                                    <input type="number" id="entry-receipt" class="w-full p-2 sm:p-2.5 h-[40px] sm:h-[42px] font-mono text-base sm:text-lg font-bold text-blue-700 rounded-lg" placeholder="Number">
                                 </div>
-                                <div><label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Date</label><input type="date" id="entry-date" class="w-full p-2 sm:p-2.5 rounded-lg text-xs sm:text-sm"></div>
+                                <div class="col-span-1 lg:col-span-3">
+                                    <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Date</label>
+                                    <input type="date" id="entry-date" class="w-full p-2 sm:p-2.5 h-[40px] sm:h-[42px] rounded-lg text-xs sm:text-sm">
+                                </div>
+                                <div class="col-span-2 lg:col-span-6">
+                                    <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Description (Optional)</label>
+                                    <textarea id="entry-description" rows="1" class="w-full p-2 sm:p-2.5 min-h-[40px] sm:min-h-[42px] rounded-lg text-xs sm:text-sm leading-snug resize-y" placeholder="Optional payment note..."></textarea>
+                                </div>
                             </div>
                         </div>
                         
-                        <div class="mt-3.5 sm:mt-5">
+                        <div class="mt-3.5 sm:mt-4">
                             <label class="block text-xs sm:text-sm font-semibold mb-1.5 sm:mb-2 text-gray-700 flex items-center gap-1.5">
                                 <span>Fee Items</span>
                                 <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Select monthly fee installments or additional institutional fee items (Admission, Books, Uniform) to collect." title="Select monthly fee installments or additional institutional fee items (Admission, Books, Uniform) to collect.">
@@ -897,17 +913,17 @@
                             </div>
                             <div id="fee-due-notice" class="hidden mb-2.5 sm:mb-3 text-xs font-semibold rounded-lg border border-amber-200 bg-amber-50 text-amber-800 px-3 py-2"></div>
                             <div id="fee-past-dues-banner" class="hidden mb-2.5 sm:mb-3"></div>
-                            <div id="fee-item-selection-container" class="grid grid-cols-3 gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
-                                <div class="col-span-3 text-center text-xs font-semibold text-gray-400 py-3 sm:py-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">Search and select a student first</div>
+                            <div id="fee-item-selection-container" class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
+                                <div class="col-span-full text-center text-xs font-semibold text-gray-400 py-3 sm:py-4 bg-gray-50 rounded-lg border border-dashed border-gray-300">Search and select a student first</div>
                             </div>
                         </div>
-                        
-                        <div class="mt-3.5 sm:mt-5"><label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Description (Optional)</label><textarea id="entry-description" rows="2" class="w-full p-2 sm:p-2.5 rounded-lg text-xs sm:text-sm"></textarea></div>
-                        <div class="mt-4 pt-3.5 sm:mt-6 sm:pt-5 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4">
-                            <div class="w-full sm:w-auto grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 sm:gap-4">
+
+                        <!-- Bottom Payment Bar (Single Line on Desktop/Tablet) -->
+                        <div class="mt-4 pt-3.5 sm:mt-5 sm:pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4">
+                            <div class="w-full sm:w-auto grid grid-cols-2 sm:flex sm:items-end gap-2.5 sm:gap-4">
                                 <div>
                                     <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1">Total Amount (₹)</label>
-                                    <input type="number" id="total-amount" class="p-2 sm:p-2.5 w-full sm:w-32 font-mono text-base sm:text-xl font-bold text-green-700 bg-green-50 border border-green-300 rounded-lg text-center focus:ring-2 focus:ring-green-400 focus:outline-none" value="0">
+                                    <input type="number" id="total-amount" class="p-2 sm:p-2.5 h-[42px] sm:h-[44px] w-full sm:w-36 font-mono text-base sm:text-xl font-bold text-green-700 bg-green-50 border border-green-300 rounded-lg text-center focus:ring-2 focus:ring-green-400 focus:outline-none" value="0">
                                 </div>
                                 <div>
                                     <label class="block text-xs sm:text-sm font-bold text-gray-700 mb-1 flex items-center gap-1.5">
@@ -916,7 +932,7 @@
                                             <i class="fas fa-info-circle"></i>
                                         </button>
                                     </label>
-                                    <select id="entry-payment-mode" data-smart-select="true" data-smart-wrapper-class="sm:w-48" class="p-2 sm:p-2.5 w-full sm:w-48 font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none text-xs sm:text-sm">
+                                    <select id="entry-payment-mode" data-smart-select="true" data-smart-wrapper-class="sm:w-52" class="p-2 sm:p-2.5 h-[42px] sm:h-[44px] w-full sm:w-52 font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none text-xs sm:text-sm">
                                         <option value="Cash" selected>Cash</option>
                                         <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
                                         <option value="Bank Transfer">Bank Transfer</option>
@@ -924,10 +940,10 @@
                                     </select>
                                 </div>
                             </div>
-                            <div id="action-buttons-container" class="flex justify-end sm:justify-start gap-2 w-full sm:w-auto mt-1 sm:mt-0">
-                                <button id="cancel-edit-btn" class="bg-gray-200 text-gray-800 font-bold py-2.5 px-5 sm:px-6 rounded-lg shadow-sm hover:bg-gray-300 transition hidden flex-grow sm:flex-grow-0 text-sm">Cancel</button>
-                                <button id="update-fee-btn" class="bg-amber-500 text-white font-bold py-2.5 px-5 sm:px-6 rounded-lg shadow-md hover:bg-amber-600 transition hidden flex-grow sm:flex-grow-0 text-sm">Update</button>
-                                <button id="save-fee-btn" class="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 sm:py-2.5 min-h-[46px] sm:min-h-0 px-4 sm:px-8 rounded-xl sm:rounded-lg shadow-md transition cursor-pointer text-sm sm:text-lg w-2/5 sm:w-auto">Save</button>
+                            <div id="action-buttons-container" class="flex justify-end items-center gap-2 w-full sm:w-auto shrink-0">
+                                <button id="cancel-edit-btn" class="bg-gray-200 text-gray-800 font-bold py-2.5 px-5 sm:px-6 h-[44px] rounded-lg shadow-sm hover:bg-gray-300 transition hidden flex-grow sm:flex-grow-0 text-sm">Cancel</button>
+                                <button id="update-fee-btn" class="bg-amber-500 text-white font-bold py-2.5 px-5 sm:px-6 h-[44px] rounded-lg shadow-md hover:bg-amber-600 transition hidden flex-grow sm:flex-grow-0 text-sm">Update</button>
+                                <button id="save-fee-btn" class="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-2.5 sm:h-[44px] min-h-[44px] px-4 sm:px-8 rounded-xl sm:rounded-lg shadow-md transition cursor-pointer text-sm sm:text-base w-2/5 sm:w-auto whitespace-nowrap">Save</button>
                             </div>
                         </div>
                     </div>
@@ -1168,31 +1184,46 @@
 
                 <!-- Sub-View 3: Donation Entry -->
                 <div id="donation-page" class="hidden">
-                    <div class="card p-3.5 sm:p-5 shadow-sm max-w-3xl mx-auto">
+                    <div class="card p-3.5 sm:p-5 shadow-sm max-w-4xl mx-auto">
                         <div class="flex items-center gap-2 mb-3 sm:mb-4 border-b pb-2">
                             <h2 class="text-base sm:text-xl font-bold text-gray-800">Donation Entry</h2>
                             <button type="button" class="info-tooltip-btn text-slate-400 hover:text-blue-600 cursor-pointer text-xs p-0.5 focus:outline-none transition inline-flex items-center" data-info="Record general contributions, institutional endowments, and special donor receipts." title="Record general contributions, institutional endowments, and special donor receipts.">
                                 <i class="fas fa-info-circle"></i>
                             </button>
                         </div>
-                        <div class="grid grid-cols-2 gap-2.5 sm:gap-4">
-                            <div class="col-span-2 md:col-span-1">
+                        <div class="grid grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3.5 items-end">
+                            <!-- Line 1 (Desktop 12-Col): Donor Name (5) + Receipt (2) + Amount (2) + Date (3) -->
+                            <div class="col-span-2 lg:col-span-5">
                                 <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Donor Name</label>
                                 <div class="relative" id="donation-donor-container">
-                                    <input type="text" id="donation-name" class="w-full p-2 sm:p-2.5 pr-10 rounded-lg text-xs sm:text-sm" placeholder="Type donor name or Adm No..." autocomplete="off">
+                                    <input type="text" id="donation-name" class="w-full p-2 sm:p-2.5 h-[40px] sm:h-[42px] pr-10 rounded-lg text-xs sm:text-sm" placeholder="Type donor name or Adm No..." autocomplete="off">
                                     <button id="donation-donor-clear-btn" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 hidden" title="Clear donor name"><i class="fas fa-times text-xs"></i></button>
                                     <div id="donation-donor-suggestions" class="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl hidden max-h-60 overflow-y-auto"></div>
                                 </div>
                             </div>
-                            <div class="col-span-1"><label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Receipt No</label><input type="number" id="donation-receipt" class="w-full p-2 sm:p-2.5 rounded-lg text-xs sm:text-sm" placeholder="Optional"></div>
-                            <div class="col-span-1"><label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Amount (₹)</label><input type="number" id="donation-amount" class="w-full p-2 sm:p-2.5 rounded-lg text-xs sm:text-sm" placeholder="Amount"></div>
-                            <div class="col-span-2 md:col-span-1"><label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Date</label><input type="date" id="donation-date" class="w-full p-2 sm:p-2.5 rounded-lg text-xs sm:text-sm"></div>
-                            <div class="col-span-2"><label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Description</label><textarea id="donation-description" rows="2" class="w-full p-2 sm:p-2.5 rounded-lg text-xs sm:text-sm" placeholder="Donation details"></textarea></div>
+                            <div class="col-span-1 lg:col-span-2">
+                                <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Receipt No</label>
+                                <input type="number" id="donation-receipt" class="w-full p-2 sm:p-2.5 h-[40px] sm:h-[42px] rounded-lg text-xs sm:text-sm" placeholder="Optional">
+                            </div>
+                            <div class="col-span-1 lg:col-span-2">
+                                <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Amount (₹)</label>
+                                <input type="number" id="donation-amount" class="w-full p-2 sm:p-2.5 h-[40px] sm:h-[42px] rounded-lg text-xs sm:text-sm font-mono font-bold" placeholder="Amount">
+                            </div>
+                            <div class="col-span-2 lg:col-span-3">
+                                <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Date</label>
+                                <input type="date" id="donation-date" class="w-full p-2 sm:p-2.5 h-[40px] sm:h-[42px] rounded-lg text-xs sm:text-sm">
+                            </div>
+
+                            <!-- Line 2 (Desktop 12-Col): Description (9) + Save Donation (3) -->
+                            <div class="col-span-2 lg:col-span-9">
+                                <label class="block text-xs sm:text-sm font-semibold mb-1 text-gray-700">Description (Optional)</label>
+                                <textarea id="donation-description" rows="1" class="w-full p-2 sm:p-2.5 min-h-[40px] sm:min-h-[42px] rounded-lg text-xs sm:text-sm leading-snug resize-y" placeholder="Donation details"></textarea>
+                            </div>
+                            <div class="col-span-2 lg:col-span-3 flex items-center justify-end gap-3">
+                                <button id="save-donation-btn" class="ml-auto lg:ml-0 lg:w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-2.5 h-[42px] px-4 sm:px-5 rounded-xl sm:rounded-lg shadow-md transition cursor-pointer text-xs sm:text-sm w-2/5 sm:w-auto whitespace-nowrap">Save Donation</button>
+                            </div>
                         </div>
-                        <div class="mt-3.5 sm:mt-4 flex items-center justify-between sm:justify-start gap-3">
-                            <span id="donation-save-msg" class="text-xs font-semibold text-emerald-700 order-1 sm:order-2"></span>
-                            <button id="save-donation-btn" class="order-2 sm:order-1 ml-auto sm:ml-0 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 sm:py-2.5 min-h-[46px] sm:min-h-0 px-4 sm:px-6 rounded-xl sm:rounded-lg shadow-md transition cursor-pointer text-xs sm:text-sm w-2/5 sm:w-auto">Save Donation</button>
-                        </div>
+                        <span id="donation-save-msg" class="block empty:hidden mt-2 text-xs font-semibold text-emerald-700"></span>
                     </div>
                 </div>
             </section>
