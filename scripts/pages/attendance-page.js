@@ -4,6 +4,7 @@ import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID } from '../../config/app-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, populateAcademicYearSelect, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, compareClassLabelsNatural, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
+import { createPaginationState, resetPaginationPage, paginateArray, hidePaginationControls, renderPaginationControls } from '../shared/pagination-utils.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -71,9 +72,16 @@ let selectedMonthlyClass = '';
 let selectedMonthlyMonth = getTodayDateString().slice(0, 7); // 'YYYY-MM'
 let monthlyAttendanceDocs = [];
 let lastCompiledMonthlyRegister = null;
+let currentMonthlyRenderCtx = null;
 
 // Analytics State
 let selectedAnalyticsClass = '';
+let currentAnalyticsFilteredList = [];
+
+// Pagination State
+const dailyPagination = createPaginationState();
+const monthlyPagination = createPaginationState();
+const analyticsPagination = createPaginationState();
 
 // Holiday Edit State
 let editingHolidayIndex = -1;
@@ -805,26 +813,32 @@ const formatClassPillText = (clsVal = '') => {
 
 const populateClassDropdowns = () => {
     const allowed = getAllowedClassesForTeacher();
-    const savedUi = !hasRestoredInitialDailyContext ? loadUiStateSnapshot() : null;
 
-    const fieldMap = {
-        'daily-class-select': savedUi?.dailyClass || '',
-        'monthly-class-select': savedUi?.monthlyClass || '',
-        'analytics-class-select': savedUi?.analyticsClass || ''
-    };
+    const dropdownConfigs = [
+        { id: 'daily-class-select', includeAllOption: false },
+        { id: 'monthly-class-select', includeAllOption: false },
+        { id: 'analytics-class-select', includeAllOption: allowed.length > 1 }
+    ];
 
-    Object.entries(fieldMap).forEach(([id, restoredVal]) => {
+    dropdownConfigs.forEach(({ id, includeAllOption }) => {
         const select = document.getElementById(id);
         if (!select) return;
 
-        const prev = select.value || restoredVal;
-        const matchedOption = prev ? allowed.find(c => normalizeClassLabel(c) === normalizeClassLabel(prev)) : '';
-        const validPrev = matchedOption || '';
+        const prev = select.value || '';
+        let validPrev = '';
+        if (prev === 'all' && includeAllOption) {
+            validPrev = 'all';
+        } else if (prev) {
+            const matchedOption = allowed.find(c => normalizeClassLabel(c) === normalizeClassLabel(prev));
+            validPrev = matchedOption || '';
+        }
 
         populateClassSelect(select, allowed, {
             selectedValue: validPrev,
             placeholder: '-- Select Class --',
-            includeAllOption: false
+            includeAllOption,
+            allOptionLabel: 'All Classes',
+            allOptionValue: 'all'
         });
 
         if (!allowed.length) {
@@ -843,9 +857,6 @@ const populateClassDropdowns = () => {
 
     if (!hasRestoredInitialDailyContext && allowed.length) {
         hasRestoredInitialDailyContext = true;
-        if (selectedDailyClass) loadDailyAttendanceRoster();
-        if (activeTabId === 'tab-monthly' && selectedMonthlyClass) loadMonthlyRegister();
-        if (activeTabId === 'tab-analytics' && selectedAnalyticsClass) loadAnalytics();
     }
 };
 
@@ -1094,11 +1105,14 @@ const loadDailyAttendanceRoster = async () => {
         currentDailyAttendanceDoc = null;
         hasUnsavedChanges = false;
         updateDailyMetrics(0, 0, 0, 0);
-        applyDailySearchFilter();
+        hidePaginationControls('att-daily-pagination-top', 'att-daily-pagination-bottom');
+        const countBadge = document.getElementById('daily-search-count');
+        if (countBadge) countBadge.classList.add('hidden');
         return;
     }
 
     if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold"><i class="fas fa-spinner fa-spin mr-2 text-emerald-600"></i>Loading students...</td></tr>`;
+    hidePaginationControls('att-daily-pagination-top', 'att-daily-pagination-bottom');
 
     try {
         const classStudents = await fetchStudentsForClass(selectedDailyClass, year);
@@ -1152,91 +1166,104 @@ const loadDailyAttendanceRoster = async () => {
     } catch (err) {
         console.warn('Failed to load daily attendance roster:', err);
         if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-rose-600 font-bold">Failed to load students: ${escapeHtml(err.message)}</td></tr>`;
+        hidePaginationControls('att-daily-pagination-top', 'att-daily-pagination-bottom');
     }
 };
 
-const applyDailySearchFilter = () => {
+const getDailyStudentSearchText = (student, idx) => {
+    const roll = student.rollNo || student.roll || (idx + 1);
+    const adm = student.adm || student.admNo || '-';
+    const genderLabel = isFemaleGender(student.gender) ? 'Girl' : 'Boy';
+    return `${student.name || ''} ${adm} ${roll} ${genderLabel}`.toLowerCase();
+};
+
+const applyDailySearchFilter = ({ resetPage = true } = {}) => {
+    const searchInput = document.getElementById('daily-search-input');
+    const clearBtn = document.getElementById('btn-clear-daily-search');
+    dailySearchQuery = String(searchInput?.value || '').trim().toLowerCase();
+    if (clearBtn) clearBtn.classList.toggle('hidden', !dailySearchQuery);
+    if (resetPage) resetPaginationPage(dailyPagination);
+    if (!selectedDailyClass) {
+        const countBadge = document.getElementById('daily-search-count');
+        if (countBadge) countBadge.classList.add('hidden');
+        return;
+    }
+    renderDailyStudentRows(currentDailyStudents);
+};
+
+const renderDailyStudentRows = (classStudents = currentDailyStudents) => {
+    const tbody = document.getElementById('daily-roster-tbody');
     const searchInput = document.getElementById('daily-search-input');
     const clearBtn = document.getElementById('btn-clear-daily-search');
     const countBadge = document.getElementById('daily-search-count');
-    const tbody = document.getElementById('daily-roster-tbody');
+    if (!tbody) return;
 
     dailySearchQuery = String(searchInput?.value || '').trim().toLowerCase();
     if (clearBtn) clearBtn.classList.toggle('hidden', !dailySearchQuery);
 
-    if (!tbody) return;
-    const rows = Array.from(tbody.querySelectorAll('tr[data-student-id]'));
-    const existingEmptyRow = document.getElementById('daily-search-empty-row');
-    if (existingEmptyRow) existingEmptyRow.remove();
-
-    if (!rows.length) {
+    if (!classStudents.length) {
+        const emptyText = `No active students found in Class ${escapeHtml(selectedDailyClass)}.`;
+        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">${emptyText}</td></tr>`;
+        updateDailyMetrics(0, 0, 0, 0);
         if (countBadge) countBadge.classList.add('hidden');
+        hidePaginationControls('att-daily-pagination-top', 'att-daily-pagination-bottom');
         return;
     }
 
-    let visibleCount = 0;
-    rows.forEach(row => {
-        const haystack = String(row.dataset.searchText || '');
-        const isMatch = !dailySearchQuery || haystack.includes(dailySearchQuery);
-        row.classList.toggle('hidden', !isMatch);
-        if (isMatch) visibleCount++;
+    // Calculate class-wide totals across ALL students regardless of pagination/search
+    let pCount = 0;
+    let aCount = 0;
+    let lCount = 0;
+    const indexedStudents = classStudents.map((student, idx) => {
+        const record = dailyAttendanceMap[student.id] || {};
+        let status = record.status || '';
+        if (status === 'E') status = 'L';
+        if (status === 'P') pCount++;
+        else if (status === 'A') aCount++;
+        else if (status === 'L') lCount++;
+        return {
+            student,
+            classIdx: idx,
+            searchText: getDailyStudentSearchText(student, idx)
+        };
     });
+    updateDailyMetrics(classStudents.length, pCount, aCount, lCount);
+
+    const filteredEntries = dailySearchQuery
+        ? indexedStudents.filter(item => item.searchText.includes(dailySearchQuery))
+        : indexedStudents;
 
     if (countBadge) {
         if (dailySearchQuery) {
-            countBadge.textContent = `${visibleCount}/${rows.length} shown`;
+            countBadge.textContent = `${filteredEntries.length}/${classStudents.length} shown`;
             countBadge.classList.remove('hidden');
         } else {
             countBadge.classList.add('hidden');
         }
     }
 
-    if (dailySearchQuery && visibleCount === 0) {
-        const emptyTr = document.createElement('tr');
-        emptyTr.id = 'daily-search-empty-row';
-        emptyTr.innerHTML = `<td colspan="6" class="p-6 text-center text-slate-400 font-bold text-xs">No students matching "${escapeHtml(searchInput?.value.trim() || '')}".</td>`;
-        tbody.appendChild(emptyTr);
-    }
-};
-
-const renderDailyStudentRows = (classStudents) => {
-    const tbody = document.getElementById('daily-roster-tbody');
-    if (!tbody) return;
-
-    if (!classStudents.length) {
-        const emptyText = `No active students found in Class ${escapeHtml(selectedDailyClass)}.`;
-        tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 font-bold">${emptyText}</td></tr>`;
-        updateDailyMetrics(0, 0, 0, 0);
-        applyDailySearchFilter();
+    if (!filteredEntries.length) {
+        tbody.innerHTML = `<tr id="daily-search-empty-row"><td colspan="6" class="p-6 text-center text-slate-400 font-bold text-xs">No students matching "${escapeHtml(searchInput?.value.trim() || '')}".</td></tr>`;
+        hidePaginationControls('att-daily-pagination-top', 'att-daily-pagination-bottom');
         return;
     }
 
-    let pCount = 0;
-    let aCount = 0;
-    let lCount = 0;
-
-    const rowsHtml = [];
-
-    classStudents.forEach((student, idx) => {
+    const pageData = paginateArray(filteredEntries, dailyPagination);
+    const rowsHtml = pageData.items.map(({ student, classIdx, searchText }) => {
         const stuCls = student._resolvedYearClass || student.class || '';
         const record = dailyAttendanceMap[student.id] || {};
         let status = record.status || '';
         if (status === 'E') status = 'L';
         const remarks = record.remarks || '';
 
-        if (status === 'P') pCount++;
-        else if (status === 'A') aCount++;
-        else if (status === 'L') lCount++;
-
         const photo = student.photo || student.profile?.photo || '';
-        const roll = student.rollNo || student.roll || (idx + 1);
+        const roll = student.rollNo || student.roll || (classIdx + 1);
         const adm = student.adm || student.admNo || '-';
         const genderLabel = isFemaleGender(student.gender) ? 'Girl' : 'Boy';
-        const searchText = `${student.name || ''} ${adm} ${roll} ${genderLabel}`.toLowerCase();
 
-        rowsHtml.push(`
+        return `
             <tr class="hover:bg-slate-50/80 transition-colors" data-student-id="${escapeHtml(student.id)}" data-student-class="${escapeHtml(stuCls)}" data-search-text="${escapeHtml(searchText)}">
-                <td class="py-2 sm:py-3 px-2 sm:px-3 text-center font-bold text-slate-400 tabular-nums">${idx + 1}</td>
+                <td class="py-2 sm:py-3 px-2 sm:px-3 text-center font-bold text-slate-400 tabular-nums">${classIdx + 1}</td>
                 <td class="py-2 sm:py-3 px-2 sm:px-3 text-center font-mono font-bold text-slate-700 tabular-nums">${escapeHtml(String(roll))}</td>
                 <td class="py-2 sm:py-3 px-2 sm:px-3 font-mono text-slate-500 font-semibold tabular-nums">${escapeHtml(adm)}</td>
                 <td class="py-2 sm:py-3 px-2 sm:px-4">
@@ -1261,12 +1288,19 @@ const renderDailyStudentRows = (classStudents) => {
                     <input type="text" data-student-id="${escapeHtml(student.id)}" class="student-remarks-input w-full p-1.5 px-2 text-xs rounded-lg border border-slate-200 focus:border-emerald-500 outline-none bg-white transition" placeholder="Remark..." value="${escapeHtml(remarks)}">
                 </td>
             </tr>
-        `);
+        `;
     });
 
     tbody.innerHTML = rowsHtml.join('');
-    updateDailyMetrics(classStudents.length, pCount, aCount, lCount);
-    applyDailySearchFilter();
+
+    renderPaginationControls({
+        topContainerId: 'att-daily-pagination-top',
+        bottomContainerId: 'att-daily-pagination-bottom',
+        state: dailyPagination,
+        totalItems: pageData.totalItems,
+        itemLabel: 'students',
+        onChange: () => renderDailyStudentRows(currentDailyStudents)
+    });
 };
 
 const updateDailyMetrics = (total, present, absent, leave) => {
@@ -1313,50 +1347,34 @@ const recalculateDailyTotals = () => {
     let aCount = 0;
     let lCount = 0;
 
-    Object.values(dailyAttendanceMap).forEach(rec => {
+    currentDailyStudents.forEach(student => {
+        const rec = dailyAttendanceMap[student.id];
+        if (!rec) return;
         const s = rec.status === 'E' ? 'L' : rec.status;
         if (s === 'P') pCount++;
         else if (s === 'A') aCount++;
         else if (s === 'L') lCount++;
     });
 
-    const total = document.querySelectorAll('#daily-roster-tbody tr[data-student-id]').length;
+    const total = currentDailyStudents.length;
     updateDailyMetrics(total, pCount, aCount, lCount);
 };
 
 const markAllStudents = (status) => {
-    const rows = document.querySelectorAll('#daily-roster-tbody tr[data-student-id]');
-    rows.forEach(row => {
-        const studentId = row.dataset.studentId;
-        if (studentId) {
-            if (!dailyAttendanceMap[studentId]) dailyAttendanceMap[studentId] = {};
-            dailyAttendanceMap[studentId].status = status;
-        }
+    if (!currentDailyStudents.length) return;
+    currentDailyStudents.forEach(student => {
+        if (!dailyAttendanceMap[student.id]) dailyAttendanceMap[student.id] = {};
+        dailyAttendanceMap[student.id].status = status;
     });
 
-    document.querySelectorAll('[data-toggle-group]').forEach(group => {
-        group.querySelectorAll('.att-toggle-btn').forEach(btn => {
-            btn.classList.remove('active-p', 'active-a', 'active-l');
-            if (btn.dataset.status === status) {
-                btn.classList.add(`active-${status.toLowerCase()}`);
-            }
-        });
-    });
-
+    renderDailyStudentRows(currentDailyStudents);
     markUnsavedChanges();
     recalculateDailyTotals();
 };
 
 const clearAllStudents = () => {
     dailyAttendanceMap = {};
-    document.querySelectorAll('[data-toggle-group]').forEach(group => {
-        group.querySelectorAll('.att-toggle-btn').forEach(btn => {
-            btn.classList.remove('active-p', 'active-a', 'active-l');
-        });
-    });
-    document.querySelectorAll('.student-remarks-input').forEach(input => {
-        input.value = '';
-    });
+    renderDailyStudentRows(currentDailyStudents);
     const year = document.getElementById('daily-academic-year')?.value || currentAcademicYear;
     clearDailyDraftSnapshot(year, selectedDailyClass, selectedDailyDate);
     hasUnsavedChanges = true;
@@ -1385,6 +1403,7 @@ const saveDailyAttendance = async () => {
     }
 
     try {
+        // Sync any currently rendered remarks inputs before saving full class map
         const rows = Array.from(document.querySelectorAll('#daily-roster-tbody tr[data-student-id]'));
         rows.forEach(row => {
             const studentId = row.dataset.studentId;
@@ -1400,14 +1419,16 @@ const saveDailyAttendance = async () => {
         let aCount = 0;
         let lCount = 0;
 
-        Object.values(dailyAttendanceMap).forEach(rec => {
+        currentDailyStudents.forEach(student => {
+            const rec = dailyAttendanceMap[student.id];
+            if (!rec) return;
             const s = rec.status === 'E' ? 'L' : rec.status;
             if (s === 'P') pCount++;
             else if (s === 'A') aCount++;
             else if (s === 'L') lCount++;
         });
 
-        const totalEnrolled = rows.length;
+        const totalEnrolled = currentDailyStudents.length;
         const { isHoliday, reason } = isDateHoliday(selectedDailyDate, selectedDailyClass);
         const docId = getDailyDocId(year, selectedDailyClass, selectedDailyDate);
 
@@ -1474,11 +1495,13 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
 
     if (!selectedMonthlyClass || !monthVal) {
         lastCompiledMonthlyRegister = null;
+        currentMonthlyRenderCtx = null;
         if (emptyNotice) {
             emptyNotice.innerHTML = 'Select a class and month to generate the monthly attendance register sheet.';
             emptyNotice.classList.remove('hidden');
         }
         if (table) table.classList.add('hidden');
+        hidePaginationControls('att-monthly-pagination-top', 'att-monthly-pagination-bottom');
         return;
     }
 
@@ -1578,9 +1601,11 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
 
         if (!relevantStudents.length) {
             lastCompiledMonthlyRegister = null;
+            currentMonthlyRenderCtx = null;
             tbody.innerHTML = `<tr><td colspan="${daysInMonth + 10}" class="p-8 text-center text-slate-400 font-bold">No active students found in Class ${escapeHtml(selectedMonthlyClass)} for session ${escapeHtml(year)}.</td></tr>`;
             if (emptyNotice) emptyNotice.classList.add('hidden');
             if (table) table.classList.remove('hidden');
+            hidePaginationControls('att-monthly-pagination-top', 'att-monthly-pagination-bottom');
             return;
         }
 
@@ -1748,77 +1773,15 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
             girls: computedGirls
         }];
 
-        const allBodyHtmlChunks = [];
-        orderedClsStudents.forEach((student, idx) => {
-            const comp = computedById.get(student.id);
-            let dayCellsHtml = '';
+        currentMonthlyRenderCtx = {
+            orderedClsStudents,
+            computedById,
+            daysInMonth,
+            monthVal,
+            classLabel: selectedMonthlyClass
+        };
 
-            for (let day = 1; day <= daysInMonth; day++) {
-                const tok = comp.dayTokens[day - 1];
-                if (tok.type === 'H') {
-                    if (idx === 0) {
-                        const dateStr = `${monthVal}-${String(day).padStart(2, '0')}`;
-                        const { title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, selectedMonthlyClass);
-                        let hLabel = 'HOLIDAY';
-                        if (isWeeklyOff) {
-                            hLabel = holidayTitle ? `HOLIDAY - ${holidayTitle.toUpperCase()}` : 'HOLIDAY - WEEKLY OFF';
-                        } else if (holidayTitle) {
-                            const trimmedTitle = holidayTitle.trim();
-                            hLabel = trimmedTitle.toLowerCase().includes('holiday')
-                                ? trimmedTitle.toUpperCase()
-                                : `HOLIDAY - ${trimmedTitle.toUpperCase()}`;
-                        } else {
-                            hLabel = 'INSTITUTIONAL HOLIDAY';
-                        }
-                        dayCellsHtml += `
-                            <td rowspan="${orderedClsStudents.length}" class="holiday-merged-cell bg-amber-50/90 border-x border-amber-200 text-amber-900 text-center font-black p-0 select-none align-middle" style="writing-mode: vertical-rl; transform: rotate(180deg); min-width: 32px; max-width: 36px; letter-spacing: 0.12em; font-size: 10px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(hLabel)}">
-                                <span class="inline-block py-2 uppercase font-black tracking-widest">${escapeHtml(hLabel)}</span>
-                            </td>
-                        `;
-                    }
-                    continue;
-                }
-
-                let cellClass = 'text-slate-300 font-bold';
-                let cellContent = '•';
-                if (tok.type === 'DIM') {
-                    cellClass = 'bg-slate-50 text-slate-300 font-bold';
-                    cellContent = '·';
-                } else if (tok.type === 'P') {
-                    cellClass = 'bg-emerald-100/60 text-emerald-800 font-black';
-                    cellContent = 'P';
-                } else if (tok.type === 'A') {
-                    cellClass = 'bg-rose-100/70 text-rose-800 font-black';
-                    cellContent = 'A';
-                } else if (tok.type === 'L') {
-                    cellClass = 'bg-amber-100/80 text-amber-900 font-black';
-                    cellContent = 'L';
-                }
-                dayCellsHtml += `<td class="${cellClass} text-center px-1 py-1.5 text-[11px]" title="${escapeHtml(tok.title)}">${cellContent}</td>`;
-            }
-
-            const pctBadgeColor = comp.totalPercentage >= 85
-                ? 'text-emerald-700 bg-emerald-50'
-                : (comp.totalPercentage >= 75 ? 'text-amber-700 bg-amber-50' : 'text-rose-700 bg-rose-50 font-black');
-
-            allBodyHtmlChunks.push(`
-                <tr class="hover:bg-slate-50/70">
-                    <td class="sticky-col-1 font-bold text-slate-400 text-center">${idx + 1}</td>
-                    <td class="sticky-col-2 font-mono font-bold text-slate-600 text-center">${escapeHtml(student.adm || student.admNo || '-')}</td>
-                    <td class="sticky-col-3 font-extrabold text-slate-900 text-left truncate max-w-[130px] sm:max-w-none text-xs" title="${escapeHtml(student.name || '')}">${escapeHtml(student.name || '--')}</td>
-                    ${dayCellsHtml}
-                    <td class="font-bold text-slate-600 text-center">${comp.curWork}</td>
-                    <td class="font-black text-emerald-600 text-center">${comp.curPres}</td>
-                    <td class="font-black text-rose-600 text-center">${comp.curAbs}</td>
-                    <td class="font-bold text-indigo-800 text-center bg-indigo-50/40">${comp.prevWork} / ${comp.prevPres}</td>
-                    <td class="font-black text-indigo-950 text-center bg-indigo-50/80">${comp.totalWork} / ${comp.totalPres}</td>
-                    <td class="font-black text-amber-700 text-center">${comp.totalLeave}</td>
-                    <td class="text-center"><span class="px-1.5 py-0.5 rounded text-xs ${pctBadgeColor}">${comp.totalPercentage}%</span></td>
-                </tr>
-            `);
-        });
-
-        tbody.innerHTML = allBodyHtmlChunks.join('');
+        renderMonthlyRegisterRows();
         lastCompiledMonthlyRegister = {
             year,
             monthVal,
@@ -1834,7 +1797,108 @@ const loadMonthlyRegister = async ({ force = false } = {}) => {
     } catch (err) {
         console.error('Failed to load monthly register:', err);
         lastCompiledMonthlyRegister = null;
+        currentMonthlyRenderCtx = null;
         if (emptyNotice) emptyNotice.innerHTML = `<div class="text-rose-600 font-bold">Failed to load register: ${escapeHtml(err.message)}</div>`;
+        hidePaginationControls('att-monthly-pagination-top', 'att-monthly-pagination-bottom');
+    }
+};
+
+const renderMonthlyRegisterRows = ({ renderAll = false } = {}) => {
+    const tbody = document.getElementById('monthly-matrix-tbody');
+    if (!tbody || !currentMonthlyRenderCtx) {
+        hidePaginationControls('att-monthly-pagination-top', 'att-monthly-pagination-bottom');
+        return;
+    }
+
+    const { orderedClsStudents, computedById, daysInMonth, monthVal, classLabel } = currentMonthlyRenderCtx;
+    const pageData = renderAll
+        ? { items: orderedClsStudents, startIndex: 0, totalItems: orderedClsStudents.length }
+        : paginateArray(orderedClsStudents, monthlyPagination);
+
+    const visibleItems = pageData.items;
+    const allBodyHtmlChunks = [];
+
+    visibleItems.forEach((student, pageIdx) => {
+        const globalIdx = pageData.startIndex + pageIdx;
+        const comp = computedById.get(student.id);
+        let dayCellsHtml = '';
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const tok = comp.dayTokens[day - 1];
+            if (tok.type === 'H') {
+                if (pageIdx === 0) {
+                    const dateStr = `${monthVal}-${String(day).padStart(2, '0')}`;
+                    const { title: holidayTitle, isWeeklyOff } = isDateHoliday(dateStr, classLabel);
+                    let hLabel = 'HOLIDAY';
+                    if (isWeeklyOff) {
+                        hLabel = holidayTitle ? `HOLIDAY - ${holidayTitle.toUpperCase()}` : 'HOLIDAY - WEEKLY OFF';
+                    } else if (holidayTitle) {
+                        const trimmedTitle = holidayTitle.trim();
+                        hLabel = trimmedTitle.toLowerCase().includes('holiday')
+                            ? trimmedTitle.toUpperCase()
+                            : `HOLIDAY - ${trimmedTitle.toUpperCase()}`;
+                    } else {
+                        hLabel = 'INSTITUTIONAL HOLIDAY';
+                    }
+                    dayCellsHtml += `
+                        <td rowspan="${visibleItems.length}" class="holiday-merged-cell bg-amber-50/90 border-x border-amber-200 text-amber-900 text-center font-black p-0 select-none align-middle" style="writing-mode: vertical-rl; transform: rotate(180deg); min-width: 32px; max-width: 36px; letter-spacing: 0.12em; font-size: 10px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(hLabel)}">
+                            <span class="inline-block py-2 uppercase font-black tracking-widest">${escapeHtml(hLabel)}</span>
+                        </td>
+                    `;
+                }
+                continue;
+            }
+
+            let cellClass = 'text-slate-300 font-bold';
+            let cellContent = '•';
+            if (tok.type === 'DIM') {
+                cellClass = 'bg-slate-50 text-slate-300 font-bold';
+                cellContent = '·';
+            } else if (tok.type === 'P') {
+                cellClass = 'bg-emerald-100/60 text-emerald-800 font-black';
+                cellContent = 'P';
+            } else if (tok.type === 'A') {
+                cellClass = 'bg-rose-100/70 text-rose-800 font-black';
+                cellContent = 'A';
+            } else if (tok.type === 'L') {
+                cellClass = 'bg-amber-100/80 text-amber-900 font-black';
+                cellContent = 'L';
+            }
+            dayCellsHtml += `<td class="${cellClass} text-center px-1 py-1.5 text-[11px]" title="${escapeHtml(tok.title)}">${cellContent}</td>`;
+        }
+
+        const pctBadgeColor = comp.totalPercentage >= 85
+            ? 'text-emerald-700 bg-emerald-50'
+            : (comp.totalPercentage >= 75 ? 'text-amber-700 bg-amber-50' : 'text-rose-700 bg-rose-50 font-black');
+
+        allBodyHtmlChunks.push(`
+            <tr class="hover:bg-slate-50/70">
+                <td class="sticky-col-1 font-bold text-slate-400 text-center">${globalIdx + 1}</td>
+                <td class="sticky-col-2 font-mono font-bold text-slate-600 text-center">${escapeHtml(student.adm || student.admNo || '-')}</td>
+                <td class="sticky-col-3 font-extrabold text-slate-900 text-left truncate max-w-[130px] sm:max-w-none text-xs" title="${escapeHtml(student.name || '')}">${escapeHtml(student.name || '--')}</td>
+                ${dayCellsHtml}
+                <td class="font-bold text-slate-600 text-center">${comp.curWork}</td>
+                <td class="font-black text-emerald-600 text-center">${comp.curPres}</td>
+                <td class="font-black text-rose-600 text-center">${comp.curAbs}</td>
+                <td class="font-bold text-indigo-800 text-center bg-indigo-50/40">${comp.prevWork} / ${comp.prevPres}</td>
+                <td class="font-black text-indigo-950 text-center bg-indigo-50/80">${comp.totalWork} / ${comp.totalPres}</td>
+                <td class="font-black text-amber-700 text-center">${comp.totalLeave}</td>
+                <td class="text-center"><span class="px-1.5 py-0.5 rounded text-xs ${pctBadgeColor}">${comp.totalPercentage}%</span></td>
+            </tr>
+        `);
+    });
+
+    tbody.innerHTML = allBodyHtmlChunks.join('');
+
+    if (!renderAll) {
+        renderPaginationControls({
+            topContainerId: 'att-monthly-pagination-top',
+            bottomContainerId: 'att-monthly-pagination-bottom',
+            state: monthlyPagination,
+            totalItems: pageData.totalItems,
+            itemLabel: 'students',
+            onChange: () => renderMonthlyRegisterRows()
+        });
     }
 };
 
@@ -1845,6 +1909,7 @@ const exportMonthlyRegisterToExcel = () => {
     if (!table || table.classList.contains('hidden')) return showToast('Please load the monthly register first.', 'info');
 
     try {
+        renderMonthlyRegisterRows({ renderAll: true });
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.table_to_sheet(table);
         const safeCls = String(selectedMonthlyClass || 'Class').replace(/[^\w-]/g, '_');
@@ -1854,6 +1919,8 @@ const exportMonthlyRegisterToExcel = () => {
     } catch (err) {
         console.error('Excel export failed:', err);
         showToast('Failed to export Excel file: ' + err.message, 'error');
+    } finally {
+        renderMonthlyRegisterRows({ renderAll: false });
     }
 };
 
@@ -2228,6 +2295,137 @@ const exportMonthlyRegisterToPDF = (options = {}) => {
 };
 
 // --- Analytics & Defaulters ---
+const renderAnalyticsPage = () => {
+    const tbody = document.getElementById('defaulters-tbody');
+    const mobileList = document.getElementById('analytics-mobile-list');
+    if (!currentAnalyticsFilteredList.length) {
+        hidePaginationControls('att-analytics-pagination-top', 'att-analytics-pagination-bottom');
+        return;
+    }
+
+    const pageData = paginateArray(currentAnalyticsFilteredList, analyticsPagination);
+    const senderInst = document.getElementById('header-title')?.textContent?.trim() || 'Our Institution';
+    const desktopRows = [];
+    const mobileCards = [];
+
+    pageData.items.forEach((item, pageIdx) => {
+        const globalIdx = pageData.startIndex + pageIdx;
+        const stu = item.student;
+        const fatherPhone = stu.mobile || stu.phone || stu.fatherMobile || stu.profile?.mobile || stu.profile?.phone || stu.profile?.fatherMobile || stu.parentMobile || stu.whatsapp || '';
+        const motherPhone = stu.motherMobile || stu.mother_mobile || stu.profile?.motherMobile || stu.profile?.mother_mobile || stu.motherPhone || '';
+
+        const cleanFather = String(fatherPhone).replace(/\D/g, '');
+        const cleanMother = String(motherPhone).replace(/\D/g, '');
+
+        const msgText = encodeURIComponent(`Dear Parent, Attendance notification from ${senderInst} for ${stu.name || 'Student'}: Current attendance is ${item.percentage}% (${item.presentDays}/${item.totalDays} days). Please ensure regular attendance.`);
+        const fatherWaLink = cleanFather ? `https://wa.me/91${cleanFather}?text=${msgText}` : '';
+        const motherWaLink = cleanMother ? `https://wa.me/91${cleanMother}?text=${msgText}` : '';
+
+        const badgeColor = item.percentage >= 75
+            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+            : (item.percentage >= 60 ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-rose-100 text-rose-800 border-rose-300');
+        const admDisplay = stu.adm || stu.admNo || '-';
+        const genderLabel = isFemaleGender(stu.gender) ? 'Girl' : 'Boy';
+
+        desktopRows.push(`
+            <tr class="hover:bg-slate-50/80">
+                <td class="py-2.5 px-3 font-bold text-slate-400">${globalIdx + 1}</td>
+                <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 font-extrabold text-slate-700 text-xs">Class ${escapeHtml(item.studentClass)}</span></td>
+                <td class="py-2.5 px-3 font-mono font-bold text-slate-700">${escapeHtml(admDisplay)}</td>
+                <td class="py-2.5 px-4 font-extrabold text-slate-900">${escapeHtml(stu.name || '--')} <span class="text-[10px] font-bold text-slate-400 ml-1">(${genderLabel})</span></td>
+                <td class="py-2.5 px-3 text-center font-bold text-slate-600">${item.totalDays}</td>
+                <td class="py-2.5 px-3 text-center font-bold text-emerald-600">${item.presentDays}</td>
+                <td class="py-2.5 px-3 text-center font-black text-rose-600">${item.absentDays}</td>
+                <td class="py-2.5 px-3 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-black ${badgeColor} border">${item.percentage}%</span></td>
+                <td class="py-2.5 px-4 font-mono text-xs">
+                    <div class="space-y-1">
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200 shrink-0">Father</span>
+                            <span class="font-bold text-slate-800">${escapeHtml(fatherPhone || '--')}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-pink-50 text-pink-700 border border-pink-200 shrink-0">Mother</span>
+                            <span class="font-bold text-slate-800">${escapeHtml(motherPhone || '--')}</span>
+                        </div>
+                    </div>
+                </td>
+                <td class="py-2.5 px-3 text-center">
+                    <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                        ${fatherWaLink ? `
+                            <a href="${fatherWaLink}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition active:scale-95 cursor-pointer" title="Send WhatsApp alert to Father (${escapeHtml(fatherPhone)})">
+                                <i class="fab fa-whatsapp"></i> Father
+                            </a>` : `<span class="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 text-slate-400">Father -</span>`
+                        }
+                        ${motherWaLink ? `
+                            <a href="${motherWaLink}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition active:scale-95 cursor-pointer" title="Send WhatsApp alert to Mother (${escapeHtml(motherPhone)})">
+                                <i class="fab fa-whatsapp"></i> Mother
+                            </a>` : `<span class="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 text-slate-400">Mother -</span>`
+                        }
+                    </div>
+                </td>
+            </tr>
+        `);
+
+        mobileCards.push(`
+            <div class="p-3.5 space-y-2.5 bg-white">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(stu.name || '--')}</div>
+                        <div class="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            <span class="font-mono font-bold text-slate-700">#${globalIdx + 1} · Adm: ${escapeHtml(admDisplay)}</span>
+                            <span>· Class ${escapeHtml(item.studentClass)}</span>
+                            <span>· ${genderLabel}</span>
+                        </div>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-full text-xs font-black ${badgeColor} border shrink-0">${item.percentage}%</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-center bg-slate-50 border border-slate-200 rounded-xl p-2 text-[11px]">
+                    <div>
+                        <div class="text-[9px] font-bold text-slate-400 uppercase">Working</div>
+                        <div class="font-black text-slate-700 tabular-nums">${item.totalDays}</div>
+                    </div>
+                    <div>
+                        <div class="text-[9px] font-bold text-emerald-600 uppercase">Present</div>
+                        <div class="font-black text-emerald-700 tabular-nums">${item.presentDays}</div>
+                    </div>
+                    <div>
+                        <div class="text-[9px] font-bold text-rose-600 uppercase">Absent</div>
+                        <div class="font-black text-rose-700 tabular-nums">${item.absentDays}</div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between gap-2 text-[11px] text-slate-600 font-mono">
+                    <span class="truncate"><strong class="text-blue-700">F:</strong> ${escapeHtml(fatherPhone || '--')}</span>
+                    <span class="truncate"><strong class="text-pink-700">M:</strong> ${escapeHtml(motherPhone || '--')}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    ${fatherWaLink ? `
+                        <a href="${fatherWaLink}" target="_blank" class="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition">
+                            <i class="fab fa-whatsapp"></i> Father
+                        </a>` : `<span class="min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200">Father N/A</span>`
+                    }
+                    ${motherWaLink ? `
+                        <a href="${motherWaLink}" target="_blank" class="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition">
+                            <i class="fab fa-whatsapp"></i> Mother
+                        </a>` : `<span class="min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200">Mother N/A</span>`
+                    }
+                </div>
+            </div>
+        `);
+    });
+
+    if (tbody) tbody.innerHTML = desktopRows.join('');
+    if (mobileList) mobileList.innerHTML = mobileCards.join('');
+
+    renderPaginationControls({
+        topContainerId: 'att-analytics-pagination-top',
+        bottomContainerId: 'att-analytics-pagination-bottom',
+        state: analyticsPagination,
+        totalItems: pageData.totalItems,
+        itemLabel: 'students',
+        onChange: () => renderAnalyticsPage()
+    });
+};
+
 const loadAnalytics = async ({ force = false } = {}) => {
     const yearSelect = document.getElementById('analytics-academic-year');
     const classSelect = document.getElementById('analytics-class-select');
@@ -2248,6 +2446,7 @@ const loadAnalytics = async ({ force = false } = {}) => {
     const tableHeading = document.getElementById('analytics-table-heading');
 
     if (!selectedClass) {
+        currentAnalyticsFilteredList = [];
         if (tableHeading) tableHeading.textContent = 'Filtered Student Attendance List';
         if (summaryBadge) summaryBadge.textContent = 'Select a class to calculate';
         if (countBadge) countBadge.textContent = '0 Students';
@@ -2257,12 +2456,18 @@ const loadAnalytics = async ({ force = false } = {}) => {
         if (mobileList) {
             mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs">Please select a class to view attendance analytics.</div>`;
         }
+        hidePaginationControls('att-analytics-pagination-top', 'att-analytics-pagination-bottom');
         return;
     }
 
+    const isAllClasses = selectedClass === 'all';
+    const classesToAnalyze = isAllClasses ? getAllowedClassesForTeacher() : [selectedClass];
+
     if (tableHeading) {
         const compSymbol = comparator === 'below' ? '<' : '≥';
-        tableHeading.textContent = `Class ${selectedClass} Attendance (${compSymbol} ${targetPct}%)`;
+        tableHeading.textContent = isAllClasses
+            ? `All Classes Attendance (${compSymbol} ${targetPct}%)`
+            : `Class ${selectedClass} Attendance (${compSymbol} ${targetPct}%)`;
     }
 
     if (tbody) {
@@ -2271,82 +2476,98 @@ const loadAnalytics = async ({ force = false } = {}) => {
     if (mobileList) {
         mobileList.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold text-xs"><i class="fas fa-spinner fa-spin mr-2"></i>Analyzing attendance records...</div>`;
     }
+    hidePaginationControls('att-analytics-pagination-top', 'att-analytics-pagination-bottom');
 
     try {
-        const [docs, relevantStudents] = await Promise.all([
-            fetchYearClassAttendanceDocs(year, selectedClass, { force }),
-            fetchStudentsForClass(selectedClass, year, { force })
-        ]);
-
         const sessionStartDate = getSessionStartDate(year);
-
-        let classWorkingDays = 0;
-        const studentStats = {};
-
-        docs.forEach(d => {
-            const dDate = d.date || '';
-            if (sessionStartDate && dDate && dDate < sessionStartDate) {
-                return;
-            }
-            if (isDateAfterSessionEnd(dDate, year)) {
-                return;
-            }
-
-            const cLabel = d.classLabel || selectedClass;
-            const { isHoliday } = isDateHoliday(dDate, cLabel);
-            if (!d.isHoliday && !isHoliday) {
-                classWorkingDays++;
-
-                const records = d.records || {};
-                Object.entries(records).forEach(([stuId, rec]) => {
-                    if (!studentStats[stuId]) studentStats[stuId] = { present: 0, absent: 0, leave: 0 };
-                    const s = rec.status === 'E' ? 'L' : rec.status;
-                    if (s === 'P') studentStats[stuId].present++;
-                    else if (s === 'A') studentStats[stuId].absent++;
-                    else if (s === 'L') studentStats[stuId].leave++;
-                });
-            }
-        });
+        const perClassResults = await Promise.all(classesToAnalyze.map(async (clsLabel) => {
+            const [docs, students] = await Promise.all([
+                fetchYearClassAttendanceDocs(year, clsLabel, { force }),
+                fetchStudentsForClass(clsLabel, year, { force })
+            ]);
+            return { clsLabel, docs, students };
+        }));
 
         const filteredList = [];
         let grandPresent = 0;
         let grandTotal = 0;
+        let totalWorkingDaysAcrossClasses = 0;
+        let totalEvaluatedStudents = 0;
 
-        relevantStudents.forEach(student => {
-            const stuClass = student._resolvedYearClass || student.academicYears?.[year]?.class || student.class || selectedClass;
-            const st = studentStats[student.id] || { present: 0, absent: 0, leave: 0 };
-            const effectiveTotal = classWorkingDays > 0 ? classWorkingDays : (st.present + st.absent + st.leave);
-            const pct = effectiveTotal > 0 ? Math.round((st.present / effectiveTotal) * 100) : 0;
+        perClassResults.forEach(({ clsLabel, docs, students }) => {
+            let classWorkingDays = 0;
+            const studentStats = {};
 
-            grandPresent += st.present;
-            grandTotal += effectiveTotal;
+            docs.forEach(d => {
+                const dDate = d.date || '';
+                if (sessionStartDate && dDate && dDate < sessionStartDate) {
+                    return;
+                }
+                if (isDateAfterSessionEnd(dDate, year)) {
+                    return;
+                }
 
-            const matchesCondition = comparator === 'below'
-                ? (pct < targetPct && effectiveTotal > 0)
-                : (pct >= targetPct && effectiveTotal > 0);
+                const cLabel = d.classLabel || clsLabel;
+                const { isHoliday } = isDateHoliday(dDate, cLabel);
+                if (!d.isHoliday && !isHoliday) {
+                    classWorkingDays++;
 
-            if (matchesCondition) {
-                filteredList.push({
-                    student,
-                    studentClass: stuClass,
-                    totalDays: effectiveTotal,
-                    presentDays: st.present,
-                    absentDays: st.absent,
-                    leaveDays: st.leave,
-                    percentage: pct
-                });
-            }
+                    const records = d.records || {};
+                    Object.entries(records).forEach(([stuId, rec]) => {
+                        if (!studentStats[stuId]) studentStats[stuId] = { present: 0, absent: 0, leave: 0 };
+                        const s = rec.status === 'E' ? 'L' : rec.status;
+                        if (s === 'P') studentStats[stuId].present++;
+                        else if (s === 'A') studentStats[stuId].absent++;
+                        else if (s === 'L') studentStats[stuId].leave++;
+                    });
+                }
+            });
+
+            totalWorkingDaysAcrossClasses += classWorkingDays;
+            totalEvaluatedStudents += students.length;
+
+            students.forEach(student => {
+                const stuClass = student._resolvedYearClass || student.academicYears?.[year]?.class || student.class || clsLabel;
+                const st = studentStats[student.id] || { present: 0, absent: 0, leave: 0 };
+                const effectiveTotal = classWorkingDays > 0 ? classWorkingDays : (st.present + st.absent + st.leave);
+                const pct = effectiveTotal > 0 ? Math.round((st.present / effectiveTotal) * 100) : 0;
+
+                grandPresent += st.present;
+                grandTotal += effectiveTotal;
+
+                const matchesCondition = comparator === 'below'
+                    ? (pct < targetPct && effectiveTotal > 0)
+                    : (pct >= targetPct && effectiveTotal > 0);
+
+                if (matchesCondition) {
+                    filteredList.push({
+                        student,
+                        studentClass: stuClass,
+                        totalDays: effectiveTotal,
+                        presentDays: st.present,
+                        absentDays: st.absent,
+                        leaveDays: st.leave,
+                        percentage: pct
+                    });
+                }
+            });
         });
 
-        // Order filtered students: Boys first, then Girls, each sorted by Admission No ascending
+        // Order filtered students: Class natural order (when All Classes), then Boys before Girls, then Admission No ascending
         filteredList.sort((a, b) => {
+            if (isAllClasses) {
+                const clsCmp = compareClassLabelsNatural(a.studentClass, b.studentClass);
+                if (clsCmp !== 0) return clsCmp;
+            }
             const aFemale = isFemaleGender(a.student.gender);
             const bFemale = isFemaleGender(b.student.gender);
             if (aFemale !== bFemale) return aFemale ? 1 : -1;
             return compareByAdmNoAsc(a.student, b.student);
         });
 
-        if (classWorkingDays === 0 && grandTotal === 0) {
+        currentAnalyticsFilteredList = filteredList;
+
+        if (totalWorkingDaysAcrossClasses === 0 && grandTotal === 0) {
             if (summaryBadge) {
                 summaryBadge.textContent = `Overall Average: -- (No attendance marked yet)`;
             }
@@ -2356,12 +2577,13 @@ const loadAnalytics = async ({ force = false } = {}) => {
             const noDataMsg = `<i class="fas fa-calendar-xmark mr-1.5 text-slate-300"></i> No attendance records have been marked yet for this period.`;
             if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold bg-slate-50/40">${noDataMsg}</td></tr>`;
             if (mobileList) mobileList.innerHTML = `<div class="p-6 text-center text-slate-400 font-bold text-xs bg-slate-50/40">${noDataMsg}</div>`;
+            hidePaginationControls('att-analytics-pagination-top', 'att-analytics-pagination-bottom');
             return;
         }
 
         const averagePct = grandTotal > 0 ? Math.round((grandPresent / grandTotal) * 100) : 0;
         if (summaryBadge) {
-            summaryBadge.textContent = `Overall Average: ${averagePct}% (${relevantStudents.length} Students Evaluated)`;
+            summaryBadge.textContent = `Overall Average: ${averagePct}% (${totalEvaluatedStudents} Students Evaluated)`;
         }
         if (countBadge) {
             countBadge.textContent = `${filteredList.length} Students`;
@@ -2371,123 +2593,17 @@ const loadAnalytics = async ({ force = false } = {}) => {
             const emptyMsg = `<i class="fas fa-check-circle mr-1"></i> No students match the condition (${comparator === 'below' ? '<' : '≥'} ${targetPct}%).`;
             if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-emerald-700 font-extrabold bg-emerald-50/50">${emptyMsg}</td></tr>`;
             if (mobileList) mobileList.innerHTML = `<div class="p-6 text-center text-emerald-700 font-extrabold text-xs bg-emerald-50/50">${emptyMsg}</div>`;
+            hidePaginationControls('att-analytics-pagination-top', 'att-analytics-pagination-bottom');
             return;
         }
 
-        const senderInst = document.getElementById('header-title')?.textContent?.trim() || 'Our Institution';
-        const desktopRows = [];
-        const mobileCards = [];
-
-        filteredList.forEach((item, idx) => {
-            const stu = item.student;
-            const fatherPhone = stu.mobile || stu.phone || stu.fatherMobile || stu.profile?.mobile || stu.profile?.phone || stu.profile?.fatherMobile || stu.parentMobile || stu.whatsapp || '';
-            const motherPhone = stu.motherMobile || stu.mother_mobile || stu.profile?.motherMobile || stu.profile?.mother_mobile || stu.motherPhone || '';
-
-            const cleanFather = String(fatherPhone).replace(/\D/g, '');
-            const cleanMother = String(motherPhone).replace(/\D/g, '');
-
-            const msgText = encodeURIComponent(`Dear Parent, Attendance notification from ${senderInst} for ${stu.name || 'Student'}: Current attendance is ${item.percentage}% (${item.presentDays}/${item.totalDays} days). Please ensure regular attendance.`);
-            const fatherWaLink = cleanFather ? `https://wa.me/91${cleanFather}?text=${msgText}` : '';
-            const motherWaLink = cleanMother ? `https://wa.me/91${cleanMother}?text=${msgText}` : '';
-
-            const badgeColor = item.percentage >= 75
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                : (item.percentage >= 60 ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-rose-100 text-rose-800 border-rose-300');
-            const admDisplay = stu.adm || stu.admNo || '-';
-            const genderLabel = isFemaleGender(stu.gender) ? 'Girl' : 'Boy';
-
-            desktopRows.push(`
-                <tr class="hover:bg-slate-50/80">
-                    <td class="py-2.5 px-3 font-bold text-slate-400">${idx + 1}</td>
-                    <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded bg-slate-100 font-extrabold text-slate-700 text-xs">Class ${escapeHtml(item.studentClass)}</span></td>
-                    <td class="py-2.5 px-3 font-mono font-bold text-slate-700">${escapeHtml(admDisplay)}</td>
-                    <td class="py-2.5 px-4 font-extrabold text-slate-900">${escapeHtml(stu.name || '--')} <span class="text-[10px] font-bold text-slate-400 ml-1">(${genderLabel})</span></td>
-                    <td class="py-2.5 px-3 text-center font-bold text-slate-600">${item.totalDays}</td>
-                    <td class="py-2.5 px-3 text-center font-bold text-emerald-600">${item.presentDays}</td>
-                    <td class="py-2.5 px-3 text-center font-black text-rose-600">${item.absentDays}</td>
-                    <td class="py-2.5 px-3 text-center"><span class="px-2 py-0.5 rounded-full text-xs font-black ${badgeColor} border">${item.percentage}%</span></td>
-                    <td class="py-2.5 px-4 font-mono text-xs">
-                        <div class="space-y-1">
-                            <div class="flex items-center gap-1.5">
-                                <span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200 shrink-0">Father</span>
-                                <span class="font-bold text-slate-800">${escapeHtml(fatherPhone || '--')}</span>
-                            </div>
-                            <div class="flex items-center gap-1.5">
-                                <span class="px-1.5 py-0.5 rounded text-[10px] font-black bg-pink-50 text-pink-700 border border-pink-200 shrink-0">Mother</span>
-                                <span class="font-bold text-slate-800">${escapeHtml(motherPhone || '--')}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="py-2.5 px-3 text-center">
-                        <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                            ${fatherWaLink ? `
-                                <a href="${fatherWaLink}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition active:scale-95 cursor-pointer" title="Send WhatsApp alert to Father (${escapeHtml(fatherPhone)})">
-                                    <i class="fab fa-whatsapp"></i> Father
-                                </a>` : `<span class="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 text-slate-400">Father -</span>`
-                            }
-                            ${motherWaLink ? `
-                                <a href="${motherWaLink}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition active:scale-95 cursor-pointer" title="Send WhatsApp alert to Mother (${escapeHtml(motherPhone)})">
-                                    <i class="fab fa-whatsapp"></i> Mother
-                                </a>` : `<span class="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 text-slate-400">Mother -</span>`
-                            }
-                        </div>
-                    </td>
-                </tr>
-            `);
-
-            mobileCards.push(`
-                <div class="p-3.5 space-y-2.5 bg-white">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                            <div class="font-extrabold text-slate-900 text-sm truncate">${escapeHtml(stu.name || '--')}</div>
-                            <div class="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                <span class="font-mono font-bold text-slate-700">#${idx + 1} · Adm: ${escapeHtml(admDisplay)}</span>
-                                <span>· Class ${escapeHtml(item.studentClass)}</span>
-                                <span>· ${genderLabel}</span>
-                            </div>
-                        </div>
-                        <span class="px-2.5 py-1 rounded-full text-xs font-black ${badgeColor} border shrink-0">${item.percentage}%</span>
-                    </div>
-                    <div class="grid grid-cols-3 gap-2 text-center bg-slate-50 border border-slate-200 rounded-xl p-2 text-[11px]">
-                        <div>
-                            <div class="text-[9px] font-bold text-slate-400 uppercase">Working</div>
-                            <div class="font-black text-slate-700 tabular-nums">${item.totalDays}</div>
-                        </div>
-                        <div>
-                            <div class="text-[9px] font-bold text-emerald-600 uppercase">Present</div>
-                            <div class="font-black text-emerald-700 tabular-nums">${item.presentDays}</div>
-                        </div>
-                        <div>
-                            <div class="text-[9px] font-bold text-rose-600 uppercase">Absent</div>
-                            <div class="font-black text-rose-700 tabular-nums">${item.absentDays}</div>
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between gap-2 text-[11px] text-slate-600 font-mono">
-                        <span class="truncate"><strong class="text-blue-700">F:</strong> ${escapeHtml(fatherPhone || '--')}</span>
-                        <span class="truncate"><strong class="text-pink-700">M:</strong> ${escapeHtml(motherPhone || '--')}</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        ${fatherWaLink ? `
-                            <a href="${fatherWaLink}" target="_blank" class="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition">
-                                <i class="fab fa-whatsapp"></i> Father
-                            </a>` : `<span class="min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200">Father N/A</span>`
-                        }
-                        ${motherWaLink ? `
-                            <a href="${motherWaLink}" target="_blank" class="min-h-[44px] inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition">
-                                <i class="fab fa-whatsapp"></i> Mother
-                            </a>` : `<span class="min-h-[44px] inline-flex items-center justify-center rounded-xl text-xs font-semibold bg-slate-100 text-slate-400 border border-slate-200">Mother N/A</span>`
-                        }
-                    </div>
-                </div>
-            `);
-        });
-
-        if (tbody) tbody.innerHTML = desktopRows.join('');
-        if (mobileList) mobileList.innerHTML = mobileCards.join('');
+        renderAnalyticsPage();
     } catch (err) {
         console.error('Failed to load analytics:', err);
+        currentAnalyticsFilteredList = [];
         if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-rose-600 font-bold">Failed to load analytics: ${escapeHtml(err.message)}</td></tr>`;
         if (mobileList) mobileList.innerHTML = `<div class="p-6 text-center text-rose-600 font-bold text-xs">Failed to load analytics: ${escapeHtml(err.message)}</div>`;
+        hidePaginationControls('att-analytics-pagination-top', 'att-analytics-pagination-bottom');
     }
 };
 
@@ -2992,17 +3108,20 @@ const setupEventListeners = () => {
         selectedDailyClass = document.getElementById('daily-class-select')?.value || '';
         const rosterClassPill = document.getElementById('roster-class-pill');
         if (rosterClassPill) rosterClassPill.textContent = formatClassPillText(selectedDailyClass);
+        resetPaginationPage(dailyPagination);
         saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
 
     document.getElementById('daily-academic-year')?.addEventListener('change', () => {
+        resetPaginationPage(dailyPagination);
         saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
 
     document.getElementById('daily-date-input')?.addEventListener('change', () => {
         selectedDailyDate = document.getElementById('daily-date-input')?.value || getTodayDateString();
+        resetPaginationPage(dailyPagination);
         saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
@@ -3014,6 +3133,7 @@ const setupEventListeners = () => {
         selectedDailyDate = toLocalDateStr(cur);
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
+        resetPaginationPage(dailyPagination);
         saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
@@ -3025,6 +3145,7 @@ const setupEventListeners = () => {
         selectedDailyDate = toLocalDateStr(cur);
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
+        resetPaginationPage(dailyPagination);
         saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
@@ -3033,13 +3154,14 @@ const setupEventListeners = () => {
         selectedDailyDate = getTodayDateString();
         const dateInput = document.getElementById('daily-date-input');
         if (dateInput) dateInput.value = selectedDailyDate;
+        resetPaginationPage(dailyPagination);
         saveUiStateSnapshot();
         loadDailyAttendanceRoster();
     });
 
     // Inline Search Filter (Save Attendance Line)
     document.getElementById('daily-search-input')?.addEventListener('input', () => {
-        applyDailySearchFilter();
+        applyDailySearchFilter({ resetPage: true });
         saveUiStateSnapshot();
     });
     document.getElementById('btn-clear-daily-search')?.addEventListener('click', () => {
@@ -3048,7 +3170,7 @@ const setupEventListeners = () => {
             searchInput.value = '';
             searchInput.focus();
         }
-        applyDailySearchFilter();
+        applyDailySearchFilter({ resetPage: true });
         saveUiStateSnapshot();
     });
 
@@ -3102,14 +3224,19 @@ const setupEventListeners = () => {
     });
 
     // 3. Monthly Listeners
-    document.getElementById('btn-load-monthly')?.addEventListener('click', () => loadMonthlyRegister({ force: true }));
+    document.getElementById('btn-load-monthly')?.addEventListener('click', () => {
+        resetPaginationPage(monthlyPagination);
+        loadMonthlyRegister({ force: true });
+    });
     document.getElementById('monthly-class-select')?.addEventListener('change', () => {
         selectedMonthlyClass = document.getElementById('monthly-class-select')?.value || '';
+        resetPaginationPage(monthlyPagination);
         saveUiStateSnapshot();
         loadMonthlyRegister();
     });
     document.getElementById('monthly-month-input')?.addEventListener('change', () => {
         selectedMonthlyMonth = document.getElementById('monthly-month-input')?.value || selectedMonthlyMonth;
+        resetPaginationPage(monthlyPagination);
         saveUiStateSnapshot();
         loadMonthlyRegister();
     });
@@ -3136,15 +3263,28 @@ const setupEventListeners = () => {
     });
 
     // 4. Analytics Listeners
-    document.getElementById('btn-refresh-analytics')?.addEventListener('click', () => loadAnalytics({ force: true }));
-    document.getElementById('analytics-academic-year')?.addEventListener('change', () => loadAnalytics());
+    document.getElementById('btn-refresh-analytics')?.addEventListener('click', () => {
+        resetPaginationPage(analyticsPagination);
+        loadAnalytics({ force: true });
+    });
+    document.getElementById('analytics-academic-year')?.addEventListener('change', () => {
+        resetPaginationPage(analyticsPagination);
+        loadAnalytics();
+    });
     document.getElementById('analytics-class-select')?.addEventListener('change', () => {
         selectedAnalyticsClass = document.getElementById('analytics-class-select')?.value || '';
+        resetPaginationPage(analyticsPagination);
         saveUiStateSnapshot();
         loadAnalytics();
     });
-    document.getElementById('analytics-comparator-select')?.addEventListener('change', () => loadAnalytics());
-    document.getElementById('analytics-percentage-input')?.addEventListener('change', () => loadAnalytics());
+    document.getElementById('analytics-comparator-select')?.addEventListener('change', () => {
+        resetPaginationPage(analyticsPagination);
+        loadAnalytics();
+    });
+    document.getElementById('analytics-percentage-input')?.addEventListener('change', () => {
+        resetPaginationPage(analyticsPagination);
+        loadAnalytics();
+    });
 
     // 5. Calendar & Holidays Listeners
     document.getElementById('btn-save-weekends')?.addEventListener('click', saveWeekendConfig);

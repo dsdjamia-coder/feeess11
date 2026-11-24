@@ -201,20 +201,24 @@
         width: 4.5rem;
       }
       #activity-app:not(.sidebar-collapsed) .activity-main-wrapper,
-      #activity-app:not(.sidebar-collapsed) .attendance-sticky-header {
-        margin-left: 16rem;
+      #activity-app:not(.sidebar-collapsed) .attendance-sticky-header,
+      #activity-app:not(.sidebar-collapsed) > footer.unified-workspace-footer {
+        margin-left: 16rem !important;
         width: calc(100% - 16rem) !important;
         max-width: calc(100% - 16rem) !important;
         min-width: 0 !important;
         box-sizing: border-box !important;
+        transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       #activity-app.sidebar-collapsed .activity-main-wrapper,
-      #activity-app.sidebar-collapsed .attendance-sticky-header {
-        margin-left: 4.5rem;
+      #activity-app.sidebar-collapsed .attendance-sticky-header,
+      #activity-app.sidebar-collapsed > footer.unified-workspace-footer {
+        margin-left: 4.5rem !important;
         width: calc(100% - 4.5rem) !important;
         max-width: calc(100% - 4.5rem) !important;
         min-width: 0 !important;
         box-sizing: border-box !important;
+        transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       #activity-app.sidebar-collapsed #side-drawer .nav-text,
       #activity-app.sidebar-collapsed #side-drawer .drawer-heading,
@@ -254,7 +258,9 @@
       #activity-mobile-menu-btn {
         display: none !important;
       }
-      .activity-main-wrapper, .attendance-sticky-header {
+      .activity-main-wrapper,
+      .attendance-sticky-header,
+      #activity-app > footer.unified-workspace-footer {
         margin-left: 0 !important;
         width: 100% !important;
         max-width: 100% !important;
@@ -263,6 +269,9 @@
       }
       .activity-main-wrapper {
         padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important;
+      }
+      #activity-app > footer.unified-workspace-footer {
+        padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
       }
       .activity-bottom-nav {
         position: fixed;
@@ -788,6 +797,9 @@
             </div>
           </div>
 
+          <!-- Top Pagination -->
+          <div id="activity-tasks-pagination-top" class="hidden"></div>
+
           <!-- Sticky 2D Frozen Tasks Matrix Table Container -->
           <div class="sticky-table-container shadow-2xs">
             <table class="sticky-table text-left text-xs">
@@ -799,6 +811,9 @@
               </tbody>
             </table>
           </div>
+
+          <!-- Bottom Pagination -->
+          <div id="activity-tasks-pagination-bottom" class="hidden"></div>
         </section>
 
         <!-- ========================================== -->
@@ -870,6 +885,9 @@
             </div>
           </div>
 
+          <!-- Top Pagination -->
+          <div id="activity-prayer-pagination-top" class="hidden"></div>
+
           <!-- Sticky 2D Frozen Prayer Roster Matrix Container -->
           <div class="sticky-table-container shadow-2xs">
             <table class="sticky-table text-left text-xs">
@@ -881,6 +899,9 @@
               </tbody>
             </table>
           </div>
+
+          <!-- Bottom Pagination -->
+          <div id="activity-prayer-pagination-bottom" class="hidden"></div>
         </section>
 
         <!-- ========================================== -->
@@ -998,6 +1019,8 @@
               <span class="text-xs text-slate-500 font-semibold">Aggregated points from attendance, prayers, tasks &amp; badges</span>
             </div>
 
+            <div id="activity-rewards-pagination-top" class="hidden px-3.5 pt-3"></div>
+
             <div class="overflow-x-auto">
               <table class="w-full text-left border-collapse text-xs">
                 <thead>
@@ -1019,6 +1042,8 @@
                 </tbody>
               </table>
             </div>
+
+            <div id="activity-rewards-pagination-bottom" class="hidden px-3.5 pb-3 pt-2 border-t border-slate-100"></div>
           </div>
         </section>
 

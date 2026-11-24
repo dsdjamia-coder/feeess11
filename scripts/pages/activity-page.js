@@ -3,6 +3,7 @@ import { doc, onSnapshot, collection, getDocs, setDoc, deleteDoc, query, where, 
 import { db, auth } from '../../config/firebase-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, ensureTenantStatusAndAccess, escapeHtml, getPeriodDateRange, formatDateDisplay, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, formatStudentOptionLabel } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
+import { createPaginationState, resetPaginationPage, paginateArray, hidePaginationControls, renderPaginationControls } from '../shared/pagination-utils.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -69,6 +70,15 @@ let configuredMonthlyResetDay = 1; // 1 | 15 | 25 | 28
 let selectedRewardsPeriodCadence = 'daily';
 let selectedRewardsPeriodRefDate = new Date();
 
+// --- Pagination & Full-Class Dataset State ---
+const tasksPagination = createPaginationState();
+const prayerPagination = createPaginationState();
+const rewardsPagination = createPaginationState();
+let currentTasksStudents = [];
+let currentTasksCadenceDefs = [];
+let currentPrayerStudents = [];
+let currentRewardsScores = [];
+
 // --- Confirmation Dialog Handler ---
 let pendingConfirmCallback = null;
 
@@ -92,11 +102,28 @@ const showConfirmDialog = ({ title = 'Confirm Action', message = 'Are you sure y
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
 const normalizeClassLabel = (str = '') => String(str || '').replace(/^class\s*/i, '').trim().toLowerCase();
+const isSameClassLabel = (clsA = '', clsB = '') => {
+    const rawA = String(clsA || '').trim().toLowerCase();
+    const rawB = String(clsB || '').trim().toLowerCase();
+    if (!rawA || !rawB) return false;
+    return rawA === rawB || normalizeClassLabel(clsA) === normalizeClassLabel(clsB);
+};
 const isClassInDutyScope = (clsName = '', dutyList = []) => {
     if (isSuperAdmin) return true;
     if (!Array.isArray(dutyList) || dutyList.length === 0) return false;
     const targetNorm = normalizeClassLabel(clsName);
     return dutyList.some((d) => normalizeClassLabel(d) === targetNorm || String(d).trim().toLowerCase() === String(clsName).trim().toLowerCase());
+};
+const getActiveStudentsForClass = (targetClass = '') => {
+    if (!targetClass) return [];
+    return allStudents.filter(s => {
+        const yearEntry = (s.academicYears && typeof s.academicYears === 'object') ? s.academicYears[currentAcademicYear] : null;
+        const stuClass = String(yearEntry?.class || s.class || '').trim();
+        const stuStatus = String(yearEntry?.status || s.status || '').trim().toLowerCase();
+        if (stuStatus === 'alumni' || stuStatus === 'graduated' || stuStatus === 'discontinued' || s.isAlumni) return false;
+        const matchesYear = Boolean(yearEntry) || (!s.academicYear || s.academicYear === currentAcademicYear);
+        return matchesYear && isSameClassLabel(stuClass, targetClass);
+    });
 };
 
 const getStaffAssignedClasses = (staffDoc = null, staffAccess = null) => {
@@ -737,33 +764,44 @@ const populateClassDropdowns = () => {
         if (!select) return;
 
         const prev = select.value;
+        const placeholder = allowed.length
+            ? `<option value="">-- Select Class --</option>`
+            : `<option value="">No Classes Assigned</option>`;
         const opts = allowed.map(c => {
             const raw = String(c).trim();
             const label = raw.toLowerCase().startsWith('class') ? raw : `Class: ${raw}`;
             return `<option value="${escapeHtml(raw)}">${escapeHtml(label)}</option>`;
         }).join('');
-        select.innerHTML = opts || `<option value="">No Classes Assigned</option>`;
+        select.innerHTML = placeholder + opts;
 
-        if (prev && allowed.some(c => isClassInDutyScope(prev, [c]))) {
-            select.value = prev;
-        } else if (allowed.length > 0) {
-            select.value = allowed[0];
+        const matchedPrev = prev ? allowed.find(c => isSameClassLabel(prev, c)) : '';
+        if (matchedPrev) {
+            select.value = String(matchedPrev).trim();
         } else {
             select.value = '';
         }
     });
 
-    selectedDashClass = document.getElementById('dashboard-class-select')?.value || allowed[0] || '';
-    selectedTasksClass = document.getElementById('tasks-class-select')?.value || allowed[0] || '';
-    selectedPrayerClass = document.getElementById('prayer-class-select')?.value || allowed[0] || '';
-    selectedRewardsClass = document.getElementById('rewards-class-select')?.value || allowed[0] || '';
+    selectedDashClass = document.getElementById('dashboard-class-select')?.value || '';
+    selectedTasksClass = document.getElementById('tasks-class-select')?.value || '';
+    selectedPrayerClass = document.getElementById('prayer-class-select')?.value || '';
+    selectedRewardsClass = document.getElementById('rewards-class-select')?.value || '';
 };
 
 const populateStudentSelect = () => {
     const sel = document.getElementById('modal-award-student-select');
     if (!sel) return;
     const allowed = getAllowedClassesForTeacher();
-    const students = (!isSuperAdmin && !allowed.length) ? [] : allStudents.filter(s => isClassInDutyScope(s.class, allowed) && s.status !== 'alumni');
+    const students = (!isSuperAdmin && !allowed.length) ? [] : allStudents.filter(s => {
+        const yearEntry = (s.academicYears && typeof s.academicYears === 'object') ? s.academicYears[currentAcademicYear] : null;
+        const stuClass = String(yearEntry?.class || s.class || '').trim();
+        const stuStatus = String(yearEntry?.status || s.status || '').trim().toLowerCase();
+        if (stuStatus === 'alumni' || stuStatus === 'graduated' || stuStatus === 'discontinued' || s.isAlumni) return false;
+        const matchesYear = Boolean(yearEntry) || (!s.academicYear || s.academicYear === currentAcademicYear);
+        if (!matchesYear) return false;
+        if (selectedRewardsClass) return isSameClassLabel(stuClass, selectedRewardsClass);
+        return isClassInDutyScope(stuClass, allowed);
+    });
     sel.innerHTML = students.length > 0
         ? students.map(s => `<option value="${s.id}">${escapeHtml(formatStudentOptionLabel(s))}</option>`).join('')
         : '<option value="">No students available</option>';
@@ -774,8 +812,9 @@ const populateStudentSelect = () => {
 // =========================================================================
 const loadDashboardView = async () => {
     const allowed = getAllowedClassesForTeacher();
-    const classVal = document.getElementById('dashboard-class-select')?.value;
-    selectedDashClass = (classVal && allowed.some(c => isClassInDutyScope(classVal, [c]))) ? classVal : (allowed[0] || '');
+    const classVal = document.getElementById('dashboard-class-select')?.value || '';
+    const matchedClass = classVal ? allowed.find(c => isSameClassLabel(classVal, c)) : '';
+    selectedDashClass = matchedClass ? String(matchedClass).trim() : '';
 
     const studentsEl = document.getElementById('dash-stat-students');
     const prayerEl = document.getElementById('dash-stat-prayer');
@@ -800,20 +839,25 @@ const loadDashboardView = async () => {
         if (tasksSubEl) tasksSubEl.textContent = '0 Tasks Completed';
         if (pointsEl) pointsEl.textContent = '0';
         if (badgesSubEl) badgesSubEl.textContent = '0 Badges Active';
-        if (prayersDetailTbody) prayersDetailTbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 font-bold">No class selected.</td></tr>`;
-        if (tasksDetailTbody) tasksDetailTbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400 font-bold">No class selected.</td></tr>`;
+        if (statusPrayerBadge) {
+            statusPrayerBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-600';
+            statusPrayerBadge.textContent = 'Select Class';
+        }
+        if (statusTasksBadge) {
+            statusTasksBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-600';
+            statusTasksBadge.textContent = 'Select Class';
+        }
+        if (backlogSummaryBadge) {
+            backlogSummaryBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-500';
+            backlogSummaryBadge.textContent = 'Select Class';
+        }
+        if (prayersDetailTbody) prayersDetailTbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 font-bold">Select a class above to view prayer status.</td></tr>`;
+        if (tasksDetailTbody) tasksDetailTbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400 font-bold">Select a class above to view activity status.</td></tr>`;
         if (backlogContainer) backlogContainer.innerHTML = `<div class="p-6 text-center text-slate-400 font-bold text-xs">Please select a class to view status.</div>`;
         return;
     }
 
-    const classStudents = allStudents.filter(s => {
-        const yearEntry = (s.academicYears && typeof s.academicYears === 'object') ? s.academicYears[currentAcademicYear] : null;
-        const stuClass = String(yearEntry?.class || s.class || '').trim();
-        const stuStatus = String(yearEntry?.status || s.status || '').trim().toLowerCase();
-        if (stuStatus === 'alumni' || stuStatus === 'graduated' || stuStatus === 'discontinued' || s.isAlumni) return false;
-        const matchesYear = yearEntry || (!s.academicYear || s.academicYear === currentAcademicYear);
-        return matchesYear && isClassInDutyScope(stuClass, [selectedDashClass]);
-    });
+    const classStudents = getActiveStudentsForClass(selectedDashClass);
     const totalStudents = classStudents.length;
     if (studentsEl) studentsEl.textContent = totalStudents;
 
@@ -1309,10 +1353,64 @@ const getTaskDocId = (year, className, dateStr, cadence) => {
     return `${cleanY}__${cleanC}__${dateStr}__daily`;
 };
 
+const renderTasksRosterPage = () => {
+    const tbody = document.getElementById('tasks-roster-tbody');
+    if (!tbody) return;
+
+    const currentCadenceTasks = currentTasksCadenceDefs;
+    const classStudents = currentTasksStudents;
+
+    if (!selectedTasksClass) {
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Select a class above to mark activities.</td></tr>`;
+        hidePaginationControls('activity-tasks-pagination-top', 'activity-tasks-pagination-bottom');
+        return;
+    }
+
+    if (!classStudents.length) {
+        tbody.innerHTML = `<tr><td colspan="${currentCadenceTasks.length + 4}" class="p-8 text-center text-slate-400 font-bold">No active students in Class ${escapeHtml(selectedTasksClass)}.</td></tr>`;
+        hidePaginationControls('activity-tasks-pagination-top', 'activity-tasks-pagination-bottom');
+        return;
+    }
+
+    const pageData = paginateArray(classStudents, tasksPagination);
+
+    tbody.innerHTML = pageData.items.map((student, idx) => {
+        const globalIdx = pageData.startIndex + idx;
+        const studentTasks = taskCompletionsMap[student.id] || {};
+        let score = 0;
+
+        return `
+            <tr class="hover:bg-slate-50/80 group" data-student-id="${student.id}">
+                <td class="sticky-col-idx py-2 px-3 font-bold text-slate-400 group-hover:bg-slate-50">${globalIdx + 1}</td>
+                <td class="sticky-col-adm py-2 px-3 font-mono font-bold text-slate-600 group-hover:bg-slate-50">${escapeHtml(student.adm || student.admNo || '-')}</td>
+                <td class="sticky-col-name py-2 px-4 font-black text-slate-900 group-hover:bg-slate-50 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">${escapeHtml(student.name || '--')}</td>
+                ${currentCadenceTasks.map(t => {
+                    const done = Boolean(studentTasks[t.id]);
+                    if (done) score += Number(t.points || 0);
+                    return `
+                        <td class="py-2 px-3 text-center" data-task-id="${t.id}">
+                            <input type="checkbox" class="task-check-box w-4 h-4 text-amber-600 rounded cursor-pointer" data-student-id="${student.id}" data-task-id="${t.id}" ${done ? 'checked' : ''}>
+                        </td>`;
+                }).join('')}
+                <td class="py-2 px-3 text-center font-black text-amber-700 student-task-score">${score} pts</td>
+            </tr>`;
+    }).join('');
+
+    renderPaginationControls({
+        topContainerId: 'activity-tasks-pagination-top',
+        bottomContainerId: 'activity-tasks-pagination-bottom',
+        state: tasksPagination,
+        totalItems: pageData.totalItems,
+        itemLabel: 'students',
+        onChange: () => renderTasksRosterPage()
+    });
+};
+
 const loadTasksRoster = async () => {
     const allowed = getAllowedClassesForTeacher();
-    const classVal = document.getElementById('tasks-class-select')?.value;
-    selectedTasksClass = (classVal && allowed.some(c => isClassInDutyScope(classVal, [c]))) ? classVal : (allowed[0] || '');
+    const classVal = document.getElementById('tasks-class-select')?.value || '';
+    const matchedClass = classVal ? allowed.find(c => isSameClassLabel(classVal, c)) : '';
+    selectedTasksClass = matchedClass ? String(matchedClass).trim() : '';
     selectedTasksDate = document.getElementById('tasks-date-input')?.value || getTodayDateString();
     const thead = document.getElementById('tasks-roster-thead');
     const tbody = document.getElementById('tasks-roster-tbody');
@@ -1320,7 +1418,11 @@ const loadTasksRoster = async () => {
     setTasksUnsavedState(false);
 
     if (!selectedTasksClass) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Please select a class.</td></tr>`;
+        currentTasksStudents = [];
+        currentTasksCadenceDefs = [];
+        if (thead) thead.innerHTML = '';
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Select a class above to mark activities.</td></tr>`;
+        hidePaginationControls('activity-tasks-pagination-top', 'activity-tasks-pagination-bottom');
         return;
     }
 
@@ -1367,7 +1469,9 @@ const loadTasksRoster = async () => {
         taskCompletionsMap = {};
     }
 
+    currentTasksCadenceDefs = currentCadenceTasks;
     if (!currentCadenceTasks.length) {
+        currentTasksStudents = [];
         if (thead) thead.innerHTML = '';
         if (tbody) {
             const emptyMsg = taskDefsList.length === 0
@@ -1375,6 +1479,7 @@ const loadTasksRoster = async () => {
                 : `No ${escapeHtml(currentTaskCadence)} tasks configured yet.`;
             tbody.innerHTML = `<tr><td colspan="6" class="p-10 text-center text-slate-400 font-bold"><i class="fas fa-clipboard-list text-2xl text-slate-300 mb-2 block"></i><span class="text-xs">${emptyMsg}</span></td></tr>`;
         }
+        hidePaginationControls('activity-tasks-pagination-top', 'activity-tasks-pagination-bottom');
         return;
     }
 
@@ -1403,34 +1508,8 @@ const loadTasksRoster = async () => {
             </tr>`;
     }
 
-    if (!tbody) return;
-
-    const classStudents = allStudents.filter(s => isClassInDutyScope(s.class, [selectedTasksClass]) && s.status !== 'alumni');
-    if (!classStudents.length) {
-        tbody.innerHTML = `<tr><td colspan="${currentCadenceTasks.length + 4}" class="p-8 text-center text-slate-400 font-bold">No active students in Class ${selectedTasksClass}.</td></tr>`;
-        return;
-    }
-
-    tbody.innerHTML = classStudents.map((student, idx) => {
-        const studentTasks = taskCompletionsMap[student.id] || {};
-        let score = 0;
-
-        return `
-            <tr class="hover:bg-slate-50/80 group" data-student-id="${student.id}">
-                <td class="sticky-col-idx py-2 px-3 font-bold text-slate-400 group-hover:bg-slate-50">${idx + 1}</td>
-                <td class="sticky-col-adm py-2 px-3 font-mono font-bold text-slate-600 group-hover:bg-slate-50">${escapeHtml(student.adm || student.admNo || '-')}</td>
-                <td class="sticky-col-name py-2 px-4 font-black text-slate-900 group-hover:bg-slate-50 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">${escapeHtml(student.name || '--')}</td>
-                ${currentCadenceTasks.map(t => {
-                    const done = Boolean(studentTasks[t.id]);
-                    if (done) score += Number(t.points || 0);
-                    return `
-                        <td class="py-2 px-3 text-center" data-task-id="${t.id}">
-                            <input type="checkbox" class="task-check-box w-4 h-4 text-amber-600 rounded cursor-pointer" data-student-id="${student.id}" data-task-id="${t.id}" ${done ? 'checked' : ''}>
-                        </td>`;
-                }).join('')}
-                <td class="py-2 px-3 text-center font-black text-amber-700 student-task-score">${score} pts</td>
-            </tr>`;
-    }).join('');
+    currentTasksStudents = getActiveStudentsForClass(selectedTasksClass);
+    renderTasksRosterPage();
 };
 
 const saveTasksCompletionsToFirestore = async () => {
@@ -1530,10 +1609,65 @@ const renderCustomPrayersListInModal = () => {
     `).join('');
 };
 
+const renderPrayerRosterPage = () => {
+    const tbody = document.getElementById('prayer-roster-tbody');
+    if (!tbody) return;
+
+    const activePrayers = getAllActivePrayers();
+    const classStudents = currentPrayerStudents;
+
+    if (!selectedPrayerClass) {
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Select a class above to mark prayer records.</td></tr>`;
+        hidePaginationControls('activity-prayer-pagination-top', 'activity-prayer-pagination-bottom');
+        return;
+    }
+
+    if (!classStudents.length) {
+        tbody.innerHTML = `<tr><td colspan="${activePrayers.length + 3}" class="p-8 text-center text-slate-400 font-bold">No active students in Class ${escapeHtml(selectedPrayerClass)}.</td></tr>`;
+        hidePaginationControls('activity-prayer-pagination-top', 'activity-prayer-pagination-bottom');
+        return;
+    }
+
+    const pageData = paginateArray(classStudents, prayerPagination);
+
+    tbody.innerHTML = pageData.items.map((student, idx) => {
+        const globalIdx = pageData.startIndex + idx;
+        const rec = prayerRecordsMap[student.id] || {};
+
+        return `
+            <tr class="hover:bg-slate-50/80 group" data-student-id="${student.id}">
+                <td class="sticky-col-idx py-2.5 px-3 font-bold text-slate-400 group-hover:bg-slate-50">${globalIdx + 1}</td>
+                <td class="sticky-col-adm py-2.5 px-3 font-mono font-bold text-slate-600 group-hover:bg-slate-50">${escapeHtml(student.adm || student.admNo || '-')}</td>
+                <td class="sticky-col-name py-2.5 px-4 font-black text-slate-900 group-hover:bg-slate-50 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">${escapeHtml(student.name || '--')}</td>
+                ${activePrayers.map(p => {
+                    const status = rec[p.key] || 'A';
+                    return `
+                        <td class="py-2 px-2 text-center" data-prayer="${p.key}">
+                            <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100 prayer-pill-group">
+                                <button type="button" class="prayer-toggle-btn px-2 py-0.5 rounded text-[10px] font-black cursor-pointer ${status === 'J' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-500'}" data-val="J">J</button>
+                                <button type="button" class="prayer-toggle-btn px-2 py-0.5 rounded text-[10px] font-black cursor-pointer ${status === 'A' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-500'}" data-val="A">A</button>
+                                <button type="button" class="prayer-toggle-btn px-2 py-0.5 rounded text-[10px] font-black cursor-pointer ${status === 'Q' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-500'}" data-val="Q">Q</button>
+                            </div>
+                        </td>`;
+                }).join('')}
+            </tr>`;
+    }).join('');
+
+    renderPaginationControls({
+        topContainerId: 'activity-prayer-pagination-top',
+        bottomContainerId: 'activity-prayer-pagination-bottom',
+        state: prayerPagination,
+        totalItems: pageData.totalItems,
+        itemLabel: 'students',
+        onChange: () => renderPrayerRosterPage()
+    });
+};
+
 const loadPrayerRoster = async () => {
     const allowed = getAllowedClassesForTeacher();
-    const classVal = document.getElementById('prayer-class-select')?.value;
-    selectedPrayerClass = (classVal && allowed.some(c => isClassInDutyScope(classVal, [c]))) ? classVal : (allowed[0] || '');
+    const classVal = document.getElementById('prayer-class-select')?.value || '';
+    const matchedClass = classVal ? allowed.find(c => isSameClassLabel(classVal, c)) : '';
+    selectedPrayerClass = matchedClass ? String(matchedClass).trim() : '';
     selectedPrayerDate = document.getElementById('prayer-date-input')?.value || getTodayDateString();
     const thead = document.getElementById('prayer-roster-thead');
     const tbody = document.getElementById('prayer-roster-tbody');
@@ -1541,7 +1675,10 @@ const loadPrayerRoster = async () => {
     setPrayerUnsavedState(false);
 
     if (!selectedPrayerClass) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Please select a class.</td></tr>`;
+        currentPrayerStudents = [];
+        if (thead) thead.innerHTML = '';
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Select a class above to mark prayer records.</td></tr>`;
+        hidePaginationControls('activity-prayer-pagination-top', 'activity-prayer-pagination-bottom');
         return;
     }
 
@@ -1575,35 +1712,8 @@ const loadPrayerRoster = async () => {
             </tr>`;
     }
 
-    if (!tbody) return;
-
-    const classStudents = allStudents.filter(s => isClassInDutyScope(s.class, [selectedPrayerClass]) && s.status !== 'alumni');
-    if (!classStudents.length) {
-        tbody.innerHTML = `<tr><td colspan="${activePrayers.length + 3}" class="p-8 text-center text-slate-400 font-bold">No active students in Class ${selectedPrayerClass}.</td></tr>`;
-        return;
-    }
-
-    tbody.innerHTML = classStudents.map((student, idx) => {
-        const rec = prayerRecordsMap[student.id] || {};
-
-        return `
-            <tr class="hover:bg-slate-50/80 group" data-student-id="${student.id}">
-                <td class="sticky-col-idx py-2.5 px-3 font-bold text-slate-400 group-hover:bg-slate-50">${idx + 1}</td>
-                <td class="sticky-col-adm py-2.5 px-3 font-mono font-bold text-slate-600 group-hover:bg-slate-50">${escapeHtml(student.adm || student.admNo || '-')}</td>
-                <td class="sticky-col-name py-2.5 px-4 font-black text-slate-900 group-hover:bg-slate-50 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)]">${escapeHtml(student.name || '--')}</td>
-                ${activePrayers.map(p => {
-                    const status = rec[p.key] || 'A';
-                    return `
-                        <td class="py-2 px-2 text-center" data-prayer="${p.key}">
-                            <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100 prayer-pill-group">
-                                <button type="button" class="prayer-toggle-btn px-2 py-0.5 rounded text-[10px] font-black cursor-pointer ${status === 'J' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-slate-500'}" data-val="J">J</button>
-                                <button type="button" class="prayer-toggle-btn px-2 py-0.5 rounded text-[10px] font-black cursor-pointer ${status === 'A' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-500'}" data-val="A">A</button>
-                                <button type="button" class="prayer-toggle-btn px-2 py-0.5 rounded text-[10px] font-black cursor-pointer ${status === 'Q' ? 'bg-rose-600 text-white shadow-2xs' : 'text-slate-500'}" data-val="Q">Q</button>
-                            </div>
-                        </td>`;
-                }).join('')}
-            </tr>`;
-    }).join('');
+    currentPrayerStudents = getActiveStudentsForClass(selectedPrayerClass);
+    renderPrayerRosterPage();
 };
 
 const savePrayerRecords = async () => {
@@ -1612,22 +1722,33 @@ const savePrayerRecords = async () => {
         return alert('You can only save prayer records for your assigned classes.');
     }
 
-    const rows = document.querySelectorAll('#prayer-roster-tbody tr[data-student-id]');
-    const updated = {};
     const activePrayers = getAllActivePrayers();
 
+    // Sync any currently rendered DOM rows into in-memory map first
+    const rows = document.querySelectorAll('#prayer-roster-tbody tr[data-student-id]');
     rows.forEach(row => {
         const studentId = row.dataset.studentId;
-        const studentRec = {};
+        if (!studentId) return;
+        if (!prayerRecordsMap[studentId]) prayerRecordsMap[studentId] = {};
         activePrayers.forEach(p => {
             const cell = row.querySelector(`[data-prayer="${p.key}"]`);
             if (cell) {
                 const isJ = Boolean(cell.querySelector('.prayer-toggle-btn.bg-emerald-600'));
                 const isQ = Boolean(cell.querySelector('.prayer-toggle-btn.bg-rose-600'));
-                studentRec[p.key] = isJ ? 'J' : (isQ ? 'Q' : 'A');
+                prayerRecordsMap[studentId][p.key] = isJ ? 'J' : (isQ ? 'Q' : 'A');
             }
         });
-        updated[studentId] = studentRec;
+    });
+
+    // Persist full class roster across all pages
+    const updated = {};
+    currentPrayerStudents.forEach(student => {
+        const existing = prayerRecordsMap[student.id] || {};
+        const studentRec = {};
+        activePrayers.forEach(p => {
+            studentRec[p.key] = existing[p.key] || 'A';
+        });
+        updated[student.id] = studentRec;
     });
 
     prayerRecordsMap = updated;
@@ -1975,12 +2096,86 @@ const updateRewardsPeriodTabsUI = () => {
     });
 };
 
+const renderRewardsLeaderboardPage = ({ renderAll = false } = {}) => {
+    const tbody = document.getElementById('rewards-leaderboard-tbody');
+    if (!tbody) return;
+
+    if (!selectedRewardsClass) {
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Select a class above to view the rewards leaderboard.</td></tr>`;
+        hidePaginationControls('activity-rewards-pagination-top', 'activity-rewards-pagination-bottom');
+        return;
+    }
+
+    if (!currentRewardsScores.length) {
+        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">No active students found in Class ${escapeHtml(selectedRewardsClass)}.</td></tr>`;
+        hidePaginationControls('activity-rewards-pagination-top', 'activity-rewards-pagination-bottom');
+        return;
+    }
+
+    const pageData = renderAll
+        ? { items: currentRewardsScores, startIndex: 0, totalItems: currentRewardsScores.length }
+        : paginateArray(currentRewardsScores, rewardsPagination);
+
+    tbody.innerHTML = pageData.items.map((item, idx) => {
+        const rank = pageData.startIndex + idx + 1;
+        let rankBadge = `<span class="font-bold text-slate-400">#${rank}</span>`;
+        if (rank === 1) rankBadge = `<span class="w-6 h-6 rounded-full bg-amber-400 text-white font-black text-xs inline-flex items-center justify-center shadow-xs">1</span>`;
+        else if (rank === 2) rankBadge = `<span class="w-6 h-6 rounded-full bg-slate-300 text-slate-800 font-black text-xs inline-flex items-center justify-center shadow-xs">2</span>`;
+        else if (rank === 3) rankBadge = `<span class="w-6 h-6 rounded-full bg-amber-600 text-white font-black text-xs inline-flex items-center justify-center shadow-xs">3</span>`;
+
+        return `
+            <tr class="hover:bg-slate-50/80">
+                <td class="py-2.5 px-3 text-center">${rankBadge}</td>
+                <td class="py-2.5 px-3 font-mono font-bold text-slate-600">${escapeHtml(item.student.adm || item.student.admNo || '-')}</td>
+                <td class="py-2.5 px-4 font-black text-slate-900">${escapeHtml(item.student.name || '--')}</td>
+                <td class="py-2.5 px-3 text-center font-bold text-slate-600">${item.attPts}</td>
+                <td class="py-2.5 px-3 text-center font-bold text-emerald-600">${item.prayerPts}</td>
+                <td class="py-2.5 px-3 text-center font-bold text-slate-600">${item.tasksPts}</td>
+                <td class="py-2.5 px-3 text-center font-bold text-purple-600">+${item.bonusPts}</td>
+                <td class="py-2.5 px-3 text-center font-black text-sm text-amber-600">${item.total}</td>
+                <td class="py-2.5 px-4">
+                    <div class="flex items-center gap-1 flex-wrap">
+                        ${item.autoBadges.map(b => `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-900 border border-amber-200">${escapeHtml(b)}</span>`).join('')}
+                        ${item.customBadges.map(cb => `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200 flex items-center gap-1"><i class="fas fa-medal text-[9px] text-purple-600"></i>${escapeHtml(cb)}</span>`).join('')}
+                        <button type="button" class="btn-open-badge-modal px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer" data-student-id="${item.student.id}">
+                            + Badge
+                        </button>
+                    </div>
+                </td>
+                <td class="py-2.5 px-3 text-right">
+                    <div class="flex items-center justify-end gap-1">
+                        <button type="button" class="btn-view-bonus-history p-1.5 rounded-lg text-purple-700 bg-purple-50 hover:bg-purple-100 font-bold text-xs cursor-pointer" data-student-id="${item.student.id}" title="View & Edit Points History">
+                            <i class="fas fa-history mr-1"></i>History
+                        </button>
+                        <button type="button" class="btn-award-single-student p-1.5 rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 font-bold text-xs cursor-pointer" data-student-id="${item.student.id}" title="Award Bonus Points">
+                            <i class="fas fa-medal mr-1"></i>+Award
+                        </button>
+                    </div>
+                </td>
+            </tr>`;
+    }).join('');
+
+    if (renderAll) {
+        hidePaginationControls('activity-rewards-pagination-top', 'activity-rewards-pagination-bottom');
+    } else {
+        renderPaginationControls({
+            topContainerId: 'activity-rewards-pagination-top',
+            bottomContainerId: 'activity-rewards-pagination-bottom',
+            state: rewardsPagination,
+            totalItems: pageData.totalItems,
+            itemLabel: 'students',
+            onChange: () => renderRewardsLeaderboardPage()
+        });
+    }
+};
+
 const loadRewardsLeaderboard = async () => {
     await loadRewardsRubric();
 
     const allowed = getAllowedClassesForTeacher();
-    const classVal = document.getElementById('rewards-class-select')?.value;
-    selectedRewardsClass = (classVal && allowed.some(c => isClassInDutyScope(classVal, [c]))) ? classVal : (allowed[0] || '');
+    const classVal = document.getElementById('rewards-class-select')?.value || '';
+    const matchedClass = classVal ? allowed.find(c => isSameClassLabel(classVal, c)) : '';
+    selectedRewardsClass = matchedClass ? String(matchedClass).trim() : '';
     const tbody = document.getElementById('rewards-leaderboard-tbody');
     const topNameEl = document.getElementById('rewards-top-student-name');
     const topPtsEl = document.getElementById('rewards-top-student-points');
@@ -1988,6 +2183,7 @@ const loadRewardsLeaderboard = async () => {
     const totalBadgesEl = document.getElementById('rewards-total-badges');
 
     updateRewardsPeriodTabsUI();
+    populateStudentSelect();
 
     const periodInfo = getPeriodDateRange(selectedRewardsPeriodCadence, {
         weeklyResetDay: configuredWeeklyResetDay,
@@ -1999,7 +2195,13 @@ const loadRewardsLeaderboard = async () => {
     if (periodDisplayEl) periodDisplayEl.textContent = periodInfo.label;
 
     if (!selectedRewardsClass) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Please select a class.</td></tr>`;
+        currentRewardsScores = [];
+        if (topNameEl) topNameEl.textContent = '--';
+        if (topPtsEl) topPtsEl.textContent = '0 Points';
+        if (classAvgEl) classAvgEl.textContent = '0';
+        if (totalBadgesEl) totalBadgesEl.textContent = '0';
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">Select a class above to view the rewards leaderboard.</td></tr>`;
+        hidePaginationControls('activity-rewards-pagination-top', 'activity-rewards-pagination-bottom');
         return;
     }
 
@@ -2042,7 +2244,7 @@ const loadRewardsLeaderboard = async () => {
             const itemDate = d.date || parts[2];
             if (
                 itemYear === currentAcademicYear &&
-                isClassInDutyScope(itemClass, [selectedRewardsClass]) &&
+                isSameClassLabel(itemClass, selectedRewardsClass) &&
                 itemDate >= periodInfo.startDate &&
                 itemDate <= periodInfo.endDate
             ) {
@@ -2066,7 +2268,7 @@ const loadRewardsLeaderboard = async () => {
             const itemCadence = d.cadence || parts[3] || 'daily';
             if (
                 itemYear === currentAcademicYear &&
-                isClassInDutyScope(itemClass, [selectedRewardsClass])
+                isSameClassLabel(itemClass, selectedRewardsClass)
             ) {
                 let match = false;
                 if (itemCadence === 'daily') {
@@ -2087,7 +2289,7 @@ const loadRewardsLeaderboard = async () => {
         periodTaskDocs = [];
     }
 
-    const classStudents = allStudents.filter(s => isClassInDutyScope(s.class, [selectedRewardsClass]) && s.status !== 'alumni');
+    const classStudents = getActiveStudentsForClass(selectedRewardsClass);
 
     const scores = classStudents.map(student => {
         // Attendance Points
@@ -2164,6 +2366,7 @@ const loadRewardsLeaderboard = async () => {
     });
 
     scores.sort((a, b) => b.total - a.total);
+    currentRewardsScores = scores;
 
     if (scores.length) {
         const top = scores[0];
@@ -2182,51 +2385,7 @@ const loadRewardsLeaderboard = async () => {
         if (totalBadgesEl) totalBadgesEl.textContent = '0';
     }
 
-    if (!tbody) return;
-
-    if (!scores.length) {
-        tbody.innerHTML = `<tr><td colspan="10" class="p-8 text-center text-slate-400 font-bold">No active students found in this class.</td></tr>`;
-        return;
-    }
-
-    tbody.innerHTML = scores.map((item, idx) => {
-        const rank = idx + 1;
-        let rankBadge = `<span class="font-bold text-slate-400">#${rank}</span>`;
-        if (rank === 1) rankBadge = `<span class="w-6 h-6 rounded-full bg-amber-400 text-white font-black text-xs inline-flex items-center justify-center shadow-xs">1</span>`;
-        else if (rank === 2) rankBadge = `<span class="w-6 h-6 rounded-full bg-slate-300 text-slate-800 font-black text-xs inline-flex items-center justify-center shadow-xs">2</span>`;
-        else if (rank === 3) rankBadge = `<span class="w-6 h-6 rounded-full bg-amber-600 text-white font-black text-xs inline-flex items-center justify-center shadow-xs">3</span>`;
-
-        return `
-            <tr class="hover:bg-slate-50/80">
-                <td class="py-2.5 px-3 text-center">${rankBadge}</td>
-                <td class="py-2.5 px-3 font-mono font-bold text-slate-600">${escapeHtml(item.student.adm || item.student.admNo || '-')}</td>
-                <td class="py-2.5 px-4 font-black text-slate-900">${escapeHtml(item.student.name || '--')}</td>
-                <td class="py-2.5 px-3 text-center font-bold text-slate-600">${item.attPts}</td>
-                <td class="py-2.5 px-3 text-center font-bold text-emerald-600">${item.prayerPts}</td>
-                <td class="py-2.5 px-3 text-center font-bold text-slate-600">${item.tasksPts}</td>
-                <td class="py-2.5 px-3 text-center font-bold text-purple-600">+${item.bonusPts}</td>
-                <td class="py-2.5 px-3 text-center font-black text-sm text-amber-600">${item.total}</td>
-                <td class="py-2.5 px-4">
-                    <div class="flex items-center gap-1 flex-wrap">
-                        ${item.autoBadges.map(b => `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-900 border border-amber-200">${escapeHtml(b)}</span>`).join('')}
-                        ${item.customBadges.map(cb => `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200 flex items-center gap-1"><i class="fas fa-medal text-[9px] text-purple-600"></i>${escapeHtml(cb)}</span>`).join('')}
-                        <button type="button" class="btn-open-badge-modal px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer" data-student-id="${item.student.id}">
-                            + Badge
-                        </button>
-                    </div>
-                </td>
-                <td class="py-2.5 px-3 text-right">
-                    <div class="flex items-center justify-end gap-1">
-                        <button type="button" class="btn-view-bonus-history p-1.5 rounded-lg text-purple-700 bg-purple-50 hover:bg-purple-100 font-bold text-xs cursor-pointer" data-student-id="${item.student.id}" title="View & Edit Points History">
-                            <i class="fas fa-history mr-1"></i>History
-                        </button>
-                        <button type="button" class="btn-award-single-student p-1.5 rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 font-bold text-xs cursor-pointer" data-student-id="${item.student.id}" title="Award Bonus Points">
-                            <i class="fas fa-medal mr-1"></i>+Award
-                        </button>
-                    </div>
-                </td>
-            </tr>`;
-    }).join('');
+    renderRewardsLeaderboardPage();
 };
 
 const awardBonusPoints = async () => {
@@ -2675,10 +2834,12 @@ const setupEventListeners = () => {
     // 4. Activity Pointing Checklist Listeners (Strict Explicit Save)
     document.getElementById('tasks-class-select')?.addEventListener('change', (e) => {
         selectedTasksClass = e.target.value;
+        resetPaginationPage(tasksPagination);
         loadTasksRoster();
     });
     document.getElementById('tasks-date-input')?.addEventListener('change', (e) => {
         selectedTasksDate = e.target.value;
+        resetPaginationPage(tasksPagination);
         loadTasksRoster();
     });
     document.querySelectorAll('.tasks-freq-btn').forEach(btn => {
@@ -2690,6 +2851,7 @@ const setupEventListeners = () => {
             btn.classList.add('bg-amber-500', 'text-white', 'shadow-2xs');
             btn.classList.remove('text-slate-600', 'hover:bg-slate-200');
             currentTaskCadence = btn.dataset.freq;
+            resetPaginationPage(tasksPagination);
             loadTasksRoster();
         });
     });
@@ -2717,46 +2879,28 @@ const setupEventListeners = () => {
         setTasksUnsavedState(true);
     });
 
-    // Column header bulk tick button for a specific task (NO AUTO-SAVE)
+    // Column header bulk tick button for a specific task across ALL students in class (NO AUTO-SAVE)
     document.getElementById('tasks-roster-thead')?.addEventListener('click', (e) => {
         const bulkBtn = e.target.closest('.btn-bulk-task-col');
         if (!bulkBtn) return;
         const taskId = bulkBtn.dataset.taskId;
-        if (!taskId) return;
+        if (!taskId || !currentTasksStudents.length) return;
 
-        const cbs = document.querySelectorAll(`.task-check-box[data-task-id="${taskId}"]`);
-        const allChecked = Array.from(cbs).every(cb => cb.checked);
+        const allChecked = currentTasksStudents.every(st => Boolean(taskCompletionsMap[st.id]?.[taskId]));
         const targetState = !allChecked;
 
-        cbs.forEach(cb => {
-            cb.checked = targetState;
-            const sId = cb.dataset.studentId;
-            if (!taskCompletionsMap[sId]) taskCompletionsMap[sId] = {};
-            taskCompletionsMap[sId][taskId] = targetState;
-
-            const row = cb.closest('tr');
-            if (row) {
-                let total = 0;
-                row.querySelectorAll('.task-check-box:checked').forEach(c => {
-                    const tObj = taskDefsList.find(x => x.id === c.dataset.taskId);
-                    if (tObj) total += Number(tObj.points || 0);
-                });
-                const scoreEl = row.querySelector('.student-task-score');
-                if (scoreEl) scoreEl.textContent = `${total} pts`;
-            }
+        currentTasksStudents.forEach(st => {
+            if (!taskCompletionsMap[st.id]) taskCompletionsMap[st.id] = {};
+            taskCompletionsMap[st.id][taskId] = targetState;
         });
 
+        renderTasksRosterPage();
         setTasksUnsavedState(true);
     });
 
     document.getElementById('btn-tasks-clear-all')?.addEventListener('click', () => {
-        document.querySelectorAll('.task-check-box').forEach(cb => {
-            cb.checked = false;
-        });
         taskCompletionsMap = {};
-        document.querySelectorAll('.student-task-score').forEach(el => {
-            el.textContent = '0 pts';
-        });
+        renderTasksRosterPage();
         setTasksUnsavedState(true);
     });
 
@@ -2766,19 +2910,23 @@ const setupEventListeners = () => {
     // 5. Prayer Tracker Listeners (Strict Explicit Save)
     document.getElementById('prayer-class-select')?.addEventListener('change', (e) => {
         selectedPrayerClass = e.target.value;
+        resetPaginationPage(prayerPagination);
         loadPrayerRoster();
     });
     document.getElementById('prayer-date-input')?.addEventListener('change', (e) => {
         selectedPrayerDate = e.target.value;
+        resetPaginationPage(prayerPagination);
         loadPrayerRoster();
     });
     document.getElementById('btn-save-prayer')?.addEventListener('click', savePrayerRecords);
 
-    // Individual prayer pill click (NO AUTO-SAVE, flags unsaved changes)
+    // Individual prayer pill click (NO AUTO-SAVE, updates in-memory map & flags unsaved changes)
     document.getElementById('prayer-roster-tbody')?.addEventListener('click', (e) => {
         const btn = e.target.closest('.prayer-toggle-btn');
         if (!btn) return;
         const group = btn.closest('.prayer-pill-group');
+        const cell = btn.closest('td[data-prayer]');
+        const row = btn.closest('tr[data-student-id]');
         if (group) {
             group.querySelectorAll('.prayer-toggle-btn').forEach(b => {
                 b.classList.remove('bg-emerald-600', 'bg-blue-600', 'bg-rose-600', 'text-white', 'shadow-2xs');
@@ -2790,34 +2938,33 @@ const setupEventListeners = () => {
             else if (val === 'A') btn.classList.add('bg-blue-600', 'text-white', 'shadow-2xs');
             else if (val === 'Q') btn.classList.add('bg-rose-600', 'text-white', 'shadow-2xs');
 
+            const studentId = row?.dataset.studentId;
+            const prayerKey = cell?.dataset.prayer;
+            if (studentId && prayerKey && val) {
+                if (!prayerRecordsMap[studentId]) prayerRecordsMap[studentId] = {};
+                prayerRecordsMap[studentId][prayerKey] = val;
+            }
+
             setPrayerUnsavedState(true);
         }
     });
 
-    // Column header bulk prayer button ([J], [A], [Q]) (NO AUTO-SAVE)
+    // Column header bulk prayer button ([J], [A], [Q]) across ALL students in class (NO AUTO-SAVE)
     document.getElementById('prayer-roster-thead')?.addEventListener('click', (e) => {
         const bulkBtn = e.target.closest('.btn-prayer-bulk-mark');
         if (!bulkBtn) return;
         const prayerKey = bulkBtn.dataset.prayer;
         const val = bulkBtn.dataset.val; // 'J' | 'A' | 'Q'
-        if (!prayerKey || !val) return;
+        if (!prayerKey || !val || !currentPrayerStudents.length) return;
 
-        document.querySelectorAll(`[data-prayer="${prayerKey}"] .prayer-pill-group`).forEach(group => {
-            group.querySelectorAll('.prayer-toggle-btn').forEach(b => {
-                b.classList.remove('bg-emerald-600', 'bg-blue-600', 'bg-rose-600', 'text-white', 'shadow-2xs');
-                b.classList.add('text-slate-500');
-            });
-            const targetBtn = group.querySelector(`.prayer-toggle-btn[data-val="${val}"]`);
-            if (targetBtn) {
-                targetBtn.classList.remove('text-slate-500');
-                if (val === 'J') targetBtn.classList.add('bg-emerald-600', 'text-white', 'shadow-2xs');
-                else if (val === 'A') targetBtn.classList.add('bg-blue-600', 'text-white', 'shadow-2xs');
-                else if (val === 'Q') targetBtn.classList.add('bg-rose-600', 'text-white', 'shadow-2xs');
-            }
+        currentPrayerStudents.forEach(st => {
+            if (!prayerRecordsMap[st.id]) prayerRecordsMap[st.id] = {};
+            prayerRecordsMap[st.id][prayerKey] = val;
         });
 
+        renderPrayerRosterPage();
         setPrayerUnsavedState(true);
-        showToast(`Selected ${val === 'J' ? "Jama'ah" : (val === 'A' ? "Ada'" : "Qaza")} for all students. Click "Save Prayer Log" to commit.`, 'info');
+        showToast(`Selected ${val === 'J' ? "Jama'ah" : (val === 'A' ? "Ada'" : "Qaza")} for all ${currentPrayerStudents.length} students. Click "Save Prayer Log" to commit.`, 'info');
     });
 
     // Custom Sunnah Prayer modal
@@ -2921,6 +3068,7 @@ const setupEventListeners = () => {
     // 6. Rewards & Leaderboard Listeners
     document.getElementById('rewards-class-select')?.addEventListener('change', (e) => {
         selectedRewardsClass = e.target.value;
+        resetPaginationPage(rewardsPagination);
         loadRewardsLeaderboard();
     });
     document.getElementById('btn-rewards-settings')?.addEventListener('click', openRewardsSettingsModal);
@@ -2935,13 +3083,24 @@ const setupEventListeners = () => {
     });
     document.getElementById('btn-open-award-points')?.addEventListener('click', () => openModal('modal-award-points'));
     document.getElementById('btn-submit-award-points')?.addEventListener('click', awardBonusPoints);
-    document.getElementById('btn-print-leaderboard')?.addEventListener('click', () => window.print());
+    document.getElementById('btn-print-leaderboard')?.addEventListener('click', () => {
+        if (!currentRewardsScores.length) {
+            window.print();
+            return;
+        }
+        renderRewardsLeaderboardPage({ renderAll: true });
+        const restorePagination = () => renderRewardsLeaderboardPage({ renderAll: false });
+        window.addEventListener('afterprint', restorePagination, { once: true });
+        window.print();
+        setTimeout(restorePagination, 250);
+    });
 
     // Period Cadence Switching Tabs
     document.querySelectorAll('.btn-rewards-period').forEach(btn => {
         btn.addEventListener('click', () => {
             selectedRewardsPeriodCadence = btn.dataset.period || 'daily';
             selectedRewardsPeriodRefDate = new Date();
+            resetPaginationPage(rewardsPagination);
             loadRewardsLeaderboard();
         });
     });
@@ -2954,6 +3113,7 @@ const setupEventListeners = () => {
         else if (selectedRewardsPeriodCadence === 'monthly') d.setMonth(d.getMonth() - 1);
         else if (selectedRewardsPeriodCadence === 'yearly') d.setFullYear(d.getFullYear() - 1);
         selectedRewardsPeriodRefDate = d;
+        resetPaginationPage(rewardsPagination);
         loadRewardsLeaderboard();
     });
 
@@ -2965,12 +3125,14 @@ const setupEventListeners = () => {
         else if (selectedRewardsPeriodCadence === 'monthly') d.setMonth(d.getMonth() + 1);
         else if (selectedRewardsPeriodCadence === 'yearly') d.setFullYear(d.getFullYear() + 1);
         selectedRewardsPeriodRefDate = d;
+        resetPaginationPage(rewardsPagination);
         loadRewardsLeaderboard();
     });
 
     // Jump to Current Period
     document.getElementById('btn-rewards-current-period')?.addEventListener('click', () => {
         selectedRewardsPeriodRefDate = new Date();
+        resetPaginationPage(rewardsPagination);
         loadRewardsLeaderboard();
     });
 

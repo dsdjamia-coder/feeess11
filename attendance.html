@@ -102,8 +102,9 @@
         width: 4.5rem; /* 72px */
       }
       #attendance-app:not(.sidebar-collapsed) .attendance-main-wrapper,
-      #attendance-app:not(.sidebar-collapsed) .attendance-sticky-header {
-        margin-left: 16rem;
+      #attendance-app:not(.sidebar-collapsed) .attendance-sticky-header,
+      #attendance-app:not(.sidebar-collapsed) > footer.unified-workspace-footer {
+        margin-left: 16rem !important;
         width: calc(100% - 16rem) !important;
         max-width: calc(100% - 16rem) !important;
         min-width: 0 !important;
@@ -111,8 +112,9 @@
         transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       #attendance-app.sidebar-collapsed .attendance-main-wrapper,
-      #attendance-app.sidebar-collapsed .attendance-sticky-header {
-        margin-left: 4.5rem;
+      #attendance-app.sidebar-collapsed .attendance-sticky-header,
+      #attendance-app.sidebar-collapsed > footer.unified-workspace-footer {
+        margin-left: 4.5rem !important;
         width: calc(100% - 4.5rem) !important;
         max-width: calc(100% - 4.5rem) !important;
         min-width: 0 !important;
@@ -155,7 +157,9 @@
       #side-drawer, #drawer-overlay {
         display: none !important;
       }
-      .attendance-main-wrapper, .attendance-sticky-header {
+      .attendance-main-wrapper,
+      .attendance-sticky-header,
+      #attendance-app > footer.unified-workspace-footer {
         margin-left: 0 !important;
         width: 100% !important;
         max-width: 100% !important;
@@ -164,6 +168,9 @@
       }
       .attendance-main-wrapper {
         padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important;
+      }
+      #attendance-app > footer.unified-workspace-footer {
+        padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
       }
       .attendance-bottom-nav {
         position: fixed;
@@ -663,6 +670,7 @@
 
           <!-- Student Roster Container (Unified Table Format for Mobile, Tablet & Desktop) -->
           <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div id="att-daily-pagination-top" class="hidden px-3 pt-3"></div>
             <div class="overflow-x-auto">
               <table class="daily-attendance-table w-full text-left border-collapse text-xs sm:text-sm">
                 <thead>
@@ -682,6 +690,7 @@
                 </tbody>
               </table>
             </div>
+            <div id="att-daily-pagination-bottom" class="hidden px-3 pb-3 pt-2 border-t border-slate-100"></div>
           </div>
 
         </section>
@@ -720,6 +729,9 @@
             </div>
           </div>
 
+          <!-- Top Pagination -->
+          <div id="att-monthly-pagination-top" class="hidden"></div>
+
           <!-- Register Matrix Sheet -->
           <div class="register-table-wrapper shadow-2xs" id="monthly-matrix-wrapper">
             <div id="monthly-matrix-empty" class="p-8 sm:p-12 text-center text-slate-400 font-bold text-xs sm:text-sm">
@@ -730,6 +742,9 @@
               <tbody id="monthly-matrix-tbody"></tbody>
             </table>
           </div>
+
+          <!-- Bottom Pagination -->
+          <div id="att-monthly-pagination-bottom" class="hidden"></div>
 
         </section>
 
@@ -793,6 +808,8 @@
               <span id="defaulter-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-slate-200 text-slate-800">0 Students</span>
             </div>
 
+            <div id="att-analytics-pagination-top" class="hidden px-3.5 pt-3"></div>
+
             <!-- Mobile Card View (< 768px) -->
             <div id="analytics-mobile-list" class="md:hidden divide-y divide-slate-100">
               <div class="p-8 text-center text-slate-400 font-bold text-xs">Please select a class to view attendance analytics.</div>
@@ -822,6 +839,8 @@
                 </tbody>
               </table>
             </div>
+
+            <div id="att-analytics-pagination-bottom" class="hidden px-3.5 pb-3 pt-2 border-t border-slate-100"></div>
           </div>
 
         </section>

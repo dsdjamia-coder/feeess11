@@ -3,6 +3,7 @@ import { doc, onSnapshot, collection, getDocs, setDoc, deleteDoc, query, where, 
 import { db, auth } from '../../config/firebase-config.js';
 import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, ensureTenantStatusAndAccess, escapeHtml, formatDateDisplay, populateAcademicYearSelect, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, formatStudentOptionLabel, compareClassLabelsNatural } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
+import { createPaginationState, paginateArray, renderPaginationControls, hidePaginationControls, resetPaginationPage } from '../shared/pagination-utils.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -48,8 +49,16 @@ let unsubscribeImpositions = null;
 
 // Monthly Evaluation Matrix Data (For Participation Fairness & Analytics)
 let monthlyEvalsCache = {}; // studentId -> { totalAsked, answeredWell, partial, missed, readingChecks, writingCompleted, impositionsCount }
+let analyticsMonthlyEvalsCache = {};
+let analyticsImpositionsList = [];
+let selectedAnalyticsClass = '';
 let selectedAnalyticsMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
 let selectedAnalyticsSubject = 'all';
+
+// Pagination States (Default 25: 25, 50, 100, 150, All)
+const livePagination = createPaginationState(25);
+const impositionsPagination = createPaginationState(25);
+const analyticsPagination = createPaginationState(25);
 
 // Filter & Search State
 let currentLiveFilter = 'least-turns'; // 'least-turns' | 'not-today' | 'evaluated-today' | 'all'
@@ -69,11 +78,15 @@ let pendingConfirmCallback = null;
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
 const normalizeClassLabel = (str = '') => String(str || '').replace(/^class\s*/i, '').trim().toLowerCase();
+const isSameClassLabel = (clsA = '', clsB = '') => {
+    const a = normalizeClassLabel(clsA);
+    const b = normalizeClassLabel(clsB);
+    return Boolean(a && b && (a === b || String(clsA).trim().toLowerCase() === String(clsB).trim().toLowerCase()));
+};
 const isClassInDutyScope = (clsName = '', dutyList = []) => {
     if (isSuperAdmin) return true;
     if (!Array.isArray(dutyList) || dutyList.length === 0) return false;
-    const targetNorm = normalizeClassLabel(clsName);
-    return dutyList.some((d) => normalizeClassLabel(d) === targetNorm || String(d).trim().toLowerCase() === String(clsName).trim().toLowerCase());
+    return dutyList.some((d) => isSameClassLabel(d, clsName));
 };
 
 const getStudentAdm = (s) => String(s?.adm || s?.profile?.admNo || s?.admNo || s?.admissionNo || s?.profile?.adm || s?.profile?.admissionNo || '-').trim();
@@ -87,10 +100,14 @@ const getStudentClass = (s, year = selectedYear) => {
 
 const getClassStudents = (targetClass = selectedClass, targetYear = selectedYear) => {
     if (!targetClass) return [];
+    const allowed = getAllowedClassesForTeacher();
     return allStudents.filter((s) => {
-        if (s.status === 'alumni' || s.isAlumni) return false;
+        if (s.status === 'alumni' || s.isAlumni || String(s.class || '').toUpperCase() === 'ALUMNI') return false;
         const stuClass = getStudentClass(s, targetYear);
-        return isClassInDutyScope(stuClass, [targetClass]);
+        if (targetClass === 'all') {
+            return allowed.some((c) => isSameClassLabel(stuClass, c));
+        }
+        return isSameClassLabel(stuClass, targetClass);
     });
 };
 
@@ -275,7 +292,12 @@ const switchTab = (tabId) => {
     }
 
     if (tabId === 'tab-analytics') {
-        renderMonthlyRegister();
+        if (!selectedAnalyticsClass && selectedClass) {
+            selectedAnalyticsClass = selectedClass;
+            const analyticsClassSel = document.getElementById('analytics-class-select');
+            if (analyticsClassSel) analyticsClassSel.value = selectedAnalyticsClass;
+        }
+        fetchAnalyticsMonthlyData();
     } else if (tabId === 'tab-impositions') {
         renderImpositionsList();
     } else if (tabId === 'tab-settings') {
@@ -714,6 +736,7 @@ const getAllowedClassesForTeacher = () => {
 
 const populateClassDropdown = () => {
     const classSelect = document.getElementById('eval-class-select');
+    const analyticsClassSelect = document.getElementById('analytics-class-select');
     if (!classSelect) return;
 
     const allowed = getAllowedClassesForTeacher();
@@ -724,17 +747,68 @@ const populateClassDropdown = () => {
     };
 
     if (allowed.length > 0) {
-        classSelect.innerHTML = allowed.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(formatClassOptionLabel(c))}</option>`).join('');
-        if (!selectedClass || !allowed.includes(selectedClass)) {
-            selectedClass = allowed[0];
-        }
+        classSelect.innerHTML = `<option value="">-- Select Class --</option>`
+            + allowed.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(formatClassOptionLabel(c))}</option>`).join('');
+
+        const matchedPrev = selectedClass ? allowed.find((c) => isSameClassLabel(c, selectedClass)) : '';
+        selectedClass = matchedPrev || '';
         classSelect.value = selectedClass;
-        onClassOrDateChanged();
+
+        if (analyticsClassSelect) {
+            analyticsClassSelect.innerHTML = `<option value="">-- Select Class --</option>`
+                + `<option value="all">All Classes</option>`
+                + allowed.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(formatClassOptionLabel(c))}</option>`).join('');
+            const matchedAnalytics = selectedAnalyticsClass === 'all'
+                ? 'all'
+                : (selectedAnalyticsClass ? (allowed.find((c) => isSameClassLabel(c, selectedAnalyticsClass)) || '') : '');
+            selectedAnalyticsClass = matchedAnalytics;
+            analyticsClassSelect.value = selectedAnalyticsClass;
+        }
+
+        if (selectedClass) {
+            onClassOrDateChanged();
+        } else {
+            resetUnselectedClassState();
+        }
     } else {
         selectedClass = '';
+        selectedAnalyticsClass = '';
         classSelect.innerHTML = '<option value="">No classes assigned</option>';
-        renderLiveClassroomBoard();
+        if (analyticsClassSelect) analyticsClassSelect.innerHTML = '<option value="">No classes assigned</option>';
+        resetUnselectedClassState();
     }
+};
+
+const resetUnselectedClassState = () => {
+    if (unsubscribeDailyEval) {
+        unsubscribeDailyEval();
+        unsubscribeDailyEval = null;
+    }
+    if (unsubscribeImpositions) {
+        unsubscribeImpositions();
+        unsubscribeImpositions = null;
+    }
+    currentDailyRecords = {};
+    currentImpositionsList = [];
+    monthlyEvalsCache = {};
+    classCurriculumSubjects = [];
+    classCustomSubjects = [];
+    todaysScheduledPeriods = [];
+    currentClassTimetableDoc = null;
+
+    const subSelect = document.getElementById('eval-subject-select');
+    if (subSelect) subSelect.innerHTML = '<option value="">-- Select Class First --</option>';
+    const pillsContainer = document.getElementById('timetable-period-pills');
+    if (pillsContainer) {
+        pillsContainer.innerHTML = '<span class="text-[11px] font-semibold text-slate-400 italic">Select a class above to load scheduled timetable periods.</span>';
+    }
+
+    renderLiveClassroomBoard();
+    renderImpositionsList();
+    renderMonthlyRegister();
+    renderSettingsView();
+    updateQuickStatsBanner();
+    populateImpositionStudentSelect();
 };
 
 const populateImpositionStudentSelect = (preselectedStudentId = '') => {
@@ -760,6 +834,12 @@ const populateImpositionStudentSelect = (preselectedStudentId = '') => {
 };
 
 const onClassOrDateChanged = async () => {
+    resetPaginationPage(livePagination);
+    resetPaginationPage(impositionsPagination);
+    if (!selectedClass) {
+        resetUnselectedClassState();
+        return;
+    }
     await loadClassSubjectsAndTimetable();
     setupDailyEvaluationListener();
     setupImpositionsListener();
@@ -822,101 +902,149 @@ const setupImpositionsListener = () => {
 };
 
 // 3. Monthly Evaluations Fetching (Aggregates for Fairness Queue & Register)
-const fetchMonthlyEvaluations = async () => {
-    if (!selectedClass || !selectedYear) return;
+const buildMonthlyEvalMapFromSnap = (snap, { targetClass, monthPrefix, allowedClasses }) => {
+    const map = {};
+    snap.forEach((d) => {
+        const data = d.data();
+        const docClass = data.class || '';
+        const classMatched = targetClass === 'all'
+            ? allowedClasses.some((c) => isSameClassLabel(docClass, c))
+            : isSameClassLabel(docClass, targetClass);
+        if (!classMatched) return;
 
-    const monthPrefix = selectedDate ? selectedDate.slice(0, 7) : selectedAnalyticsMonth;
-    selectedAnalyticsMonth = monthPrefix;
-
-    try {
-        const colRef = collection(db, BASE_PATH, 'evaluations');
-        const q = query(
-            colRef,
-            where('academicYear', '==', selectedYear)
-        );
-
-        const snap = await getDocs(q);
-        const map = {};
-
-        snap.forEach((d) => {
-            const data = d.data();
-            const docClass = data.class || '';
-            if (!isClassInDutyScope(docClass, [selectedClass])) return;
-
-            const dateStr = data.date || '';
-            if (dateStr.startsWith(monthPrefix)) {
-                const records = data.records || {};
-                Object.keys(records).forEach((sId) => {
-                    if (!map[sId]) {
-                        map[sId] = {
+        const dateStr = data.date || '';
+        if (dateStr.startsWith(monthPrefix)) {
+            const records = data.records || {};
+            Object.keys(records).forEach((sId) => {
+                if (!map[sId]) {
+                    map[sId] = {
+                        totalAsked: 0,
+                        answeredWell: 0,
+                        partial: 0,
+                        missed: 0,
+                        readingChecks: 0,
+                        writingCompleted: 0,
+                        all: { totalAsked: 0, answeredWell: 0, partial: 0, missed: 0, readingChecks: 0, writingCompleted: 0 },
+                        bySubject: {}
+                    };
+                }
+                const evals = records[sId].evaluations || [];
+                evals.forEach((ev) => {
+                    const subj = String(ev.subject || 'General').trim();
+                    const subjLower = subj.toLowerCase();
+                    if (!map[sId].bySubject[subjLower]) {
+                        map[sId].bySubject[subjLower] = {
                             totalAsked: 0,
                             answeredWell: 0,
                             partial: 0,
                             missed: 0,
                             readingChecks: 0,
-                            writingCompleted: 0,
-                            all: { totalAsked: 0, answeredWell: 0, partial: 0, missed: 0, readingChecks: 0, writingCompleted: 0 },
-                            bySubject: {}
+                            writingCompleted: 0
                         };
                     }
-                    const evals = records[sId].evaluations || [];
-                    evals.forEach((ev) => {
-                        const subj = String(ev.subject || 'General').trim();
-                        const subjLower = subj.toLowerCase();
-                        if (!map[sId].bySubject[subjLower]) {
-                            map[sId].bySubject[subjLower] = {
-                                totalAsked: 0,
-                                answeredWell: 0,
-                                partial: 0,
-                                missed: 0,
-                                readingChecks: 0,
-                                writingCompleted: 0
-                            };
-                        }
 
-                        if (ev.activityType === 'reading' || ev.readingRating) {
-                            map[sId].readingChecks++;
-                            map[sId].all.readingChecks++;
-                            map[sId].bySubject[subjLower].readingChecks++;
-                        } else if (ev.activityType === 'writing' || ev.writingStatus) {
-                            if (ev.writingStatus === 'completed') {
-                                map[sId].writingCompleted++;
-                                map[sId].all.writingCompleted++;
-                                map[sId].bySubject[subjLower].writingCompleted++;
-                            }
-                        } else {
-                            map[sId].totalAsked++;
-                            map[sId].all.totalAsked++;
-                            map[sId].bySubject[subjLower].totalAsked++;
-                            if (ev.status === 'answered') {
-                                map[sId].answeredWell++;
-                                map[sId].all.answeredWell++;
-                                map[sId].bySubject[subjLower].answeredWell++;
-                            } else if (ev.status === 'partial') {
-                                map[sId].partial++;
-                                map[sId].all.partial++;
-                                map[sId].bySubject[subjLower].partial++;
-                            } else if (ev.status === 'missed') {
-                                map[sId].missed++;
-                                map[sId].all.missed++;
-                                map[sId].bySubject[subjLower].missed++;
-                            }
+                    if (ev.activityType === 'reading' || ev.readingRating) {
+                        map[sId].readingChecks++;
+                        map[sId].all.readingChecks++;
+                        map[sId].bySubject[subjLower].readingChecks++;
+                    } else if (ev.activityType === 'writing' || ev.writingStatus) {
+                        if (ev.writingStatus === 'completed') {
+                            map[sId].writingCompleted++;
+                            map[sId].all.writingCompleted++;
+                            map[sId].bySubject[subjLower].writingCompleted++;
                         }
-                    });
+                    } else {
+                        map[sId].totalAsked++;
+                        map[sId].all.totalAsked++;
+                        map[sId].bySubject[subjLower].totalAsked++;
+                        if (ev.status === 'answered') {
+                            map[sId].answeredWell++;
+                            map[sId].all.answeredWell++;
+                            map[sId].bySubject[subjLower].answeredWell++;
+                        } else if (ev.status === 'partial') {
+                            map[sId].partial++;
+                            map[sId].all.partial++;
+                            map[sId].bySubject[subjLower].partial++;
+                        } else if (ev.status === 'missed') {
+                            map[sId].missed++;
+                            map[sId].all.missed++;
+                            map[sId].bySubject[subjLower].missed++;
+                        }
+                    }
                 });
-            }
-        });
+            });
+        }
+    });
+    return map;
+};
 
-        monthlyEvalsCache = map;
+const fetchMonthlyEvaluations = async () => {
+    if (!selectedClass || !selectedYear) return;
+
+    const monthPrefix = selectedDate ? selectedDate.slice(0, 7) : selectedAnalyticsMonth;
+
+    try {
+        const colRef = collection(db, BASE_PATH, 'evaluations');
+        const q = query(colRef, where('academicYear', '==', selectedYear));
+        const snap = await getDocs(q);
+        monthlyEvalsCache = buildMonthlyEvalMapFromSnap(snap, {
+            targetClass: selectedClass,
+            monthPrefix,
+            allowedClasses: getAllowedClassesForTeacher()
+        });
         renderLiveClassroomBoard();
-        renderMonthlyRegister();
+        if (selectedAnalyticsClass && isSameClassLabel(selectedAnalyticsClass, selectedClass) && selectedAnalyticsMonth === monthPrefix) {
+            analyticsMonthlyEvalsCache = monthlyEvalsCache;
+            analyticsImpositionsList = currentImpositionsList;
+            renderMonthlyRegister();
+        }
     } catch (err) {
         console.warn('Error fetching monthly evaluations:', err);
     }
 };
 
-const getStudentMonthlyStats = (studentId, subjectFilter = 'all') => {
-    const studentData = monthlyEvalsCache[studentId];
+const fetchAnalyticsMonthlyData = async () => {
+    const targetCls = selectedAnalyticsClass || '';
+    if (!targetCls || !selectedYear) {
+        analyticsMonthlyEvalsCache = {};
+        analyticsImpositionsList = [];
+        renderMonthlyRegister();
+        return;
+    }
+
+    const allowed = getAllowedClassesForTeacher();
+    try {
+        const evalQ = query(collection(db, BASE_PATH, 'evaluations'), where('academicYear', '==', selectedYear));
+        const impQ = query(collection(db, BASE_PATH, 'impositions'), where('academicYear', '==', selectedYear));
+        const [evalSnap, impSnap] = await Promise.all([getDocs(evalQ), getDocs(impQ)]);
+
+        analyticsMonthlyEvalsCache = buildMonthlyEvalMapFromSnap(evalSnap, {
+            targetClass: targetCls,
+            monthPrefix: selectedAnalyticsMonth,
+            allowedClasses: allowed
+        });
+
+        const imps = [];
+        impSnap.forEach((d) => {
+            const data = d.data();
+            const docClass = data.class || '';
+            const matched = targetCls === 'all'
+                ? allowed.some((c) => isSameClassLabel(docClass, c))
+                : isSameClassLabel(docClass, targetCls);
+            if (matched && Array.isArray(data.items)) {
+                imps.push(...data.items);
+            }
+        });
+        analyticsImpositionsList = imps;
+        renderMonthlyRegister();
+    } catch (err) {
+        console.warn('Error fetching monthly register analytics:', err);
+        renderMonthlyRegister();
+    }
+};
+
+const getStudentMonthlyStats = (studentId, subjectFilter = 'all', cacheObj = monthlyEvalsCache) => {
+    const studentData = cacheObj[studentId];
     const defaultStats = { totalAsked: 0, answeredWell: 0, partial: 0, missed: 0, readingChecks: 0, writingCompleted: 0 };
     if (!studentData) return defaultStats;
 
@@ -933,20 +1061,33 @@ const renderLiveClassroomBoard = () => {
     const container = document.getElementById('live-students-container');
     if (!container) return;
 
+    const allowed = getAllowedClassesForTeacher();
     if (!selectedClass) {
-        container.innerHTML = `
-            <div class="col-span-full p-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
-                <i class="fas fa-layer-group text-3xl mb-2 text-slate-300 block"></i>
-                <p class="text-sm font-bold text-slate-600">No classes assigned to your account.</p>
-                <p class="text-xs text-slate-400 mt-1">Please contact administrator to configure assigned classes.</p>
-            </div>
-        `;
+        hidePaginationControls('eval-live-pagination-top', 'eval-live-pagination-bottom');
+        if (allowed.length === 0) {
+            container.innerHTML = `
+                <div class="col-span-full p-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
+                    <i class="fas fa-layer-group text-3xl mb-2 text-slate-300 block"></i>
+                    <p class="text-sm font-bold text-slate-600">No classes assigned to your account.</p>
+                    <p class="text-xs text-slate-400 mt-1">Please contact administrator to configure assigned classes.</p>
+                </div>
+            `;
+        } else {
+            container.innerHTML = `
+                <div class="col-span-full p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-300">
+                    <i class="fas fa-filter text-3xl mb-2 text-slate-300 block"></i>
+                    <p class="text-sm font-bold text-slate-600">Please select a class to load students.</p>
+                    <p class="text-xs text-slate-400 mt-1">Choose a class from the Class selector above to start classroom evaluation.</p>
+                </div>
+            `;
+        }
         return;
     }
 
     const classStudents = getClassStudents(selectedClass, selectedYear);
 
     if (classStudents.length === 0) {
+        hidePaginationControls('eval-live-pagination-top', 'eval-live-pagination-bottom');
         container.innerHTML = `
             <div class="col-span-full p-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
                 <i class="fas fa-users-slash text-3xl mb-2 text-slate-300 block"></i>
@@ -958,7 +1099,7 @@ const renderLiveClassroomBoard = () => {
     }
 
     // Filter by search
-    let list = classStudents;
+    let list = classStudents.slice();
     if (currentLiveSearch) {
         const q = currentLiveSearch.toLowerCase();
         list = list.filter((s) => (s.name && s.name.toLowerCase().includes(q)) || (getStudentAdm(s).toLowerCase().includes(q)));
@@ -982,6 +1123,7 @@ const renderLiveClassroomBoard = () => {
     }
 
     if (list.length === 0) {
+        hidePaginationControls('eval-live-pagination-top', 'eval-live-pagination-bottom');
         container.innerHTML = `
             <div class="col-span-full p-8 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
                 <p class="text-xs font-bold">No students match current filter.</p>
@@ -990,7 +1132,17 @@ const renderLiveClassroomBoard = () => {
         return;
     }
 
-    container.innerHTML = list.map((student) => {
+    const pageInfo = paginateArray(list, livePagination);
+    renderPaginationControls({
+        topEl: 'eval-live-pagination-top',
+        bottomEl: 'eval-live-pagination-bottom',
+        pageInfo,
+        state: livePagination,
+        itemLabel: 'students',
+        onRender: renderLiveClassroomBoard
+    });
+
+    container.innerHTML = pageInfo.items.map((student) => {
         const rec = currentDailyRecords[student.id];
         const todayEvals = rec?.evaluations || [];
         const isEvaluatedToday = todayEvals.length > 0;
@@ -1378,7 +1530,21 @@ const renderImpositionsList = () => {
         list = list.filter((imp) => imp.cleared === true);
     }
 
+    if (!selectedClass) {
+        hidePaginationControls('eval-imp-pagination-top', 'eval-imp-pagination-bottom');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="py-8 text-center text-slate-400">
+                    <i class="fas fa-filter text-2xl mb-1 text-slate-300 block"></i>
+                    Please select a class to view impositions.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
     if (list.length === 0) {
+        hidePaginationControls('eval-imp-pagination-top', 'eval-imp-pagination-bottom');
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="py-8 text-center text-slate-400">
@@ -1390,7 +1556,17 @@ const renderImpositionsList = () => {
         return;
     }
 
-    tbody.innerHTML = list.map((imp) => {
+    const impPageInfo = paginateArray(list, impositionsPagination);
+    renderPaginationControls({
+        topEl: 'eval-imp-pagination-top',
+        bottomEl: 'eval-imp-pagination-bottom',
+        pageInfo: impPageInfo,
+        state: impositionsPagination,
+        itemLabel: 'records',
+        onRender: renderImpositionsList
+    });
+
+    tbody.innerHTML = impPageInfo.items.map((imp) => {
         const isOverdue = !imp.cleared && imp.dueDate && imp.dueDate < todayStr;
         const isDueToday = !imp.cleared && imp.dueDate === todayStr;
 
@@ -1473,14 +1649,46 @@ const populateAnalyticsMonths = () => {
     sel.innerHTML = options.join('');
 };
 
-const renderMonthlyRegister = () => {
+const renderMonthlyRegister = ({ renderAllForPrint = false } = {}) => {
     const tbody = document.getElementById('analytics-register-tbody');
     if (!tbody) return;
 
-    const classStudents = getClassStudents(selectedClass, selectedYear)
-        .sort((a, b) => getStudentAdm(a).localeCompare(getStudentAdm(b), undefined, { numeric: true }));
+    const activeAnalyticsClass = selectedAnalyticsClass || '';
+    const totalQEl = document.getElementById('analytics-total-questions');
+    const rateEl = document.getElementById('analytics-success-rate');
+    const missedEl = document.getElementById('analytics-missed-count');
+    const impRatioEl = document.getElementById('analytics-impositions-ratio');
+    const attnBox = document.getElementById('analytics-attention-box');
+    const titleEl = document.getElementById('register-table-title');
+
+    if (!activeAnalyticsClass) {
+        hidePaginationControls('eval-analytics-pagination-top', 'eval-analytics-pagination-bottom');
+        if (totalQEl) totalQEl.textContent = '0';
+        if (rateEl) rateEl.textContent = '0%';
+        if (missedEl) missedEl.textContent = '0';
+        if (impRatioEl) impRatioEl.textContent = '0 / 0';
+        if (attnBox) attnBox.classList.add('hidden');
+        if (titleEl) titleEl.textContent = 'Monthly Student Assessment Register';
+        tbody.innerHTML = `<tr><td colspan="10" class="py-8 text-center text-slate-400 font-bold">Please select a class (or All Classes) to view the monthly register.</td></tr>`;
+        return;
+    }
+
+    const classStudents = getClassStudents(activeAnalyticsClass, selectedYear)
+        .sort((a, b) => {
+            if (activeAnalyticsClass === 'all') {
+                const clsCmp = compareClassLabelsNatural(getStudentClass(a, selectedYear), getStudentClass(b, selectedYear));
+                if (clsCmp !== 0) return clsCmp;
+            }
+            return getStudentAdm(a).localeCompare(getStudentAdm(b), undefined, { numeric: true });
+        });
 
     if (classStudents.length === 0) {
+        hidePaginationControls('eval-analytics-pagination-top', 'eval-analytics-pagination-bottom');
+        if (totalQEl) totalQEl.textContent = '0';
+        if (rateEl) rateEl.textContent = '0%';
+        if (missedEl) missedEl.textContent = '0';
+        if (impRatioEl) impRatioEl.textContent = '0 / 0';
+        if (attnBox) attnBox.classList.add('hidden');
         tbody.innerHTML = `<tr><td colspan="10" class="py-8 text-center text-slate-400">No students found.</td></tr>`;
         return;
     }
@@ -1490,64 +1698,82 @@ const renderMonthlyRegister = () => {
     let totalMissed = 0;
     const attentionStudents = [];
 
-    const rows = classStudents.map((s) => {
-        const st = getStudentMonthlyStats(s.id, selectedAnalyticsSubject);
+    const computedEntries = classStudents.map((s) => {
+        const st = getStudentMonthlyStats(s.id, selectedAnalyticsSubject, analyticsMonthlyEvalsCache);
         totalQ += st.totalAsked;
         totalAnsweredWell += st.answeredWell;
         totalMissed += st.missed;
 
         const rate = st.totalAsked > 0 ? Math.round((st.answeredWell / st.totalAsked) * 100) : 0;
-        let imps = currentImpositionsList.filter((imp) => imp.studentId === s.id);
+        let imps = analyticsImpositionsList.filter((imp) => imp.studentId === s.id);
         if (selectedAnalyticsSubject !== 'all') {
             imps = imps.filter((imp) => String(imp.subject || '').trim().toLowerCase() === selectedAnalyticsSubject.toLowerCase());
         }
         const impsCleared = imps.filter((imp) => imp.cleared === true).length;
 
-        // Flag attention if turns < 2 or rate < 50% (after at least 2 questions)
         if (st.totalAsked < 2 || (st.totalAsked >= 2 && rate < 50)) {
             attentionStudents.push({ name: s.name, reason: st.totalAsked < 2 ? 'Only ' + st.totalAsked + ' turns' : rate + '% success' });
         }
 
-        const adm = getStudentAdm(s);
-
-        return `
-            <tr class="hover:bg-slate-50/80 transition text-xs">
-                <td class="py-2.5 px-3 font-semibold text-slate-500">${escapeHtml(adm)}</td>
-                <td class="py-2.5 px-3 font-extrabold text-slate-800">${escapeHtml(s.name)}</td>
-                <td class="py-2.5 px-3 text-center font-bold text-slate-800">${st.totalAsked}</td>
-                <td class="py-2.5 px-3 text-center font-black text-emerald-700">${st.answeredWell}</td>
-                <td class="py-2.5 px-3 text-center font-bold text-amber-700">${st.partial}</td>
-                <td class="py-2.5 px-3 text-center font-black text-rose-700">${st.missed}</td>
-                <td class="py-2.5 px-3 text-center">
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black ${rate >= 75 ? 'bg-emerald-100 text-emerald-800' : (rate >= 50 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800')}">
-                        ${rate}%
-                    </span>
-                </td>
-                <td class="py-2.5 px-3 text-center font-semibold text-slate-700">${st.readingChecks}</td>
-                <td class="py-2.5 px-3 text-center font-semibold text-slate-700">${st.writingCompleted}</td>
-                <td class="py-2.5 px-3 text-center font-bold text-slate-700">${impsCleared} / ${imps.length}</td>
-            </tr>
-        `;
+        return {
+            student: s,
+            adm: getStudentAdm(s),
+            stuClass: getStudentClass(s, selectedYear),
+            st,
+            rate,
+            impsCleared,
+            impsTotal: imps.length
+        };
     });
 
-    tbody.innerHTML = rows.join('');
+    let visibleEntries = computedEntries;
+    if (!renderAllForPrint) {
+        const pageInfo = paginateArray(computedEntries, analyticsPagination);
+        visibleEntries = pageInfo.items;
+        renderPaginationControls({
+            topEl: 'eval-analytics-pagination-top',
+            bottomEl: 'eval-analytics-pagination-bottom',
+            pageInfo,
+            state: analyticsPagination,
+            itemLabel: 'students',
+            onRender: () => renderMonthlyRegister()
+        });
+    }
+
+    tbody.innerHTML = visibleEntries.map(({ student: s, adm, stuClass, st, rate, impsCleared, impsTotal }) => `
+        <tr class="hover:bg-slate-50/80 transition text-xs">
+            <td class="py-2.5 px-3 font-semibold text-slate-500">${escapeHtml(adm)}</td>
+            <td class="py-2.5 px-3 font-extrabold text-slate-800">
+                ${escapeHtml(s.name)}
+                ${activeAnalyticsClass === 'all' ? `<span class="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-500">${escapeHtml(stuClass)}</span>` : ''}
+            </td>
+            <td class="py-2.5 px-3 text-center font-bold text-slate-800">${st.totalAsked}</td>
+            <td class="py-2.5 px-3 text-center font-black text-emerald-700">${st.answeredWell}</td>
+            <td class="py-2.5 px-3 text-center font-bold text-amber-700">${st.partial}</td>
+            <td class="py-2.5 px-3 text-center font-black text-rose-700">${st.missed}</td>
+            <td class="py-2.5 px-3 text-center">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black ${rate >= 75 ? 'bg-emerald-100 text-emerald-800' : (rate >= 50 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800')}">
+                    ${rate}%
+                </span>
+            </td>
+            <td class="py-2.5 px-3 text-center font-semibold text-slate-700">${st.readingChecks}</td>
+            <td class="py-2.5 px-3 text-center font-semibold text-slate-700">${st.writingCompleted}</td>
+            <td class="py-2.5 px-3 text-center font-bold text-slate-700">${impsCleared} / ${impsTotal}</td>
+        </tr>
+    `).join('');
 
     // Update Analytics Highlights
-    const totalQEl = document.getElementById('analytics-total-questions');
     if (totalQEl) totalQEl.textContent = totalQ;
 
-    const rateEl = document.getElementById('analytics-success-rate');
     if (rateEl) {
         const overallRate = totalQ > 0 ? Math.round((totalAnsweredWell / totalQ) * 100) : 0;
         rateEl.textContent = `${overallRate}%`;
     }
 
-    const missedEl = document.getElementById('analytics-missed-count');
     if (missedEl) missedEl.textContent = totalMissed;
 
-    const impRatioEl = document.getElementById('analytics-impositions-ratio');
     if (impRatioEl) {
-        let filteredImps = currentImpositionsList;
+        let filteredImps = analyticsImpositionsList;
         if (selectedAnalyticsSubject !== 'all') {
             filteredImps = filteredImps.filter((imp) => String(imp.subject || '').trim().toLowerCase() === selectedAnalyticsSubject.toLowerCase());
         }
@@ -1556,26 +1782,25 @@ const renderMonthlyRegister = () => {
     }
 
     // Attention Needed Box
-    const attnBox = document.getElementById('analytics-attention-box');
     const chipsCont = document.getElementById('analytics-attention-chips');
     if (attnBox && chipsCont) {
         if (attentionStudents.length > 0) {
             attnBox.classList.remove('hidden');
-            chipsCont.innerHTML = attentionStudents.map((item) => `
+            chipsCont.innerHTML = attentionStudents.slice(0, 30).map((item) => `
                 <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-amber-300 text-[10px] font-bold text-amber-900 shadow-2xs">
                     <span>${escapeHtml(item.name)}</span>
                     <span class="text-rose-600 font-black">(${escapeHtml(item.reason)})</span>
                 </span>
-            `).join('');
+            `).join('') + (attentionStudents.length > 30 ? `<span class="inline-flex items-center px-2.5 py-1 rounded-xl bg-amber-100 text-[10px] font-extrabold text-amber-900">+${attentionStudents.length - 30} more</span>` : '');
         } else {
             attnBox.classList.add('hidden');
         }
     }
 
-    const titleEl = document.getElementById('register-table-title');
     if (titleEl) {
+        const clsLabel = activeAnalyticsClass === 'all' ? 'All Classes' : `Class ${activeAnalyticsClass}`;
         const subjPart = selectedAnalyticsSubject === 'all' ? 'All Subjects' : selectedAnalyticsSubject;
-        titleEl.textContent = `Monthly Evaluation Register: ${selectedClass} - ${subjPart} (${selectedAnalyticsMonth})`;
+        titleEl.textContent = `Monthly Evaluation Register: ${clsLabel} - ${subjPart} (${selectedAnalyticsMonth})`;
     }
 };
 
@@ -1713,6 +1938,11 @@ const initEventBindings = () => {
     // Class & Year Change
     document.getElementById('eval-class-select')?.addEventListener('change', (e) => {
         selectedClass = e.target.value;
+        if (selectedClass && selectedAnalyticsClass !== 'all') {
+            selectedAnalyticsClass = selectedClass;
+            const analyticsClassSel = document.getElementById('analytics-class-select');
+            if (analyticsClassSel) analyticsClassSel.value = selectedAnalyticsClass;
+        }
         onClassOrDateChanged();
     });
 
@@ -1721,6 +1951,7 @@ const initEventBindings = () => {
         const yearBadge = document.getElementById('header-active-year');
         if (yearBadge) yearBadge.textContent = selectedYear;
         onClassOrDateChanged();
+        if (selectedAnalyticsClass) fetchAnalyticsMonthlyData();
     });
 
     // Date Change
@@ -1783,6 +2014,7 @@ const initEventBindings = () => {
             btn.classList.add('active', 'bg-rose-600', 'text-white');
             btn.classList.remove('bg-slate-100', 'text-slate-700');
             currentLiveFilter = btn.getAttribute('data-filter') || 'all';
+            resetPaginationPage(livePagination);
             renderLiveClassroomBoard();
         });
     });
@@ -1790,6 +2022,7 @@ const initEventBindings = () => {
     // Live Board Search
     document.getElementById('live-search-input')?.addEventListener('input', (e) => {
         currentLiveSearch = e.target.value.trim();
+        resetPaginationPage(livePagination);
         renderLiveClassroomBoard();
     });
 
@@ -1957,6 +2190,7 @@ const initEventBindings = () => {
             btn.classList.add('active', 'bg-amber-500', 'text-white');
             btn.classList.remove('bg-slate-100', 'text-slate-700');
             currentImpositionFilter = btn.getAttribute('data-filter') || 'pending';
+            resetPaginationPage(impositionsPagination);
             renderImpositionsList();
         });
     });
@@ -2003,21 +2237,32 @@ const initEventBindings = () => {
         switchTab('tab-impositions');
     });
 
+    // Analytics Class Select (Includes optional All Classes for Analytics tab)
+    document.getElementById('analytics-class-select')?.addEventListener('change', (e) => {
+        selectedAnalyticsClass = e.target.value;
+        resetPaginationPage(analyticsPagination);
+        fetchAnalyticsMonthlyData();
+    });
+
     // Analytics Month Select
     document.getElementById('analytics-month-select')?.addEventListener('change', (e) => {
         selectedAnalyticsMonth = e.target.value;
-        fetchMonthlyEvaluations();
+        resetPaginationPage(analyticsPagination);
+        fetchAnalyticsMonthlyData();
     });
 
     // Analytics Subject Filter Select
     document.getElementById('analytics-subject-filter')?.addEventListener('change', (e) => {
         selectedAnalyticsSubject = e.target.value;
+        resetPaginationPage(analyticsPagination);
         renderMonthlyRegister();
     });
 
-    // Print Register
+    // Print Register (Temporarily render all rows for complete printout)
     document.getElementById('btn-print-register')?.addEventListener('click', () => {
+        renderMonthlyRegister({ renderAllForPrint: true });
         window.print();
+        setTimeout(() => renderMonthlyRegister(), 250);
     });
 
     // Settings Add Custom Subject (Scoped to Selected Class)

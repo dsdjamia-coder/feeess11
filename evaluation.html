@@ -94,20 +94,24 @@
         width: 4.5rem;
       }
       #evaluation-app:not(.sidebar-collapsed) .evaluation-main-wrapper,
-      #evaluation-app:not(.sidebar-collapsed) .attendance-sticky-header {
-        margin-left: 16rem;
+      #evaluation-app:not(.sidebar-collapsed) .attendance-sticky-header,
+      #evaluation-app:not(.sidebar-collapsed) > footer.unified-workspace-footer {
+        margin-left: 16rem !important;
         width: calc(100% - 16rem) !important;
         max-width: calc(100% - 16rem) !important;
         min-width: 0 !important;
         box-sizing: border-box !important;
+        transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       #evaluation-app.sidebar-collapsed .evaluation-main-wrapper,
-      #evaluation-app.sidebar-collapsed .attendance-sticky-header {
-        margin-left: 4.5rem;
+      #evaluation-app.sidebar-collapsed .attendance-sticky-header,
+      #evaluation-app.sidebar-collapsed > footer.unified-workspace-footer {
+        margin-left: 4.5rem !important;
         width: calc(100% - 4.5rem) !important;
         max-width: calc(100% - 4.5rem) !important;
         min-width: 0 !important;
         box-sizing: border-box !important;
+        transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       #evaluation-app.sidebar-collapsed #side-drawer .nav-text,
       #evaluation-app.sidebar-collapsed #side-drawer .drawer-heading,
@@ -147,7 +151,7 @@
       #evaluation-mobile-menu-btn {
         display: none !important;
       }
-      .evaluation-main-wrapper, .attendance-sticky-header {
+      .evaluation-main-wrapper, .attendance-sticky-header, #evaluation-app > footer.unified-workspace-footer {
         margin-left: 0 !important;
         width: 100% !important;
         max-width: 100% !important;
@@ -155,7 +159,10 @@
         box-sizing: border-box !important;
       }
       .evaluation-main-wrapper {
-        padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+      }
+      #evaluation-app > footer.unified-workspace-footer {
+        padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
       }
       .evaluation-bottom-nav {
         position: fixed;
@@ -354,7 +361,7 @@
                 <i class="fas fa-school text-rose-600 text-xs"></i>
                 <label for="eval-class-select" class="text-[11px] font-black text-slate-500 uppercase tracking-wider">Class:</label>
                 <select id="eval-class-select" class="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer">
-                  <option value="">Loading classes...</option>
+                  <option value="">-- Select Class --</option>
                 </select>
               </div>
 
@@ -465,13 +472,19 @@
             </div>
           </div>
 
+          <!-- Live Board Top Pagination -->
+          <div id="eval-live-pagination-top" class="hidden"></div>
+
           <!-- Student Cards Roster Container -->
           <div id="live-students-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            <div class="col-span-full p-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
-              <i class="fas fa-spinner fa-spin text-2xl mb-2 text-rose-500"></i>
-              <p class="text-xs font-bold">Loading students...</p>
+            <div class="col-span-full p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-300">
+              <i class="fas fa-filter text-2xl mb-2 text-slate-300 block"></i>
+              <p class="text-xs font-bold text-slate-600">Please select a class to load students.</p>
             </div>
           </div>
+
+          <!-- Live Board Bottom Pagination -->
+          <div id="eval-live-pagination-bottom" class="hidden"></div>
         </section>
 
         <!-- ========================================== -->
@@ -504,6 +517,9 @@
             </button>
           </div>
 
+          <!-- Impositions Top Pagination -->
+          <div id="eval-imp-pagination-top" class="hidden"></div>
+
           <!-- Impositions Table / Cards List -->
           <div class="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
             <div class="overflow-x-auto">
@@ -523,13 +539,16 @@
                   <tr>
                     <td colspan="7" class="py-8 text-center text-slate-400">
                       <i class="fas fa-inbox text-2xl mb-1 text-slate-300 block"></i>
-                      No pending impositions for this class.
+                      Please select a class to view impositions.
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
+
+          <!-- Impositions Bottom Pagination -->
+          <div id="eval-imp-pagination-bottom" class="hidden"></div>
         </section>
 
         <!-- ========================================== -->
@@ -540,12 +559,17 @@
           <!-- Month Selector & Export Bar -->
           <div class="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div class="flex items-center gap-2 flex-wrap">
-              <label for="analytics-month-select" class="text-xs font-black text-slate-700 uppercase tracking-wider">Month:</label>
+              <label for="analytics-class-select" class="text-xs font-black text-slate-700 uppercase tracking-wider">Class:</label>
+              <select id="analytics-class-select" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 cursor-pointer">
+                <option value="">-- Select Class --</option>
+              </select>
+
+              <label for="analytics-month-select" class="text-xs font-black text-slate-700 uppercase tracking-wider ml-1">Month:</label>
               <select id="analytics-month-select" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 cursor-pointer">
                 <!-- Injected dynamically: Current & previous months -->
               </select>
 
-              <label for="analytics-subject-filter" class="text-xs font-black text-slate-700 uppercase tracking-wider ml-2">Subject:</label>
+              <label for="analytics-subject-filter" class="text-xs font-black text-slate-700 uppercase tracking-wider ml-1">Subject:</label>
               <select id="analytics-subject-filter" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-extrabold text-slate-800 cursor-pointer">
                 <option value="all">All Subjects (Combined)</option>
               </select>
@@ -596,6 +620,9 @@
             </div>
           </div>
 
+          <!-- Monthly Register Top Pagination -->
+          <div id="eval-analytics-pagination-top" class="hidden"></div>
+
           <!-- Printable Register Table View -->
           <div class="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden card-print">
             <div class="p-4 border-b border-slate-100 flex items-center justify-between">
@@ -623,13 +650,16 @@
                 <tbody id="analytics-register-tbody" class="divide-y divide-slate-100 font-medium text-slate-700">
                   <tr>
                     <td colspan="10" class="py-8 text-center text-slate-400">
-                      Loading monthly register...
+                      Please select a class to view the monthly register.
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
+
+          <!-- Monthly Register Bottom Pagination -->
+          <div id="eval-analytics-pagination-bottom" class="hidden"></div>
         </section>
 
         <!-- ========================================== -->

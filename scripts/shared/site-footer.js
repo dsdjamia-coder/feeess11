@@ -732,7 +732,59 @@ const resolveCompactFooterMountTarget = () => {
     return document.body;
 };
 
+const ensureCompactWorkspaceFooterStyles = () => {
+    if (typeof document === 'undefined' || document.getElementById('unified-workspace-footer-layout-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'unified-workspace-footer-layout-styles';
+    style.textContent = `
+        footer.unified-workspace-footer {
+            box-sizing: border-box !important;
+            max-width: none !important;
+            margin-left: 0;
+            margin-right: 0;
+        }
+        @media (min-width: 1024px) {
+            .has-desktop-sidebar:not(.sidebar-collapsed) > footer.unified-workspace-footer {
+                margin-left: 16rem !important;
+                width: calc(100% - 16rem) !important;
+                max-width: calc(100% - 16rem) !important;
+                min-width: 0 !important;
+                box-sizing: border-box !important;
+                transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .has-desktop-sidebar.sidebar-collapsed > footer.unified-workspace-footer {
+                margin-left: 4.5rem !important;
+                width: calc(100% - 4.5rem) !important;
+                max-width: calc(100% - 4.5rem) !important;
+                min-width: 0 !important;
+                box-sizing: border-box !important;
+                transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+        }
+        @media (max-width: 1023px) {
+            .has-desktop-sidebar > footer.unified-workspace-footer {
+                margin-left: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                box-sizing: border-box !important;
+                transition: none;
+            }
+            #collection-app > footer.unified-workspace-footer,
+            #attendance-app > footer.unified-workspace-footer,
+            #result-app > footer.unified-workspace-footer,
+            #evaluation-app > footer.unified-workspace-footer,
+            #activity-app > footer.unified-workspace-footer,
+            #academic-app > footer.unified-workspace-footer {
+                padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+};
+
 const mountCompactWorkspaceFooter = (footerCfg) => {
+    ensureCompactWorkspaceFooterStyles();
     const mountTarget = resolveCompactFooterMountTarget();
     if (!mountTarget) return;
 

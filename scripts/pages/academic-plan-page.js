@@ -6,6 +6,13 @@ import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, ensureTenantStatus
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
+import {
+    createPaginationState,
+    resetPaginationPage,
+    paginateArray,
+    hidePaginationControls,
+    renderPaginationControls
+} from '../shared/pagination-utils.js';
 
 const getPageUrl = (target = '') => window.AppSession?.buildPageUrl?.(target) || target;
 
@@ -32,12 +39,19 @@ let allClasses = [];
 let hasLoadedPlanAcademicYears = false;
 
 // --- Class Subjects State & Cards ---
-let selectedSubjectsClass = 'all';
+let selectedSubjectsClass = '';
 let classSubjectsList = []; // [ { id, name, code, teacher, weeklyPeriods } ]
 let editingSubjectId = null;
 let editingSubjectClass = '';
 let classCardsData = {}; // classLabel -> { subjects: [], customExams: [] }
 let subjectSearchQuery = '';
+
+// --- Pagination States (Admin-style 25/50/100/150/All) ---
+const subjectsPagination = createPaginationState();
+const ttPagination = createPaginationState();
+const ypPagination = createPaginationState();
+const stPagination = createPaginationState();
+const examPagination = createPaginationState();
 
 // --- Exam Definitions & Arabic Constants ---
 const DEFAULT_EXAM_DEFS = [
@@ -272,6 +286,11 @@ const getEnglishDayName = (dateStr) => {
 };
 
 const normalizeClassLabel = (str = '') => String(str || '').replace(/^class\s*/i, '').trim().toLowerCase();
+const isSameClassLabel = (clsA = '', clsB = '') => {
+    const normA = normalizeClassLabel(clsA);
+    const normB = normalizeClassLabel(clsB);
+    return Boolean(normA && normB && normA === normB);
+};
 const isClassInDutyScope = (clsName = '', dutyList = []) => {
     if (isSuperAdmin) return true;
     if (!Array.isArray(dutyList) || dutyList.length === 0) return false;
@@ -437,8 +456,8 @@ const activateTab = (targetTabId) => {
         loadSyllabusTracker();
     } else if (targetTabId === 'tab-exam-schedule') {
         const y = document.getElementById('exam-tt-academic-year')?.value || currentAcademicYear;
-        const c = document.getElementById('exam-tt-class-select')?.value || '1';
-        loadAvailableExams(y, c).then(() => {
+        const c = document.getElementById('exam-tt-class-select')?.value || '';
+        loadAvailableExams(y, c || 'all').then(() => {
             loadExamTimetable();
         });
     } else if (targetTabId === 'tab-master-timetable') {
@@ -822,34 +841,38 @@ const getAllowedClassesForTeacher = () => {
     return [];
 };
 
-const buildSelectOptionsWithAll = (allowedList, isSuperAdmin, featureLabel = 'All Classes') => {
-    let opts = '';
-    if (isSuperAdmin) {
+const buildSelectOptionsWithAll = (allowedList, isSuperAdminFlag, featureLabel = 'All Classes') => {
+    if (!Array.isArray(allowedList) || allowedList.length === 0) {
+        return `<option value="">No Classes Assigned</option>`;
+    }
+    let opts = `<option value="">-- Select Class --</option>`;
+    if (isSuperAdminFlag || allowedList.length > 1) {
         opts += `<option value="all">${escapeHtml(featureLabel)}</option>`;
-    } else if (allowedList.length > 0) {
-        opts += `<option value="all">All Classes</option>`;
     }
     const formatClassOptionLabel = (cls) => {
         const clean = String(cls || '').trim();
         return clean.toLowerCase().startsWith('class') ? clean : `Class: ${clean}`;
     };
     opts += allowedList.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(formatClassOptionLabel(c))}</option>`).join('');
-    return opts || `<option value="">No Classes Assigned</option>`;
+    return opts;
 };
 
 const populateClassDropdowns = () => {
     const allowed = getAllowedClassesForTeacher();
+    const canSelectAll = allowed.length > 0 && (isSuperAdmin || allowed.length > 1);
+    const resolvePreservedValue = (prev) => {
+        if (!prev) return '';
+        if (prev === 'all' && canSelectAll) return 'all';
+        const matched = allowed.find(c => isSameClassLabel(prev, c));
+        return matched || '';
+    };
 
-    // 1. Subject class filter
+    // 1. Subject class filter (if present)
     const subjClassSelect = document.getElementById('subj-class-select');
     if (subjClassSelect) {
         const prev = subjClassSelect.value;
         subjClassSelect.innerHTML = buildSelectOptionsWithAll(allowed, isSuperAdmin, 'All Classes');
-        if (prev && (prev === 'all' || allowed.some(c => isClassInDutyScope(prev, [c])))) {
-            subjClassSelect.value = prev;
-        } else {
-            subjClassSelect.value = isSuperAdmin ? 'all' : (allowed[0] || '');
-        }
+        subjClassSelect.value = resolvePreservedValue(prev);
         selectedSubjectsClass = subjClassSelect.value;
     }
 
@@ -858,13 +881,7 @@ const populateClassDropdowns = () => {
     if (ttClassSelect) {
         const prev = ttClassSelect.value;
         ttClassSelect.innerHTML = buildSelectOptionsWithAll(allowed, isSuperAdmin, 'All Classes');
-        if (prev && (prev === 'all' || allowed.some(c => isClassInDutyScope(prev, [c])))) {
-            ttClassSelect.value = prev;
-        } else if (allowed.length > 0) {
-            ttClassSelect.value = allowed[0];
-        } else {
-            ttClassSelect.value = '';
-        }
+        ttClassSelect.value = resolvePreservedValue(prev);
         selectedTtClass = ttClassSelect.value;
     }
 
@@ -873,13 +890,7 @@ const populateClassDropdowns = () => {
     if (ypClassSelect) {
         const prev = ypClassSelect.value;
         ypClassSelect.innerHTML = buildSelectOptionsWithAll(allowed, isSuperAdmin, 'All Classes');
-        if (prev && (prev === 'all' || allowed.some(c => isClassInDutyScope(prev, [c])))) {
-            ypClassSelect.value = prev;
-        } else if (allowed.length > 0) {
-            ypClassSelect.value = isSuperAdmin ? 'all' : allowed[0];
-        } else {
-            ypClassSelect.value = '';
-        }
+        ypClassSelect.value = resolvePreservedValue(prev);
         selectedYpClass = ypClassSelect.value;
     }
 
@@ -888,13 +899,7 @@ const populateClassDropdowns = () => {
     if (stClassSelect) {
         const prev = stClassSelect.value;
         stClassSelect.innerHTML = buildSelectOptionsWithAll(allowed, isSuperAdmin, 'All Classes');
-        if (prev && (prev === 'all' || allowed.some(c => isClassInDutyScope(prev, [c])))) {
-            stClassSelect.value = prev;
-        } else if (allowed.length > 0) {
-            stClassSelect.value = allowed[0];
-        } else {
-            stClassSelect.value = '';
-        }
+        stClassSelect.value = resolvePreservedValue(prev);
         selectedStClass = stClassSelect.value;
     }
 
@@ -903,13 +908,7 @@ const populateClassDropdowns = () => {
     if (examClassSelect) {
         const prev = examClassSelect.value;
         examClassSelect.innerHTML = buildSelectOptionsWithAll(allowed, isSuperAdmin, 'All Classes');
-        if (prev && (prev === 'all' || allowed.some(c => isClassInDutyScope(prev, [c])))) {
-            examClassSelect.value = prev;
-        } else if (allowed.length > 0) {
-            examClassSelect.value = allowed[0];
-        } else {
-            examClassSelect.value = '';
-        }
+        examClassSelect.value = resolvePreservedValue(prev);
     }
 
     // 5. Modal Subject Class Select
@@ -1154,6 +1153,7 @@ const loadAllClassCardsData = async (year = currentAcademicYear) => {
 const loadClassSubjects = async () => {
     const year = document.getElementById('subj-academic-year')?.value || currentAcademicYear;
     selectedSubjectsClass = 'all';
+    resetPaginationPage(subjectsPagination);
 
     await loadAllClassCardsData(year);
     renderClassSubjectsUI();
@@ -1162,6 +1162,8 @@ const loadClassSubjects = async () => {
 const renderClassSubjectsUI = () => {
     const grid = document.getElementById('subjects-cards-grid');
     const badge = document.getElementById('subj-count-badge');
+    const pagTop = document.getElementById('ap-subjects-pagination-top');
+    const pagBottom = document.getElementById('ap-subjects-pagination-bottom');
     if (!grid) return;
 
     const allowed = getAllowedClassesForTeacher();
@@ -1177,6 +1179,7 @@ const renderClassSubjectsUI = () => {
     }
 
     if (!targetClasses.length) {
+        hidePaginationControls(pagTop, pagBottom);
         grid.innerHTML = `
             <div class="col-span-full p-12 text-center text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">
                 <i class="fas fa-layer-group text-4xl mb-3 text-slate-300 block"></i>
@@ -1186,7 +1189,17 @@ const renderClassSubjectsUI = () => {
         return;
     }
 
-    grid.innerHTML = targetClasses.map(c => {
+    const { items: visibleClasses } = paginateArray(targetClasses, subjectsPagination);
+    renderPaginationControls({
+        topEl: pagTop,
+        bottomEl: pagBottom,
+        state: subjectsPagination,
+        totalItems: targetClasses.length,
+        itemLabel: 'classes',
+        onChange: () => renderClassSubjectsUI()
+    });
+
+    grid.innerHTML = visibleClasses.map(c => {
         const cardData = classCardsData[c] || { subjects: [], customExams: [] };
         const subjects = cardData.subjects || [];
         const customExams = cardData.customExams || [];
@@ -1761,12 +1774,31 @@ let allClassesTimetables = {}; // classLabel -> { matrix, subjects }
 const loadTimetable = async () => {
     const year = document.getElementById('tt-academic-year')?.value || currentAcademicYear;
     const allowed = getAllowedClassesForTeacher();
-    const selVal = document.getElementById('tt-class-select')?.value;
-    selectedTtClass = (selVal !== undefined && selVal !== '') ? selVal : (isSuperAdmin ? 'all' : (allowed[0] || ''));
+    const selVal = document.getElementById('tt-class-select')?.value || '';
+    selectedTtClass = selVal;
+    resetPaginationPage(ttPagination);
     const heading = document.getElementById('tt-view-heading');
 
     if (!isSuperAdmin && !allowed.length) {
         if (heading) heading.textContent = 'Weekly Routine Timetable';
+        renderTimetableMatrixUI();
+        return;
+    }
+
+    if (!selectedTtClass) {
+        if (heading) heading.textContent = `Weekly Routine Timetable (${year})`;
+        if (isTimetableEditMode) {
+            isTimetableEditMode = false;
+            const editToggle = document.getElementById('toggle-timetable-edit');
+            if (editToggle) editToggle.checked = false;
+            const label = document.getElementById('tt-edit-mode-label');
+            if (label) {
+                label.textContent = 'View Only';
+                label.className = 'text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-200 text-slate-600';
+            }
+            const saveBtn = document.getElementById('btn-save-timetable');
+            if (saveBtn) saveBtn.disabled = true;
+        }
         renderTimetableMatrixUI();
         return;
     }
@@ -1917,14 +1949,69 @@ const normalizeTimetableSlots = (config = {}) => {
     return slots;
 };
 
-const renderTimetableMatrixUI = () => {
+const syncAllClassesTimetableDomToMemory = () => {
+    const renderedClasses = new Set();
+    document.querySelectorAll('.tt-cell-subject[data-class]').forEach(el => {
+        if (el.dataset.class) renderedClasses.add(el.dataset.class);
+    });
+    document.querySelectorAll('.tt-day-status-select[data-class]').forEach(el => {
+        if (el.dataset.class) renderedClasses.add(el.dataset.class);
+    });
+
+    renderedClasses.forEach(cls => {
+        if (!allClassesTimetables[cls]) return;
+        const cSubjects = allClassesTimetables[cls].subjects || [];
+        const subjectSelects = document.querySelectorAll(`.tt-cell-subject[data-class="${cls}"]`);
+        if (subjectSelects.length > 0) {
+            const classMatrix = {};
+            subjectSelects.forEach(sel => {
+                const day = sel.dataset.day;
+                const slotId = sel.dataset.slot;
+                const period = sel.dataset.period;
+                const subjectId = sel.value;
+                const primaryKey = `${day}_${slotId}`;
+                const legacyKey = `${day}_${period}`;
+                const teacherInput = document.querySelector(`.tt-cell-teacher[data-class="${cls}"][data-day="${day}"][data-slot="${slotId}"]`)
+                    || document.querySelector(`.tt-cell-teacher[data-class="${cls}"][data-day="${day}"][data-period="${period}"]`);
+                const roomInput = document.querySelector(`.tt-cell-room[data-class="${cls}"][data-day="${day}"][data-slot="${slotId}"]`)
+                    || document.querySelector(`.tt-cell-room[data-class="${cls}"][data-day="${day}"][data-period="${period}"]`);
+                if (subjectId) {
+                    const subjObj = cSubjects.find(s => s.id === subjectId);
+                    const entry = {
+                        subjectId,
+                        subjectName: subjObj ? subjObj.name : 'Subject',
+                        subjectCode: subjObj ? subjObj.code : '',
+                        teacher: teacherInput?.value.trim() || (subjObj ? subjObj.teacher : ''),
+                        room: roomInput?.value.trim() || ''
+                    };
+                    classMatrix[primaryKey] = entry;
+                    classMatrix[legacyKey] = entry;
+                }
+            });
+            allClassesTimetables[cls].matrix = classMatrix;
+        }
+
+        const daySelects = document.querySelectorAll(`.tt-day-status-select[data-class="${cls}"]`);
+        if (daySelects.length > 0) {
+            const dayStatuses = { ...(allClassesTimetables[cls].dayStatuses || {}) };
+            daySelects.forEach(ds => {
+                dayStatuses[ds.dataset.day] = ds.value;
+            });
+            allClassesTimetables[cls].dayStatuses = dayStatuses;
+        }
+    });
+};
+
+const renderTimetableMatrixUI = ({ renderAll = false } = {}) => {
     const grid = document.getElementById('tt-schedule-grid');
     const workingDaysBadge = document.getElementById('tt-working-days-badge');
     const totalPeriodsBadge = document.getElementById('tt-total-periods-badge');
+    const pagTop = document.getElementById('ap-tt-pagination-top');
+    const pagBottom = document.getElementById('ap-tt-pagination-bottom');
 
     const instOffDays = getOffDaysFromWeekendDays(attendanceConfig.weekendDays || [5]);
 
-    const slots = (selectedTtClass !== 'all' && Array.isArray(currentClassSlots))
+    const slots = (selectedTtClass && selectedTtClass !== 'all' && Array.isArray(currentClassSlots))
         ? currentClassSlots
         : [];
     const teachingSlotsCount = slots.filter(s => !s.isBreak).length;
@@ -1939,7 +2026,30 @@ const renderTimetableMatrixUI = () => {
     if (!grid) return;
 
     const allowed = getAllowedClassesForTeacher();
-    if (!isSuperAdmin && (!allowed.length || (selectedTtClass !== 'all' && !isClassInDutyScope(selectedTtClass, teacherAssignedClasses)))) {
+    if (!isSuperAdmin && !allowed.length) {
+        hidePaginationControls(pagTop, pagBottom);
+        grid.innerHTML = `
+            <div class="p-12 text-center text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">
+                <i class="fas fa-layer-group text-4xl mb-3 text-slate-300 block"></i>
+                No duty classes assigned for this account.<br>
+                <span class="text-xs text-slate-500 font-medium">Please contact administrator to configure assigned classes.</span>
+            </div>`;
+        return;
+    }
+
+    if (!selectedTtClass) {
+        hidePaginationControls(pagTop, pagBottom);
+        grid.innerHTML = `
+            <div class="p-12 text-center text-slate-500 font-bold bg-white rounded-3xl border border-dashed border-slate-300">
+                <i class="fas fa-calendar-days text-4xl mb-3 text-indigo-300 block"></i>
+                Select a Class to View Weekly Routine Timetable<br>
+                <span class="text-xs text-slate-400 font-medium">Choose a class (or All Classes) from the dropdown above to load the timetable.</span>
+            </div>`;
+        return;
+    }
+
+    if (!isSuperAdmin && selectedTtClass !== 'all' && !isClassInDutyScope(selectedTtClass, teacherAssignedClasses)) {
+        hidePaginationControls(pagTop, pagBottom);
         grid.innerHTML = `
             <div class="p-12 text-center text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">
                 <i class="fas fa-layer-group text-4xl mb-3 text-slate-300 block"></i>
@@ -1950,7 +2060,29 @@ const renderTimetableMatrixUI = () => {
     }
 
     if (selectedTtClass === 'all') {
-        grid.innerHTML = allowed.map(cls => {
+        if (!allowed.length) {
+            hidePaginationControls(pagTop, pagBottom);
+            grid.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">No classes available in your scope.</div>`;
+            return;
+        }
+        const visibleClasses = renderAll ? allowed : paginateArray(allowed, ttPagination).items;
+        if (renderAll) {
+            hidePaginationControls(pagTop, pagBottom);
+        } else {
+            renderPaginationControls({
+                topEl: pagTop,
+                bottomEl: pagBottom,
+                state: ttPagination,
+                totalItems: allowed.length,
+                itemLabel: 'classes',
+                onChange: () => {
+                    if (isTimetableEditMode) syncAllClassesTimetableDomToMemory();
+                    renderTimetableMatrixUI();
+                }
+            });
+        }
+
+        grid.innerHTML = visibleClasses.map(cls => {
             const cData = allClassesTimetables[cls] || { matrix: {}, subjects: [], slots: [], dayStatuses: {} };
             const matrix = cData.matrix || {};
             const dayStatuses = cData.dayStatuses || {};
@@ -2096,6 +2228,8 @@ const renderTimetableMatrixUI = () => {
         }).join('');
         return;
     }
+
+    hidePaginationControls(pagTop, pagBottom);
 
     if (!selectedTtClass) {
         grid.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">Please select a class to view routine timetable.</div>`;
@@ -2265,6 +2399,12 @@ const renderTimetableMatrixUI = () => {
 };
 
 const toggleTimetableEdit = (enabled) => {
+    if (enabled && !selectedTtClass) {
+        const toggle = document.getElementById('toggle-timetable-edit');
+        if (toggle) toggle.checked = false;
+        showToast('Please select a class first to enable Edit Mode.', 'warning');
+        return;
+    }
     isTimetableEditMode = enabled;
     const label = document.getElementById('tt-edit-mode-label');
     const saveBtn = document.getElementById('btn-save-timetable');
@@ -2284,47 +2424,23 @@ const saveTimetableMatrix = async () => {
     const year = document.getElementById('tt-academic-year')?.value || currentAcademicYear;
     const allowed = getAllowedClassesForTeacher();
 
+    if (!selectedTtClass) {
+        showToast('Please select a class first.', 'warning');
+        return;
+    }
+
     if (!isSuperAdmin && (!allowed.length || (selectedTtClass !== 'all' && !isClassInDutyScope(selectedTtClass, teacherAssignedClasses)))) {
         showToast('Permission denied: You cannot edit timetable for unassigned classes.', 'warning');
         return;
     }
 
     if (selectedTtClass === 'all') {
+        syncAllClassesTimetableDomToMemory();
         const tasks = allowed.map(async (cls) => {
             const cDocId = getTimetableDocId(year, cls);
-            const cSubjects = (allClassesTimetables[cls] && allClassesTimetables[cls].subjects) || [];
-            const classMatrix = {};
-            const subjectSelects = document.querySelectorAll(`.tt-cell-subject[data-class="${cls}"]`);
-            subjectSelects.forEach(sel => {
-                const day = sel.dataset.day;
-                const slotId = sel.dataset.slot;
-                const period = sel.dataset.period;
-                const subjectId = sel.value;
-                const primaryKey = `${day}_${slotId}`;
-                const legacyKey = `${day}_${period}`;
-                const teacherInput = document.querySelector(`.tt-cell-teacher[data-class="${cls}"][data-day="${day}"][data-slot="${slotId}"]`)
-                    || document.querySelector(`.tt-cell-teacher[data-class="${cls}"][data-day="${day}"][data-period="${period}"]`);
-                const roomInput = document.querySelector(`.tt-cell-room[data-class="${cls}"][data-day="${day}"][data-slot="${slotId}"]`)
-                    || document.querySelector(`.tt-cell-room[data-class="${cls}"][data-day="${day}"][data-period="${period}"]`);
-                if (subjectId) {
-                    const subjObj = cSubjects.find(s => s.id === subjectId);
-                    const entry = {
-                        subjectId,
-                        subjectName: subjObj ? subjObj.name : 'Subject',
-                        subjectCode: subjObj ? subjObj.code : '',
-                        teacher: teacherInput?.value.trim() || (subjObj ? subjObj.teacher : ''),
-                        room: roomInput?.value.trim() || ''
-                    };
-                    classMatrix[primaryKey] = entry;
-                    classMatrix[legacyKey] = entry;
-                }
-            });
-
-            const dayStatuses = (allClassesTimetables[cls] && allClassesTimetables[cls].dayStatuses) || {};
-            const daySelects = document.querySelectorAll(`.tt-day-status-select[data-class="${cls}"]`);
-            daySelects.forEach(ds => {
-                dayStatuses[ds.dataset.day] = ds.value;
-            });
+            const cData = allClassesTimetables[cls] || { matrix: {}, dayStatuses: {} };
+            const classMatrix = cData.matrix || {};
+            const dayStatuses = cData.dayStatuses || {};
 
             await setDoc(doc(db, `${BASE_PATH}/timetables`, cDocId), {
                 matrix: classMatrix,
@@ -2998,6 +3114,10 @@ const updatePrintBrandingHeaders = (docTitle, dateElId) => {
 };
 
 const printTimetableRoutine = () => {
+    if (!selectedTtClass) {
+        showToast('Please select a class first to print the timetable.', 'warning');
+        return;
+    }
     const year = document.getElementById('tt-academic-year')?.value || currentAcademicYear;
     const titleEl = document.getElementById('tt-print-doc-title');
     if (titleEl) {
@@ -3008,10 +3128,24 @@ const printTimetableRoutine = () => {
     updatePrintBrandingHeaders('Class Routine Timetable', 'tt-print-date');
     setPrintOrientation('landscape');
     document.body.setAttribute('data-print-target', 'timetable');
+    if (selectedTtClass === 'all') {
+        if (isTimetableEditMode) syncAllClassesTimetableDomToMemory();
+        renderTimetableMatrixUI({ renderAll: true });
+        try {
+            window.print();
+        } finally {
+            renderTimetableMatrixUI();
+        }
+        return;
+    }
     window.print();
 };
 
 const printYearPlan = () => {
+    if (!selectedYpClass) {
+        showToast('Please select a class first to print the syllabus plan.', 'warning');
+        return;
+    }
     const year = document.getElementById('yp-academic-year')?.value || currentAcademicYear;
     const calType = document.getElementById('yp-calendar-type')?.value === 'hijri' ? 'Hijri' : 'Gregorian';
     const titleEl = document.getElementById('yp-print-doc-title');
@@ -3023,12 +3157,26 @@ const printYearPlan = () => {
     updatePrintBrandingHeaders('Academic Year Plan', 'yp-print-date');
     setPrintOrientation('landscape');
     document.body.setAttribute('data-print-target', 'yearplan');
+    if (selectedYpClass === 'all') {
+        if (isYearPlanEditMode) syncAllClassesYearPlanDomToMemory();
+        renderYearPlanUI({ renderAll: true });
+        try {
+            window.print();
+        } finally {
+            renderYearPlanUI();
+        }
+        return;
+    }
     window.print();
 };
 
 const printExamRoutine = () => {
     const year = document.getElementById('exam-tt-academic-year')?.value || currentAcademicYear;
-    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '1';
+    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '';
+    if (!selectedClass) {
+        showToast('Please select a class first to print the exam routine.', 'warning');
+        return;
+    }
     const titleEl = document.getElementById('exam-print-doc-title');
     if (titleEl) {
         titleEl.textContent = selectedClass === 'all'
@@ -3038,6 +3186,16 @@ const printExamRoutine = () => {
     updatePrintBrandingHeaders('Exam Schedule', 'exam-print-date');
     setPrintOrientation('landscape');
     document.body.setAttribute('data-print-target', 'exam');
+    if (selectedClass === 'all') {
+        if (isExamTimetableEditMode) syncAllClassesExamDomToMemory();
+        renderExamTimetableGridUI({ renderAll: true });
+        try {
+            window.print();
+        } finally {
+            renderExamTimetableGridUI();
+        }
+        return;
+    }
     window.print();
 };
 
@@ -3123,8 +3281,27 @@ const saveYearPlanCalendarSettings = async () => {
 
 const loadYearPlan = async () => {
     const year = document.getElementById('yp-academic-year')?.value || currentAcademicYear;
-    selectedYpClass = document.getElementById('yp-class-select')?.value || selectedSubjectsClass || '1';
+    selectedYpClass = document.getElementById('yp-class-select')?.value || '';
+    resetPaginationPage(ypPagination);
     const heading = document.getElementById('yp-view-heading');
+
+    if (!selectedYpClass) {
+        if (heading) heading.textContent = `Academic Year Syllabus Plan (${year})`;
+        if (isYearPlanEditMode) {
+            isYearPlanEditMode = false;
+            const toggle = document.getElementById('toggle-yearplan-edit');
+            if (toggle) toggle.checked = false;
+            const label = document.getElementById('yp-edit-mode-label');
+            if (label) {
+                label.textContent = 'View & Track';
+                label.className = 'text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-slate-200 text-slate-600';
+            }
+            const saveBtn = document.getElementById('btn-save-yearplan');
+            if (saveBtn) saveBtn.disabled = true;
+        }
+        renderYearPlanUI();
+        return;
+    }
 
     if (selectedYpClass === 'all') {
         if (heading) heading.textContent = `All Classes Academic Year Syllabus Plans (${year})`;
@@ -3180,12 +3357,60 @@ const loadYearPlan = async () => {
     renderYearPlanUI();
 };
 
-const renderYearPlanUI = () => {
+const syncAllClassesYearPlanDomToMemory = () => {
+    const renderedClasses = new Set();
+    document.querySelectorAll('.yp-cell-lesson[data-class]').forEach(el => {
+        if (el.dataset.class) renderedClasses.add(el.dataset.class);
+    });
+    renderedClasses.forEach(cls => {
+        if (!allClassesYearPlans[cls]) return;
+        const cGrid = { ...(allClassesYearPlans[cls].grid || {}) };
+        const lessonInputs = document.querySelectorAll(`.yp-cell-lesson[data-class="${cls}"]`);
+        lessonInputs.forEach(input => {
+            const key = input.dataset.key;
+            const topicInput = document.querySelector(`.yp-cell-topic[data-class="${cls}"][data-key="${key}"]`);
+            const existing = cGrid[key] || {};
+            cGrid[key] = {
+                ...existing,
+                lessonNo: input.value.trim(),
+                topic: topicInput?.value.trim() || ''
+            };
+        });
+        allClassesYearPlans[cls].grid = cGrid;
+    });
+};
+
+const renderYearPlanUI = ({ renderAll = false } = {}) => {
     const grid = document.getElementById('yp-schedule-grid');
+    const pagTop = document.getElementById('ap-yp-pagination-top');
+    const pagBottom = document.getElementById('ap-yp-pagination-bottom');
     if (!grid) return;
 
     const allowed = getAllowedClassesForTeacher();
-    if (!isSuperAdmin && (!allowed.length || (selectedYpClass !== 'all' && !isClassInDutyScope(selectedYpClass, teacherAssignedClasses)))) {
+    if (!isSuperAdmin && !allowed.length) {
+        hidePaginationControls(pagTop, pagBottom);
+        grid.innerHTML = `
+            <div class="p-12 text-center text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">
+                <i class="fas fa-layer-group text-4xl mb-3 text-slate-300 block"></i>
+                No duty classes assigned for this account.<br>
+                <span class="text-xs text-slate-500 font-medium">Please contact administrator to configure assigned classes.</span>
+            </div>`;
+        return;
+    }
+
+    if (!selectedYpClass) {
+        hidePaginationControls(pagTop, pagBottom);
+        grid.innerHTML = `
+            <div class="p-12 text-center text-slate-500 font-bold bg-white rounded-3xl border border-dashed border-slate-300">
+                <i class="fas fa-calendar-check text-4xl mb-3 text-indigo-300 block"></i>
+                Select a Class to View Academic Year Syllabus Plan<br>
+                <span class="text-xs text-slate-400 font-medium">Choose a class (or All Classes) from the dropdown above to load the syllabus plan.</span>
+            </div>`;
+        return;
+    }
+
+    if (!isSuperAdmin && selectedYpClass !== 'all' && !isClassInDutyScope(selectedYpClass, teacherAssignedClasses)) {
+        hidePaginationControls(pagTop, pagBottom);
         grid.innerHTML = `
             <div class="p-12 text-center text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">
                 <i class="fas fa-layer-group text-4xl mb-3 text-slate-300 block"></i>
@@ -3200,7 +3425,29 @@ const renderYearPlanUI = () => {
     const months = getSessionMonthsList(currentYpCalendarType, startMonth, endMonth);
 
     if (selectedYpClass === 'all') {
-        grid.innerHTML = allowed.map(cls => {
+        if (!allowed.length) {
+            hidePaginationControls(pagTop, pagBottom);
+            grid.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">No classes available in your scope.</div>`;
+            return;
+        }
+        const visibleClasses = renderAll ? allowed : paginateArray(allowed, ypPagination).items;
+        if (renderAll) {
+            hidePaginationControls(pagTop, pagBottom);
+        } else {
+            renderPaginationControls({
+                topEl: pagTop,
+                bottomEl: pagBottom,
+                state: ypPagination,
+                totalItems: allowed.length,
+                itemLabel: 'classes',
+                onChange: () => {
+                    if (isYearPlanEditMode) syncAllClassesYearPlanDomToMemory();
+                    renderYearPlanUI();
+                }
+            });
+        }
+
+        grid.innerHTML = visibleClasses.map(cls => {
             const cData = allClassesYearPlans[cls] || { grid: {}, subjects: [] };
             const subjs = cData.subjects || [];
             const cGrid = cData.grid || {};
@@ -3281,6 +3528,8 @@ const renderYearPlanUI = () => {
         }).join('');
         return;
     }
+
+    hidePaginationControls(pagTop, pagBottom);
 
     if (!selectedYpClass) {
         grid.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">Please select a class.</div>`;
@@ -3388,6 +3637,12 @@ const renderYearPlanUI = () => {
 };
 
 const toggleYearPlanEdit = (enabled) => {
+    if (enabled && !selectedYpClass) {
+        const toggle = document.getElementById('toggle-yearplan-edit');
+        if (toggle) toggle.checked = false;
+        showToast('Please select a class first to enable Edit Mode.', 'warning');
+        return;
+    }
     isYearPlanEditMode = enabled;
     const label = document.getElementById('yp-edit-mode-label');
     const saveBtn = document.getElementById('btn-save-yearplan');
@@ -3405,25 +3660,18 @@ const toggleYearPlanEdit = (enabled) => {
 
 const saveYearPlan = async () => {
     const year = document.getElementById('yp-academic-year')?.value || currentAcademicYear;
+    if (!selectedYpClass) {
+        showToast('Please select a class first.', 'warning');
+        return;
+    }
 
     if (selectedYpClass === 'all') {
+        syncAllClassesYearPlanDomToMemory();
         const allowed = getAllowedClassesForTeacher();
         const tasks = allowed.map(async (cls) => {
             const cDocId = getYearPlanDocId(year, cls);
             const cData = allClassesYearPlans[cls] || { grid: {} };
             const cGrid = { ...(cData.grid || {}) };
-            const lessonInputs = document.querySelectorAll(`.yp-cell-lesson[data-class="${cls}"]`);
-
-            lessonInputs.forEach(input => {
-                const key = input.dataset.key;
-                const topicInput = document.querySelector(`.yp-cell-topic[data-class="${cls}"][data-key="${key}"]`);
-                const existing = cGrid[key] || {};
-                cGrid[key] = {
-                    ...existing,
-                    lessonNo: input.value.trim(),
-                    topic: topicInput?.value.trim() || ''
-                };
-            });
 
             await setDoc(doc(db, `${BASE_PATH}/yearPlans`, cDocId), {
                 calendarType: currentYpCalendarType,
@@ -4358,7 +4606,7 @@ const saveTeacherRemarksModal = async () => {
     }
 };
 
-const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData) => {
+const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData, paginationOpts = null) => {
     const year = document.getElementById('st-academic-year')?.value || currentAcademicYear;
     const isHijri = currentYpCalendarType === 'hijri';
     const monthList = isHijri ? HIJRI_MONTHS : GREGORIAN_MONTHS;
@@ -4378,6 +4626,9 @@ const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData) => {
     const teachingSlots = cSlots.filter(s => !s.isBreak);
 
     if (!teachingSlots.length) {
+        if (paginationOpts && paginationOpts.onTotalDays) {
+            paginationOpts.onTotalDays(0);
+        }
         return `
             <div class="p-10 text-center bg-white rounded-2xl border border-slate-200">
                 <i class="fas fa-calendar-times text-3xl text-slate-300 mb-2.5 block"></i>
@@ -4393,19 +4644,7 @@ const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData) => {
 
     const cumProgressByDate = computeMonthlyCumulativeSubjectProgress(cls, activeMonth, daysInMonth, isHijri, yearNum, mIndex, monthLogsMap);
 
-    let html = `
-        <table class="w-full text-left border-collapse border-2 border-slate-900 text-xs">
-            <thead>
-                <tr class="bg-slate-100 text-slate-900 border-b-2 border-slate-900 font-black text-xs uppercase tracking-wider">
-                    <th class="py-2.5 px-3 border-r-2 border-slate-900 text-center w-12 bg-slate-200/80">#</th>
-                    <th class="py-2.5 px-3 border-r-2 border-slate-900 w-36 bg-slate-200/80">Date &amp; Weekday</th>
-                    <th class="py-2.5 px-3 border-r-2 border-slate-900 min-w-[220px]">Timetable Periods Scheduled</th>
-                    <th class="py-2.5 px-3 border-r-2 border-slate-900 min-w-[320px]">Taught Lessons &amp; Portions Log</th>
-                    <th class="py-2.5 px-3 border-r-2 border-slate-900 min-w-[220px]">Teacher Remarks / Notes</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y-0 font-medium">`;
-
+    const matchingDays = [];
     for (let d = 1; d <= daysInMonth; d++) {
         let dateStr = '';
         let dayName = '';
@@ -4449,6 +4688,33 @@ const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData) => {
                 continue;
             }
         }
+
+        matchingDays.push({ d, dateStr, dayName, isDayOff, logData, loggedPeriods });
+    }
+
+    if (paginationOpts && paginationOpts.onTotalDays) {
+        paginationOpts.onTotalDays(matchingDays.length);
+    }
+
+    const daysToRender = (paginationOpts && paginationOpts.state && !paginationOpts.renderAll)
+        ? paginateArray(matchingDays, paginationOpts.state).items
+        : matchingDays;
+
+    let html = `
+        <table class="w-full text-left border-collapse border-2 border-slate-900 text-xs">
+            <thead>
+                <tr class="bg-slate-100 text-slate-900 border-b-2 border-slate-900 font-black text-xs uppercase tracking-wider">
+                    <th class="py-2.5 px-3 border-r-2 border-slate-900 text-center w-12 bg-slate-200/80">#</th>
+                    <th class="py-2.5 px-3 border-r-2 border-slate-900 w-36 bg-slate-200/80">Date &amp; Weekday</th>
+                    <th class="py-2.5 px-3 border-r-2 border-slate-900 min-w-[220px]">Timetable Periods Scheduled</th>
+                    <th class="py-2.5 px-3 border-r-2 border-slate-900 min-w-[320px]">Taught Lessons &amp; Portions Log</th>
+                    <th class="py-2.5 px-3 border-r-2 border-slate-900 min-w-[220px]">Teacher Remarks / Notes</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y-0 font-medium">`;
+
+    for (const dayEntry of daysToRender) {
+        const { d, dateStr, dayName, isDayOff, logData, loggedPeriods } = dayEntry;
 
         if (isDayOff) {
             html += `
@@ -4627,7 +4893,8 @@ const renderMonthlyRegisterTable = (cls, targetMonth, monthLogsMap, cData) => {
 
 const loadSyllabusTracker = async () => {
     const year = document.getElementById('st-academic-year')?.value || currentAcademicYear;
-    selectedStClass = document.getElementById('st-class-select')?.value || selectedYpClass || '1';
+    selectedStClass = document.getElementById('st-class-select')?.value || '';
+    resetPaginationPage(stPagination);
     
     const activeMonth = getActiveCalendarCurrentMonth(currentYpCalendarType);
     const mSel = document.getElementById('st-month-select');
@@ -4641,6 +4908,12 @@ const loadSyllabusTracker = async () => {
     stSearchQuery = document.getElementById('st-search-input')?.value.trim().toLowerCase() || '';
 
     const viewHeading = document.getElementById('st-view-heading');
+
+    if (!selectedStClass) {
+        if (viewHeading) viewHeading.textContent = `Monthly Syllabus Execution Register (${year})`;
+        renderSyllabusTrackerUI();
+        return;
+    }
 
     // Query daily teaching logs for this year
     try {
@@ -5015,12 +5288,43 @@ const renderSyllabusTrackerMonthSubjectCards = (cls, activeMonth) => {
     container.classList.remove('hidden');
 };
 
-const renderSyllabusTrackerUI = () => {
+const renderSyllabusTrackerUI = ({ renderAll = false } = {}) => {
     const gridEl = document.getElementById('st-schedule-grid');
+    const pagTop = document.getElementById('ap-st-pagination-top');
+    const pagBottom = document.getElementById('ap-st-pagination-bottom');
     if (!gridEl) return;
 
     const allowed = getAllowedClassesForTeacher();
-    if (!isSuperAdmin && (!allowed.length || (selectedStClass !== 'all' && !isClassInDutyScope(selectedStClass, teacherAssignedClasses)))) {
+    if (!isSuperAdmin && !allowed.length) {
+        hidePaginationControls(pagTop, pagBottom);
+        const summaryContainer = document.getElementById('st-month-syllabus-summary');
+        if (summaryContainer) summaryContainer.classList.add('hidden');
+        gridEl.innerHTML = `
+            <div class="p-12 text-center text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">
+                <i class="fas fa-layer-group text-4xl mb-3 text-slate-300 block"></i>
+                No duty classes assigned for this account.<br>
+                <span class="text-xs text-slate-500 font-medium">Please contact administrator to configure assigned classes.</span>
+            </div>`;
+        return;
+    }
+
+    if (!selectedStClass) {
+        hidePaginationControls(pagTop, pagBottom);
+        const summaryContainer = document.getElementById('st-month-syllabus-summary');
+        if (summaryContainer) summaryContainer.classList.add('hidden');
+        gridEl.innerHTML = `
+            <div class="p-12 text-center text-slate-500 font-bold bg-white rounded-3xl border border-dashed border-slate-300">
+                <i class="fas fa-list-check text-4xl mb-3 text-indigo-300 block"></i>
+                Select a Class to View Monthly Syllabus Execution Register<br>
+                <span class="text-xs text-slate-400 font-medium">Choose a class (or All Classes) from the dropdown above to load daily teaching progress.</span>
+            </div>`;
+        return;
+    }
+
+    if (!isSuperAdmin && selectedStClass !== 'all' && !isClassInDutyScope(selectedStClass, teacherAssignedClasses)) {
+        hidePaginationControls(pagTop, pagBottom);
+        const summaryContainer = document.getElementById('st-month-syllabus-summary');
+        if (summaryContainer) summaryContainer.classList.add('hidden');
         gridEl.innerHTML = `
             <div class="p-12 text-center text-slate-400 font-bold bg-white rounded-3xl border border-slate-200">
                 <i class="fas fa-layer-group text-4xl mb-3 text-slate-300 block"></i>
@@ -5112,12 +5416,27 @@ const renderSyllabusTrackerUI = () => {
         }
 
         if (!allowed.length) {
+            hidePaginationControls(pagTop, pagBottom);
             gridEl.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">No classes available in your scope.</div>`;
             return;
         }
 
+        const visibleClasses = renderAll ? allowed : paginateArray(allowed, stPagination).items;
+        if (renderAll) {
+            hidePaginationControls(pagTop, pagBottom);
+        } else {
+            renderPaginationControls({
+                topEl: pagTop,
+                bottomEl: pagBottom,
+                state: stPagination,
+                totalItems: allowed.length,
+                itemLabel: 'classes',
+                onChange: () => renderSyllabusTrackerUI()
+            });
+        }
+
         let html = '';
-        allowed.forEach(cls => {
+        visibleClasses.forEach(cls => {
             const cTt = allClassesTimetables[cls] || { slots: [], matrix: {}, dayStatuses: {}, subjects: [] };
             const classLogs = {};
             for (let d = 1; d <= daysInMonth; d++) {
@@ -5219,12 +5538,30 @@ const renderSyllabusTrackerUI = () => {
         metaEl.textContent = `Academic Year: ${year} • Class: ${selectedStClass} • Month: ${activeMonth} • Teaching Days: ${totalWorkingDays} • Execution Progress: ${completionPct}%`;
     }
 
+    let totalMatchingDays = 0;
     gridEl.innerHTML = renderMonthlyRegisterTable(selectedStClass, activeMonth, stMonthlyLogsMap, {
         slots: currentClassSlots,
         matrix: timetableMatrix,
         dayStatuses: currentClassDayStatuses,
         subjects: stClassSubjects
+    }, {
+        state: stPagination,
+        renderAll,
+        onTotalDays: (count) => { totalMatchingDays = count; }
     });
+
+    if (renderAll || totalMatchingDays === 0) {
+        hidePaginationControls(pagTop, pagBottom);
+    } else {
+        renderPaginationControls({
+            topEl: pagTop,
+            bottomEl: pagBottom,
+            state: stPagination,
+            totalItems: totalMatchingDays,
+            itemLabel: 'days',
+            onChange: () => renderSyllabusTrackerUI()
+        });
+    }
 };
 
 const openAddEditTrackerEntryModal = (cellKey = null, itemId = null, isNewSubSession = false, entryClass = null) => {
@@ -5484,8 +5821,11 @@ const deleteTrackerDailyItem = async (cellKey, itemId, entryClass = null) => {
 };
 
 const printSyllabusTracker = () => {
+    if (!selectedStClass) {
+        showToast('Please select a class first to print the syllabus register.', 'warning');
+        return;
+    }
     const year = document.getElementById('st-academic-year')?.value || currentAcademicYear;
-    const isHijri = currentYpCalendarType === 'hijri';
     const activeMonth = (selectedStMonth && selectedStMonth !== 'all') ? selectedStMonth : getActiveCalendarCurrentMonth(currentYpCalendarType);
 
     const docTitle = document.getElementById('st-print-doc-title');
@@ -5504,7 +5844,12 @@ const printSyllabusTracker = () => {
     updatePrintBrandingHeaders('Syllabus Execution Register', 'st-print-date');
     setPrintOrientation('landscape');
     document.body.setAttribute('data-print-target', 'syllabus-tracker');
-    window.print();
+    renderSyllabusTrackerUI({ renderAll: true });
+    try {
+        window.print();
+    } finally {
+        renderSyllabusTrackerUI();
+    }
 };
 
 
@@ -5758,8 +6103,15 @@ const toggleExamTimetableEdit = (isEditing) => {
         updateExamEditToggleUI(isEditing);
         renderMasterExamGridUI();
     } else {
-        const selectedClass = document.getElementById('exam-tt-class-select')?.value || '1';
-        if (selectedClass !== 'all' && !isSuperAdmin && !isClassInDutyScope(selectedClass, teacherAssignedClasses)) {
+        const selectedClass = document.getElementById('exam-tt-class-select')?.value || '';
+        if (isEditing && !selectedClass) {
+            const toggle = document.getElementById('toggle-exam-timetable-edit');
+            if (toggle) toggle.checked = false;
+            updateExamEditToggleUI(false);
+            showToast('Please select a class first to enable Edit Mode.', 'warning');
+            return;
+        }
+        if (selectedClass && selectedClass !== 'all' && !isSuperAdmin && !isClassInDutyScope(selectedClass, teacherAssignedClasses)) {
             const toggle = document.getElementById('toggle-exam-timetable-edit');
             if (toggle) toggle.checked = false;
             updateExamEditToggleUI(false);
@@ -5788,11 +6140,28 @@ const toggleExamTimetableEdit = (isEditing) => {
 
 const loadExamTimetable = async () => {
     const year = document.getElementById('exam-tt-academic-year')?.value || currentAcademicYear;
-    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '1';
+    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '';
+    resetPaginationPage(examPagination);
     currentExamTitle = document.getElementById('exam-tt-title-select')?.value || 'Half-Yearly';
     const heading = document.getElementById('exam-tt-view-heading');
     const classBadge = document.getElementById('exam-tt-class-badge');
     const datesBadge = document.getElementById('exam-tt-dates-badge');
+
+    if (!selectedClass) {
+        if (heading) heading.textContent = currentExamTitle ? `${currentExamTitle} Routine (${year})` : 'Examination Schedule';
+        if (classBadge) classBadge.textContent = 'Select Class';
+        if (datesBadge) datesBadge.textContent = '0 Scheduled Days';
+        if (isExamTimetableEditMode) {
+            isExamTimetableEditMode = false;
+            const editToggle = document.getElementById('toggle-exam-timetable-edit');
+            if (editToggle) editToggle.checked = false;
+            updateExamEditToggleUI(false);
+            const saveBtn = document.getElementById('btn-save-exam-timetable');
+            if (saveBtn) saveBtn.classList.add('hidden');
+        }
+        renderExamTimetableGridUI();
+        return;
+    }
 
     if (selectedClass === 'all') {
         const allowed = getAllowedClassesForTeacher();
@@ -5942,13 +6311,77 @@ const loadExamTimetable = async () => {
     renderExamTimetableGridUI();
 };
 
-const renderExamTimetableGridUI = () => {
+const syncAllClassesExamDomToMemory = () => {
+    const renderedClasses = new Set();
+    document.querySelectorAll('.exam-cell-subject[data-class]').forEach(el => {
+        if (el.dataset.class) renderedClasses.add(el.dataset.class);
+    });
+    renderedClasses.forEach(cls => {
+        const cData = allClassesExamTimetables[cls];
+        if (!cData) return;
+        const updatedMatrix = { ...(cData.matrix || {}) };
+        const selects = document.querySelectorAll(`.exam-cell-subject[data-class="${cls}"]`);
+        selects.forEach(sel => {
+            const date = sel.dataset.date;
+            const session = sel.dataset.session;
+            const val = sel.value;
+            const cellKey = `${date}_${session}`;
+
+            const portionsInput = document.querySelector(`.exam-cell-portions[data-class="${cls}"][data-date="${date}"][data-session="${session}"]`);
+            const invigilatorInput = document.querySelector(`.exam-cell-invigilator[data-class="${cls}"][data-date="${date}"][data-session="${session}"]`);
+            const hallInput = document.querySelector(`.exam-cell-hall[data-class="${cls}"][data-date="${date}"][data-session="${session}"]`);
+
+            if (val === '__NO_EXAM__') {
+                updatedMatrix[cellKey] = {
+                    subjectId: '',
+                    subjectName: 'No Exam / Study Leave',
+                    subjectCode: '',
+                    isNoExam: true,
+                    portions: portionsInput?.value.trim() || '',
+                    invigilator: '',
+                    hall: ''
+                };
+            } else if (val) {
+                const subjObj = (cData.subjects || []).find(s => s.id === val);
+                updatedMatrix[cellKey] = {
+                    subjectId: val,
+                    subjectName: subjObj ? subjObj.name : 'Subject',
+                    subjectCode: subjObj ? subjObj.code : '',
+                    isNoExam: false,
+                    portions: portionsInput?.value.trim() || '',
+                    invigilator: invigilatorInput?.value.trim() || '',
+                    hall: hallInput?.value.trim() || ''
+                };
+            } else {
+                delete updatedMatrix[cellKey];
+            }
+        });
+        cData.matrix = updatedMatrix;
+        allClassesExamTimetables[cls] = cData;
+    });
+};
+
+const renderExamTimetableGridUI = ({ renderAll = false } = {}) => {
     const grid = document.getElementById('exam-schedule-grid');
+    const pagTop = document.getElementById('ap-exam-pagination-top');
+    const pagBottom = document.getElementById('ap-exam-pagination-bottom');
     if (!grid) return;
 
-    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '1';
+    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '';
+
+    if (!selectedClass) {
+        hidePaginationControls(pagTop, pagBottom);
+        grid.innerHTML = `
+            <div class="p-12 text-center text-slate-500 font-bold bg-white rounded-3xl border border-dashed border-slate-300">
+                <i class="fas fa-file-pen text-4xl mb-3 text-indigo-300 block"></i>
+                Select a Class to View Examination Schedule<br>
+                <span class="text-xs text-slate-400 font-medium">Choose a class (or All Classes) from the dropdown above to load the exam timetable.</span>
+            </div>`;
+        return;
+    }
 
     if (!currentExamTitle) {
+        hidePaginationControls(pagTop, pagBottom);
         grid.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">Please select an examination to view schedule.</div>`;
         return;
     }
@@ -5956,12 +6389,30 @@ const renderExamTimetableGridUI = () => {
     if (selectedClass === 'all') {
         const allowed = getAllowedClassesForTeacher();
         if (!allowed.length) {
+            hidePaginationControls(pagTop, pagBottom);
             grid.innerHTML = `<div class="p-8 text-center text-slate-400 font-bold">No classes available in your scope.</div>`;
             return;
         }
 
+        const visibleClasses = renderAll ? allowed : paginateArray(allowed, examPagination).items;
+        if (renderAll) {
+            hidePaginationControls(pagTop, pagBottom);
+        } else {
+            renderPaginationControls({
+                topEl: pagTop,
+                bottomEl: pagBottom,
+                state: examPagination,
+                totalItems: allowed.length,
+                itemLabel: 'classes',
+                onChange: () => {
+                    if (isExamTimetableEditMode) syncAllClassesExamDomToMemory();
+                    renderExamTimetableGridUI();
+                }
+            });
+        }
+
         let html = '';
-        allowed.forEach(cls => {
+        visibleClasses.forEach(cls => {
             const cData = allClassesExamTimetables[cls] || { dates: [], sessions: [], matrix: {}, subjects: [] };
             const cDates = cData.dates || [];
             const cSessions = (Array.isArray(cData.sessions) && cData.sessions.length) ? cData.sessions : [
@@ -6098,6 +6549,8 @@ const renderExamTimetableGridUI = () => {
         grid.innerHTML = html;
         return;
     }
+
+    hidePaginationControls(pagTop, pagBottom);
 
     let html = `
         <table class="w-full text-left border-collapse border border-slate-200 text-xs">
@@ -6538,56 +6991,22 @@ const renderMasterExamGridUI = (targetClasses = null, classSubjsMap = null) => {
 
 const saveExamTimetableMatrix = async () => {
     const year = document.getElementById('exam-tt-academic-year')?.value || currentAcademicYear;
-    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '1';
+    const selectedClass = document.getElementById('exam-tt-class-select')?.value || '';
+    if (!selectedClass) {
+        showToast('Please select a class first.', 'warning');
+        return;
+    }
     if (!currentExamTitle) return alert('Please select an examination first.');
 
     if (selectedClass === 'all') {
         const allowed = getAllowedClassesForTeacher();
         if (!allowed.length) return;
 
+        syncAllClassesExamDomToMemory();
+
         const batchTasks = allowed.map(async (cls) => {
             const cData = allClassesExamTimetables[cls] || { dates: [], sessions: [], matrix: {}, subjects: [] };
-            const updatedMatrix = { ...cData.matrix };
-            const selects = document.querySelectorAll(`.exam-cell-subject[data-class="${cls}"]`);
-
-            selects.forEach(sel => {
-                const date = sel.dataset.date;
-                const session = sel.dataset.session;
-                const val = sel.value;
-                const cellKey = `${date}_${session}`;
-
-                const portionsInput = document.querySelector(`.exam-cell-portions[data-class="${cls}"][data-date="${date}"][data-session="${session}"]`);
-                const invigilatorInput = document.querySelector(`.exam-cell-invigilator[data-class="${cls}"][data-date="${date}"][data-session="${session}"]`);
-                const hallInput = document.querySelector(`.exam-cell-hall[data-class="${cls}"][data-date="${date}"][data-session="${session}"]`);
-
-                if (val === '__NO_EXAM__') {
-                    updatedMatrix[cellKey] = {
-                        subjectId: '',
-                        subjectName: 'No Exam / Study Leave',
-                        subjectCode: '',
-                        isNoExam: true,
-                        portions: portionsInput?.value.trim() || '',
-                        invigilator: '',
-                        hall: ''
-                    };
-                } else if (val) {
-                    const subjObj = (cData.subjects || []).find(s => s.id === val);
-                    updatedMatrix[cellKey] = {
-                        subjectId: val,
-                        subjectName: subjObj ? subjObj.name : 'Subject',
-                        subjectCode: subjObj ? subjObj.code : '',
-                        isNoExam: false,
-                        portions: portionsInput?.value.trim() || '',
-                        invigilator: invigilatorInput?.value.trim() || '',
-                        hall: hallInput?.value.trim() || ''
-                    };
-                } else {
-                    delete updatedMatrix[cellKey];
-                }
-            });
-
-            cData.matrix = updatedMatrix;
-            allClassesExamTimetables[cls] = cData;
+            const updatedMatrix = { ...(cData.matrix || {}) };
 
             const docId = getExamTimetableDocId(year, cls, currentExamTitle);
             return setDoc(doc(db, `${BASE_PATH}/examTimetables`, docId), {
@@ -7146,14 +7565,17 @@ const setupEventListeners = () => {
     document.getElementById('st-class-select')?.addEventListener('change', loadSyllabusTracker);
     document.getElementById('st-month-select')?.addEventListener('change', (e) => {
         selectedStMonth = e.target.value;
+        resetPaginationPage(stPagination);
         renderSyllabusTrackerUI();
     });
     document.getElementById('st-subject-select')?.addEventListener('change', (e) => {
         selectedStSubject = e.target.value;
+        resetPaginationPage(stPagination);
         renderSyllabusTrackerUI();
     });
     document.getElementById('st-search-input')?.addEventListener('input', (e) => {
         stSearchQuery = e.target.value.trim().toLowerCase();
+        resetPaginationPage(stPagination);
         renderSyllabusTrackerUI();
     });
     document.getElementById('btn-st-add-entry')?.addEventListener('click', () => openAddEditTrackerEntryModal());
@@ -7423,8 +7845,8 @@ const setupEventListeners = () => {
 
     document.getElementById('exam-tt-academic-year')?.addEventListener('change', async () => {
         const y = document.getElementById('exam-tt-academic-year')?.value;
-        const c = document.getElementById('exam-tt-class-select')?.value;
-        await loadAvailableExams(y, c);
+        const c = document.getElementById('exam-tt-class-select')?.value || '';
+        await loadAvailableExams(y, c || 'all');
         if (examViewMode === 'master') {
             await loadMasterExamTimetable();
         } else {
@@ -7433,8 +7855,8 @@ const setupEventListeners = () => {
     });
     document.getElementById('exam-tt-class-select')?.addEventListener('change', async () => {
         const y = document.getElementById('exam-tt-academic-year')?.value;
-        const c = document.getElementById('exam-tt-class-select')?.value;
-        await loadAvailableExams(y, c);
+        const c = document.getElementById('exam-tt-class-select')?.value || '';
+        await loadAvailableExams(y, c || 'all');
         if (examViewMode === 'master') {
             await loadMasterExamTimetable();
         } else {
