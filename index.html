@@ -148,7 +148,11 @@
                 </div>
 
                 <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    <a href="#product-download" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <i class="fas fa-plus-circle text-[11px]" aria-hidden="true"></i>
+                        <span>Create Free Website</span>
+                    </button>
+                    <a href="#product-download" class="hidden sm:inline-flex px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors items-center gap-1.5 whitespace-nowrap">
                         <i class="fas fa-download text-[11px] text-blue-600" aria-hidden="true"></i>
                         <span>App</span>
                     </a>
@@ -180,6 +184,10 @@
 
                         <div class="space-y-2.5">
                             <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <i class="fas fa-rocket text-[11px]" aria-hidden="true"></i>
+                                    <span>Create Free Website</span>
+                                </button>
                                 <button type="button" onclick="window.openLogin()" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
                                     <i class="fas fa-lock text-[11px] opacity-90" aria-hidden="true"></i>
                                     <span>Login</span>

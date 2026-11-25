@@ -181,6 +181,7 @@
         "offerBanner": { "type": "object" },
         "plans": { "type": "array" },
         "contact": { "type": "object" },
+        "selfSignupConfig": { "type": "object" },
         "updatedBy": { "type": "string", "maxLength": 160 },
         "updatedAt": { "type": "string" }
       }
@@ -234,12 +235,40 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["keyHash", "username", "passwordSalt", "passwordHash", "uid", "role", "institutionId"]
+    },
+    "UpgradeRequest": {
+      "title": "UpgradeRequest",
+      "description": "In-app plan upgrade request submitted by a Basic plan institution administrator for Company Owner approval.",
+      "type": "object",
+      "properties": {
+        "institutionId": { "type": "string" },
+        "institutionName": { "type": "string" },
+        "institutionPlace": { "type": "string" },
+        "currentPlanTier": { "type": "string", "enum": ["basic", "premium"] },
+        "currentPlanName": { "type": "string" },
+        "requestedPlanId": { "type": "string" },
+        "requestedPlanName": { "type": "string" },
+        "requestedFeature": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "note": { "type": "string" },
+        "requestedBy": { "type": "string" },
+        "requestedByUid": { "type": "string" },
+        "usageSnapshot": { "type": "object" },
+        "status": { "type": "string", "enum": ["pending", "contacted", "approved", "declined"] },
+        "createdAtIso": { "type": "string" },
+        "updatedAtIso": { "type": "string" }
+      },
+      "required": ["institutionId", "requestedPlanName", "status"]
     }
   },
   "firestore": {
     "/authCredentials/{keyHash}": {
       "schema": { "$ref": "#/entities/AuthCredential" },
       "description": "Server-only custom username authentication vault accessed strictly via Firebase Cloud Functions"
+    },
+    "/upgradeRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/UpgradeRequest" },
+      "description": "In-app upgrade requests from institutions managed by the Company Owner"
     },
     "/company/publicCatalog": {
       "schema": { "$ref": "#/entities/CompanyPublicCatalog" },

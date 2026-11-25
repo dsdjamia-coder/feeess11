@@ -73,6 +73,7 @@ export const COMPANY_PUBLIC_CATALOG_DOC_ID = 'publicCatalog';
 export const COMPANY_SHOWCASES_SUBCOLLECTION = 'showcases';
 export const INSTITUTIONS_COLLECTION = 'institutions';
 export const GLOBAL_USERS_COLLECTION = 'globalUsers';
+export const UPGRADE_REQUESTS_COLLECTION = 'upgradeRequests';
 export const RESERVED_INSTITUTION_SLUGS = RESERVED_PATH_SEGMENTS;
 export const DEFAULT_COMPANY_ALLOWED_PAGES = {
   admin: true,
@@ -86,6 +87,73 @@ export const DEFAULT_COMPANY_ALLOWED_PAGES = {
   studentActivity: true,
   classroomEvaluation: true
 };
+
+export const BASIC_PLAN_ALLOWED_PAGES = {
+  admin: true,
+  official: true,
+  student: true,
+  collection: true,
+  result: true,
+  attendance: false,
+  worksheet: false,
+  academicPlan: false,
+  studentActivity: false,
+  classroomEvaluation: false
+};
+
+export const DEFAULT_BASIC_PLAN_LIMITS = {
+  maxStudents: 150,
+  maxStaff: 6,
+  maxClasses: 12,
+  maxAcademicYears: 1,
+  maxFeeItems: 4,
+  maxNotices: 5,
+  maxGalleryPhotos: 6,
+  maxExamsPerYear: 2,
+  maxDirectoryEntries: 10
+};
+
+export const DEFAULT_PREMIUM_PLAN_LIMITS = {
+  maxStudents: 0,
+  maxStaff: 0,
+  maxClasses: 0,
+  maxAcademicYears: 0,
+  maxFeeItems: 0,
+  maxNotices: 0,
+  maxGalleryPhotos: 24,
+  maxExamsPerYear: 0,
+  maxDirectoryEntries: 0
+};
+
+export const BASIC_PLAN_FEATURES = {
+  excelBulkImport: false,
+  excelExport: false,
+  blankSheets: false,
+  multiAcademicYears: false,
+  batchPromotion: false,
+  alumniManagement: false,
+  studentContinuity: false,
+  studentGroups: false,
+  feeConcessions: false,
+  transferCertificates: false,
+  customStudentFields: false,
+  customDirectoryCategories: false,
+  backupAndAudit: false,
+  workflowOverrides: false,
+  masterLedger: false,
+  advancedFeeReports: false,
+  donations: false,
+  bulkWhatsappReminders: false,
+  bulkReportCards: false,
+  resultPromotionEngine: false,
+  studentSelfEdit: false,
+  siblingSwitcher: false
+};
+
+export const PREMIUM_PLAN_FEATURES = Object.keys(BASIC_PLAN_FEATURES).reduce((acc, key) => {
+  acc[key] = true;
+  return acc;
+}, {});
 
 export const PLATFORM_SHOWCASE_PAGES = [
   {

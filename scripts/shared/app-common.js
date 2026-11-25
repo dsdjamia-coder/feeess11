@@ -12,6 +12,22 @@ import {
 } from '../../config/app-config.js';
 import { openPremiumPlansModal } from './premium-plans-modal.js';
 import { mountUnifiedFooter, openLegalInfoModal } from './site-footer.js';
+import {
+    resolveInstitutionPlan,
+    setActiveInstitutionPlan,
+    getActiveInstitutionPlan,
+    isBasicPlan,
+    isPremiumPlan,
+    hasFeature,
+    getPlanLimit,
+    checkQuotaLimit,
+    requirePlanFeature,
+    requirePlanQuota,
+    openFeatureUpgradePrompt,
+    decorateProLockElement,
+    renderPlanUsageBanner,
+    onPlanChange
+} from './plan-entitlements.js';
 
 export {
     BASE_PATH,
@@ -24,7 +40,21 @@ export {
     extractInternalUsername,
     openPremiumPlansModal,
     mountUnifiedFooter,
-    openLegalInfoModal
+    openLegalInfoModal,
+    resolveInstitutionPlan,
+    setActiveInstitutionPlan,
+    getActiveInstitutionPlan,
+    isBasicPlan,
+    isPremiumPlan,
+    hasFeature,
+    getPlanLimit,
+    checkQuotaLimit,
+    requirePlanFeature,
+    requirePlanQuota,
+    openFeatureUpgradePrompt,
+    decorateProLockElement,
+    renderPlanUsageBanner,
+    onPlanChange
 };
 export const formatCurrency = (value = 0) => {
     const num = Number(value || 0);
@@ -2187,6 +2217,7 @@ export const ensureTenantStatusAndAccess = async ({
         }
 
         const data = { id: snap.id, ...snap.data() };
+        const planInfo = setActiveInstitutionPlan(data);
         const evalRes = evaluateInstitutionAccess(data, requiredPage);
         window.AppSession?.setCompanyAllowedPages?.(evalRes.allowedPages);
 
@@ -2199,6 +2230,7 @@ export const ensureTenantStatusAndAccess = async ({
                     exists: true,
                     isRootGateway: false,
                     institution: data,
+                    planInfo,
                     allowedPages: evalRes.allowedPages,
                     evaluation: evalRes
                 };
@@ -2212,6 +2244,7 @@ export const ensureTenantStatusAndAccess = async ({
                 exists: true,
                 isRootGateway: false,
                 institution: data,
+                planInfo,
                 allowedPages: evalRes.allowedPages,
                 evaluation: evalRes
             };
@@ -2226,6 +2259,7 @@ export const ensureTenantStatusAndAccess = async ({
             exists: true,
             isRootGateway: false,
             institution: data,
+            planInfo,
             allowedPages: evalRes.allowedPages,
             evaluation: evalRes
         };

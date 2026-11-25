@@ -95,6 +95,87 @@ const updateOwnOtpPhoneCallable = httpsCallable(functions, 'updateOwnOtpPhone');
 const verifyOwnPasswordCallable = httpsCallable(functions, 'verifyOwnPassword');
 const initiateCompanyOwnerOtpCallable = httpsCallable(functions, 'initiateCompanyOwnerOtp');
 const completeCompanyOwnerOtpLoginCallable = httpsCallable(functions, 'completeCompanyOwnerOtpLogin');
+const checkSelfSignupAvailabilityCallable = httpsCallable(functions, 'checkSelfSignupAvailability');
+const selfRegisterInstitutionCallable = httpsCallable(functions, 'selfRegisterInstitution');
+const submitUpgradeRequestCallable = httpsCallable(functions, 'submitUpgradeRequest');
+
+export const checkSelfSignupAvailability = async ({ slug = '', username = '' } = {}) => {
+  try {
+    const res = await checkSelfSignupAvailabilityCallable({
+      slug: String(slug || '').trim().toLowerCase(),
+      username: String(username || '').trim()
+    });
+    return res?.data || { slugAvailable: false, usernameAvailable: false };
+  } catch (err) {
+    const msg = extractCallableErrorMessage(err, 'Unable to check availability right now.');
+    const wrapped = new Error(msg);
+    wrapped.code = err?.code || 'functions/error';
+    throw wrapped;
+  }
+};
+
+export const selfRegisterInstitutionAndSignIn = async (authInstance, payload = {}) => {
+  try {
+    const res = await selfRegisterInstitutionCallable({
+      institutionName: String(payload.institutionName || '').trim(),
+      slug: String(payload.slug || '').trim().toLowerCase(),
+      place: String(payload.place || '').trim(),
+      phone: String(payload.phone || '').trim(),
+      adminName: String(payload.adminName || '').trim(),
+      username: String(payload.username || '').trim(),
+      password: String(payload.password || ''),
+      phoneIdToken: String(payload.phoneIdToken || '').trim()
+    });
+    const data = res?.data || null;
+    if (!data?.ok) {
+      throw new Error('Could not complete institution registration.');
+    }
+    let userCred = null;
+    if (authInstance && data.customToken) {
+      userCred = await signInWithCustomToken(authInstance, data.customToken);
+      if (userCred?.user) {
+        try {
+          await userCred.user.getIdToken(true);
+        } catch (_) {}
+      }
+    }
+    return {
+      ...data,
+      userCred
+    };
+  } catch (err) {
+    const msg = extractCallableErrorMessage(err, 'Institution registration failed. Please try again.', { isTokenMinting: true });
+    const wrapped = new Error(msg);
+    wrapped.code = err?.code || 'functions/error';
+    throw wrapped;
+  }
+};
+
+export const submitUpgradeRequest = async ({
+  institutionId = '',
+  requestedPlanId = '',
+  requestedPlanName = '',
+  requestedFeature = '',
+  contactPhone = '',
+  note = ''
+} = {}) => {
+  try {
+    const res = await submitUpgradeRequestCallable({
+      institutionId: String(institutionId || '').trim().toLowerCase(),
+      requestedPlanId: String(requestedPlanId || '').trim(),
+      requestedPlanName: String(requestedPlanName || '').trim(),
+      requestedFeature: String(requestedFeature || '').trim(),
+      contactPhone: String(contactPhone || '').trim(),
+      note: String(note || '').trim()
+    });
+    return res?.data || { ok: true };
+  } catch (err) {
+    const msg = extractCallableErrorMessage(err, 'Unable to submit upgrade request.');
+    const wrapped = new Error(msg);
+    wrapped.code = err?.code || 'functions/error';
+    throw wrapped;
+  }
+};
 
 export const verifyLoginIdentifier = async ({ username, institutionId = '' }) => {
   try {

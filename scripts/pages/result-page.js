@@ -2,7 +2,7 @@ import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/1
 import { doc, onSnapshot, collection, getDocs, writeBatch, setDoc, query, where, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION } from '../../config/app-config.js';
-import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, isPastAcademicYearLabel, populateAcademicYearSelect, populateClassSelect, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, decorateProLockElement, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, hasFeature, isPastAcademicYearLabel, onPlanChange, populateAcademicYearSelect, populateClassSelect, renderPlanUsageBanner, requirePlanFeature, requirePlanQuota, resolveAuthoritativeCurrentYear, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
 import { showToast } from '../shared/toaster.js';
 import { getAuthClaims } from '../shared/custom-auth-service.js';
@@ -973,12 +973,35 @@ onAuthStateChanged(auth, async (user) => {
         return;
     }
 
+    const syncResultPlanUI = () => {
+        const proBindings = [
+            ['[data-target="report-cards-page"]', 'bulkReportCards', 'Bulk Report Cards & Rank Sheets'],
+            ['[data-target="promotion-page"]', 'resultPromotionEngine', 'Result Promotion Engine'],
+            ['#marks-tab-bulk', 'excelBulkImport', 'Bulk Excel Marks Upload'],
+            ['#marks-template-menu-btn', 'blankSheets', 'Blank Marksheet Templates'],
+            ['#marks-export-excel-btn', 'excelExport', 'Result Excel Export']
+        ];
+        proBindings.forEach(([selector, featureKey, featureName]) => {
+            document.querySelectorAll(selector).forEach((el) => {
+                decorateProLockElement(el, { featureKey, featureName });
+            });
+        });
+        renderPlanUsageBanner(
+            document.getElementById('result-plan-usage-banner'),
+            {},
+            { compact: true }
+        );
+    };
+
     const tenantCheck = await ensureTenantStatusAndAccess({
         db,
         requiredPage: 'result',
         institutionId: INSTITUTION_ID,
-        liveWatch: true
+        liveWatch: true,
+        onStatusUpdate: () => syncResultPlanUI()
     });
+    syncResultPlanUI();
+    onPlanChange(() => syncResultPlanUI());
     if (!tenantCheck?.active) {
         dismissLoadingScreen();
         return;
@@ -1169,6 +1192,12 @@ const pages = document.querySelectorAll('.page-content');
 const activateResultTab = (tabEl, { updateHash = true } = {}) => {
     if (!tabEl) return;
     const targetId = tabEl.dataset.target;
+    if (targetId === 'report-cards-page' && !requirePlanFeature('bulkReportCards', 'Bulk Report Cards & Rank Sheets')) {
+        return;
+    }
+    if (targetId === 'promotion-page' && !requirePlanFeature('resultPromotionEngine', 'Result Promotion Engine')) {
+        return;
+    }
     const targetSubtab = tabEl.dataset.subtab;
     const targetHref = tabEl.getAttribute('href');
     const effectiveSubtab = targetId === 'settings-page'
@@ -4687,6 +4716,10 @@ document.getElementById('exam-list-container').addEventListener('click', async (
 
 document.getElementById('exam-save').addEventListener('click', async () => {
     if (roleScope !== 'admin') return alert('Only admin can save exam setup.');
+    if (!editingExamId) {
+        const currentYearExams = (resultSchemas || []).filter((s) => !currentAcademicYear || (s.academicYear || currentAcademicYear) === currentAcademicYear).length;
+        if (!requirePlanQuota('maxExamsPerYear', currentYearExams)) return;
+    }
     const name = document.getElementById('exam-name').value.trim();
     const maxMarks = parseInt(document.getElementById('exam-max').value) || 0;
     const passMarks = parseInt(document.getElementById('exam-pass').value) || 0;
@@ -5003,6 +5036,9 @@ const updateMarksManualZeroState = (hasTable = false) => {
 };
 
 function setMarksEntryMode(mode = 'manual') {
+    if (mode === 'bulk' && !requirePlanFeature('excelBulkImport', 'Bulk Excel Marks Upload')) {
+        mode = 'manual';
+    }
     activeMarksEntryMode = mode === 'bulk' ? 'bulk' : 'manual';
     const isManual = activeMarksEntryMode === 'manual';
 
@@ -6338,6 +6374,7 @@ const openMarksBlankSheet = () => {
 };
 
 const exportCurrentMarksSheetToExcel = () => {
+    if (!requirePlanFeature('excelExport', 'Result Excel Export')) return;
     if (!currentMarksReviewData || !currentMarksReviewData.columns?.length || !currentMarksReviewData.workingRows?.length) {
         return alert('No active marks sheet available to export.');
     }
@@ -8936,6 +8973,8 @@ document.getElementById('exam-config-class-select')?.addEventListener('change', 
 document.getElementById('exam-config-add-row-btn')?.addEventListener('click', () => {
     const body = document.getElementById('exam-config-rows-body');
     if (!body) return;
+    const currentRowCount = body.querySelectorAll('.exam-config-row').length;
+    if (!requirePlanQuota('maxExamsPerYear', currentRowCount)) return;
     const schema = getSelectedSchemaForExamConfig();
     if (!schema) return alert('Select a class and save subjects first.');
     body.insertAdjacentHTML('beforeend', buildExamConfigRowHtml({ label: '', subjects: getSchemaSubjectRows(schema).map((subject) => subject.id) }, getSchemaSubjectRows(schema)));

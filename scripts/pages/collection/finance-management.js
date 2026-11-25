@@ -1,6 +1,6 @@
 import { doc, collection, writeBatch, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db } from '../../../config/firebase-config.js';
-import { BASE_PATH, escapeHtml, formatCurrency, populateClassSelect, compareClassLabelsNatural, openConfirmDialog, enableSmartSelectWindowing, syncSmartSelectDisplay } from '../../shared/app-common.js';
+import { BASE_PATH, escapeHtml, formatCurrency, populateClassSelect, compareClassLabelsNatural, openConfirmDialog, enableSmartSelectWindowing, requirePlanQuota, syncSmartSelectDisplay } from '../../shared/app-common.js';
 import { showToast } from '../../shared/toaster.js';
 
 const MONTH_SEQUENCE = [
@@ -1547,6 +1547,11 @@ export const initFinanceManagementModule = (stateContext) => {
         if (!admin && dutyClasses.length === 0) {
             return showToast('No duty classes assigned to your account.', 'warn');
         }
+        const activeYear = ctx.getAcademicYear?.() || '';
+        const existingCustomCount = (ctx.getFeeItems?.() || []).filter((item) => (
+            item.type === 'custom' && (!activeYear || (item.academicYear || activeYear) === activeYear)
+        )).length;
+        if (!requirePlanQuota('maxFeeItems', existingCustomCount)) return;
 
         const nameInput = document.getElementById('adv-fee-name');
         const scopeSelect = document.getElementById('adv-fee-scope');

@@ -87,6 +87,25 @@ service cloud.firestore {
       return isInstitutionActiveAndUnexpired(institutionId) || isCompanyOwner();
     }
 
+    function isBasicPlanTenant(institutionId) {
+      return institutionMetaExists(institutionId)
+        && ('planTier' in institutionMetaData(institutionId))
+        && institutionMetaData(institutionId).planTier == 'basic';
+    }
+
+    function isPremiumPlanTenant(institutionId) {
+      return isCompanyOwner() || !isBasicPlanTenant(institutionId);
+    }
+
+    function isModuleAllowedForTenant(institutionId, moduleKey) {
+      return isCompanyOwner()
+        || !institutionMetaExists(institutionId)
+        || !('allowedPages' in institutionMetaData(institutionId))
+        || !(institutionMetaData(institutionId).allowedPages is map)
+        || !(moduleKey in institutionMetaData(institutionId).allowedPages)
+        || institutionMetaData(institutionId).allowedPages[moduleKey] != false;
+    }
+
     // Public index landing page remains read-only accessible for any registered institution
     // even when subscription is expired or paused; all writes and internal portal data stay strictly locked.
     function isPublicIndexReadableInstitution(institutionId) {
@@ -347,11 +366,12 @@ service cloud.firestore {
     }
 
     function isValidPublicCatalogPayload() {
-      return hasOnlyKeys(request.resource.data, ['offerBanner', 'plans', 'contact', 'footer', 'legal', 'updatedAt', 'updatedBy'])
+      return hasOnlyKeys(request.resource.data, ['offerBanner', 'plans', 'contact', 'footer', 'legal', 'selfSignupConfig', 'updatedAt', 'updatedBy'])
         && (!('offerBanner' in request.resource.data) || request.resource.data.offerBanner is map)
         && (!('contact' in request.resource.data) || request.resource.data.contact is map)
         && (!('footer' in request.resource.data) || request.resource.data.footer is map)
         && (!('legal' in request.resource.data) || request.resource.data.legal is map)
+        && (!('selfSignupConfig' in request.resource.data) || request.resource.data.selfSignupConfig is map)
         && (!('plans' in request.resource.data) || (request.resource.data.plans is list && request.resource.data.plans.size() <= 25))
         && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 160));
     }
@@ -456,17 +476,43 @@ service cloud.firestore {
       allow create, update, delete: if isCompanyOwner();
     }
 
+    // Upgrade requests submitted by Institution Admins via Cloud Function; managed by Company Owner
+    match /upgradeRequests/{requestId} {
+      allow read: if isCompanyOwner() || (
+        isCustomAuth()
+        && ('institutionId' in request.auth.token)
+        && resource != null
+        && resource.data.institutionId == request.auth.token.institutionId
+        && isAdmin(resource.data.institutionId)
+      );
+      allow create, update, delete: if isCompanyOwner();
+    }
+
     // --- INSTITUTION RULES ---
 
     // 1. Settings Collection
     match /institutions/{institutionId}/settings/{docId} {
+      function maxAllowedGalleryCount() {
+        return isBasicPlanTenant(institutionId)
+          ? (
+            ('planLimits' in institutionMetaData(institutionId))
+            && (institutionMetaData(institutionId).planLimits is map)
+            && ('maxGalleryPhotos' in institutionMetaData(institutionId).planLimits)
+            && (institutionMetaData(institutionId).planLimits.maxGalleryPhotos is int || institutionMetaData(institutionId).planLimits.maxGalleryPhotos is float)
+            && institutionMetaData(institutionId).planLimits.maxGalleryPhotos > 0
+            ? institutionMetaData(institutionId).planLimits.maxGalleryPhotos
+            : 6
+          )
+          : 24;
+      }
+
       function validGalleryLimitWrite() {
         return docId != 'content'
           || !('gallery' in request.resource.data)
           || (
             request.resource.data.gallery is list
             && (
-              request.resource.data.gallery.size() <= 24
+              request.resource.data.gallery.size() <= maxAllowedGalleryCount()
               || (
                 resource != null
                 && resource.data.gallery is list
@@ -594,10 +640,10 @@ service cloud.firestore {
       );
     }
 
-    // 6. Student Groups
+    // 6. Student Groups (Premium feature)
     match /institutions/{institutionId}/studentGroups/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
+      allow write: if canAccessTenant(institutionId) && isPremiumPlanTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId));
     }
 
     // 7. Student Notification State (Authenticated student/staff sessions only)
@@ -636,103 +682,103 @@ service cloud.firestore {
       );
     }
 
-    // 10. Donations (Staff/Collector read; Admin/Manager or owner collector create/update/delete)
+    // 10. Donations (Premium feature)
     match /institutions/{institutionId}/donations/{docId} {
       allow read: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isCollector(institutionId) || isStaff(institutionId));
-      allow create: if canAccessTenant(institutionId) && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
-      allow update: if canAccessTenant(institutionId) && (
+      allow create: if canAccessTenant(institutionId) && isPremiumPlanTenant(institutionId) && (isAdmin(institutionId) || isRecordCollectorOwner(institutionId, request.resource.data));
+      allow update: if canAccessTenant(institutionId) && isPremiumPlanTenant(institutionId) && (
         isAdmin(institutionId)
         || (isCollector(institutionId) && matchesCollectorIdentity(institutionId, resource.data) && matchesCollectorIdentity(institutionId, request.resource.data))
       );
-      allow delete: if canAccessTenant(institutionId) && (
+      allow delete: if canAccessTenant(institutionId) && isPremiumPlanTenant(institutionId) && (
         isAdmin(institutionId)
         || (isCollector(institutionId) && (resource == null || matchesCollectorIdentity(institutionId, resource.data)))
       );
     }
 
-    // 11. Attendance
+    // 11. Attendance (Module-gated)
     match /institutions/{institutionId}/attendance/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageAttendance(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'attendance') && canManageAttendance(institutionId);
     }
 
-    // 12. Timetables & Classes
+    // 12. Timetables & Classes (Academic Plan module-gated)
     match /institutions/{institutionId}/timetables/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'academicPlan') && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/classSubjects/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'academicPlan') && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/yearPlans/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'academicPlan') && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/syllabusDailyLogs/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'academicPlan') && canManageAcademicPlan(institutionId);
     }
 
     match /institutions/{institutionId}/examTimetables/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageAcademicPlan(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'academicPlan') && canManageAcademicPlan(institutionId);
     }
 
-    // 13. Activities, Ibadah, Tasks
+    // 13. Activities, Ibadah, Tasks (Activity module-gated)
     match /institutions/{institutionId}/activities/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'studentActivity') && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/ibadah/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'studentActivity') && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/taskCompletions/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'studentActivity') && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/studentCustomBadges/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'studentActivity') && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/studentBonusPoints/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'studentActivity') && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/rewardSettings/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'studentActivity') && canManageActivity(institutionId);
     }
 
     match /institutions/{institutionId}/prayerSettings/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageActivity(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'studentActivity') && canManageActivity(institutionId);
     }
 
-    // 14. Evaluations & Impositions
+    // 14. Evaluations & Impositions (Evaluation module-gated)
     match /institutions/{institutionId}/evaluations/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageEvaluation(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'classroomEvaluation') && canManageEvaluation(institutionId);
     }
 
     match /institutions/{institutionId}/impositions/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageEvaluation(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'classroomEvaluation') && canManageEvaluation(institutionId);
     }
 
-    // 15. Worksheets
+    // 15. Worksheets (Worksheet module-gated)
     match /institutions/{institutionId}/worksheets/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && canManageWorksheet(institutionId);
+      allow write: if canAccessTenant(institutionId) && isModuleAllowedForTenant(institutionId, 'worksheet') && canManageWorksheet(institutionId);
     }
 
     // 16. Public Directory (Public read for landing page; auth metadata isolated to admin)
@@ -856,7 +902,7 @@ service cloud.firestore {
 
     match /institutions/{institutionId}/transferCertificates/{docId} {
       allow read: if isSignedIn() && canAccessTenant(institutionId);
-      allow write: if canAccessTenant(institutionId) && isAdmin(institutionId);
+      allow write: if canAccessTenant(institutionId) && isPremiumPlanTenant(institutionId) && isAdmin(institutionId);
     }
 
     // Default Deny on all other paths

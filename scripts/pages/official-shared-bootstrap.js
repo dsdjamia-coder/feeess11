@@ -2,7 +2,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { db, auth } from '../../config/firebase-config.js';
     import { ADMIN_AUTH_DOC_ID, INSTITUTION_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
-    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, ensureTenantStatusAndAccess, escapeHtml, openPremiumPlansModal, registerServiceWorker, rememberInstitutionLogo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, ensureTenantStatusAndAccess, escapeHtml, isBasicPlan, onPlanChange, openPremiumPlansModal, registerServiceWorker, rememberInstitutionLogo, renderPlanUsageBanner, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
     import { InteractiveCropper } from '../shared/image-cropper.js';
     import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
     import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
@@ -1790,12 +1790,15 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       ];
 
       const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
+      const basicTierActive = isBasicPlan();
+      const premiumOnlyIds = new Set(['worksheet', 'attendance', 'academicPlan', 'studentActivity', 'classroomEvaluation']);
+      const isModulePlanLocked = (modId) => companyAllowed[modId] === false || (basicTierActive && premiumOnlyIds.has(modId));
       const modules = allPossibleModules
-        .filter((m) => m.id === 'admin' || companyAllowed[m.id] === false || enabledModules[m.id] !== false)
-        .filter((m) => companyAllowed[m.id] === false || isMasterAdmin || m.hasAccess);
+        .filter((m) => m.id === 'admin' || isModulePlanLocked(m.id) || enabledModules[m.id] !== false)
+        .filter((m) => isModulePlanLocked(m.id) || isMasterAdmin || m.hasAccess);
 
       const moduleCardsHtml = modules.length > 0 ? modules.map((m) => {
-        const isCompanyLocked = companyAllowed[m.id] === false;
+        const isCompanyLocked = isModulePlanLocked(m.id);
         if (isCompanyLocked) {
           return `
             <div data-premium-locked-module="${escapeHtml(m.title)}" data-premium-module-key="${escapeHtml(m.id)}" class="group flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 bg-amber-50/40 border border-amber-200 hover:border-amber-400 rounded-xl p-2.5 sm:p-3.5 h-full shadow-2xs hover:shadow-md transition-all duration-150 cursor-pointer">
@@ -1902,6 +1905,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             </span>
           </div>
 
+          <!-- Basic Free Plan Usage & Upgrade Banner (auto-hidden on Premium) -->
+          <div id="official-plan-usage-banner"></div>
+
           <!-- Institution Strength Summary (Single-Doc Read) -->
           <div class="bg-white border border-slate-200 rounded-xl p-2.5 sm:p-3 shadow-2xs">
             <div class="flex items-center justify-between gap-2 mb-2 sm:mb-2.5">
@@ -1933,6 +1939,16 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             ${moduleCardsHtml}
           </div>
         </div>`;
+
+      renderPlanUsageBanner(
+        document.getElementById('official-plan-usage-banner'),
+        {
+          students: stats.hasStats ? stats.totalStudents : undefined,
+          classes: stats.hasStats ? stats.classCount : undefined,
+          staff: Array.isArray(allStaff) && allStaff.length > 0 ? allStaff.filter((s) => String(s?.status || 'Active').toLowerCase() !== 'inactive').length : undefined
+        },
+        { institutionName: resolveInstitutionName(institutionConfig) || '' }
+      );
 
       // Event bindings
       document.querySelectorAll('[data-open-tab]').forEach((btn) => {
@@ -9008,6 +9024,12 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
         } catch (_fallbackErr) {}
       }
     };
+
+    onPlanChange(() => {
+      if (!isWorksheetPage && document.getElementById('official-tab-dashboard')) {
+        renderDashboard();
+      }
+    });
 
     preloadOfficialBranding();
     restoreOfficialSession();

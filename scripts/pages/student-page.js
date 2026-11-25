@@ -1,7 +1,7 @@
 import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, getDoc, getDocFromCache, collection, query, where, getDocs, onSnapshot, setDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
-import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, isUpcomingAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, hasFeature, isBasicPlan, isUpcomingAcademicYearLabel, onPlanChange, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
 import {
@@ -5511,10 +5511,15 @@ registerServiceWorker();
                 if (!effectiveOrder.includes(k)) effectiveOrder.push(k);
             });
 
+            const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
+            const basicTierActive = isBasicPlan();
+            const premiumOnlyStudentTabKeys = new Set(['attendance', 'timetable', 'syllabus', 'activities']);
             const activeTabsUnsorted = PORTAL_TABS_REGISTRY.filter((tab) => {
                 const tabEnabled = cachedStudentPortalConfig.tabs[tab.key] !== false;
                 const moduleEnabled = tab.moduleKey ? cachedGlobalEnabledModules[tab.moduleKey] !== false : true;
-                return tabEnabled && moduleEnabled;
+                const companyModuleAllowed = tab.moduleKey ? companyAllowed[tab.moduleKey] !== false : true;
+                const tierAllowed = !(basicTierActive && premiumOnlyStudentTabKeys.has(tab.key));
+                return tabEnabled && moduleEnabled && companyModuleAllowed && tierAllowed;
             });
 
             // Sort active tabs according to admin configured order
@@ -7792,7 +7797,18 @@ registerServiceWorker();
                     db,
                     requiredPage: 'student',
                     institutionId: INSTITUTION_ID,
-                    liveWatch: true
+                    liveWatch: true,
+                    onStatusUpdate: () => {
+                        applyStudentPortalNavigation(cachedStudentPortalConfig, cachedGlobalEnabledModules);
+                    }
+                });
+                onPlanChange(() => {
+                    if (!hasFeature('studentSelfEdit')) {
+                        studentPortalPerms.allowPhotoUpload = false;
+                        studentPortalPerms.allowDetailsEdit = false;
+                        applyStudentPortalPermissionsUI();
+                    }
+                    applyStudentPortalNavigation(cachedStudentPortalConfig, cachedGlobalEnabledModules);
                 });
                 if (!tenantCheck?.active) {
                     const loader = document.getElementById('loading-screen');
@@ -7841,8 +7857,9 @@ registerServiceWorker();
                     }
 
                     studentFieldSchema = normalizeStudentFieldSchema(conf.studentFields);
-                    studentPortalPerms.allowPhotoUpload = conf.allowStudentPhotoUpload === true;
-                    studentPortalPerms.allowDetailsEdit = conf.allowStudentDetailsEdit === true;
+                    const selfEditAllowed = hasFeature('studentSelfEdit');
+                    studentPortalPerms.allowPhotoUpload = selfEditAllowed && conf.allowStudentPhotoUpload === true;
+                    studentPortalPerms.allowDetailsEdit = selfEditAllowed && conf.allowStudentDetailsEdit === true;
                     applyStudentPortalPermissionsUI();
 
                     const portalConfig = (conf.studentPortalConfig && typeof conf.studentPortalConfig === 'object')

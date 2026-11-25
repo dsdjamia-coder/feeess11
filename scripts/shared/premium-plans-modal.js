@@ -3,8 +3,10 @@ import { db as defaultDb } from '../../config/firebase-config.js';
 import {
   COMPANY_COLLECTION,
   COMPANY_PUBLIC_CATALOG_DOC_ID,
+  DEFAULT_BASIC_PLAN_LIMITS,
   INSTITUTION_ID
 } from '../../config/app-config.js';
+import { submitUpgradeRequest } from './custom-auth-service.js';
 
 const MODAL_ID = 'shared-premium-plans-modal';
 
@@ -112,6 +114,15 @@ export const normalizePublicCatalog = (raw = {}) => {
 
   const footer = raw?.footer && typeof raw.footer === 'object' ? raw.footer : null;
   const legal = raw?.legal && typeof raw.legal === 'object' ? raw.legal : null;
+  const rawSelfSignup = raw?.selfSignupConfig && typeof raw.selfSignupConfig === 'object' ? raw.selfSignupConfig : {};
+  const rawDefaultLimits = rawSelfSignup.defaultBasicLimits && typeof rawSelfSignup.defaultBasicLimits === 'object'
+    ? rawSelfSignup.defaultBasicLimits
+    : {};
+  const defaultBasicLimits = {};
+  Object.keys(DEFAULT_BASIC_PLAN_LIMITS).forEach((key) => {
+    const num = Number(rawDefaultLimits[key]);
+    defaultBasicLimits[key] = Number.isFinite(num) && num > 0 ? Math.floor(num) : DEFAULT_BASIC_PLAN_LIMITS[key];
+  });
 
   return {
     offerBanner: {
@@ -130,6 +141,10 @@ export const normalizePublicCatalog = (raw = {}) => {
       email: String(contact.email || '').trim(),
       website: String(contact.website || '').trim(),
       supportNote: String(contact.supportNote || '').trim()
+    },
+    selfSignupConfig: {
+      enabled: rawSelfSignup.enabled !== false,
+      defaultBasicLimits
     },
     ...(footer ? { footer } : {}),
     ...(legal ? { legal } : {})
@@ -209,7 +224,8 @@ const resolveContextHeader = ({
   moduleName = '',
   institutionName = '',
   pauseReason = '',
-  expiryDate = ''
+  expiryDate = '',
+  customReason = ''
 } = {}) => {
   if (contextType === 'paused') {
     return {
@@ -234,6 +250,20 @@ const resolveContextHeader = ({
       kicker: 'Company Catalog Preview',
       title: 'Premium Plans & Offers',
       subtitle: 'Live preview of how institutions see your custom plans, pricing, and contact channels.'
+    };
+  }
+  if (contextType === 'quota') {
+    return {
+      kicker: institutionName || 'Basic Plan Limit Reached',
+      title: moduleName ? `Upgrade for More ${moduleName.replace(/\s*Limit$/i, '')}` : 'Basic Plan Limit Reached',
+      subtitle: customReason || 'You have reached the Basic Free Plan quota. Upgrade to Premium for unlimited capacity and all modules.'
+    };
+  }
+  if (contextType === 'feature') {
+    return {
+      kicker: institutionName || 'Premium Feature',
+      title: moduleName ? `Unlock ${moduleName}` : 'Upgrade to Premium',
+      subtitle: customReason || `${moduleName || 'This feature'} is available on Premium Plans. Request an instant upgrade or contact us below.`
     };
   }
   if (moduleName) {
@@ -463,10 +493,43 @@ const renderCatalogContent = (container, catalog, options) => {
     </div>
   `;
 
+  const canRequestInApp = contextType !== 'preview' && Boolean(institutionSlug) && Boolean(window.__firebaseAuth?.currentUser);
+  const inAppRequestHtml = canRequestInApp ? `
+    <div id="premium-modal-inapp-request" class="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <div class="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+            <i class="fas fa-paper-plane text-indigo-600"></i>
+            <span>Request Instant Upgrade Approval</span>
+          </div>
+          <p class="text-[11px] text-indigo-800/90 mt-0.5">Submit an in-app upgrade request directly to the platform team. They will review and activate Premium for your portal.</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        <select id="premium-upgrade-plan-select" class="px-3 py-2 rounded-xl border border-indigo-200 bg-white text-xs font-bold text-slate-800 outline-none focus:border-indigo-500">
+          ${activePlans.length > 0
+            ? activePlans.map((p) => `<option value="${esc(p.id)}" data-plan-name="${esc(p.name)}">${esc(p.name)} (${esc(p.currency)}${esc(formatPriceNumber(p.offerPrice))} / ${esc(p.billingCycle)})</option>`).join('')
+            : '<option value="premium_full" data-plan-name="Premium Full Plan">Premium Full Plan</option>'
+          }
+        </select>
+        <input id="premium-upgrade-phone" type="tel" maxlength="20" placeholder="Contact mobile / WhatsApp number" class="px-3 py-2 rounded-xl border border-indigo-200 bg-white text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500">
+        <input id="premium-upgrade-note" type="text" maxlength="200" placeholder="Optional note (e.g. needed modules)" class="px-3 py-2 rounded-xl border border-indigo-200 bg-white text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500">
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div id="premium-upgrade-feedback" class="text-xs font-bold text-indigo-900 min-h-[1rem]"></div>
+        <button type="button" id="premium-upgrade-submit-btn" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition cursor-pointer whitespace-nowrap">
+          <i class="fas fa-bolt text-[11px]"></i>
+          <span>Send Upgrade Request</span>
+        </button>
+      </div>
+    </div>
+  ` : '';
+
   container.innerHTML = `
     <div class="space-y-5">
       ${bannerHtml}
       ${plansHtml}
+      ${inAppRequestHtml}
       ${contactSectionHtml}
     </div>
   `;
@@ -476,6 +539,54 @@ const renderCatalogContent = (container, catalog, options) => {
       document.getElementById('premium-modal-contact-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   });
+
+  const submitBtn = container.querySelector('#premium-upgrade-submit-btn');
+  if (submitBtn) {
+    submitBtn.addEventListener('click', async () => {
+      const planSelect = container.querySelector('#premium-upgrade-plan-select');
+      const phoneInput = container.querySelector('#premium-upgrade-phone');
+      const noteInput = container.querySelector('#premium-upgrade-note');
+      const feedbackEl = container.querySelector('#premium-upgrade-feedback');
+
+      const selectedOpt = planSelect?.selectedOptions?.[0];
+      const requestedPlanId = String(planSelect?.value || 'premium_full').trim();
+      const requestedPlanName = String(selectedOpt?.dataset?.planName || selectedOpt?.textContent || 'Premium Plan').trim();
+      const contactPhone = String(phoneInput?.value || '').trim();
+      const note = String(noteInput?.value || '').trim();
+
+      submitBtn.disabled = true;
+      const origHtml = submitBtn.innerHTML;
+      submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin text-[11px]"></i><span>Sending...</span>';
+      if (feedbackEl) {
+        feedbackEl.className = 'text-xs font-bold text-indigo-800';
+        feedbackEl.textContent = 'Submitting your upgrade request...';
+      }
+
+      try {
+        const res = await submitUpgradeRequest({
+          institutionId: institutionSlug,
+          requestedPlanId,
+          requestedPlanName,
+          requestedFeature: moduleName || contextType,
+          contactPhone,
+          note
+        });
+        if (feedbackEl) {
+          feedbackEl.className = 'text-xs font-bold text-emerald-700';
+          feedbackEl.innerHTML = `<i class="fas fa-circle-check mr-1"></i>${esc(res?.message || 'Upgrade request submitted! Our team will contact you shortly.')}`;
+        }
+        submitBtn.innerHTML = '<i class="fas fa-check text-[11px]"></i><span>Request Sent</span>';
+        submitBtn.className = 'inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold whitespace-nowrap cursor-default';
+      } catch (err) {
+        if (feedbackEl) {
+          feedbackEl.className = 'text-xs font-bold text-rose-700';
+          feedbackEl.textContent = err?.message || 'Could not submit request. Please use WhatsApp below.';
+        }
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = origHtml;
+      }
+    });
+  }
 };
 
 export const openPremiumPlansModal = async ({
@@ -487,6 +598,7 @@ export const openPremiumPlansModal = async ({
   institutionSlug = '',
   pauseReason = '',
   expiryDate = '',
+  customReason = '',
   forceRefresh = false,
   catalogOverride = null
 } = {}) => {
@@ -499,7 +611,8 @@ export const openPremiumPlansModal = async ({
     moduleName: moduleName || MODULE_LABELS[moduleKey] || '',
     institutionName,
     pauseReason,
-    expiryDate
+    expiryDate,
+    customReason
   });
 
   const modal = document.createElement('div');

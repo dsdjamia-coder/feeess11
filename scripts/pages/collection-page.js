@@ -2,7 +2,7 @@ import { signOut, onAuthStateChanged} from "https://www.gstatic.com/firebasejs/1
 import { doc, onSnapshot, collection, getDocs, writeBatch, setDoc, query, where, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
-import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, syncSmartSelectDisplay, openConfirmDialog, escapeHtml, fitTextToContainer, formatCurrency, formatMonthLabel, hardenExternalLinks, isPastAcademicYearLabel, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, formatStudentOptionLabel, populateGenderSelect, populateRowLimitSelect, compareClassLabelsNatural } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, decorateProLockElement, enableSmartSelectWindowing, ensureTenantStatusAndAccess, syncSmartSelectDisplay, openConfirmDialog, escapeHtml, fitTextToContainer, formatCurrency, formatMonthLabel, hardenExternalLinks, hasFeature, isPastAcademicYearLabel, onPlanChange, populateAcademicYearSelect, registerServiceWorker, renderPlanUsageBanner, renderVersionInfo, requirePlanFeature, resolveAcademicYearClasses, resolveAuthoritativeCurrentYear, populateClassSelect, formatStudentOptionLabel, populateGenderSelect, populateRowLimitSelect, compareClassLabelsNatural } from '../shared/app-common.js';
 import { appLog } from '../shared/logger.js';
 import { showToast } from '../shared/toaster.js';
 
@@ -466,6 +466,8 @@ const OVERFLOW_COLLECTION_TABS = new Set([
 
 // --- UNIFIED SUB-TAB NAVIGATION HANDLERS ---
 const switchCollectionSubTab = (subtab = 'entry') => {
+    if (subtab === 'bulk' && !requirePlanFeature('excelBulkImport', 'Bulk Excel Fee Upload')) return;
+    if (subtab === 'donation' && !requirePlanFeature('donations', 'Donations & Contributions')) return;
     const panels = {
         entry: document.getElementById('subview-fee-entry'),
         bulk: document.getElementById('bulk-upload-page'),
@@ -517,6 +519,8 @@ const switchReportsSubTab = (subtab = 'monthly') => {
 window.switchReportsSubTab = switchReportsSubTab;
 
 const switchSettingsSubTab = (subtab = 'structure') => {
+    if (subtab === 'groups' && !requirePlanFeature('studentGroups', 'Student Family Groups')) return;
+    if (subtab === 'concessions' && !requirePlanFeature('feeConcessions', 'Fee Concessions')) return;
     const panels = {
         structure: document.getElementById('subview-fee-structure'),
         groups: document.getElementById('manage-groups-page'),
@@ -592,6 +596,13 @@ const activateTab = (targetId, subTabId = null) => {
     }
     if (targetId === 'fee-concessions-page') {
         activateTab('fee-settings-page', 'concessions');
+        return;
+    }
+
+    if (targetId === 'master-ledger-page' && !requirePlanFeature('masterLedger', 'Master Fee Register')) {
+        return;
+    }
+    if (targetId === 'monthly-collected-page' && !requirePlanFeature('advancedFeeReports', 'Reports & Financial Analytics')) {
         return;
     }
 
@@ -9960,12 +9971,44 @@ onAuthStateChanged(auth, async (user) => {
         window.location.href = getPageUrl('index.html');
         return;
     }
+    const syncCollectionPlanUI = () => {
+        const proBindings = [
+            ['#nav-master-ledger', 'masterLedger', 'Master Fee Register'],
+            ['.bottom-nav-link[data-target="master-ledger-page"]', 'masterLedger', 'Master Fee Register'],
+            ['#nav-monthly', 'advancedFeeReports', 'Reports & Financial Analytics'],
+            ['.fee-collection-subtab-btn[data-collection-subtab="bulk"]', 'excelBulkImport', 'Bulk Excel Fee Upload'],
+            ['.fee-collection-subtab-btn[data-collection-subtab="donation"]', 'donations', 'Donations & Contributions'],
+            ['#bulk-open-blank-sheet-btn', 'blankSheets', 'Blank Fee Collection Sheet'],
+            ['#dues-export-excel-btn', 'excelExport', 'Fee Dues Excel Export'],
+            ['#dues-export-pdf-btn', 'excelExport', 'Fee Dues PDF Export'],
+            ['.settings-subtab-btn[data-settings-subtab="groups"]', 'studentGroups', 'Student Family Groups'],
+            ['.settings-subtab-btn[data-settings-subtab="concessions"]', 'feeConcessions', 'Fee Concessions']
+        ];
+        proBindings.forEach(([selector, featureKey, featureName]) => {
+            document.querySelectorAll(selector).forEach((el) => {
+                decorateProLockElement(el, { featureKey, featureName });
+            });
+        });
+        const customFeeCount = (feeItems || []).filter((f) => f.type === 'custom').length;
+        renderPlanUsageBanner(
+            document.getElementById('collection-plan-usage-banner'),
+            {
+                feeItems: customFeeCount,
+                students: Array.isArray(students) && students.length > 0 ? students.length : undefined
+            },
+            { compact: true }
+        );
+    };
+
     const tenantCheck = await ensureTenantStatusAndAccess({
         db,
         requiredPage: 'collection',
         institutionId: INSTITUTION_ID,
-        liveWatch: true
+        liveWatch: true,
+        onStatusUpdate: () => syncCollectionPlanUI()
     });
+    syncCollectionPlanUI();
+    onPlanChange(() => syncCollectionPlanUI());
     if (!tenantCheck?.active) {
         hideLoader();
         return;

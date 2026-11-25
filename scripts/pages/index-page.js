@@ -20,7 +20,9 @@ import {
     applyInstitutionBranding,
     ensureTenantStatusAndAccess,
     escapeHtml,
+    getPlanLimit,
     hardenExternalLinks,
+    isBasicPlan,
     mountUnifiedFooter,
     normalizePhone,
     openPremiumPlansModal,
@@ -47,6 +49,9 @@ import {
     completeCompanyOwnerOtpLogin,
     normalizePhoneToE164Client
 } from '../shared/custom-auth-service.js';
+import { openSelfSignupWizard } from './self-signup-wizard.js';
+
+window.openSelfSignupWizard = openSelfSignupWizard;
 
 let companyOtpAuthInstance = null;
 const getCompanyOtpAuth = () => {
@@ -1511,6 +1516,7 @@ let isRootGatewayMode = false;
                     if (navNoticesLink) navNoticesLink.classList.remove('hidden');
                     if (heroBtnNotice) heroBtnNotice.classList.remove('hidden');
                     
+                    const noticeLimit = isBasicPlan() ? getPlanLimit('maxNotices') : Infinity;
                     const sortedNotices = notices
                         .map((notice, originalIndex) => ({ notice, originalIndex }))
                         .sort((a, b) => {
@@ -1521,7 +1527,8 @@ let isRootGatewayMode = false;
                             if (dateA !== dateB) return dateB - dateA;
                             return b.originalIndex - a.originalIndex;
                         })
-                        .map((entry) => entry.notice);
+                        .map((entry) => entry.notice)
+                        .slice(0, Number.isFinite(noticeLimit) ? Math.max(1, noticeLimit) : notices.length);
 
                     latestNoticeCache = sortedNotices.map((notice, index) => {
                         const text = String(notice?.text || '').trim();
@@ -1576,6 +1583,7 @@ let isRootGatewayMode = false;
                     if (navGalleryLink) navGalleryLink.classList.remove('hidden');
                     if (heroBtnGallery) heroBtnGallery.classList.remove('hidden');
                     
+                    const galleryLimit = isBasicPlan() ? getPlanLimit('maxGalleryPhotos') : Infinity;
                     galleryUrls = gallery
                         .map((item, originalIndex) => {
                             const parsedOrder = Number(item?.order);
@@ -1587,7 +1595,8 @@ let isRootGatewayMode = false;
                         })
                         .sort((a, b) => (a.order - b.order) || (a.originalIndex - b.originalIndex))
                         .map((item) => sanitizeUrl(item.url))
-                        .filter(Boolean);
+                        .filter(Boolean)
+                        .slice(0, Number.isFinite(galleryLimit) ? Math.max(1, galleryLimit) : gallery.length);
                     document.getElementById('gallery-list').innerHTML = galleryUrls.map((safeUrl, index) => {
                         return `<button type="button" class="gallery-item" data-gallery-index="${index}" data-gallery-url="${escapeHtml(safeUrl)}" aria-label="View photo ${index + 1}"><img src="${safeUrl}" alt="Gallery image ${index + 1}" loading="lazy"></button>`;
                     }).join('');

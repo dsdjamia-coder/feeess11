@@ -2,7 +2,7 @@ import { signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCrede
 import { doc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, setDoc, getDoc, orderBy, limit, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, GLOBAL_USERS_COLLECTION, INSTITUTION_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION, extractInternalUsername, isInternalStaffEmail, normalizeGlobalUserKey } from '../../config/app-config.js';
-import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, hardenExternalLinks, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, openPremiumPlansModal, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderVersionInfo, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, decorateProLockElement, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, getPlanLimit, hardenExternalLinks, hasFeature, isBasicPlan, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, onPlanChange, openPremiumPlansModal, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderPlanUsageBanner, renderVersionInfo, requirePlanFeature, requirePlanQuota, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { areInstitutionalStatsEqual, normalizeInstitutionalStats } from '../shared/student-stats-service.js';
@@ -3288,6 +3288,17 @@ const renderDashboard = () => {
     setTxt('dashboard-class-count', totalClassDisplay);
     setTxt('dashboard-staff-count', targetStaff.length);
     setTxt('dashboard-fee-item-count', targetFeeItems.length);
+
+    renderPlanUsageBanner(
+        document.getElementById('admin-plan-usage-banner'),
+        {
+            students: totalStudentDisplay,
+            classes: totalClassDisplay,
+            staff: targetStaff.length,
+            feeItems: targetFeeItems.filter((f) => f.type === 'custom').length
+        },
+        { institutionName: latestConfigData?.institutionName || '' }
+    );
     setTxt('dashboard-group-count', targetGroups.length);
     setTxt('dashboard-female-count', femaleCount);
     setTxt('dashboard-male-count', maleCount);
@@ -3430,6 +3441,40 @@ const syncCompanyLockedAdminControls = () => {
             }
         });
     });
+
+    // 3. Basic (Free) Plan PRO Feature Locks across Admin Sidebar & Action Buttons
+    const adminProBindings = [
+        ['a.nav-link[href="#manage-alumni"]', 'alumniManagement', 'Alumni Management'],
+        ['a.nav-link[href="#student-continuity"]', 'studentContinuity', 'Discontinue & Re-admission'],
+        ['a.nav-link[href="#batch-promotion"]', 'batchPromotion', 'Class Promotion'],
+        ['a.nav-link[href="#workflow-modules"]', 'workflowOverrides', 'Workflow & Module Overrides'],
+        ['.admin-quick-action[data-target-page="batch-promotion"]', 'batchPromotion', 'Class Promotion'],
+        ['.admin-quick-action[data-target-page="workflow-modules"]', 'workflowOverrides', 'Workflow & Module Overrides'],
+        ['#excel-drop-zone', 'excelBulkImport', 'Bulk Excel Student Import'],
+        ['#export-students-excel-btn', 'excelExport', 'Student Excel Export'],
+        ['#export-students-pdf-btn', 'excelExport', 'Student PDF Export'],
+        ['#export-alumni-excel-btn', 'excelExport', 'Alumni Excel Export'],
+        ['#export-alumni-pdf-btn', 'excelExport', 'Alumni PDF Export'],
+        ['#open-student-fields-config-btn', 'customStudentFields', 'Custom Student Fields'],
+        ['#dir-cat-add-btn', 'customDirectoryCategories', 'Custom Staff & Directory Categories'],
+        ['#backup-export-btn', 'backupAndAudit', 'Data Backup & Restore'],
+        ['#btn-run-data-health-check', 'multiAcademicYears', 'Multi-Year Data Integrity Validator'],
+        ['#create-group-btn', 'studentGroups', 'Student Sibling Groups'],
+        ['#result-download-template-btn', 'blankSheets', 'Blank Excel Templates']
+    ];
+    adminProBindings.forEach(([selector, featureKey, featureName]) => {
+        const el = document.querySelector(selector);
+        if (el) {
+            decorateProLockElement(el, {
+                featureKey,
+                featureName,
+                institutionName: latestConfigData?.institutionName || ''
+            });
+        }
+    });
+    if (typeof updateGalleryLimitUI === 'function') {
+        try { updateGalleryLimitUI(); } catch (_) {}
+    }
 };
 
 const renderWorkflowModules = async () => {
@@ -4403,6 +4448,24 @@ const activateAdminPage = (targetId, options = {}) => {
     if (requiredPermission && !hasPermission(requiredPermission)) {
         if (!suppressDeniedAlert) alert('Your admin role does not allow access to this page.');
         targetId = 'dashboard';
+    }
+    const basicBlockedPages = {
+        'manage-alumni': ['alumniManagement', 'Alumni Management'],
+        'student-continuity': ['studentContinuity', 'Discontinue & Re-admission'],
+        'batch-promotion': ['batchPromotion', 'Class Promotion'],
+        'promote-students': ['batchPromotion', 'Class Promotion'],
+        'manage-groups': ['studentGroups', 'Student Sibling Groups'],
+        'fee-concessions': ['feeConcessions', 'Fee Concessions'],
+        'workflow-modules': ['workflowOverrides', 'Workflow & Module Overrides']
+    };
+    if (basicBlockedPages[targetId]) {
+        const [featureKey, featureLabel] = basicBlockedPages[targetId];
+        if (!hasFeature(featureKey)) {
+            if (!suppressDeniedAlert) {
+                requirePlanFeature(featureKey, featureLabel, { institutionName: latestConfigData?.institutionName || '' });
+            }
+            targetId = 'dashboard';
+        }
     }
     document.querySelectorAll('.nav-link').forEach((link) => {
         const href = link.getAttribute('href');
@@ -5403,6 +5466,8 @@ setupAccessToggleButtons('e-st');
 
 document.getElementById('add-staff-btn').addEventListener('click', async () => {
     if(!requirePermission('staff.manage')) return;
+    const activeStaffCount = (allStaff || []).filter((s) => s.isActive !== false && String(s.status || 'Active').toLowerCase() !== 'inactive').length;
+    if (!requirePlanQuota('maxStaff', activeStaffCount, { institutionName: latestConfigData?.institutionName || '' })) return;
     const staffRecord = extractAndValidateStaffForm('st');
     if (!staffRecord) return;
     if(!confirm("Add new staff member?")) return;
@@ -6357,11 +6422,25 @@ function getDuplicateMappedFields() {
     return dupes;
 }
 
-dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('click', () => {
+    if (!requirePlanFeature('excelBulkImport', 'Bulk Excel Student Import', { institutionName: latestConfigData?.institutionName || '' })) return;
+    fileInput.click();
+});
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); if(e.dataTransfer.files.length) handleExcelFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener('change', (e) => { if(e.target.files.length) handleExcelFile(e.target.files[0]); });
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (!requirePlanFeature('excelBulkImport', 'Bulk Excel Student Import', { institutionName: latestConfigData?.institutionName || '' })) return;
+    if (e.dataTransfer.files.length) handleExcelFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', (e) => {
+    if (!requirePlanFeature('excelBulkImport', 'Bulk Excel Student Import', { institutionName: latestConfigData?.institutionName || '' })) {
+        e.target.value = '';
+        return;
+    }
+    if (e.target.files.length) handleExcelFile(e.target.files[0]);
+});
 
 function normalizeToIsoDate(val) {
     if (val === null || val === undefined || val === '') return '';
@@ -8126,6 +8205,8 @@ applyStudentFieldSchemaToForm('add-student-fields-grid', 'add-stu-', studentFiel
 
 document.getElementById('add-manual-btn')?.addEventListener('click', async () => {
     if(!requirePermission('students.manage')) return;
+    const activeStudentsInYear = getStudentsForYear(getActiveAcademicYearLabel()).filter((s) => normalizeStudentStatus(s.status) === 'Active').length;
+    if (!requirePlanQuota('maxStudents', activeStudentsInYear, { institutionName: latestConfigData?.institutionName || '' })) return;
     const btn = document.getElementById('add-manual-btn');
     const rawCls = (document.getElementById('add-stu-class')?.value || '').trim();
     const isAlumniSelected = rawCls.toUpperCase() === 'ALUMNI' || rawCls.toUpperCase() === 'GRADUATED';
@@ -9205,6 +9286,7 @@ const buildStudentExportRows = () => {
     });
 };
 const exportStudentsToExcel = () => {
+    if (!requirePlanFeature('excelExport', 'Student Excel Export', { institutionName: latestConfigData?.institutionName || '' })) return;
     const exportRows = buildStudentExportRows();
     if (exportRows.length === 0) {
         alert('No students available to export.');
@@ -9218,6 +9300,7 @@ const exportStudentsToExcel = () => {
     XLSX.writeFile(workbook, `students-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 const exportStudentsToPDF = () => {
+    if (!requirePlanFeature('excelExport', 'Student PDF Export', { institutionName: latestConfigData?.institutionName || '' })) return;
     const exportRows = buildStudentExportRows();
     if (exportRows.length === 0) return alert('No students available to export.');
     const { jsPDF } = window.jspdf;
@@ -11446,6 +11529,7 @@ document.getElementById('filter-classes-academic-year')?.addEventListener('chang
 });
 document.getElementById('create-class-btn').addEventListener('click', async () => {
     if(!requirePermission('classes.manage')) return;
+    if (!requirePlanQuota('maxClasses', classes.length, { institutionName: latestConfigData?.institutionName || '' })) return;
     const className = cleanClassInput(document.getElementById('new-class-name-input').value);
     if(!className) return alert('Enter a class/division name.');
     if (className === 'ALUMNI' || className === 'GRADUATED') {
@@ -11459,8 +11543,13 @@ document.getElementById('create-class-btn').addEventListener('click', async () =
 });
 document.getElementById('generate-default-classes-btn')?.addEventListener('click', async () => {
     if(!requirePermission('classes.manage')) return;
+    const defaultLadder = getDefaultClassLadder();
+    const maxCls = getPlanLimit('maxClasses');
+    if (isBasicPlan() && Number.isFinite(maxCls) && defaultLadder.length > maxCls) {
+        if (!requirePlanQuota('maxClasses', defaultLadder.length, { institutionName: latestConfigData?.institutionName || '' })) return;
+    }
     if(!confirm('Reset active year classes to default ladder (1 to 12)?')) return;
-    await syncActiveAcademicYearClasses(getDefaultClassLadder(), { replace: true });
+    await syncActiveAcademicYearClasses(defaultLadder, { replace: true });
     await logAuditEvent({ category: 'class', action: 'class.default.generate', entityType: 'academicYear', entityId: getActiveAcademicYearLabel(), message: 'Default class ladder generated (1 to 12).' });
 });
 document.getElementById('create-divisions-btn')?.addEventListener('click', async () => {
@@ -11469,6 +11558,11 @@ document.getElementById('create-divisions-btn')?.addEventListener('click', async
     const divisionCount = document.getElementById('division-count-input')?.value || 3;
     const labels = buildDivisionLabels(baseClass, divisionCount);
     if (!labels.length) return alert('Enter a valid base class for divisions.');
+    const combinedUnique = new Set([...classes, ...labels]);
+    const maxCls = getPlanLimit('maxClasses');
+    if (isBasicPlan() && Number.isFinite(maxCls) && combinedUnique.size > maxCls) {
+        if (!requirePlanQuota('maxClasses', combinedUnique.size, { institutionName: latestConfigData?.institutionName || '' })) return;
+    }
     await syncActiveAcademicYearClasses([...classes, ...labels]);
     await logAuditEvent({ category: 'class', action: 'class.divisions.create', entityType: 'class', entityId: baseClass, message: `Created ${labels.length} division classes for ${baseClass}.`, metadata: { labels } });
 });
@@ -15657,6 +15751,8 @@ document.getElementById('adv-fee-scope').addEventListener('change', (e) => {
 
 document.getElementById('add-adv-fee-btn').addEventListener('click', () => {
     if(!requirePermission('fees.manage')) return;
+    const activeYearCustomFees = getFeeItemsForAcademicYear(getActiveAcademicYearLabel()).filter((f) => f.type === 'custom');
+    if (!requirePlanQuota('maxFeeItems', activeYearCustomFees.length, { institutionName: latestConfigData?.institutionName || '' })) return;
     const name = document.getElementById('adv-fee-name')?.value.trim();
     const scope = document.getElementById('adv-fee-scope')?.value;
     const isMandatory = document.getElementById('adv-fee-receipt-req')?.checked || false;
@@ -16239,6 +16335,7 @@ const renderWebNotices = () => {
 };
 document.getElementById('add-notice-btn').onclick = () => {
     if(!requirePermission('website.manage')) return;
+    if (!requirePlanQuota('maxNotices', (webContent.notices || []).length, { institutionName: latestConfigData?.institutionName || '' })) return;
     const heading = document.getElementById('new-notice-head').value.trim();
     const txt = document.getElementById('new-notice-txt').value.trim();
     const image = document.getElementById('new-notice-img-data')?.value?.trim() || '';
@@ -16342,16 +16439,22 @@ const MAX_GALLERY_IMAGES = 24;
 const MAX_GALLERY_BATCH_UPLOAD = 5;
 let selectedGalleryFiles = [];
 
+const getEffectiveGalleryMax = () => {
+    const planMax = getPlanLimit('maxGalleryPhotos');
+    return isBasicPlan() && Number.isFinite(planMax) ? Math.max(1, Math.min(MAX_GALLERY_IMAGES, planMax)) : MAX_GALLERY_IMAGES;
+};
+
 const getGalleryCapacityInfo = () => {
     normalizeGalleryList();
     const current = Array.isArray(webContent.gallery) ? webContent.gallery.length : 0;
     const queued = selectedGalleryFiles.length;
+    const maxAllowed = getEffectiveGalleryMax();
     return {
-        max: MAX_GALLERY_IMAGES,
+        max: maxAllowed,
         batchMax: MAX_GALLERY_BATCH_UPLOAD,
         current,
         queued,
-        isAtLimit: current >= MAX_GALLERY_IMAGES
+        isAtLimit: current >= maxAllowed
     };
 };
 
@@ -16653,9 +16756,13 @@ const initGalleryUploadControls = () => {
             return;
         }
         if (current + count > max) {
-            const msg = 'Gallery storage limit reached. Please delete some existing photos before uploading more.';
-            showToast?.(msg, 'error');
-            alert(msg);
+            if (isBasicPlan()) {
+                requirePlanQuota('maxGalleryPhotos', current + count, { institutionName: latestConfigData?.institutionName || '' });
+            } else {
+                const msg = 'Gallery storage limit reached. Please delete some existing photos before uploading more.';
+                showToast?.(msg, 'error');
+                alert(msg);
+            }
             updateGalleryLimitUI();
             return;
         }
@@ -16705,7 +16812,7 @@ const initGalleryUploadControls = () => {
 
         if (uploadedItems.length > 0) {
             normalizeGalleryList();
-            if (webContent.gallery.length + uploadedItems.length > MAX_GALLERY_IMAGES) {
+            if (webContent.gallery.length + uploadedItems.length > getEffectiveGalleryMax()) {
                 await Promise.allSettled(uploadedItems.map((it) => deleteStorageUrlIfManaged(it.url)));
                 alert('Gallery storage limit reached. Upload cancelled. Please delete existing photos before uploading more.');
             } else {
@@ -17240,6 +17347,7 @@ const updateDirectoryCategories = async (categories = []) => {
 
 document.getElementById('dir-cat-add-btn')?.addEventListener('click', async () => {
     if(!requirePermission('website.manage') && !requirePermission('staff.manage')) return;
+    if (!requirePlanFeature('customDirectoryCategories', 'Custom Staff & Directory Categories', { institutionName: latestConfigData?.institutionName || '' })) return;
     const addBtn = document.getElementById('dir-cat-add-btn');
     const name = document.getElementById('dir-cat-name')?.value?.trim() || '';
     const order = Number(document.getElementById('dir-cat-order')?.value || 1);
@@ -18281,6 +18389,7 @@ document.getElementById('backup-export-progress-close')?.addEventListener('click
 
 document.getElementById('backup-export-btn')?.addEventListener('click', async () => {
     if (!requirePermission('backup.export')) return;
+    if (!requirePlanFeature('backupAndAudit', 'Data Backup & Export', { institutionName: latestConfigData?.institutionName || '' })) return;
     const selected = getSelectedBackupCategories();
     if (!selected.length) return alert('Please select at least one category to export.');
 
@@ -19292,6 +19401,9 @@ document.getElementById('add-academic-year-btn').addEventListener('click', async
     const label = `${startYear}-${endYear}`;
 
     const existing = academicYears.find((year) => year.label === label);
+    if (!existing && academicYears.length >= 1) {
+        if (!requirePlanQuota('maxAcademicYears', academicYears.length, { institutionName: latestConfigData?.institutionName || '' })) return;
+    }
     if (existing) {
         return showInputError(`Academic year "${label}" already exists. Use the 3-dot menu in the card below to edit or activate it.`);
     }
@@ -19556,12 +19668,17 @@ onAuthStateChanged(auth, async (user) => {
         liveWatch: true,
         onStatusUpdate: () => {
             syncCompanyLockedAdminControls();
+            renderDashboard();
             if (!document.getElementById('workflow-modules-page')?.classList.contains('hidden')) {
                 renderWorkflowModules();
             }
         }
     });
     syncCompanyLockedAdminControls();
+    onPlanChange(() => {
+        syncCompanyLockedAdminControls();
+        renderDashboard();
+    });
     if (!tenantCheck?.active) {
         const loader = document.getElementById('auth-loader');
         if (loader) loader.style.display = 'none';

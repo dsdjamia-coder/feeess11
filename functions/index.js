@@ -21,8 +21,44 @@ const AUTH_CREDENTIALS_COLLECTION = 'authCredentials';
 const OTP_CHALLENGES_COLLECTION = 'otpChallenges';
 const OTP_RATE_LIMITS_COLLECTION = 'otpRateLimits';
 const INSTITUTIONS_COLLECTION = 'institutions';
+const UPGRADE_REQUESTS_COLLECTION = 'upgradeRequests';
 const COMPANY_COLLECTION = 'company';
 const COMPANY_CONFIG_DOC_ID = 'config';
+const COMPANY_PUBLIC_CATALOG_DOC_ID = 'publicCatalog';
+
+const RESERVED_INSTITUTION_SLUGS = new Set([
+  'index', 'company', 'admin', 'attendance', 'academic-plan', 'activity',
+  'evaluation', 'collection', 'official', 'result', 'student', 'worksheet',
+  'platform', 'official-dashboard', 'student-fee-system', 'studentmanagement',
+  'assets', 'scripts', 'styles', 'config', 'public', 'school', 'api', 'app', 'login', 'signup'
+]);
+
+const BASIC_PLAN_ALLOWED_PAGES = {
+  admin: true,
+  official: true,
+  student: true,
+  collection: true,
+  result: true,
+  attendance: false,
+  worksheet: false,
+  academicPlan: false,
+  studentActivity: false,
+  classroomEvaluation: false
+};
+
+const DEFAULT_BASIC_PLAN_LIMITS = {
+  maxStudents: 150,
+  maxStaff: 6,
+  maxClasses: 12,
+  maxAcademicYears: 1,
+  maxFeeItems: 4,
+  maxNotices: 5,
+  maxGalleryPhotos: 6,
+  maxExamsPerYear: 2,
+  maxDirectoryEntries: 10
+};
+
+const MAX_SELF_SIGNUPS_PER_PHONE = 2;
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -1448,7 +1484,29 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
   }
 
   const instSnap = await db.collection(INSTITUTIONS_COLLECTION).doc(slug).get();
-  const institutionName = String(instSnap.data()?.name || slug).trim();
+  const instData = instSnap.exists ? (instSnap.data() || {}) : {};
+  const institutionName = String(instData.name || slug).trim();
+
+  // Enforce Basic plan maxStaff quota on new staff creation (unless caller is Company Owner)
+  const isBasicTenant = String(instData.planTier || '').trim().toLowerCase() === 'basic';
+  if (isBasicTenant && isActive && !isCompanyOwnerAuth(request.auth)) {
+    const existingAccessPreview = await staffAccessRef.get();
+    if (!existingAccessPreview.exists) {
+      const configuredMaxStaff = Number(instData.planLimits?.maxStaff ?? DEFAULT_BASIC_PLAN_LIMITS.maxStaff);
+      const maxStaff = Number.isFinite(configuredMaxStaff) && configuredMaxStaff > 0
+        ? Math.floor(configuredMaxStaff)
+        : DEFAULT_BASIC_PLAN_LIMITS.maxStaff;
+      const activeAccessSnap = await db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/staffAccess`).get();
+      const activeCount = activeAccessSnap.docs.filter((d) => d.data()?.isActive !== false && d.id !== uid).length;
+      if (activeCount >= maxStaff) {
+        throw new HttpsError(
+          'resource-exhausted',
+          `Basic Free Plan limit reached: maximum ${maxStaff} active staff accounts allowed. Upgrade to Premium for unlimited staff.`
+        );
+      }
+    }
+  }
+
   const newPasswordHashObj = rawPassword ? hashPasswordScrypt(rawPassword) : null;
   const newCredRef = db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash);
 
@@ -1902,4 +1960,403 @@ exports.completeCompanyOwnerOtpLogin = onCall({ cors: true }, async (request) =>
     companyName: String(challenge.companyName || 'Institution Manage').trim()
   };
 });
+
+// =========================================================================
+// 12. PUBLIC SELF-SIGNUP AVAILABILITY CHECK: checkSelfSignupAvailability
+// =========================================================================
+exports.checkSelfSignupAvailability = onCall({ cors: true }, async (request) => {
+  const rawSlug = String(request.data?.slug || '').trim().toLowerCase();
+  const rawUsername = String(request.data?.username || '').trim();
+
+  const result = {
+    ok: true,
+    selfSignupEnabled: true,
+    slugValid: false,
+    slugAvailable: false,
+    slugReason: '',
+    usernameValid: false,
+    usernameAvailable: false,
+    usernameReason: ''
+  };
+
+  try {
+    const catalogSnap = await db.collection(COMPANY_COLLECTION).doc(COMPANY_PUBLIC_CATALOG_DOC_ID).get();
+    if (catalogSnap.exists && catalogSnap.data()?.selfSignupConfig?.enabled === false) {
+      result.selfSignupEnabled = false;
+    }
+  } catch (_) {}
+
+  if (rawSlug) {
+    const cleanSlug = normalizeInstitutionSlug(rawSlug);
+    if (!cleanSlug || cleanSlug.length < 3) {
+      result.slugReason = 'Portal URL must be at least 3 characters (letters, numbers, hyphens).';
+    } else if (RESERVED_INSTITUTION_SLUGS.has(cleanSlug)) {
+      result.slugReason = 'This portal URL is reserved. Please choose another.';
+    } else {
+      result.slugValid = true;
+      const instSnap = await db.collection(INSTITUTIONS_COLLECTION).doc(cleanSlug).get();
+      if (instSnap.exists) {
+        result.slugAvailable = false;
+        result.slugReason = 'This portal URL is already taken.';
+      } else {
+        result.slugAvailable = true;
+      }
+    }
+  }
+
+  if (rawUsername) {
+    if (rawUsername.length < 3 || rawUsername.length > 60 || /\s/.test(rawUsername) || /[\u0000-\u001F\u007F]/.test(rawUsername)) {
+      result.usernameReason = 'Username must be 3–60 characters with no spaces.';
+    } else {
+      result.usernameValid = true;
+      const keyHash = sha256Hex(rawUsername.toLowerCase());
+      const credSnap = await db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash).get();
+      if (credSnap.exists) {
+        result.usernameAvailable = false;
+        result.usernameReason = 'This username is already taken.';
+      } else {
+        result.usernameAvailable = true;
+      }
+    }
+  }
+
+  return result;
+});
+
+// =========================================================================
+// 13. PUBLIC SELF-SERVICE REGISTRATION: selfRegisterInstitution
+// Provisions a Basic (Free Forever) institution workspace atomically after
+// verifying Firebase Phone Auth OTP token. Strictly server-authoritative.
+// =========================================================================
+exports.selfRegisterInstitution = onCall({ cors: true }, async (request) => {
+  const institutionName = String(request.data?.institutionName || '').trim().slice(0, 120);
+  const rawSlug = String(request.data?.slug || '').trim().toLowerCase();
+  const place = String(request.data?.place || '').trim().slice(0, 120);
+  const rawPhone = String(request.data?.phone || '').trim();
+  const adminName = String(request.data?.adminName || '').trim().slice(0, 100) || 'Principal / Admin';
+  const rawUsername = String(request.data?.username || '').trim();
+  const rawPassword = String(request.data?.password || '');
+  const phoneIdToken = String(request.data?.phoneIdToken || '').trim();
+
+  if (!institutionName || institutionName.length < 3) {
+    throw new HttpsError('invalid-argument', 'Institution name must be at least 3 characters.');
+  }
+
+  const slug = normalizeInstitutionSlug(rawSlug);
+  if (!slug || slug.length < 3 || RESERVED_INSTITUTION_SLUGS.has(slug)) {
+    throw new HttpsError('invalid-argument', 'Please choose a valid, non-reserved portal URL slug (at least 3 characters).');
+  }
+
+  const phoneE164 = normalizePhoneToE164(rawPhone);
+  if (!phoneE164) {
+    throw new HttpsError('invalid-argument', 'Please enter a valid mobile number for OTP verification.');
+  }
+
+  if (!phoneIdToken) {
+    throw new HttpsError('invalid-argument', 'Mobile OTP verification is required before creating an institution account.');
+  }
+
+  const { displayUsername, username, keyHash } = validateAndNormalizeUsername(rawUsername);
+  const passwordHashObj = hashPasswordScrypt(rawPassword);
+
+  // Check if self-signup is enabled in Company Public Catalog and read default Basic limits
+  const catalogSnap = await db.collection(COMPANY_COLLECTION).doc(COMPANY_PUBLIC_CATALOG_DOC_ID).get();
+  const catalogData = catalogSnap.exists ? (catalogSnap.data() || {}) : {};
+  const selfSignupCfg = (catalogData.selfSignupConfig && typeof catalogData.selfSignupConfig === 'object')
+    ? catalogData.selfSignupConfig
+    : {};
+  if (selfSignupCfg.enabled === false) {
+    throw new HttpsError('failed-precondition', 'Self-service institution registration is currently paused. Please contact our support team.');
+  }
+
+  // Verify Phone Auth OTP ID token matches the submitted phone number
+  await verifyPhoneAuthToken(phoneIdToken, phoneE164);
+  await enforceOtpRateLimit(`self-signup:${phoneE164}`, OTP_RATE_MAX_REQUESTS);
+
+  // Anti-abuse check: cap maximum self-registered institutions per verified mobile number
+  const existingByPhoneSnap = await db.collection(INSTITUTIONS_COLLECTION)
+    .where('ownerPhoneE164', '==', phoneE164)
+    .where('signupSource', '==', 'self_signup')
+    .limit(MAX_SELF_SIGNUPS_PER_PHONE + 1)
+    .get();
+  if (existingByPhoneSnap.size >= MAX_SELF_SIGNUPS_PER_PHONE) {
+    throw new HttpsError(
+      'resource-exhausted',
+      `This mobile number has already registered ${MAX_SELF_SIGNUPS_PER_PHONE} free institutions. Please contact support for additional workspaces.`
+    );
+  }
+
+  const rawLimits = (selfSignupCfg.defaultBasicLimits && typeof selfSignupCfg.defaultBasicLimits === 'object')
+    ? selfSignupCfg.defaultBasicLimits
+    : {};
+  const planLimits = {};
+  Object.keys(DEFAULT_BASIC_PLAN_LIMITS).forEach((k) => {
+    const val = Number(rawLimits[k]);
+    planLimits[k] = Number.isFinite(val) && val > 0 ? Math.floor(val) : DEFAULT_BASIC_PLAN_LIMITS[k];
+  });
+
+  const uid = buildSuperAdminUid(slug);
+  const instRef = db.collection(INSTITUTIONS_COLLECTION).doc(slug);
+  const credRef = db.collection(AUTH_CREDENTIALS_COLLECTION).doc(keyHash);
+  const adminAuthRef = db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/adminAuth`);
+  const configRef = db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/config`);
+  const academicYearsRef = db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/academicYears`);
+
+  const nowDate = new Date();
+  const nowIso = nowDate.toISOString();
+  const currentYear = nowDate.getFullYear();
+  const defaultAcademicYear = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
+
+  await db.runTransaction(async (tx) => {
+    const [instSnap, credSnap] = await Promise.all([
+      tx.get(instRef),
+      tx.get(credRef)
+    ]);
+
+    if (instSnap.exists) {
+      throw new HttpsError('already-exists', `Portal URL "/${slug}" is already registered. Please choose a different URL.`);
+    }
+    if (credSnap.exists) {
+      throw new HttpsError('already-exists', `Username "${displayUsername}" is already taken. Please choose another username.`);
+    }
+
+    // 1. Create institution metadata document (strictly forced Basic Free Forever)
+    tx.set(instRef, {
+      slug,
+      name: institutionName,
+      place,
+      phone: rawPhone,
+      ownerPhoneE164: phoneE164,
+      adminName,
+      adminUsername: username,
+      adminDisplayUsername: displayUsername,
+      status: 'active',
+      isActive: true,
+      planTier: 'basic',
+      planName: 'Basic (Free)',
+      isLifetime: true,
+      expiryDate: '',
+      expiryTimestamp: null,
+      signupSource: 'self_signup',
+      verificationStatus: 'unverified',
+      allowedPages: { ...BASIC_PLAN_ALLOWED_PAGES },
+      planLimits,
+      createdAt: FieldValue.serverTimestamp(),
+      createdAtIso: nowIso,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+    // 2. Create server-only authCredentials entry
+    tx.set(credRef, {
+      keyHash,
+      username,
+      displayUsername,
+      passwordSalt: passwordHashObj.passwordSalt,
+      passwordHash: passwordHashObj.passwordHash,
+      uid,
+      role: 'super_admin',
+      institutionId: slug,
+      institutionName,
+      staffId: '',
+      displayName: adminName,
+      phone: rawPhone,
+      phoneE164,
+      isActive: true,
+      failedAttempts: 0,
+      lockUntilMs: 0,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      lastOtpVerifiedAt: nowIso
+    });
+
+    // 3. Create institution adminAuth document
+    tx.set(adminAuthRef, {
+      uid,
+      name: adminName,
+      username,
+      displayUsername,
+      phone: rawPhone,
+      role: 'super_admin',
+      isActive: true,
+      credentialKeyHash: keyHash,
+      admins: [
+        {
+          uid,
+          name: adminName,
+          username,
+          displayUsername,
+          phone: rawPhone,
+          role: 'super_admin',
+          isActive: true
+        }
+      ],
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+    // 4. Bootstrap basic institution config for public site & portals
+    tx.set(configRef, {
+      appName: institutionName,
+      institutionName,
+      place,
+      phone: rawPhone,
+      activeAcademicYear: defaultAcademicYear,
+      classes: [],
+      feeItems: [],
+      updatedAt: nowIso
+    });
+
+    // 5. Bootstrap initial single academic year record
+    tx.set(academicYearsRef, {
+      activeYear: defaultAcademicYear,
+      years: [
+        {
+          id: defaultAcademicYear,
+          name: defaultAcademicYear,
+          isActive: true,
+          createdAt: nowIso
+        }
+      ],
+      updatedAt: nowIso
+    });
+  });
+
+  // Mint custom token so the newly registered Super Admin can enter Official Hub immediately
+  const customToken = await mintOfficialCustomToken(uid, {
+    customAuth: true,
+    role: 'super_admin',
+    institutionId: slug,
+    staffId: '',
+    username,
+    displayUsername,
+    phoneVerified: true
+  });
+
+  return {
+    ok: true,
+    slug,
+    institutionName,
+    planTier: 'basic',
+    planName: 'Basic (Free)',
+    planLimits,
+    customToken,
+    profile: {
+      uid,
+      role: 'super_admin',
+      institutionId: slug,
+      institutionName,
+      staffId: '',
+      username,
+      displayUsername,
+      displayName: adminName,
+      phoneE164
+    }
+  };
+});
+
+// =========================================================================
+// 14. PROTECTED (INSTITUTION ADMIN): submitUpgradeRequest
+// Allows an authenticated Institution Super Admin or Staff Manager to submit
+// an in-app upgrade request visible in the Company Master Portal.
+// =========================================================================
+exports.submitUpgradeRequest = onCall({ cors: true }, async (request) => {
+  const authCtx = request.auth;
+  if (!authCtx || !authCtx.uid) {
+    throw new HttpsError('unauthenticated', 'Please sign in as an Institution Administrator to request an upgrade.');
+  }
+
+  const slug = normalizeInstitutionSlug(request.data?.institutionId || authCtx.token?.institutionId || '');
+  if (!slug) {
+    throw new HttpsError('invalid-argument', 'Valid institution ID is required.');
+  }
+
+  const authorized = await isInstitutionAdminOrCompanyOwner(authCtx, slug);
+  if (!authorized) {
+    throw new HttpsError('permission-denied', 'Only institution administrators can submit plan upgrade requests.');
+  }
+
+  const instSnap = await db.collection(INSTITUTIONS_COLLECTION).doc(slug).get();
+  if (!instSnap.exists) {
+    throw new HttpsError('not-found', 'Institution record not found.');
+  }
+  const instData = instSnap.data() || {};
+
+  const requestedPlanId = String(request.data?.requestedPlanId || 'premium_full').trim().slice(0, 80);
+  const requestedPlanName = String(request.data?.requestedPlanName || 'Premium Plan').trim().slice(0, 120);
+  const requestedFeature = String(request.data?.requestedFeature || '').trim().slice(0, 120);
+  const contactPhone = String(request.data?.contactPhone || instData.phone || '').trim().slice(0, 30);
+  const note = String(request.data?.note || '').trim().slice(0, 300);
+
+  // Collect live usage snapshot server-side for Company Owner review
+  let studentCount = 0;
+  let staffCount = 0;
+  try {
+    const [studentsCountSnap, staffCountSnap] = await Promise.all([
+      db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/students`).count().get(),
+      db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/staff`).count().get()
+    ]);
+    studentCount = Number(studentsCountSnap.data()?.count || 0);
+    staffCount = Number(staffCountSnap.data()?.count || 0);
+  } catch (_) {}
+
+  const requestedBy = String(
+    authCtx.token?.displayUsername || authCtx.token?.username || authCtx.token?.email || authCtx.uid
+  ).trim().slice(0, 120);
+
+  const nowIso = new Date().toISOString();
+
+  // Check if a pending request already exists for this institution -> update it instead of creating duplicates
+  const existingPendingSnap = await db.collection(UPGRADE_REQUESTS_COLLECTION)
+    .where('institutionId', '==', slug)
+    .where('status', '==', 'pending')
+    .limit(1)
+    .get();
+
+  const payload = {
+    institutionId: slug,
+    institutionName: String(instData.name || slug).trim(),
+    institutionPlace: String(instData.place || '').trim(),
+    currentPlanTier: String(instData.planTier || 'premium').trim().toLowerCase(),
+    currentPlanName: String(instData.planName || 'Basic (Free)').trim(),
+    requestedPlanId,
+    requestedPlanName,
+    requestedFeature,
+    contactPhone,
+    note,
+    requestedBy,
+    requestedByUid: authCtx.uid,
+    usageSnapshot: {
+      students: studentCount,
+      staff: staffCount
+    },
+    status: 'pending',
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedAtIso: nowIso
+  };
+
+  if (!existingPendingSnap.empty) {
+    const existingRef = existingPendingSnap.docs[0].ref;
+    await existingRef.set(payload, { merge: true });
+    return {
+      ok: true,
+      requestId: existingRef.id,
+      updatedExisting: true,
+      message: 'Your pending upgrade request has been updated. Our platform team will contact you shortly.'
+    };
+  }
+
+  const newRef = await db.collection(UPGRADE_REQUESTS_COLLECTION).add({
+    ...payload,
+    createdAt: FieldValue.serverTimestamp(),
+    createdAtIso: nowIso
+  });
+
+  return {
+    ok: true,
+    requestId: newRef.id,
+    updatedExisting: false,
+    message: 'Upgrade request submitted successfully! Our platform team will review and activate Premium shortly.'
+  };
+});
+
 
