@@ -731,7 +731,7 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
       : 'grid-cols-1 md:grid-cols-3';
 
   const trackLayoutClass = (isPublicMode && activePlans.length > 1)
-    ? `flex md:grid ${activePlans.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-4 overflow-x-auto md:overflow-visible snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2 md:pb-0 items-stretch`
+    ? `-mx-4 px-[8vw] md:mx-0 md:px-0 flex md:grid ${activePlans.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-3.5 md:gap-4 overflow-x-auto md:overflow-visible snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2 md:pb-0 items-stretch`
     : `grid ${gridColsClass} gap-4 items-stretch`;
 
   return `
@@ -814,7 +814,7 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
 
         const compactFeatures = (plan.features || []).slice(0, 6);
         const cardSwipeClass = (isPublicMode && activePlans.length > 1)
-          ? 'w-[84vw] max-w-[340px] md:w-auto md:max-w-none shrink-0 snap-center'
+          ? 'w-[82vw] max-w-[330px] md:w-auto md:max-w-none shrink-0 snap-center'
           : '';
 
         return `
@@ -891,9 +891,11 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
       }).join('')}
     </div>
     ${(isPublicMode && activePlans.length > 1) ? `
-      <div id="public-pricing-dots" class="flex md:hidden items-center justify-center gap-1.5 pt-2" aria-label="Plan slide indicators">
-        ${activePlans.map((_, idx) => `
-          <button type="button" data-pricing-dot="${idx}" aria-label="View plan ${idx + 1}" class="${idx === 0 ? 'h-1.5 w-5 rounded-full bg-blue-600 transition-all cursor-pointer' : 'h-1.5 w-1.5 rounded-full bg-slate-300 transition-all cursor-pointer'}"></button>
+      <div id="public-pricing-dots" class="flex md:hidden items-center justify-center gap-2 pt-3" aria-label="Select plan card">
+        ${activePlans.map((p, idx) => `
+          <button type="button" data-pricing-dot="${idx}" aria-label="View ${esc(p.name)} plan" class="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-slate-500 bg-slate-100">
+            ${esc(p.name)}
+          </button>
         `).join('')}
       </div>
     ` : ''}
@@ -1273,7 +1275,7 @@ export const renderPublicPricingSection = async (container, {
     </div>
   `;
 
-  // Mobile horizontal swipe dot synchronization for public plans
+  // Mobile horizontal swipe sync + auto-center on Standard tier first
   const pricingTrack = container.querySelector('#public-pricing-track');
   const pricingDots = Array.from(container.querySelectorAll('[data-pricing-dot]'));
   const pricingCards = Array.from(container.querySelectorAll('[data-public-plan-idx]'));
@@ -1281,21 +1283,43 @@ export const renderPublicPricingSection = async (container, {
     const syncPricingDots = (activeIdx) => {
       pricingDots.forEach((dot, idx) => {
         const active = idx === activeIdx;
+        dot.setAttribute('aria-current', active ? 'true' : 'false');
         dot.className = active
-          ? 'h-1.5 w-5 rounded-full bg-blue-600 transition-all cursor-pointer'
-          : 'h-1.5 w-1.5 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer';
+          ? 'px-3 py-1 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer bg-slate-900 text-white'
+          : 'px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-slate-500 bg-slate-100 hover:text-slate-900';
       });
     };
 
+    const scrollCardToCenter = (idx, instant = false) => {
+      const card = pricingCards[idx];
+      if (!card) return;
+      const cardLeft = card.offsetLeft - pricingTrack.offsetLeft;
+      const targetLeft = Math.max(0, cardLeft - Math.max(0, (pricingTrack.clientWidth - card.offsetWidth) / 2));
+      if (instant) {
+        const prevBehavior = pricingTrack.style.scrollBehavior;
+        pricingTrack.style.scrollBehavior = 'auto';
+        pricingTrack.scrollLeft = targetLeft;
+        pricingTrack.style.scrollBehavior = prevBehavior;
+      } else {
+        pricingTrack.scrollTo({ left: targetLeft, behavior: 'smooth' });
+      }
+      syncPricingDots(idx);
+    };
+
     pricingDots.forEach((dot, idx) => {
-      dot.addEventListener('click', () => {
-        const card = pricingCards[idx];
-        if (!card) return;
-        const targetLeft = card.offsetLeft - pricingTrack.offsetLeft;
-        pricingTrack.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
-        syncPricingDots(idx);
-      });
+      dot.addEventListener('click', () => scrollCardToCenter(idx, false));
     });
+
+    // Default to Standard (or popular) plan first on mobile viewports
+    const preferredIdx = Math.max(0, activePlans.findIndex((p) => inferPlanTierKey(p) === 'standard' || p.isPopular));
+    syncPricingDots(preferredIdx);
+    if (window.innerWidth < 768) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          scrollCardToCenter(preferredIdx, true);
+        });
+      });
+    }
 
     let pricingScrollRaf = 0;
     pricingTrack.addEventListener('scroll', () => {

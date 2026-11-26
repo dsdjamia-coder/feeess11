@@ -217,28 +217,28 @@
             </aside>
         </div>
 
-        <!-- Screen 1: Clean Centered Editorial Hero + Single-Line Portal Code Bar -->
-        <section id="product-overview" class="bg-white py-12 sm:py-16 lg:py-20 border-b border-slate-200 scroll-mt-16">
-            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-                <p class="text-[11px] sm:text-xs font-extrabold uppercase tracking-[0.12em] text-blue-600 mb-3">
+        <!-- Screen 1: Clean Centered Editorial Hero + Portal Box (Single-Screen Mobile Fit) -->
+        <section id="product-overview" class="bg-white min-h-[calc(100svh-56px)] md:min-h-0 flex flex-col justify-center md:block py-8 sm:py-16 lg:py-20 border-b border-slate-200 scroll-mt-16">
+            <div class="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                <p class="text-[11px] sm:text-xs font-extrabold uppercase tracking-[0.12em] text-blue-600 mb-2.5 sm:mb-3">
                     Institutional Management Platform
                 </p>
 
-                <h1 class="text-3xl sm:text-5xl lg:text-[54px] font-extrabold text-slate-950 tracking-tight leading-[1.12] mb-4" style="text-wrap: balance;">
+                <h1 class="text-[28px] leading-[1.15] sm:text-5xl lg:text-[54px] font-extrabold text-slate-950 tracking-tight sm:leading-[1.12] mb-3 sm:mb-4" style="text-wrap: balance;">
                     Run Your Institution From One Clean Workspace.
                 </h1>
 
-                <p class="text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl mx-auto mb-7">
+                <p class="text-[13.5px] sm:text-base text-slate-600 leading-relaxed max-w-[320px] sm:max-w-xl mx-auto mb-6 sm:mb-7">
                     Admissions, fee ledgers, exams, attendance, and family portals—unified under your own dedicated web address.
                 </p>
 
-                <!-- Crisp Primary Actions -->
-                <div class="flex items-center justify-center gap-2.5 sm:gap-3 mb-7">
-                    <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                <!-- Crisp Primary Actions (Thumb-Friendly 2-Col Full-Width on Mobile, Inline Centered on Desktop) -->
+                <div class="grid grid-cols-2 sm:flex sm:items-center sm:justify-center gap-2.5 sm:gap-3 max-w-sm sm:max-w-none mx-auto mb-6 sm:mb-7">
+                    <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="min-h-[44px] sm:min-h-0 px-4 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-xs transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap">
                         <span>Start Free</span>
                         <i class="fas fa-arrow-right text-[11px]" aria-hidden="true"></i>
                     </button>
-                    <button type="button" onclick="window.openLogin()" class="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 text-xs sm:text-sm font-bold transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                    <button type="button" onclick="window.openLogin()" class="min-h-[44px] sm:min-h-0 px-4 py-2.5 sm:px-6 sm:py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 text-xs sm:text-sm font-bold transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap">
                         <span>Login</span>
                     </button>
                     <button type="button" id="btn-gateway-hero-install" class="hidden sm:inline-flex px-4 py-2.5 sm:py-3 rounded-xl text-slate-600 hover:text-slate-950 hover:bg-slate-100 text-xs sm:text-sm font-bold transition-colors cursor-pointer items-center gap-1.5 whitespace-nowrap">
@@ -247,14 +247,14 @@
                     </button>
                 </div>
 
-                <!-- Single-Line Portal Launcher (Clean Full-Width Code Input) -->
-                <div id="portal-launcher-section" class="max-w-md mx-auto pt-5 border-t border-slate-100 scroll-mt-24">
-                    <label for="gateway-slug-input" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                <!-- Portal Launcher Box (Tactile Card on Mobile, Clean Divider Bar on Desktop) -->
+                <div id="portal-launcher-section" class="max-w-sm sm:max-w-md mx-auto bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 text-left md:text-center md:bg-transparent md:border-0 md:border-t md:border-slate-100 md:rounded-none md:p-0 md:pt-5 scroll-mt-24">
+                    <label for="gateway-slug-input" class="block text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">
                         Open Institution Portal
                     </label>
-                    <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                        <input type="text" id="gateway-slug-input" maxlength="64" placeholder="Enter institution code" class="flex-1 min-w-0 bg-transparent border-0 outline-none px-3 py-1.5 text-sm font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-medium" autocomplete="off">
-                        <button type="button" id="btn-gateway-open-slug" class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                    <div class="flex items-center gap-1.5 bg-white md:bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                        <input type="text" id="gateway-slug-input" maxlength="64" placeholder="Enter institution code" class="flex-1 min-w-0 bg-transparent border-0 outline-none px-2.5 sm:px-3 py-1.5 text-sm font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-medium" autocomplete="off">
+                        <button type="button" id="btn-gateway-open-slug" class="min-h-[38px] px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
                             <span>Open</span>
                             <i class="fas fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
                         </button>
@@ -263,21 +263,22 @@
                 </div>
 
                 <!-- Clean Unboxed Trust Metadata -->
-                <div class="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] sm:text-xs font-semibold text-slate-500">
+                <div class="mt-5 sm:mt-6 flex flex-wrap items-center justify-center gap-x-2.5 sm:gap-x-3 gap-y-1 text-[11px] sm:text-xs font-semibold text-slate-500">
                     <span>11 Workspaces</span>
                     <span aria-hidden="true" class="text-slate-300">·</span>
                     <span>3-Day Standard Trial</span>
                     <span aria-hidden="true" class="text-slate-300">·</span>
-                    <span>Android, iOS, Windows &amp; Mac</span>
+                    <span class="sm:hidden">Web &amp; Mobile App</span>
+                    <span class="hidden sm:inline">Android, iOS, Windows &amp; Mac</span>
                 </div>
             </div>
         </section>
 
         <!-- Screen 2: Horizontal Swipeable 11-Workspace Carousel (Zero Filter Subtabs) -->
-        <section id="product-modules" class="bg-slate-50 py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
+        <section id="product-modules" class="bg-slate-50 py-10 sm:py-16 border-b border-slate-200 scroll-mt-14">
             <span id="product-demo" class="block scroll-mt-16" aria-hidden="true"></span>
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div data-gateway-reveal class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6 sm:mb-8">
+                <div data-gateway-reveal class="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4 mb-5 sm:mb-8">
                     <div>
                         <p class="text-[11px] font-extrabold text-blue-600 uppercase tracking-[0.1em] mb-1.5">Unified Platform</p>
                         <h2 class="text-xl sm:text-3xl font-extrabold text-slate-950 tracking-tight" style="text-wrap: balance;">
@@ -299,8 +300,8 @@
                     </div>
                 </div>
 
-                <!-- Horizontal Scroll-Snap Carousel Track (Mobile 1-up + Peek, Tablet 2-up, Desktop 3-up) -->
-                <div data-gateway-reveal="delay-1" class="flex gap-4 sm:gap-5 overflow-x-auto snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2" id="gateway-modules-grid">
+                <!-- Horizontal Scroll-Snap Carousel Track (Mobile Edge-to-Edge Swipe, Desktop 3-up) -->
+                <div data-gateway-reveal="delay-1" class="-mx-4 px-4 sm:mx-0 sm:px-0 flex gap-3.5 sm:gap-5 overflow-x-auto snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2" id="gateway-modules-grid">
 
                     <!-- 01. Public Website -->
                     <article data-module-index="0" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
@@ -710,50 +711,54 @@
 
                 </div>
 
-                <!-- Pagination Dots Row -->
-                <div id="modules-carousel-dots" class="flex items-center justify-center gap-1.5 mt-5" aria-label="Workspace slide indicators"></div>
+                <!-- Pagination Dots Row (+ Compact Mobile Counter) -->
+                <div class="flex items-center justify-center gap-3 mt-4 sm:mt-5">
+                    <div id="modules-carousel-dots" class="flex items-center justify-center gap-1.5" aria-label="Workspace slide indicators"></div>
+                    <span id="modules-carousel-mobile-counter" class="md:hidden text-[11px] font-bold text-slate-400 tabular-nums">1 / 11</span>
+                </div>
             </div>
         </section>
 
         <!-- Screen 3: Highlighted 3-Tier Subscription Plans (Free, Standard, ELITE) -->
-        <section id="product-pricing" class="bg-white py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
+        <section id="product-pricing" class="bg-white py-10 sm:py-16 border-b border-slate-200 scroll-mt-14">
             <div data-gateway-reveal id="gateway-pricing-root" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"></div>
         </section>
 
-        <!-- Screen 4: Clean Asymmetric About & Contact Section -->
-        <section id="product-about" class="bg-slate-50 py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
+        <!-- Screen 4: Clean Asymmetric About & Contact Section (Minimal Single Card on Mobile, 2-Col Split on Desktop) -->
+        <section id="product-about" class="bg-slate-50 py-10 sm:py-16 border-b border-slate-200 scroll-mt-14">
             <span id="product-architecture" class="block scroll-mt-16" aria-hidden="true"></span>
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+                <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-5 lg:bg-transparent lg:border-0 lg:rounded-none lg:p-0 lg:space-y-0 grid grid-cols-1 lg:grid-cols-12 lg:gap-12 items-start">
                     <!-- Left: Crisp About Narrative & Direct Contact -->
-                    <div data-gateway-reveal class="lg:col-span-5 space-y-5">
+                    <div data-gateway-reveal class="lg:col-span-5 space-y-4 lg:space-y-5">
                         <div>
                             <p class="text-[11px] font-extrabold text-blue-600 uppercase tracking-[0.1em] mb-1.5">About Platform</p>
-                            <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight leading-tight" style="text-wrap: balance;">
+                            <h2 class="text-xl sm:text-3xl font-extrabold text-slate-950 tracking-tight leading-tight" style="text-wrap: balance;">
                                 Built for Real Campus Operations.
                             </h2>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed mt-3">
-                                Institution Manage gives schools, colleges, and academies one clean cloud workspace to manage fees, academics, staff roles, and parent communication without spreadsheet chaos.
+                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed mt-2 sm:mt-3">
+                                <span class="lg:hidden">One cloud workspace for fees, academics, staff roles, and parent portals.</span>
+                                <span class="hidden lg:inline">Institution Manage gives schools, colleges, and academies one clean cloud workspace to manage fees, academics, staff roles, and parent communication without spreadsheet chaos.</span>
                             </p>
                         </div>
 
-                        <div class="grid grid-cols-3 gap-3 pt-4 border-t border-slate-200">
+                        <div class="grid grid-cols-3 gap-2.5 sm:gap-3 pt-3.5 lg:pt-4 border-t border-slate-100 lg:border-slate-200">
                             <div>
-                                <div class="text-lg sm:text-xl font-extrabold text-slate-950 tabular-nums">11</div>
+                                <div class="text-base sm:text-xl font-extrabold text-slate-950 tabular-nums">11</div>
                                 <div class="text-[11px] font-medium text-slate-500">Workspaces</div>
                             </div>
                             <div>
-                                <div class="text-lg sm:text-xl font-extrabold text-slate-950 tabular-nums">100%</div>
-                                <div class="text-[11px] font-medium text-slate-500">Tenant Isolated</div>
+                                <div class="text-base sm:text-xl font-extrabold text-slate-950 tabular-nums">100%</div>
+                                <div class="text-[11px] font-medium text-slate-500">Isolated</div>
                             </div>
                             <div>
-                                <div class="text-lg sm:text-xl font-extrabold text-slate-950 tabular-nums">Zero</div>
-                                <div class="text-[11px] font-medium text-slate-500">Data Lock-in</div>
+                                <div class="text-base sm:text-xl font-extrabold text-slate-950 tabular-nums">Zero</div>
+                                <div class="text-[11px] font-medium text-slate-500">Lock-in</div>
                             </div>
                         </div>
 
                         <!-- Live Company Contact Strip -->
-                        <div id="product-contact" class="scroll-mt-20 pt-4 border-t border-slate-200 space-y-2">
+                        <div id="product-contact" class="scroll-mt-20 pt-3.5 lg:pt-4 border-t border-slate-100 lg:border-slate-200 space-y-2">
                             <div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Support &amp; Onboarding</div>
                             <div id="gateway-contact-links" class="flex flex-wrap items-center gap-2 text-xs">
                                 <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer transition-colors">
@@ -766,31 +771,31 @@
                         </div>
                     </div>
 
-                    <!-- Right: Clean Hairline-Divided Numbered Editorial Pillars -->
-                    <div data-gateway-reveal="delay-1" class="lg:col-span-7 bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
-                        <div class="p-5 sm:p-6 flex items-start gap-4">
+                    <!-- Right: Clean Hairline-Divided Numbered Pillars (Compact Rows on Mobile, Full Editorial on Desktop) -->
+                    <div data-gateway-reveal="delay-1" class="lg:col-span-7 border-t border-slate-100 pt-3 lg:pt-0 lg:bg-white lg:border lg:border-slate-200 lg:rounded-2xl divide-y divide-slate-100">
+                        <div class="py-3 lg:p-6 flex items-start gap-3 lg:gap-4">
                             <span class="text-xs font-extrabold text-blue-600 tabular-nums mt-0.5">01</span>
                             <div class="min-w-0">
-                                <h3 class="text-sm sm:text-base font-extrabold text-slate-950">Dedicated Institution Address</h3>
-                                <p class="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
+                                <h3 class="text-xs sm:text-base font-extrabold text-slate-950">Dedicated Institution Address</h3>
+                                <p class="hidden lg:block text-sm text-slate-600 mt-1 leading-relaxed">
                                     Every registered institution receives its own clean public homepage, logo, notices, and isolated database tenant.
                                 </p>
                             </div>
                         </div>
-                        <div class="p-5 sm:p-6 flex items-start gap-4">
+                        <div class="py-3 lg:p-6 flex items-start gap-3 lg:gap-4">
                             <span class="text-xs font-extrabold text-blue-600 tabular-nums mt-0.5">02</span>
                             <div class="min-w-0">
-                                <h3 class="text-sm sm:text-base font-extrabold text-slate-950">Granular Role Permissions</h3>
-                                <p class="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
+                                <h3 class="text-xs sm:text-base font-extrabold text-slate-950">Granular Role Permissions</h3>
+                                <p class="hidden lg:block text-sm text-slate-600 mt-1 leading-relaxed">
                                     Server-enforced security rules ensure admins, cashiers, teachers, and parents only access their authorized records.
                                 </p>
                             </div>
                         </div>
-                        <div class="p-5 sm:p-6 flex items-start gap-4">
+                        <div class="py-3 lg:p-6 flex items-start gap-3 lg:gap-4">
                             <span class="text-xs font-extrabold text-blue-600 tabular-nums mt-0.5">03</span>
                             <div class="min-w-0">
-                                <h3 class="text-sm sm:text-base font-extrabold text-slate-950">Instant Print &amp; Backup Ready</h3>
-                                <p class="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
+                                <h3 class="text-xs sm:text-base font-extrabold text-slate-950">Instant Print &amp; Backup Ready</h3>
+                                <p class="hidden lg:block text-sm text-slate-600 mt-1 leading-relaxed">
                                     Generate thermal or A4 fee receipts, progress cards, and Excel/JSON exports anytime with complete data ownership.
                                 </p>
                             </div>
@@ -800,61 +805,61 @@
             </div>
         </section>
 
-        <!-- Screen 5: Deep Slate App Download & Action Strip -->
-        <section id="product-download" class="bg-white py-12 sm:py-16 scroll-mt-14">
+        <!-- Screen 5: Deep Slate App Download & Action Strip (Compact Single Card on Mobile) -->
+        <section id="product-download" class="bg-white py-10 sm:py-16 scroll-mt-14">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-                <div data-gateway-reveal class="bg-slate-950 text-white rounded-3xl p-6 sm:p-8 lg:p-10">
-                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                        <div class="flex items-start sm:items-center gap-4 min-w-0">
-                            <div class="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 p-2 flex items-center justify-center shrink-0">
+                <div data-gateway-reveal class="bg-slate-950 text-white rounded-2xl sm:rounded-3xl p-5 sm:p-8 lg:p-10">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6">
+                        <div class="flex items-center gap-3.5 sm:gap-4 min-w-0">
+                            <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white/10 border border-white/15 p-2 flex items-center justify-center shrink-0">
                                 <img src="/assets/images/pwa-192x192.png" alt="Institution Manage App Icon" class="w-full h-full object-contain rounded-lg" referrerpolicy="no-referrer">
                             </div>
                             <div class="min-w-0">
-                                <div class="text-[11px] font-bold text-blue-400 uppercase tracking-wider">Official Web App</div>
-                                <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight mt-0.5">
+                                <div class="text-[10px] sm:text-[11px] font-bold text-blue-400 uppercase tracking-wider">Official Web App</div>
+                                <h2 class="text-lg sm:text-2xl font-extrabold tracking-tight mt-0.5">
                                     Install on Any Device
                                 </h2>
-                                <p id="gateway-install-status-text" class="text-xs sm:text-sm text-slate-300 mt-1">
+                                <p id="gateway-install-status-text" class="text-[11px] sm:text-sm text-slate-300 mt-0.5 sm:mt-1">
                                     Works on Android, iPhone, iPad, Windows, macOS &amp; Linux.
                                 </p>
                             </div>
                         </div>
 
-                        <div class="flex flex-wrap items-center gap-2.5 shrink-0">
-                            <button type="button" id="btn-gateway-section-install" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
+                            <button type="button" id="btn-gateway-section-install" class="min-h-[42px] sm:min-h-0 px-3.5 sm:px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap">
                                 <i class="fas fa-download text-[11px]" aria-hidden="true"></i>
                                 <span data-install-btn-label>Install App</span>
                             </button>
-                            <button type="button" id="btn-gateway-install-guide" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/15 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                            <button type="button" id="btn-gateway-install-guide" class="min-h-[42px] sm:min-h-0 px-3.5 sm:px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/15 text-xs font-bold transition-colors cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap">
                                 <i class="fas fa-list-check text-[11px]" aria-hidden="true"></i>
                                 <span>Install Steps</span>
                             </button>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-4 gap-2 sm:gap-3 mt-6 pt-6 border-t border-white/10">
-                        <button type="button" data-install-guide-tab="android" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
-                            <i class="fa-brands fa-android text-lg text-emerald-400" aria-hidden="true"></i>
-                            <span class="text-[11px] sm:text-xs font-bold text-white">Android</span>
+                    <div class="grid grid-cols-4 gap-2 sm:gap-3 mt-5 sm:mt-6 pt-5 sm:pt-6 border-t border-white/10">
+                        <button type="button" data-install-guide-tab="android" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-2.5 sm:py-3 px-1.5 sm:px-2 flex flex-col items-center justify-center text-center gap-1 sm:gap-1.5 transition-colors cursor-pointer">
+                            <i class="fa-brands fa-android text-base sm:text-lg text-emerald-400" aria-hidden="true"></i>
+                            <span class="text-[10px] sm:text-xs font-bold text-white">Android</span>
                         </button>
-                        <button type="button" data-install-guide-tab="ios" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
-                            <i class="fa-brands fa-apple text-lg text-white" aria-hidden="true"></i>
-                            <span class="text-[11px] sm:text-xs font-bold text-white">iPhone</span>
+                        <button type="button" data-install-guide-tab="ios" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-2.5 sm:py-3 px-1.5 sm:px-2 flex flex-col items-center justify-center text-center gap-1 sm:gap-1.5 transition-colors cursor-pointer">
+                            <i class="fa-brands fa-apple text-base sm:text-lg text-white" aria-hidden="true"></i>
+                            <span class="text-[10px] sm:text-xs font-bold text-white">iPhone</span>
                         </button>
-                        <button type="button" data-install-guide-tab="desktop" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
-                            <i class="fa-brands fa-windows text-lg text-blue-400" aria-hidden="true"></i>
-                            <span class="text-[11px] sm:text-xs font-bold text-white">Windows</span>
+                        <button type="button" data-install-guide-tab="desktop" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-2.5 sm:py-3 px-1.5 sm:px-2 flex flex-col items-center justify-center text-center gap-1 sm:gap-1.5 transition-colors cursor-pointer">
+                            <i class="fa-brands fa-windows text-base sm:text-lg text-blue-400" aria-hidden="true"></i>
+                            <span class="text-[10px] sm:text-xs font-bold text-white">Windows</span>
                         </button>
-                        <button type="button" data-install-guide-tab="desktop" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
-                            <i class="fas fa-laptop text-base text-slate-300" aria-hidden="true"></i>
-                            <span class="text-[11px] sm:text-xs font-bold text-white">Mac / PC</span>
+                        <button type="button" data-install-guide-tab="desktop" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-2.5 sm:py-3 px-1.5 sm:px-2 flex flex-col items-center justify-center text-center gap-1 sm:gap-1.5 transition-colors cursor-pointer">
+                            <i class="fas fa-laptop text-sm sm:text-base text-slate-300" aria-hidden="true"></i>
+                            <span class="text-[10px] sm:text-xs font-bold text-white">Mac / PC</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- Quiet Quick Access Strip -->
-                <div data-gateway-reveal="delay-1" class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
-                    <p class="text-xs sm:text-sm font-semibold text-slate-600">
+                <!-- Quiet Quick Access Strip (Desktop Only — Mobile Uses Floating Dock) -->
+                <div data-gateway-reveal="delay-1" class="hidden md:flex flex-row items-center justify-between gap-3 pt-2">
+                    <p class="text-sm font-semibold text-slate-600">
                         Already registered? Open your portal or sign in directly.
                     </p>
                     <div class="flex items-center gap-2 shrink-0">
@@ -869,8 +874,8 @@
             </div>
         </section>
 
-        <!-- Compact Product Footer -->
-        <footer class="bg-slate-950 text-slate-300 py-5 border-t border-slate-800">
+        <!-- Compact Product Footer (Extra Bottom Safe Clearance on Mobile for Floating Bar) -->
+        <footer class="bg-slate-950 text-slate-300 pt-5 pb-24 md:py-5 border-t border-slate-800">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-[11px] text-center sm:text-left">
                 <div class="flex items-center gap-2 font-bold text-white">
                     <img src="/assets/images/logo.png" alt="Logo" class="w-4 h-4 object-contain rounded" referrerpolicy="no-referrer">
@@ -886,6 +891,19 @@
                 </div>
             </div>
         </footer>
+
+        <!-- Mobile-Only Floating Start Free Bar (Appears Smoothly After Scrolling Past Hero) -->
+        <div id="gateway-mobile-float-bar" class="md:hidden fixed bottom-3 inset-x-3 z-40 transition-all duration-300 ease-out translate-y-24 opacity-0 pointer-events-none">
+            <div class="max-w-md mx-auto bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-lg shadow-slate-950/10 rounded-2xl p-2 flex items-center gap-2">
+                <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="flex-1 min-h-[42px] px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+                    <span>Start Free</span>
+                    <i class="fas fa-arrow-right text-[10px]" aria-hidden="true"></i>
+                </button>
+                <button type="button" onclick="window.openLogin()" class="min-h-[42px] px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-900 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0">
+                    Login
+                </button>
+            </div>
+        </div>
     </div>
 
     <div class="container" id="about-container">

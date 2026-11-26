@@ -1067,6 +1067,7 @@ let isRootGatewayMode = false;
             const modulesPrevBtn = document.getElementById('modules-carousel-prev');
             const modulesNextBtn = document.getElementById('modules-carousel-next');
             const modulesCounterEl = document.getElementById('modules-carousel-counter');
+            const modulesMobileCounterEl = document.getElementById('modules-carousel-mobile-counter');
             const modulesDotsEl = document.getElementById('modules-carousel-dots');
             const moduleCards = Array.from(modulesTrack?.querySelectorAll('[data-module-index]') || []);
 
@@ -1125,6 +1126,9 @@ let isRootGatewayMode = false;
                         modulesCounterEl.textContent = perView === 1
                             ? `${startDisplay} / ${moduleCards.length}`
                             : `${startDisplay}–${endIdx} / ${moduleCards.length}`;
+                    }
+                    if (modulesMobileCounterEl) {
+                        modulesMobileCounterEl.textContent = `${startDisplay} / ${moduleCards.length}`;
                     }
                     if (modulesPrevBtn) {
                         modulesPrevBtn.disabled = modulesTrack.scrollLeft <= 6;
@@ -1229,6 +1233,30 @@ let isRootGatewayMode = false;
                         threshold: 0.08
                     });
                     revealTargets.forEach((el) => revealObserver.observe(el));
+                }
+            }
+
+            // Mobile Floating Start Free Bar (appears smoothly once user scrolls past the Hero)
+            const mobileFloatBar = document.getElementById('gateway-mobile-float-bar');
+            const heroOverviewSection = document.getElementById('product-overview');
+            if (mobileFloatBar && heroOverviewSection && !mobileFloatBar.dataset.boundFloatBar) {
+                mobileFloatBar.dataset.boundFloatBar = 'true';
+                const setFloatBarVisible = (visible) => {
+                    mobileFloatBar.classList.toggle('translate-y-24', !visible);
+                    mobileFloatBar.classList.toggle('opacity-0', !visible);
+                    mobileFloatBar.classList.toggle('pointer-events-none', !visible);
+                    mobileFloatBar.classList.toggle('translate-y-0', visible);
+                    mobileFloatBar.classList.toggle('opacity-100', visible);
+                    mobileFloatBar.classList.toggle('pointer-events-auto', visible);
+                };
+                if (typeof IntersectionObserver !== 'undefined') {
+                    const heroObs = new IntersectionObserver((entries) => {
+                        const entry = entries[0];
+                        const pastHero = entry ? (!entry.isIntersecting && entry.boundingClientRect.top < 0) : false;
+                        const drawerIsOpen = navDrawer && !navDrawer.classList.contains('hidden');
+                        setFloatBarVisible(pastHero && !drawerIsOpen);
+                    }, { threshold: 0.08 });
+                    heroObs.observe(heroOverviewSection);
                 }
             }
 
