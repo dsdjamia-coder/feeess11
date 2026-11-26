@@ -83,7 +83,11 @@ export const openSelfSignupWizard = async () => {
   } catch (_) {}
 
   const selfSignupEnabled = catalog?.selfSignupConfig?.enabled !== false;
-  const basicLimits = catalog?.selfSignupConfig?.defaultBasicLimits || DEFAULT_BASIC_PLAN_LIMITS;
+  const trialDays = Number.isFinite(Number(catalog?.selfSignupConfig?.trialDays))
+    ? Number(catalog.selfSignupConfig.trialDays)
+    : 3;
+  const freeLimits = catalog?.selfSignupConfig?.defaultFreeLimits || catalog?.selfSignupConfig?.defaultBasicLimits || DEFAULT_BASIC_PLAN_LIMITS;
+  const standardLimits = catalog?.selfSignupConfig?.defaultStandardLimits || { maxStudents: 500, maxStaff: 25, maxClasses: 30 };
 
   const state = {
     step: 1,
@@ -123,7 +127,7 @@ export const openSelfSignupWizard = async () => {
             <i class="fas fa-rocket text-sm"></i>
           </div>
           <div class="min-w-0">
-            <div class="text-[10px] font-extrabold uppercase tracking-wider text-blue-600">Free Forever · Basic Plan</div>
+            <div class="text-[10px] font-extrabold uppercase tracking-wider text-blue-600">${trialDays > 0 ? `${trialDays}-Day Free Standard Trial · Then Free Forever` : 'Free Forever Plan'}</div>
             <h3 class="text-base font-extrabold text-slate-900 truncate">Create Your Institution Website</h3>
           </div>
         </div>
@@ -223,8 +227,8 @@ export const openSelfSignupWizard = async () => {
     updateStepper();
     bodyEl.innerHTML = `
       <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px] font-bold text-blue-900">
-        <span><i class="fas fa-circle-check text-blue-600 mr-1"></i>Includes Public Website, Admin, Fees, Results &amp; Student Portal</span>
-        <span class="px-2 py-0.5 rounded-md bg-white border border-blue-200 text-blue-700">${basicLimits.maxStudents || 150} Students · ${basicLimits.maxStaff || 6} Staff · ${basicLimits.maxClasses || 12} Classes</span>
+        <span><i class="fas fa-circle-check text-blue-600 mr-1"></i>${trialDays > 0 ? `Starts with ${trialDays}-day Standard Trial (Attendance, Planning, Worksheets &amp; Multi-Year), then Free Forever.` : 'Includes Public Website, Admin, Fees, Manual Result &amp; Student Portal.'}</span>
+        <span class="px-2 py-0.5 rounded-md bg-white border border-blue-200 text-blue-700 tabular-nums">${trialDays > 0 ? `${standardLimits.maxStudents || 500} Students Trial · ${freeLimits.maxStudents || 150} Free` : `${freeLimits.maxStudents || 150} Students · ${freeLimits.maxStaff || 6} Staff`}</span>
       </div>
 
       <div class="space-y-3">
@@ -686,7 +690,9 @@ export const openSelfSignupWizard = async () => {
     updateStepper();
     const res = state.result || {};
     const slug = res.slug || state.slug;
-    const limits = res.planLimits || basicLimits;
+    const activeTrialDays = Number(res.trialDays ?? trialDays);
+    const hasTrial = res.trialActive === true || activeTrialDays > 0;
+    const limits = res.planLimits || (hasTrial ? standardLimits : freeLimits);
     const publicUrl = `${window.location.origin}/${encodeURIComponent(slug)}`;
     const officialUrl = `/${encodeURIComponent(slug)}/official.html`;
 
@@ -696,7 +702,9 @@ export const openSelfSignupWizard = async () => {
           <i class="fas fa-circle-check"></i>
         </div>
         <div>
-          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase tracking-wider mb-1">Basic Plan Active · Free Forever</span>
+          <div class="text-[11px] font-extrabold uppercase tracking-wider ${hasTrial ? 'text-blue-700' : 'text-emerald-700'} mb-1">
+            ${hasTrial ? `${activeTrialDays}-Day Free Standard Trial Activated` : 'Free Forever Plan Activated'}
+          </div>
           <h4 class="text-lg font-extrabold text-slate-900">Your Institution Website Is Live!</h4>
           <p class="text-xs text-slate-600 mt-0.5">${esc(state.institutionName)} has been provisioned and you are signed in as Super Admin.</p>
         </div>
@@ -711,9 +719,14 @@ export const openSelfSignupWizard = async () => {
             <span class="font-mono font-extrabold text-slate-900">${esc(state.username)}</span>
           </div>
           <div class="flex items-center justify-between gap-2">
-            <span class="font-bold text-slate-500">Free Plan Quota</span>
-            <span class="font-extrabold text-slate-800">${limits.maxStudents || 150} Students · ${limits.maxStaff || 6} Staff · ${limits.maxClasses || 12} Classes</span>
+            <span class="font-bold text-slate-500">${hasTrial ? 'Active Trial Capacity' : 'Free Plan Quota'}</span>
+            <span class="font-extrabold text-slate-800 tabular-nums">${limits.maxStudents || 150} Students · ${limits.maxStaff || 6} Staff · ${limits.maxClasses || 12} Classes</span>
           </div>
+          ${hasTrial ? `
+            <div class="pt-1.5 border-t border-slate-200 text-[11px] font-semibold text-slate-600">
+              <i class="fas fa-shield-halved text-emerald-600 mr-1"></i>After ${activeTrialDays} days, your portal switches to Free Forever automatically — all your data stays safe.
+            </div>
+          ` : ''}
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">

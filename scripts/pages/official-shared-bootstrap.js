@@ -2,7 +2,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
     import { collection, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
     import { db, auth } from '../../config/firebase-config.js';
     import { ADMIN_AUTH_DOC_ID, INSTITUTION_ID, SINGLE_ADMIN_MODE } from '../../config/app-config.js';
-    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, ensureTenantStatusAndAccess, escapeHtml, isBasicPlan, onPlanChange, openPremiumPlansModal, registerServiceWorker, rememberInstitutionLogo, renderPlanUsageBanner, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+    import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, ensureTenantStatusAndAccess, escapeHtml, getActiveInstitutionPlan, getRequiredTierForModule, isBasicPlan, onPlanChange, openPremiumPlansModal, registerServiceWorker, rememberInstitutionLogo, renderPlanUsageBanner, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
     import { InteractiveCropper } from '../shared/image-cropper.js';
     import { normalizeInstitutionalStats } from '../shared/student-stats-service.js';
     import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
@@ -1790,9 +1790,9 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       ];
 
       const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
-      const basicTierActive = isBasicPlan();
-      const premiumOnlyIds = new Set(['worksheet', 'attendance', 'academicPlan', 'studentActivity', 'classroomEvaluation']);
-      const isModulePlanLocked = (modId) => companyAllowed[modId] === false || (basicTierActive && premiumOnlyIds.has(modId));
+      const activePlan = getActiveInstitutionPlan();
+      const effectiveAllowed = activePlan?.allowedPages || companyAllowed;
+      const isModulePlanLocked = (modId) => effectiveAllowed[modId] === false;
       const modules = allPossibleModules
         .filter((m) => m.id === 'admin' || isModulePlanLocked(m.id) || enabledModules[m.id] !== false)
         .filter((m) => isModulePlanLocked(m.id) || isMasterAdmin || m.hasAccess);
@@ -1800,27 +1800,41 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
       const moduleCardsHtml = modules.length > 0 ? modules.map((m) => {
         const isCompanyLocked = isModulePlanLocked(m.id);
         if (isCompanyLocked) {
+          const reqTier = getRequiredTierForModule(m.id);
+          const isStdReq = reqTier === 'standard';
+          const badgeText = isStdReq ? 'Standard · Upgrade' : 'ELITE · Upgrade';
+          const badgeIcon = isStdReq ? 'fa-layer-group' : 'fa-crown';
+          const cardColors = isStdReq
+            ? 'bg-indigo-50/40 border-indigo-200 hover:border-indigo-400'
+            : 'bg-amber-50/40 border-amber-200 hover:border-amber-400';
+          const iconColors = isStdReq
+            ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+            : 'bg-amber-100 text-amber-700 border-amber-200';
+          const pillColors = isStdReq
+            ? 'text-indigo-800 bg-indigo-100 border-indigo-200 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600'
+            : 'text-amber-800 bg-amber-100 border-amber-200 group-hover:bg-slate-900 group-hover:text-amber-300 group-hover:border-slate-900';
+          const titleHover = isStdReq ? 'group-hover:text-indigo-800' : 'group-hover:text-amber-800';
           return `
-            <div data-premium-locked-module="${escapeHtml(m.title)}" data-premium-module-key="${escapeHtml(m.id)}" class="group flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 bg-amber-50/40 border border-amber-200 hover:border-amber-400 rounded-xl p-2.5 sm:p-3.5 h-full shadow-2xs hover:shadow-md transition-all duration-150 cursor-pointer">
+            <div data-premium-locked-module="${escapeHtml(m.title)}" data-premium-module-key="${escapeHtml(m.id)}" data-required-tier="${escapeHtml(reqTier)}" class="group flex flex-col justify-between gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 border rounded-xl p-2.5 sm:p-3.5 h-full shadow-2xs hover:shadow-md transition-all duration-150 cursor-pointer ${cardColors}">
               <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
                 <div class="flex items-center justify-between gap-1.5 sm:contents">
-                  <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-amber-100 text-amber-700 border border-amber-200 flex items-center justify-center text-sm sm:text-base shrink-0">
-                    <i class="fas fa-crown"></i>
+                  <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl border flex items-center justify-center text-sm sm:text-base shrink-0 ${iconColors}">
+                    <i class="fas ${badgeIcon}"></i>
                   </div>
-                  <span class="sm:hidden inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold text-amber-800 bg-amber-100 border border-amber-200 shrink-0 whitespace-nowrap">
-                    <i class="fas fa-crown text-[8px]"></i>
-                    <span>Premium - Upgrade</span>
+                  <span class="sm:hidden inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold border shrink-0 whitespace-nowrap ${pillColors}">
+                    <i class="fas ${badgeIcon} text-[8px]"></i>
+                    <span>${badgeText}</span>
                   </span>
                 </div>
                 <div class="min-w-0">
-                  <h4 class="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-amber-800 transition-colors leading-snug line-clamp-2 sm:line-clamp-none sm:truncate">${m.title}</h4>
+                  <h4 class="text-xs sm:text-sm font-bold text-slate-900 ${titleHover} transition-colors leading-snug line-clamp-2 sm:line-clamp-none sm:truncate">${m.title}</h4>
                   <p class="text-[10px] sm:text-[11px] text-slate-500 leading-tight line-clamp-2 sm:line-clamp-none sm:truncate mt-0.5">${m.desc}</p>
                 </div>
               </div>
               <div class="hidden sm:block shrink-0 pl-2">
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-extrabold text-amber-800 bg-amber-100 border border-amber-200 group-hover:bg-amber-600 group-hover:text-white group-hover:border-amber-600 transition-colors whitespace-nowrap">
-                  <i class="fas fa-crown text-[9px]"></i>
-                  <span>Premium - Upgrade</span>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-extrabold border transition-colors whitespace-nowrap ${pillColors}">
+                  <i class="fas ${badgeIcon} text-[9px]"></i>
+                  <span>${badgeText}</span>
                 </span>
               </div>
             </div>`;
@@ -1966,6 +1980,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInAnonymously } fro
             contextType: 'module',
             moduleName: btn.dataset.premiumLockedModule || 'Premium Feature',
             moduleKey: btn.dataset.premiumModuleKey || '',
+            requiredTier: btn.dataset.requiredTier || '',
             institutionName: resolveInstitutionName(institutionConfig) || ''
           });
         });

@@ -417,10 +417,10 @@
                   <div>
                     <label class="block text-[11px] font-bold text-slate-700 mb-1" for="add-inst-plan-name">Plan Tier</label>
                     <select id="add-inst-plan-name" data-native-select="true" class="w-full px-2.5 py-2 rounded-lg border border-slate-300 font-bold text-slate-800 outline-none text-xs">
-                      <option value="Trial">Trial</option>
-                      <option value="Standard" selected>Standard</option>
-                      <option value="Premium">Premium</option>
-                      <option value="Enterprise">Enterprise</option>
+                      <option value="ELITE" selected>ELITE (All 10 Modules)</option>
+                      <option value="Standard">Standard (8 Modules)</option>
+                      <option value="Free">Free (5 Core Modules)</option>
+                      <option value="Trial">3-Day Trial (Free + Std Trial)</option>
                     </select>
                   </div>
                   <div>
@@ -449,9 +449,10 @@
               <div class="space-y-2.5 pt-3.5 border-t border-slate-200">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <div class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages &amp; Modules</div>
-                  <div class="flex items-center gap-1.5">
-                    <button type="button" id="btn-add-pages-select-all" class="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer">Enable All</button>
-                    <button type="button" id="btn-add-pages-core-only" class="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer">Core Only</button>
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <button type="button" id="btn-add-pages-select-all" class="px-2 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold cursor-pointer">ELITE (All 10)</button>
+                    <button type="button" id="btn-add-pages-standard-preset" class="px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold cursor-pointer">Standard (8)</button>
+                    <button type="button" id="btn-add-pages-core-only" class="px-2 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold cursor-pointer">Free (5)</button>
                   </div>
                 </div>
                 <div id="add-inst-allowed-pages-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2"></div>
@@ -481,8 +482,10 @@
               </div>
               <select id="inst-status-filter" data-native-select="true" class="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:border-indigo-500 text-xs font-bold text-slate-700 outline-none">
                 <option value="all">All Institutions</option>
-                <option value="basic">Basic (Free) Plan</option>
-                <option value="premium">Premium Plan</option>
+                <option value="free">Free Plan</option>
+                <option value="trial">Active 3-Day Trial</option>
+                <option value="standard">Standard Plan</option>
+                <option value="elite">ELITE Plan</option>
                 <option value="self_signup">Self-Signup Only</option>
                 <option value="unverified">Unverified Only</option>
                 <option value="active">Active Only</option>
@@ -512,7 +515,7 @@
           <div class="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 class="text-base font-extrabold text-slate-900">In-App Plan Upgrade Requests</h3>
-              <p class="text-xs text-slate-500">Review upgrade requests submitted by Basic Free Plan institutions and approve with 1 click.</p>
+              <p class="text-xs text-slate-500">Review upgrade requests submitted by Free or Standard institutions and approve Standard or ELITE with 1 click.</p>
             </div>
             <div class="flex items-center gap-2">
               <select id="upgrade-req-status-filter" data-native-select="true" class="px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-slate-700 outline-none">
@@ -533,61 +536,118 @@
 
         <!-- VIEW 4: PREMIUM PLANS & OFFERS -->
         <section id="view-plans" class="company-view hidden space-y-6">
-          <!-- Self-Signup & Default Basic Plan Limits Card -->
-          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+          <!-- Self-Signup, 3-Day Free Trial & Default Tier Quotas Card -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-5">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
-                <h3 class="text-base font-extrabold text-slate-900">Self-Signup &amp; Default Basic (Free) Plan Limits</h3>
-                <p class="text-xs text-slate-500">Control public self-registration and default data quotas applied to newly created Basic Free institutions.</p>
+                <h3 class="text-base font-extrabold text-slate-900">Self-Signup, 3-Day Free Trial &amp; Default Tier Limits</h3>
+                <p class="text-xs text-slate-500">Configure public self-registration, automatic Standard trial duration, and default data quotas for Free and Standard tiers.</p>
               </div>
               <button type="button" id="btn-save-self-signup-config" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
                 <i class="fas fa-save"></i>
-                <span>Save Basic Plan Rules</span>
+                <span>Save Tier Rules</span>
               </button>
             </div>
 
-            <div class="space-y-4">
-              <label class="inline-flex items-center gap-2.5 text-xs font-bold text-slate-800 cursor-pointer">
-                <input type="checkbox" id="catalog-self-signup-enabled" class="w-4 h-4 rounded border-slate-300 text-emerald-600" checked>
-                <span>Allow Public Self-Service Institution Registration ("Create Free Website")</span>
-              </label>
+            <div class="space-y-5">
+              <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                <label class="inline-flex items-center gap-2.5 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input type="checkbox" id="catalog-self-signup-enabled" class="w-4 h-4 rounded border-slate-300 text-emerald-600" checked>
+                  <span>Allow Public Self-Service Institution Registration ("Create Free Website")</span>
+                </label>
+                <div class="flex items-center gap-2">
+                  <label class="text-[11px] font-extrabold text-slate-700 whitespace-nowrap" for="catalog-trial-days">Auto Standard Trial (Days):</label>
+                  <input type="number" min="0" max="30" id="catalog-trial-days" value="3" class="w-20 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-extrabold text-indigo-700 tabular-nums outline-none focus:border-indigo-500">
+                </div>
+              </div>
 
-              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-students">Max Students</label>
-                  <input type="number" min="1" max="10000" id="basic-limit-students" value="150" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
+              <!-- Free Plan Default Limits -->
+              <div class="space-y-2.5">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">Free Plan Default Quotas (1 Academic Year · 5 Core Modules)</span>
                 </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-staff">Max Staff</label>
-                  <input type="number" min="1" max="500" id="basic-limit-staff" value="6" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-students">Max Students</label>
+                    <input type="number" min="1" max="10000" id="basic-limit-students" value="150" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-staff">Max Staff</label>
+                    <input type="number" min="1" max="500" id="basic-limit-staff" value="6" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-classes">Max Classes</label>
+                    <input type="number" min="1" max="200" id="basic-limit-classes" value="12" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-fee-items">Max Extra Fee Heads</label>
+                    <input type="number" min="1" max="50" id="basic-limit-fee-items" value="4" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-exams">Max Exams / Year</label>
+                    <input type="number" min="1" max="20" id="basic-limit-exams" value="1" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-notices">Max Notices</label>
+                    <input type="number" min="1" max="100" id="basic-limit-notices" value="5" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-gallery">Max Gallery Photos</label>
+                    <input type="number" min="1" max="24" id="basic-limit-gallery" value="6" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-directory">Max Directory Entries</label>
+                    <input type="number" min="1" max="200" id="basic-limit-directory" value="10" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-years">Max Academic Years</label>
+                    <input type="number" min="1" max="10" id="basic-limit-years" value="1" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-emerald-500">
+                  </div>
                 </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-classes">Max Classes</label>
-                  <input type="number" min="1" max="200" id="basic-limit-classes" value="12" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
+              </div>
+
+              <!-- Standard Plan Default Limits -->
+              <div class="space-y-2.5 pt-4 border-t border-slate-100">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-700">Standard Plan Default Quotas (Multi-Year · 8 Core &amp; Academic Modules)</span>
                 </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-fee-items">Max Fee Heads</label>
-                  <input type="number" min="1" max="50" id="basic-limit-fee-items" value="4" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-exams">Max Exams / Year</label>
-                  <input type="number" min="1" max="20" id="basic-limit-exams" value="2" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-notices">Max Notices</label>
-                  <input type="number" min="1" max="100" id="basic-limit-notices" value="5" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-gallery">Max Gallery Photos</label>
-                  <input type="number" min="1" max="24" id="basic-limit-gallery" value="6" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-directory">Max Directory Entries</label>
-                  <input type="number" min="1" max="200" id="basic-limit-directory" value="10" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
-                </div>
-                <div>
-                  <label class="block text-[11px] font-bold text-slate-700 mb-1" for="basic-limit-years">Max Academic Years</label>
-                  <input type="number" min="1" max="10" id="basic-limit-years" value="1" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold outline-none focus:border-emerald-500">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-students">Max Students</label>
+                    <input type="number" min="1" max="50000" id="std-limit-students" value="500" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-staff">Max Staff</label>
+                    <input type="number" min="1" max="1000" id="std-limit-staff" value="25" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-classes">Max Classes</label>
+                    <input type="number" min="1" max="200" id="std-limit-classes" value="30" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-fee-items">Max Extra Fee Heads</label>
+                    <input type="number" min="1" max="100" id="std-limit-fee-items" value="12" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-exams">Max Exams / Year</label>
+                    <input type="number" min="1" max="50" id="std-limit-exams" value="4" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-notices">Max Notices</label>
+                    <input type="number" min="1" max="200" id="std-limit-notices" value="20" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-gallery">Max Gallery Photos</label>
+                    <input type="number" min="1" max="24" id="std-limit-gallery" value="15" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-directory">Max Directory Entries</label>
+                    <input type="number" min="1" max="500" id="std-limit-directory" value="40" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1" for="std-limit-years">Max Academic Years</label>
+                    <input type="number" min="1" max="25" id="std-limit-years" value="5" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold tabular-nums outline-none focus:border-indigo-500">
+                  </div>
                 </div>
               </div>
             </div>
@@ -633,17 +693,23 @@
             </div>
           </div>
 
-          <!-- Custom Plans Header & Grid -->
+          <!-- Subscription Plans Header & Grid -->
           <div class="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 class="text-base font-extrabold text-slate-900">Custom Subscription Plans</h3>
-                <p class="text-xs text-slate-500">Add multiple plans with MRP, Offer Price, billing cycle, and custom features.</p>
+                <h3 class="text-base font-extrabold text-slate-900">Subscription Tiers (Free · Standard · ELITE)</h3>
+                <p class="text-xs text-slate-500">Manage the 3 core subscription tiers shown on the homepage and upgrade popup. Click Edit to tick card highlights or More to inspect full details.</p>
               </div>
-              <button type="button" id="btn-open-add-plan" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold cursor-pointer inline-flex items-center gap-2 whitespace-nowrap self-start sm:self-auto">
-                <i class="fas fa-plus"></i>
-                <span>Add Custom Plan</span>
-              </button>
+              <div class="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <button type="button" id="btn-sync-default-tiers" class="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <i class="fas fa-rotate"></i>
+                  <span>Sync Default 3 Tiers</span>
+                </button>
+                <button type="button" id="btn-open-add-plan" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                  <i class="fas fa-plus"></i>
+                  <span>Add Custom Plan</span>
+                </button>
+              </div>
             </div>
 
             <div id="company-plans-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
@@ -929,10 +995,19 @@
 
       <form id="plan-editor-form" class="p-5 overflow-y-auto space-y-4 text-xs sm:text-sm">
         <input type="hidden" id="plan-edit-id" value="">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-name">Plan Name <span class="text-rose-500">*</span></label>
-            <input type="text" id="plan-name" required maxlength="60" placeholder="e.g. Growth Suite" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+            <input type="text" id="plan-name" required maxlength="60" placeholder="e.g. Standard" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-semibold outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-tier-key">Tier Type</label>
+            <select id="plan-tier-key" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 font-bold text-slate-800 outline-none">
+              <option value="free">Free Tier (1 Year · 5 Core)</option>
+              <option value="standard" selected>Standard Tier (Multi-Year · 8 Modules)</option>
+              <option value="elite">ELITE Tier (All 10 · Unlimited)</option>
+              <option value="custom">Custom / Add-on Plan</option>
+            </select>
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-tagline">Tagline / Audience</label>
@@ -967,7 +1042,7 @@
           <div class="flex flex-wrap items-center gap-4 pb-2">
             <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
               <input type="checkbox" id="plan-is-popular" class="w-4 h-4 rounded border-slate-300 text-amber-600">
-              <span>Highlight as Popular</span>
+              <span>Highlight as Recommended</span>
             </label>
             <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
               <input type="checkbox" id="plan-is-active" checked class="w-4 h-4 rounded border-slate-300 text-emerald-600">
@@ -976,13 +1051,21 @@
           </div>
         </div>
 
+        <div class="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-extrabold text-slate-800">Quick-Tick Compact Card Highlights</span>
+            <span class="text-[11px] font-semibold text-slate-500">Tick 5–6 concise points for clean pricing cards</span>
+          </div>
+          <div id="plan-feature-presets-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-1"></div>
+        </div>
+
         <div>
-          <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-features">Plan Features (One per line)</label>
-          <textarea id="plan-features" rows="4" maxlength="1200" placeholder="Unlimited student records&#10;Automated fee receipts &amp; dues ledger&#10;Exam result publishing &amp; report cards&#10;Priority WhatsApp support" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 text-xs font-medium outline-none leading-relaxed"></textarea>
+          <label class="block text-xs font-bold text-slate-700 mb-1" for="plan-features">Card Feature Lines (Auto-synced with ticks above · One per line)</label>
+          <textarea id="plan-features" rows="4" maxlength="1400" placeholder="Tick presets above or type custom highlight lines (one per line)" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-indigo-500 text-xs font-medium outline-none leading-relaxed"></textarea>
         </div>
 
         <div class="space-y-2">
-          <div class="text-xs font-bold text-slate-700">Included Modules (Displayed on plan card)</div>
+          <div class="text-xs font-bold text-slate-700">Included Modules (Displayed in "More" details &amp; Compare Plans)</div>
           <div id="plan-modules-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
         </div>
 
@@ -1093,12 +1176,13 @@
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-plan-name">Plan Tier</label>
+              <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-plan-name">Plan Label</label>
               <select id="inst-plan-name" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
+                <option value="Free">Free</option>
+                <option value="Standard">Standard</option>
+                <option value="ELITE" selected>ELITE</option>
                 <option value="Trial">Trial</option>
-                <option value="Standard" selected>Standard</option>
-                <option value="Premium">Premium</option>
-                <option value="Enterprise">Enterprise</option>
+                <option value="Lifetime">Lifetime</option>
               </select>
             </div>
             <div>
@@ -1125,8 +1209,9 @@
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1" for="inst-plan-tier-select">Account Tier (Feature &amp; Quota Mode)</label>
               <select id="inst-plan-tier-select" data-native-select="true" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-slate-800 outline-none">
-                <option value="premium">Premium (Full Features / Unlimited)</option>
-                <option value="basic">Basic (Free Plan with Quotas &amp; Feature Gates)</option>
+                <option value="elite">ELITE (All 10 Modules · Unlimited · Power Tools)</option>
+                <option value="standard">Standard (8 Modules · Multi-Year · Quotas)</option>
+                <option value="free">Free (5 Core Modules · 1 Academic Year · Quotas)</option>
               </select>
             </div>
             <div>
@@ -1139,32 +1224,52 @@
             </div>
           </div>
 
+          <!-- Per-Institution Trial Control Row (Shown for Free tier in Edit mode) -->
+          <div id="inst-trial-control-wrap" class="hidden rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 flex flex-wrap items-center justify-between gap-2.5">
+            <div class="min-w-0">
+              <div class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-800">3-Day Standard Free Trial</div>
+              <div id="inst-trial-status-text" class="text-xs font-semibold text-slate-700 mt-0.5">No active trial</div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" id="btn-inst-extend-trial" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold cursor-pointer">Grant / Extend +3 Days</button>
+              <button type="button" id="btn-inst-end-trial" class="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold cursor-pointer">End Trial</button>
+            </div>
+          </div>
+
           <div id="inst-basic-limits-wrap" class="hidden rounded-2xl border border-amber-200 bg-amber-50/50 p-3.5 space-y-2.5">
-            <div class="text-[11px] font-extrabold uppercase tracking-wider text-amber-800">Per-Institution Basic Plan Quota Overrides</div>
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div id="inst-limits-heading" class="text-[11px] font-extrabold uppercase tracking-wider text-amber-800">Per-Institution Plan Quota Overrides (Free / Standard)</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <div>
                 <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-students">Max Students</label>
-                <input type="number" min="1" max="50000" id="inst-limit-students" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold">
+                <input type="number" min="1" max="50000" id="inst-limit-students" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
               </div>
               <div>
                 <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-staff">Max Staff</label>
-                <input type="number" min="1" max="1000" id="inst-limit-staff" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold">
+                <input type="number" min="1" max="1000" id="inst-limit-staff" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
               </div>
               <div>
                 <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-classes">Max Classes</label>
-                <input type="number" min="1" max="200" id="inst-limit-classes" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold">
+                <input type="number" min="1" max="200" id="inst-limit-classes" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-years">Max Years</label>
+                <input type="number" min="1" max="25" id="inst-limit-years" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
               </div>
               <div>
                 <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-fee-items">Max Fee Heads</label>
-                <input type="number" min="1" max="50" id="inst-limit-fee-items" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold">
+                <input type="number" min="1" max="100" id="inst-limit-fee-items" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
               </div>
               <div>
                 <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-exams">Max Exams/Yr</label>
-                <input type="number" min="1" max="20" id="inst-limit-exams" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold">
+                <input type="number" min="1" max="50" id="inst-limit-exams" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-notices">Max Notices</label>
+                <input type="number" min="1" max="200" id="inst-limit-notices" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
               </div>
               <div>
                 <label class="block text-[11px] font-bold text-slate-700 mb-0.5" for="inst-limit-gallery">Max Gallery</label>
-                <input type="number" min="1" max="24" id="inst-limit-gallery" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold">
+                <input type="number" min="1" max="24" id="inst-limit-gallery" class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold tabular-nums">
               </div>
             </div>
           </div>
@@ -1188,10 +1293,10 @@
         <div class="space-y-3 pt-4 border-t border-slate-200">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="text-xs font-extrabold uppercase tracking-wider text-indigo-600">4. Allowed Pages &amp; Modules</div>
-            <div class="flex items-center gap-2">
-              <button type="button" id="btn-pages-select-all" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Enable All (Premium)</button>
-              <button type="button" id="btn-pages-basic-preset" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-bold cursor-pointer">Basic Free Preset</button>
-              <button type="button" id="btn-pages-core-only" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold cursor-pointer">Core Only</button>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" id="btn-pages-select-all" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold cursor-pointer">ELITE (All 10)</button>
+              <button type="button" id="btn-pages-standard-preset" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold cursor-pointer">Standard Preset (8)</button>
+              <button type="button" id="btn-pages-basic-preset" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-bold cursor-pointer">Free Preset (5)</button>
             </div>
           </div>
           <div id="inst-allowed-pages-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>

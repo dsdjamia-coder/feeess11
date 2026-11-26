@@ -1,7 +1,7 @@
 import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, getDoc, getDocFromCache, collection, query, where, getDocs, onSnapshot, setDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
-import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getPeriodDateRange, hardenExternalLinks, hasFeature, isBasicPlan, isUpcomingAcademicYearLabel, onPlanChange, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
+import { BASE_PATH, INSTITUTION_ID, applyInstitutionBranding, buildEmptyState, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, getActiveInstitutionPlan, getPeriodDateRange, hardenExternalLinks, hasFeature, isBasicPlan, isUpcomingAcademicYearLabel, onPlanChange, populateAcademicYearSelect, registerServiceWorker, renderVersionInfo, resolveAuthoritativeCurrentYear, sanitizeUrl } from '../shared/app-common.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { MEDIA_PRESETS, deleteStorageUrlIfManaged, uploadImageToStorage } from '../shared/storage-media-service.js';
 import {
@@ -5512,13 +5512,20 @@ registerServiceWorker();
             });
 
             const companyAllowed = window.AppSession?.getCompanyAllowedPages?.() || {};
-            const basicTierActive = isBasicPlan();
-            const premiumOnlyStudentTabKeys = new Set(['attendance', 'timetable', 'syllabus', 'activities']);
+            const activePlan = getActiveInstitutionPlan();
+            const effectiveAllowed = activePlan?.allowedPages || companyAllowed;
+            const effectiveTier = activePlan?.effectiveTier || 'elite';
+            const freeBlockedStudentTabKeys = new Set(['attendance', 'timetable', 'syllabus', 'activities']);
+            const standardBlockedStudentTabKeys = new Set(['activities']);
             const activeTabsUnsorted = PORTAL_TABS_REGISTRY.filter((tab) => {
                 const tabEnabled = cachedStudentPortalConfig.tabs[tab.key] !== false;
                 const moduleEnabled = tab.moduleKey ? cachedGlobalEnabledModules[tab.moduleKey] !== false : true;
-                const companyModuleAllowed = tab.moduleKey ? companyAllowed[tab.moduleKey] !== false : true;
-                const tierAllowed = !(basicTierActive && premiumOnlyStudentTabKeys.has(tab.key));
+                const companyModuleAllowed = tab.moduleKey ? effectiveAllowed[tab.moduleKey] !== false : true;
+                const tierAllowed = effectiveTier === 'free'
+                    ? !freeBlockedStudentTabKeys.has(tab.key)
+                    : effectiveTier === 'standard'
+                        ? !standardBlockedStudentTabKeys.has(tab.key)
+                        : true;
                 return tabEnabled && moduleEnabled && companyModuleAllowed && tierAllowed;
             });
 

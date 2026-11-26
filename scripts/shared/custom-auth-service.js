@@ -153,6 +153,7 @@ export const selfRegisterInstitutionAndSignIn = async (authInstance, payload = {
 
 export const submitUpgradeRequest = async ({
   institutionId = '',
+  requestedTier = '',
   requestedPlanId = '',
   requestedPlanName = '',
   requestedFeature = '',
@@ -162,6 +163,7 @@ export const submitUpgradeRequest = async ({
   try {
     const res = await submitUpgradeRequestCallable({
       institutionId: String(institutionId || '').trim().toLowerCase(),
+      requestedTier: String(requestedTier || '').trim().toLowerCase(),
       requestedPlanId: String(requestedPlanId || '').trim(),
       requestedPlanName: String(requestedPlanName || '').trim(),
       requestedFeature: String(requestedFeature || '').trim(),

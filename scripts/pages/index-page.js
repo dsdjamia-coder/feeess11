@@ -23,6 +23,7 @@ import {
     getPlanLimit,
     hardenExternalLinks,
     isBasicPlan,
+    isElitePlan,
     mountUnifiedFooter,
     normalizePhone,
     openPremiumPlansModal,
@@ -32,6 +33,7 @@ import {
     showTenantLockOverlay,
     syncDynamicPwaBranding
 } from '../shared/app-common.js';
+import { renderPublicPricingSection } from '../shared/premium-plans-modal.js';
 import {
     initPwaPromptListener,
     registerInstallTrigger,
@@ -903,6 +905,15 @@ let isRootGatewayMode = false;
             if (footerInstEl) footerInstEl.textContent = 'Institution Manage';
             if (gatewayPrefix) gatewayPrefix.textContent = `${window.location.origin}/`;
 
+            const pricingRoot = document.getElementById('gateway-pricing-root');
+            if (pricingRoot && !pricingRoot.dataset.pricingLoaded) {
+                pricingRoot.dataset.pricingLoaded = '1';
+                renderPublicPricingSection(pricingRoot, {
+                    db,
+                    onStartFreeTrial: () => openSelfSignupWizard()
+                });
+            }
+
             const slugInput = document.getElementById('gateway-slug-input');
             const slugBtn = document.getElementById('btn-gateway-open-slug');
             const slugMsg = document.getElementById('gateway-slug-msg');
@@ -1516,7 +1527,7 @@ let isRootGatewayMode = false;
                     if (navNoticesLink) navNoticesLink.classList.remove('hidden');
                     if (heroBtnNotice) heroBtnNotice.classList.remove('hidden');
                     
-                    const noticeLimit = isBasicPlan() ? getPlanLimit('maxNotices') : Infinity;
+                    const noticeLimit = !isElitePlan() ? getPlanLimit('maxNotices') : Infinity;
                     const sortedNotices = notices
                         .map((notice, originalIndex) => ({ notice, originalIndex }))
                         .sort((a, b) => {
@@ -1583,7 +1594,7 @@ let isRootGatewayMode = false;
                     if (navGalleryLink) navGalleryLink.classList.remove('hidden');
                     if (heroBtnGallery) heroBtnGallery.classList.remove('hidden');
                     
-                    const galleryLimit = isBasicPlan() ? getPlanLimit('maxGalleryPhotos') : Infinity;
+                    const galleryLimit = !isElitePlan() ? getPlanLimit('maxGalleryPhotos') : Infinity;
                     galleryUrls = gallery
                         .map((item, originalIndex) => {
                             const parsedOrder = Number(item?.order);

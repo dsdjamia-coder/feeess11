@@ -88,7 +88,9 @@ export const DEFAULT_COMPANY_ALLOWED_PAGES = {
   classroomEvaluation: true
 };
 
-export const BASIC_PLAN_ALLOWED_PAGES = {
+export const DEFAULT_TRIAL_DAYS = 3;
+
+export const FREE_PLAN_ALLOWED_PAGES = {
   admin: true,
   official: true,
   student: true,
@@ -101,7 +103,25 @@ export const BASIC_PLAN_ALLOWED_PAGES = {
   classroomEvaluation: false
 };
 
-export const DEFAULT_BASIC_PLAN_LIMITS = {
+export const STANDARD_PLAN_ALLOWED_PAGES = {
+  admin: true,
+  official: true,
+  student: true,
+  collection: true,
+  result: true,
+  attendance: true,
+  worksheet: true,
+  academicPlan: true,
+  studentActivity: false,
+  classroomEvaluation: false
+};
+
+export const ELITE_PLAN_ALLOWED_PAGES = { ...DEFAULT_COMPANY_ALLOWED_PAGES };
+
+// Backward-compatible alias
+export const BASIC_PLAN_ALLOWED_PAGES = FREE_PLAN_ALLOWED_PAGES;
+
+export const DEFAULT_FREE_PLAN_LIMITS = {
   maxStudents: 150,
   maxStaff: 6,
   maxClasses: 12,
@@ -109,11 +129,23 @@ export const DEFAULT_BASIC_PLAN_LIMITS = {
   maxFeeItems: 4,
   maxNotices: 5,
   maxGalleryPhotos: 6,
-  maxExamsPerYear: 2,
+  maxExamsPerYear: 1,
   maxDirectoryEntries: 10
 };
 
-export const DEFAULT_PREMIUM_PLAN_LIMITS = {
+export const DEFAULT_STANDARD_PLAN_LIMITS = {
+  maxStudents: 500,
+  maxStaff: 25,
+  maxClasses: 30,
+  maxAcademicYears: 5,
+  maxFeeItems: 12,
+  maxNotices: 20,
+  maxGalleryPhotos: 15,
+  maxExamsPerYear: 4,
+  maxDirectoryEntries: 40
+};
+
+export const DEFAULT_ELITE_PLAN_LIMITS = {
   maxStudents: 0,
   maxStaff: 0,
   maxClasses: 0,
@@ -125,7 +157,11 @@ export const DEFAULT_PREMIUM_PLAN_LIMITS = {
   maxDirectoryEntries: 0
 };
 
-export const BASIC_PLAN_FEATURES = {
+// Backward-compatible aliases
+export const DEFAULT_BASIC_PLAN_LIMITS = DEFAULT_FREE_PLAN_LIMITS;
+export const DEFAULT_PREMIUM_PLAN_LIMITS = DEFAULT_ELITE_PLAN_LIMITS;
+
+export const FREE_PLAN_FEATURES = {
   excelBulkImport: false,
   excelExport: false,
   blankSheets: false,
@@ -150,10 +186,119 @@ export const BASIC_PLAN_FEATURES = {
   siblingSwitcher: false
 };
 
-export const PREMIUM_PLAN_FEATURES = Object.keys(BASIC_PLAN_FEATURES).reduce((acc, key) => {
+export const STANDARD_PLAN_FEATURES = {
+  ...FREE_PLAN_FEATURES,
+  multiAcademicYears: true
+};
+
+export const ELITE_PLAN_FEATURES = Object.keys(FREE_PLAN_FEATURES).reduce((acc, key) => {
   acc[key] = true;
   return acc;
 }, {});
+
+// Backward-compatible aliases
+export const BASIC_PLAN_FEATURES = FREE_PLAN_FEATURES;
+export const PREMIUM_PLAN_FEATURES = ELITE_PLAN_FEATURES;
+
+export const PLAN_CATALOG_FEATURE_PRESETS = [
+  'Dedicated Public Institution Website',
+  'Single Academic Year Control (1 Year)',
+  'Multi-Academic Year Progression',
+  'Unlimited Academic Years & Full Archive',
+  'Up to 150 Students, 6 Staff & 12 Classes',
+  'Up to 500 Students, 25 Staff & 30 Classes',
+  'Unlimited Students, Staff & Classes',
+  'Admin, Fee Collection & Student Portal',
+  'Manual Result Publishing (1 Exam / Year)',
+  'Manual Result System (Multi-Exam)',
+  'Daily Attendance Register & Monthly Logs',
+  'Academic Planning (Timetable & Syllabus)',
+  'Worksheet Hub & Custom Registers',
+  'Activity & Rewards + Classroom Evaluation',
+  'Excel Bulk Upload, Export & Blank Sheets',
+  'Master Fee Ledger, Donations & PDF Reports',
+  'Bulk Report Cards, Rank Lists & Promotion Engine',
+  'Batch Promotion, Alumni, TC & Fee Concessions',
+  'Full Backup, Restore, Audit Logs & Sibling Switcher'
+];
+
+export const DEFAULT_SUBSCRIPTION_PLANS = [
+  {
+    id: 'tier_free',
+    tierKey: 'free',
+    isDefaultTier: true,
+    name: 'Free',
+    tagline: 'Minimal 1-year setup to launch your institution online.',
+    currency: '₹',
+    mrpPrice: 0,
+    offerPrice: 0,
+    billingCycle: 'Free Forever',
+    discountBadge: '3-Day Standard Trial Included',
+    isPopular: false,
+    isActive: true,
+    displayOrder: 1,
+    features: [
+      'Dedicated Public Institution Website',
+      'Single Academic Year Control (1 Year)',
+      'Up to 150 Students, 6 Staff & 12 Classes',
+      'Admin, Fee Collection & Student Portal',
+      'Manual Result Publishing (1 Exam / Year)'
+    ],
+    includedModules: ['admin', 'official', 'student', 'collection', 'result']
+  },
+  {
+    id: 'tier_standard',
+    tierKey: 'standard',
+    isDefaultTier: true,
+    name: 'Standard',
+    tagline: 'Complete daily academic operations & multi-year growth.',
+    currency: '₹',
+    mrpPrice: 7999,
+    offerPrice: 4999,
+    billingCycle: 'Per Year',
+    discountBadge: 'Save 38%',
+    isPopular: true,
+    isActive: true,
+    displayOrder: 2,
+    features: [
+      'Multi-Academic Year Progression',
+      'Up to 500 Students, 25 Staff & 30 Classes',
+      'Daily Attendance Register & Monthly Logs',
+      'Academic Planning (Timetable & Syllabus)',
+      'Worksheet Hub & Custom Registers',
+      'Manual Result System (Multi-Exam)'
+    ],
+    includedModules: ['admin', 'official', 'student', 'collection', 'result', 'attendance', 'academicPlan', 'worksheet']
+  },
+  {
+    id: 'tier_elite',
+    tierKey: 'elite',
+    isDefaultTier: true,
+    name: 'ELITE',
+    tagline: 'Full potential with Excel bulk tools, automation & all 10 modules.',
+    currency: '₹',
+    mrpPrice: 14999,
+    offerPrice: 9999,
+    billingCycle: 'Per Year',
+    discountBadge: 'All-Inclusive',
+    isPopular: false,
+    isActive: true,
+    displayOrder: 3,
+    features: [
+      'Unlimited Students, Staff, Classes & Years',
+      'Activity & Rewards + Classroom Evaluation',
+      'Excel Bulk Upload, Export & Blank Sheets',
+      'Master Fee Ledger, Donations & PDF Reports',
+      'Bulk Report Cards, Rank Lists & Promotion Engine',
+      'Batch Promotion, Alumni, TC, Concessions & Backup'
+    ],
+    includedModules: [
+      'admin', 'official', 'student', 'collection', 'result',
+      'attendance', 'academicPlan', 'worksheet', 'studentActivity', 'classroomEvaluation'
+    ]
+  }
+];
+
 
 export const PLATFORM_SHOWCASE_PAGES = [
   {

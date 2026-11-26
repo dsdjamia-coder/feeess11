@@ -87,23 +87,71 @@ service cloud.firestore {
       return isInstitutionActiveAndUnexpired(institutionId) || isCompanyOwner();
     }
 
-    function isBasicPlanTenant(institutionId) {
+    function isFreeBaseTenant(institutionId) {
       return institutionMetaExists(institutionId)
         && ('planTier' in institutionMetaData(institutionId))
-        && institutionMetaData(institutionId).planTier == 'basic';
+        && (institutionMetaData(institutionId).planTier == 'free' || institutionMetaData(institutionId).planTier == 'basic');
+    }
+
+    function isTrialActiveForTenant(institutionId) {
+      return isFreeBaseTenant(institutionId)
+        && ('trialEndsAtMs' in institutionMetaData(institutionId))
+        && (institutionMetaData(institutionId).trialEndsAtMs is int || institutionMetaData(institutionId).trialEndsAtMs is float)
+        && request.time.toMillis() < institutionMetaData(institutionId).trialEndsAtMs;
+    }
+
+    function effectivePlanTier(institutionId) {
+      return isCompanyOwner()
+        ? 'elite'
+        : (
+          !institutionMetaExists(institutionId) || !('planTier' in institutionMetaData(institutionId))
+            ? 'elite'
+            : (
+              isTrialActiveForTenant(institutionId)
+                ? 'standard'
+                : (
+                  isFreeBaseTenant(institutionId)
+                    ? 'free'
+                    : (institutionMetaData(institutionId).planTier == 'standard' ? 'standard' : 'elite')
+                )
+            )
+        );
+    }
+
+    function isBasicPlanTenant(institutionId) {
+      return effectivePlanTier(institutionId) == 'free';
     }
 
     function isPremiumPlanTenant(institutionId) {
-      return isCompanyOwner() || !isBasicPlanTenant(institutionId);
+      return isCompanyOwner() || effectivePlanTier(institutionId) == 'elite';
     }
 
     function isModuleAllowedForTenant(institutionId, moduleKey) {
       return isCompanyOwner()
         || !institutionMetaExists(institutionId)
-        || !('allowedPages' in institutionMetaData(institutionId))
-        || !(institutionMetaData(institutionId).allowedPages is map)
-        || !(moduleKey in institutionMetaData(institutionId).allowedPages)
-        || institutionMetaData(institutionId).allowedPages[moduleKey] != false;
+        || (
+          isTrialActiveForTenant(institutionId)
+            ? (moduleKey in ['admin', 'official', 'student', 'collection', 'result', 'attendance', 'academicPlan', 'worksheet'])
+            : (
+              (
+                !('allowedPages' in institutionMetaData(institutionId))
+                || !(institutionMetaData(institutionId).allowedPages is map)
+                || !(moduleKey in institutionMetaData(institutionId).allowedPages)
+                || institutionMetaData(institutionId).allowedPages[moduleKey] != false
+              )
+              && (
+                effectivePlanTier(institutionId) == 'elite'
+                || (
+                  effectivePlanTier(institutionId) == 'standard'
+                  && (moduleKey in ['admin', 'official', 'student', 'collection', 'result', 'attendance', 'academicPlan', 'worksheet'])
+                )
+                || (
+                  effectivePlanTier(institutionId) == 'free'
+                  && (moduleKey in ['admin', 'official', 'student', 'collection', 'result'])
+                )
+              )
+            )
+        );
     }
 
     // Public index landing page remains read-only accessible for any registered institution
@@ -493,17 +541,41 @@ service cloud.firestore {
     // 1. Settings Collection
     match /institutions/{institutionId}/settings/{docId} {
       function maxAllowedGalleryCount() {
-        return isBasicPlanTenant(institutionId)
-          ? (
-            ('planLimits' in institutionMetaData(institutionId))
-            && (institutionMetaData(institutionId).planLimits is map)
-            && ('maxGalleryPhotos' in institutionMetaData(institutionId).planLimits)
-            && (institutionMetaData(institutionId).planLimits.maxGalleryPhotos is int || institutionMetaData(institutionId).planLimits.maxGalleryPhotos is float)
-            && institutionMetaData(institutionId).planLimits.maxGalleryPhotos > 0
-            ? institutionMetaData(institutionId).planLimits.maxGalleryPhotos
-            : 6
-          )
-          : 24;
+        return effectivePlanTier(institutionId) == 'elite'
+          ? 24
+          : (
+            effectivePlanTier(institutionId) == 'standard'
+              ? (
+                isTrialActiveForTenant(institutionId)
+                  ? (
+                    ('trialPlanLimits' in institutionMetaData(institutionId))
+                    && (institutionMetaData(institutionId).trialPlanLimits is map)
+                    && ('maxGalleryPhotos' in institutionMetaData(institutionId).trialPlanLimits)
+                    && (institutionMetaData(institutionId).trialPlanLimits.maxGalleryPhotos is int || institutionMetaData(institutionId).trialPlanLimits.maxGalleryPhotos is float)
+                    && institutionMetaData(institutionId).trialPlanLimits.maxGalleryPhotos > 0
+                    ? institutionMetaData(institutionId).trialPlanLimits.maxGalleryPhotos
+                    : 15
+                  )
+                  : (
+                    ('planLimits' in institutionMetaData(institutionId))
+                    && (institutionMetaData(institutionId).planLimits is map)
+                    && ('maxGalleryPhotos' in institutionMetaData(institutionId).planLimits)
+                    && (institutionMetaData(institutionId).planLimits.maxGalleryPhotos is int || institutionMetaData(institutionId).planLimits.maxGalleryPhotos is float)
+                    && institutionMetaData(institutionId).planLimits.maxGalleryPhotos > 0
+                    ? institutionMetaData(institutionId).planLimits.maxGalleryPhotos
+                    : 15
+                  )
+              )
+              : (
+                ('planLimits' in institutionMetaData(institutionId))
+                && (institutionMetaData(institutionId).planLimits is map)
+                && ('maxGalleryPhotos' in institutionMetaData(institutionId).planLimits)
+                && (institutionMetaData(institutionId).planLimits.maxGalleryPhotos is int || institutionMetaData(institutionId).planLimits.maxGalleryPhotos is float)
+                && institutionMetaData(institutionId).planLimits.maxGalleryPhotos > 0
+                ? institutionMetaData(institutionId).planLimits.maxGalleryPhotos
+                : 6
+              )
+          );
       }
 
       function validGalleryLimitWrite() {

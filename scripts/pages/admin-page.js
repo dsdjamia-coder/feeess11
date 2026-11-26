@@ -2,7 +2,7 @@ import { signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCrede
 import { doc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, setDoc, getDoc, orderBy, limit, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { db, auth } from '../../config/firebase-config.js';
 import { ADMIN_AUTH_DOC_ID, GLOBAL_USERS_COLLECTION, INSTITUTION_ID, SINGLE_ADMIN_MODE, STAFF_ACCESS_COLLECTION, extractInternalUsername, isInternalStaffEmail, normalizeGlobalUserKey } from '../../config/app-config.js';
-import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, decorateProLockElement, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, getPlanLimit, hardenExternalLinks, hasFeature, isBasicPlan, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, onPlanChange, openPremiumPlansModal, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderPlanUsageBanner, renderVersionInfo, requirePlanFeature, requirePlanQuota, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
+import { BASE_PATH, applyCachedInstitutionLogo, compareAcademicYearLabels, compareClassLabelsNatural, decorateProLockElement, enableSmartSelectWindowing, ensureTenantStatusAndAccess, escapeHtml, formatCurrency, formatDateDisplay, formatStudentOptionLabel, getAcademicYearPhase, getCleanAcademicYearOptions, getPlanLimit, hardenExternalLinks, hasFeature, isBasicPlan, isElitePlan, isPastAcademicYearLabel, isUpcomingAcademicYearLabel, normalizePhone, onPlanChange, openPremiumPlansModal, populateAcademicYearSelect, registerServiceWorker, rememberInstitutionLogo, renderPlanUsageBanner, renderVersionInfo, requirePlanFeature, requirePlanQuota, resolveAuthoritativeCurrentYear, resolveSafePhotoUrl, sanitizeUrl, syncSmartSelectDisplay } from '../shared/app-common.js';
 import { showToast } from '../shared/toaster.js';
 import { InteractiveCropper } from '../shared/image-cropper.js';
 import { areInstitutionalStatsEqual, normalizeInstitutionalStats } from '../shared/student-stats-service.js';
@@ -11545,7 +11545,7 @@ document.getElementById('generate-default-classes-btn')?.addEventListener('click
     if(!requirePermission('classes.manage')) return;
     const defaultLadder = getDefaultClassLadder();
     const maxCls = getPlanLimit('maxClasses');
-    if (isBasicPlan() && Number.isFinite(maxCls) && defaultLadder.length > maxCls) {
+    if (!isElitePlan() && Number.isFinite(maxCls) && defaultLadder.length > maxCls) {
         if (!requirePlanQuota('maxClasses', defaultLadder.length, { institutionName: latestConfigData?.institutionName || '' })) return;
     }
     if(!confirm('Reset active year classes to default ladder (1 to 12)?')) return;
@@ -11560,7 +11560,7 @@ document.getElementById('create-divisions-btn')?.addEventListener('click', async
     if (!labels.length) return alert('Enter a valid base class for divisions.');
     const combinedUnique = new Set([...classes, ...labels]);
     const maxCls = getPlanLimit('maxClasses');
-    if (isBasicPlan() && Number.isFinite(maxCls) && combinedUnique.size > maxCls) {
+    if (!isElitePlan() && Number.isFinite(maxCls) && combinedUnique.size > maxCls) {
         if (!requirePlanQuota('maxClasses', combinedUnique.size, { institutionName: latestConfigData?.institutionName || '' })) return;
     }
     await syncActiveAcademicYearClasses([...classes, ...labels]);
@@ -16441,7 +16441,7 @@ let selectedGalleryFiles = [];
 
 const getEffectiveGalleryMax = () => {
     const planMax = getPlanLimit('maxGalleryPhotos');
-    return isBasicPlan() && Number.isFinite(planMax) ? Math.max(1, Math.min(MAX_GALLERY_IMAGES, planMax)) : MAX_GALLERY_IMAGES;
+    return !isElitePlan() && Number.isFinite(planMax) ? Math.max(1, Math.min(MAX_GALLERY_IMAGES, planMax)) : MAX_GALLERY_IMAGES;
 };
 
 const getGalleryCapacityInfo = () => {
@@ -16756,7 +16756,7 @@ const initGalleryUploadControls = () => {
             return;
         }
         if (current + count > max) {
-            if (isBasicPlan()) {
+            if (!isElitePlan()) {
                 requirePlanQuota('maxGalleryPhotos', current + count, { institutionName: latestConfigData?.institutionName || '' });
             } else {
                 const msg = 'Gallery storage limit reached. Please delete some existing photos before uploading more.';

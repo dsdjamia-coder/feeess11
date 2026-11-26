@@ -27,9 +27,16 @@ import {
   COMPANY_SHOWCASES_SUBCOLLECTION,
   DEFAULT_BASIC_PLAN_LIMITS,
   DEFAULT_COMPANY_ALLOWED_PAGES,
+  DEFAULT_FREE_PLAN_LIMITS,
+  DEFAULT_STANDARD_PLAN_LIMITS,
+  DEFAULT_TRIAL_DAYS,
+  ELITE_PLAN_ALLOWED_PAGES,
+  FREE_PLAN_ALLOWED_PAGES,
   INSTITUTIONS_COLLECTION,
+  PLAN_CATALOG_FEATURE_PRESETS,
   PLATFORM_SHOWCASE_PAGES,
   RESERVED_INSTITUTION_SLUGS,
+  STANDARD_PLAN_ALLOWED_PAGES,
   UPGRADE_REQUESTS_COLLECTION,
   extractInternalUsername,
   isInternalStaffEmail
@@ -37,13 +44,18 @@ import {
 import {
   escapeHtml,
   formatDateDisplay,
+  normalizePlanTier,
   openConfirmDialog,
-  registerServiceWorker
+  registerServiceWorker,
+  resolveInstitutionPlan
 } from '../shared/app-common.js';
 import {
+  buildDefaultSubscriptionPlans,
   fetchCompanyPublicCatalog,
+  inferPlanTierKey,
   invalidatePublicCatalogCache,
   normalizePublicCatalog,
+  openPlanFullDetailsModal,
   openPremiumPlansModal
 } from '../shared/premium-plans-modal.js';
 import {
@@ -635,13 +647,15 @@ const renderInstitutionsGrid = () => {
 
   const filtered = allInstitutions.filter((inst) => {
     const state = classifyInstitutionState(inst);
-    const tier = String(inst.planTier || 'premium').trim().toLowerCase();
-    const isBasicTier = tier === 'basic';
+    const resolved = resolveInstitutionPlan(inst);
+    const baseTier = resolved.basePlanTier;
     const isSelfSignup = String(inst.signupSource || '').trim().toLowerCase() === 'self_signup';
     const verStatus = String(inst.verificationStatus || (isSelfSignup ? 'unverified' : 'verified')).trim().toLowerCase();
 
-    if (statusFilter === 'basic' && !isBasicTier) return false;
-    if (statusFilter === 'premium' && isBasicTier) return false;
+    if ((statusFilter === 'free' || statusFilter === 'basic') && baseTier !== 'free') return false;
+    if (statusFilter === 'trial' && !resolved.isTrialActive) return false;
+    if (statusFilter === 'standard' && baseTier !== 'standard') return false;
+    if ((statusFilter === 'elite' || statusFilter === 'premium') && baseTier !== 'elite') return false;
     if (statusFilter === 'self_signup' && !isSelfSignup) return false;
     if (statusFilter === 'unverified' && verStatus !== 'unverified') return false;
     if (statusFilter === 'active' && state.code !== 'active' && state.code !== 'expiring') return false;
@@ -682,7 +696,7 @@ const renderInstitutionsGrid = () => {
             <th class="py-3 pl-4 pr-2 w-12 text-center">#</th>
             <th class="py-3 px-3 min-w-[210px]">Institution &amp; URL</th>
             <th class="py-3 px-3 min-w-[230px]">Super Admin Credentials</th>
-            <th class="py-3 px-3 min-w-[190px]">Plan &amp; Validity</th>
+            <th class="py-3 px-3 min-w-[200px]">Plan &amp; Validity</th>
             <th class="py-3 px-3 min-w-[140px]">Pages / Modules</th>
             <th class="py-3 pl-3 pr-4 text-right min-w-[145px]">Actions</th>
           </tr>
@@ -691,8 +705,10 @@ const renderInstitutionsGrid = () => {
           ${filtered.map((inst, idx) => {
             const slug = String(inst.slug || inst.id || '').trim().toLowerCase();
             const state = classifyInstitutionState(inst);
+            const resolved = resolveInstitutionPlan(inst);
+            const baseTier = resolved.basePlanTier;
             const cleanUrl = `${origin}/${slug}`;
-            const pages = { ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) };
+            const pages = resolved.allowedPages || { ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) };
             const enabledPages = PAGE_DEFINITIONS.filter((p) => pages[p.key] !== false);
             const disabledPages = PAGE_DEFINITIONS.filter((p) => pages[p.key] === false);
             const enabledCount = enabledPages.length;
@@ -706,9 +722,17 @@ const renderInstitutionsGrid = () => {
                   ? 'bg-orange-100 text-orange-800 border-orange-200'
                   : 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
-            const expiryLabel = inst.isLifetime
-              ? 'Lifetime Validity'
-              : (inst.expiryDate ? `Expires: ${formatDateDisplay(inst.expiryDate)}` : 'No Expiry Date');
+            const tierBadgeHtml = baseTier === 'free'
+              ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold"><i class="fas fa-seedling text-[9px]"></i>Free</span>`
+              : baseTier === 'standard'
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold"><i class="fas fa-layer-group text-[9px] text-indigo-600"></i>Standard</span>`
+                : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 text-white border border-slate-800 text-[10px] font-extrabold"><i class="fas fa-crown text-[9px] text-amber-400"></i>ELITE</span>`;
+
+            const expiryLabel = baseTier === 'free'
+              ? (resolved.isTrialActive ? `Standard Trial: ${resolved.trialRemainingLabel}` : 'Free Forever (1 Academic Yr)')
+              : inst.isLifetime
+                ? 'Lifetime Validity'
+                : (inst.expiryDate ? `Expires: ${formatDateDisplay(inst.expiryDate)}` : 'No Expiry Date');
 
             const loginDisplay = inst.adminDisplayUsername || inst.adminUsername || inst.adminLoginDisplay || inst.adminEmail || '--';
 
@@ -765,12 +789,13 @@ const renderInstitutionsGrid = () => {
                   </div>
                 </td>
 
-                <!-- 4. Plan & Validity (with Tier, Source & Verification badges) -->
+                <!-- 4. Plan & Validity (with 3-Tier, Trial, Source & Verification badges) -->
                 <td class="py-3.5 px-3">
                   <div class="flex flex-wrap items-center gap-1.5">
-                    ${String(inst.planTier || 'premium').toLowerCase() === 'basic'
-                      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold"><i class="fas fa-seedling text-[9px]"></i>Basic Free</span>`
-                      : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-extrabold"><i class="fas fa-crown text-[9px] text-amber-500"></i>${escapeHtml(inst.planName || 'Premium')}</span>`}
+                    ${tierBadgeHtml}
+                    ${resolved.isTrialActive
+                      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-extrabold"><i class="fas fa-sparkles text-[9px]"></i>Trial</span>`
+                      : ''}
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold border whitespace-nowrap ${badgeClasses}">
                       ${escapeHtml(state.label)}
                     </span>
@@ -783,8 +808,8 @@ const renderInstitutionsGrid = () => {
                       ? `<button type="button" class="btn-toggle-verify inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] font-extrabold cursor-pointer" data-slug="${escapeHtml(slug)}" data-next="unverified" title="Click to mark Unverified"><i class="fas fa-badge-check text-[9px]"></i>Verified</button>`
                       : `<button type="button" class="btn-toggle-verify inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-extrabold cursor-pointer" data-slug="${escapeHtml(slug)}" data-next="verified" title="Click to Verify Institution"><i class="fas fa-clock text-[9px]"></i>Unverified · Verify</button>`}
                   </div>
-                  <div class="text-[11px] font-semibold text-slate-600 mt-1.5">
-                    <i class="fas fa-calendar-days mr-1 text-slate-400"></i>${escapeHtml(expiryLabel)}
+                  <div class="text-[11px] font-semibold ${resolved.isTrialActive ? 'text-indigo-700' : 'text-slate-600'} mt-1.5">
+                    <i class="fas ${resolved.isTrialActive ? 'fa-hourglass-half text-indigo-500' : 'fa-calendar-days text-slate-400'} mr-1"></i>${escapeHtml(expiryLabel)}
                   </div>
                   ${isPaused && inst.pauseReason ? `
                     <div class="mt-1.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 max-w-[200px] leading-snug">
@@ -800,10 +825,10 @@ const renderInstitutionsGrid = () => {
                       <i class="fas fa-layer-group text-indigo-500 text-[10px]"></i>
                       <span>${enabledCount}/${PAGE_DEFINITIONS.length} Enabled</span>
                     </div>
-                    <div class="text-[10px] text-slate-500 mt-1 max-w-[150px] truncate">
+                    <div class="text-[10px] text-slate-500 mt-1 max-w-[155px] truncate">
                       ${disabledPages.length === 0
                         ? '<span class="text-emerald-700 font-semibold">All modules unlocked</span>'
-                        : `<span class="text-amber-700 font-semibold">${disabledPages.length} premium locked</span>`}
+                        : `<span class="text-amber-700 font-semibold">${disabledPages.length} locked (${baseTier === 'standard' || resolved.isTrialActive ? 'ELITE' : 'Std/ELITE'})</span>`}
                     </div>
                   </button>
                 </td>
@@ -1043,27 +1068,65 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
     document.getElementById('inst-status-select').value = String(inst.status || 'active').toLowerCase() === 'paused' ? 'paused' : 'active';
     document.getElementById('inst-pause-reason').value = inst.pauseReason || '';
 
-    document.getElementById('inst-plan-name').value = inst.planName || 'Standard';
+    const resolvedPlan = resolveInstitutionPlan(inst);
+    const tierVal = resolvedPlan.basePlanTier; // 'free' | 'standard' | 'elite'
+    const planLabelDefault = tierVal === 'free' ? 'Free' : (tierVal === 'standard' ? 'Standard' : 'ELITE');
+    const planNameSelect = document.getElementById('inst-plan-name');
+    if (planNameSelect) {
+      const candidate = inst.planName || planLabelDefault;
+      const hasOpt = Array.from(planNameSelect.options).some((o) => o.value === candidate);
+      planNameSelect.value = hasOpt ? candidate : planLabelDefault;
+    }
     document.getElementById('inst-is-lifetime').checked = inst.isLifetime === true;
     document.getElementById('inst-duration-months').value = String(inst.durationMonths ?? 0);
     document.getElementById('inst-start-date').value = inst.startDate || toIsoDateInput();
     document.getElementById('inst-expiry-date').value = inst.expiryDate || '';
 
-    const tierVal = String(inst.planTier || 'premium').trim().toLowerCase() === 'basic' ? 'basic' : 'premium';
     const tierSelect = document.getElementById('inst-plan-tier-select');
     if (tierSelect) tierSelect.value = tierVal;
     const verSelect = document.getElementById('inst-verification-select');
     if (verSelect) verSelect.value = String(inst.verificationStatus || (inst.signupSource === 'self_signup' ? 'unverified' : 'verified')).toLowerCase();
 
-    const limits = { ...DEFAULT_BASIC_PLAN_LIMITS, ...(inst.planLimits || {}) };
+    const tierDefaultLimits = tierVal === 'standard'
+      ? (catalogState?.selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS)
+      : (catalogState?.selfSignupConfig?.defaultFreeLimits || DEFAULT_FREE_PLAN_LIMITS);
+    const limits = { ...tierDefaultLimits, ...(inst.planLimits || {}) };
     const setNum = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v ?? ''); };
     setNum('inst-limit-students', limits.maxStudents);
     setNum('inst-limit-staff', limits.maxStaff);
     setNum('inst-limit-classes', limits.maxClasses);
+    setNum('inst-limit-years', limits.maxAcademicYears);
     setNum('inst-limit-fee-items', limits.maxFeeItems);
     setNum('inst-limit-exams', limits.maxExamsPerYear);
+    setNum('inst-limit-notices', limits.maxNotices);
     setNum('inst-limit-gallery', limits.maxGalleryPhotos);
-    document.getElementById('inst-basic-limits-wrap')?.classList.toggle('hidden', tierVal !== 'basic');
+    const limitsHeading = document.getElementById('inst-limits-heading');
+    if (limitsHeading) {
+      limitsHeading.textContent = tierVal === 'standard'
+        ? 'Per-Institution Standard Plan Quota Overrides'
+        : 'Per-Institution Free Plan Quota Overrides';
+    }
+    document.getElementById('inst-basic-limits-wrap')?.classList.toggle('hidden', tierVal === 'elite');
+
+    const trialWrap = document.getElementById('inst-trial-control-wrap');
+    const trialStatusText = document.getElementById('inst-trial-status-text');
+    const extendTrialBtn = document.getElementById('btn-inst-extend-trial');
+    const endTrialBtn = document.getElementById('btn-inst-end-trial');
+    if (trialWrap) {
+      trialWrap.classList.toggle('hidden', tierVal !== 'free');
+      if (trialStatusText) {
+        trialStatusText.textContent = resolvedPlan.isTrialActive
+          ? `Active Standard Trial · ${resolvedPlan.trialRemainingLabel} (ends ${new Date(resolvedPlan.trialEndsAtMs).toLocaleString('en-IN')})`
+          : (resolvedPlan.isTrialExpired
+            ? 'Previous Standard trial has ended (currently on Free plan)'
+            : 'No Standard trial active on this Free institution');
+      }
+      if (extendTrialBtn) extendTrialBtn.dataset.slug = inst.slug || inst.id || '';
+      if (endTrialBtn) {
+        endTrialBtn.dataset.slug = inst.slug || inst.id || '';
+        endTrialBtn.classList.toggle('hidden', !resolvedPlan.isTrialActive);
+      }
+    }
 
     renderAllowedPagesCheckboxes({ ...DEFAULT_COMPANY_ALLOWED_PAGES, ...(inst.allowedPages || {}) });
   } else {
@@ -1077,11 +1140,14 @@ const openInstitutionModal = (mode = 'create', inst = null) => {
     document.getElementById('inst-duration-months').value = '12';
     document.getElementById('inst-expiry-date').value = addMonthsToDateStr(todayStr, 12);
     document.getElementById('inst-is-lifetime').checked = false;
+    const planNameSelect = document.getElementById('inst-plan-name');
+    if (planNameSelect) planNameSelect.value = 'ELITE';
     const tierSelect = document.getElementById('inst-plan-tier-select');
-    if (tierSelect) tierSelect.value = 'premium';
+    if (tierSelect) tierSelect.value = 'elite';
     const verSelect = document.getElementById('inst-verification-select');
     if (verSelect) verSelect.value = 'verified';
     document.getElementById('inst-basic-limits-wrap')?.classList.add('hidden');
+    document.getElementById('inst-trial-control-wrap')?.classList.add('hidden');
     linkExistingWrap?.classList.add('hidden');
     const adminPhoneInput = document.getElementById('inst-admin-phone');
     if (adminPhoneInput) {
@@ -1228,8 +1294,22 @@ const saveInstitutionData = async ({
     const savedAdminPhone = credRes?.phoneE164 || normalizedAdminPhoneE164 || effectiveAdminPhoneRaw;
 
     // 2. Persist institution metadata & public config (never storing plaintext passwords)
-    const cleanTier = String(planTier || 'premium').trim().toLowerCase() === 'basic' ? 'basic' : 'premium';
+    const cleanTier = normalizePlanTier(planTier || 'elite'); // 'free' | 'standard' | 'elite'
     const cleanVer = String(verificationStatus || 'verified').trim().toLowerCase();
+    const resolvedPlanName = cleanTier === 'free'
+      ? 'Free'
+      : cleanTier === 'standard'
+        ? (isLifetime ? 'Standard Lifetime' : (planName && planName !== 'Free' ? planName : 'Standard'))
+        : (isLifetime ? 'ELITE Lifetime' : (planName || 'ELITE'));
+    const resolvedPlanLimits = cleanTier === 'elite'
+      ? null
+      : (planLimits || (cleanTier === 'standard'
+        ? { ...(catalogState?.selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS) }
+        : { ...(catalogState?.selfSignupConfig?.defaultFreeLimits || DEFAULT_FREE_PLAN_LIMITS) }));
+    const clearTrialOnUpgrade = cleanTier !== 'free'
+      ? { trialTier: '', trialEndsAtMs: 0, trialAllowedPages: null, trialPlanLimits: null }
+      : {};
+
     const batch = writeBatch(db);
     if (mode === 'create') {
       batch.set(doc(db, INSTITUTIONS_COLLECTION, slug), {
@@ -1247,15 +1327,15 @@ const saveInstitutionData = async ({
         isActive: true,
         pauseReason: '',
         planTier: cleanTier,
-        planName: cleanTier === 'basic' ? 'Basic (Free)' : (isLifetime ? 'Lifetime' : planName),
-        ...(cleanTier === 'basic' && planLimits ? { planLimits } : {}),
+        planName: resolvedPlanName,
+        planLimits: resolvedPlanLimits,
         signupSource: 'manual',
         verificationStatus: cleanVer,
-        durationMonths,
-        isLifetime: cleanTier === 'basic' ? true : isLifetime,
+        durationMonths: cleanTier === 'free' ? 0 : durationMonths,
+        isLifetime: cleanTier === 'free' ? true : isLifetime,
         startDate,
-        expiryDate: cleanTier === 'basic' ? '' : expiryDate,
-        expiryTimestamp: cleanTier === 'basic' ? null : expiryTimestamp,
+        expiryDate: cleanTier === 'free' ? '' : expiryDate,
+        expiryTimestamp: cleanTier === 'free' ? null : expiryTimestamp,
         allowedPages,
         createdBy: verifiedCompanyOwnerEmail,
         createdAt: serverTimestamp(),
@@ -1276,14 +1356,15 @@ const saveInstitutionData = async ({
         isActive: status === 'active',
         pauseReason,
         planTier: cleanTier,
-        planName: cleanTier === 'basic' ? 'Basic (Free)' : (isLifetime ? 'Lifetime' : planName),
-        planLimits: cleanTier === 'basic' ? (planLimits || { ...DEFAULT_BASIC_PLAN_LIMITS }) : null,
+        planName: resolvedPlanName,
+        planLimits: resolvedPlanLimits,
+        ...clearTrialOnUpgrade,
         verificationStatus: cleanVer,
-        durationMonths,
-        isLifetime: cleanTier === 'basic' ? true : isLifetime,
+        durationMonths: cleanTier === 'free' ? 0 : durationMonths,
+        isLifetime: cleanTier === 'free' ? true : isLifetime,
         startDate,
-        expiryDate: cleanTier === 'basic' ? '' : expiryDate,
-        expiryTimestamp: cleanTier === 'basic' ? null : expiryTimestamp,
+        expiryDate: cleanTier === 'free' ? '' : expiryDate,
+        expiryTimestamp: cleanTier === 'free' ? null : expiryTimestamp,
         allowedPages,
         updatedAt: serverTimestamp()
       });
@@ -1336,21 +1417,26 @@ const handleInstitutionSubmit = async (e) => {
     ? String(document.getElementById('inst-pause-reason').value || '').trim()
     : '';
 
-  const planTier = String(document.getElementById('inst-plan-tier-select')?.value || 'premium').toLowerCase();
+  const planTier = normalizePlanTier(document.getElementById('inst-plan-tier-select')?.value || 'elite');
   const verificationStatus = String(document.getElementById('inst-verification-select')?.value || 'verified').toLowerCase();
   const numVal = (id, fb) => {
     const n = Number(document.getElementById(id)?.value);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : fb;
   };
-  const planLimits = planTier === 'basic' ? {
-    ...DEFAULT_BASIC_PLAN_LIMITS,
-    maxStudents: numVal('inst-limit-students', DEFAULT_BASIC_PLAN_LIMITS.maxStudents),
-    maxStaff: numVal('inst-limit-staff', DEFAULT_BASIC_PLAN_LIMITS.maxStaff),
-    maxClasses: numVal('inst-limit-classes', DEFAULT_BASIC_PLAN_LIMITS.maxClasses),
-    maxFeeItems: numVal('inst-limit-fee-items', DEFAULT_BASIC_PLAN_LIMITS.maxFeeItems),
-    maxExamsPerYear: numVal('inst-limit-exams', DEFAULT_BASIC_PLAN_LIMITS.maxExamsPerYear),
-    maxGalleryPhotos: numVal('inst-limit-gallery', DEFAULT_BASIC_PLAN_LIMITS.maxGalleryPhotos)
-  } : null;
+  const baseDefaults = planTier === 'standard'
+    ? (catalogState?.selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS)
+    : (catalogState?.selfSignupConfig?.defaultFreeLimits || DEFAULT_FREE_PLAN_LIMITS);
+  const planLimits = planTier === 'elite' ? null : {
+    ...baseDefaults,
+    maxStudents: numVal('inst-limit-students', baseDefaults.maxStudents),
+    maxStaff: numVal('inst-limit-staff', baseDefaults.maxStaff),
+    maxClasses: numVal('inst-limit-classes', baseDefaults.maxClasses),
+    maxAcademicYears: numVal('inst-limit-years', baseDefaults.maxAcademicYears),
+    maxFeeItems: numVal('inst-limit-fee-items', baseDefaults.maxFeeItems),
+    maxExamsPerYear: numVal('inst-limit-exams', baseDefaults.maxExamsPerYear),
+    maxNotices: numVal('inst-limit-notices', baseDefaults.maxNotices),
+    maxGalleryPhotos: numVal('inst-limit-gallery', baseDefaults.maxGalleryPhotos)
+  };
 
   const ok = await saveInstitutionData({
     mode,
@@ -1365,11 +1451,11 @@ const handleInstitutionSubmit = async (e) => {
     planTier,
     planLimits,
     verificationStatus,
-    planName: String(document.getElementById('inst-plan-name').value || 'Standard').trim(),
-    isLifetime: planTier === 'basic' ? true : (document.getElementById('inst-is-lifetime')?.checked === true),
+    planName: String(document.getElementById('inst-plan-name').value || 'ELITE').trim(),
+    isLifetime: planTier === 'free' ? true : (document.getElementById('inst-is-lifetime')?.checked === true),
     durationMonths: Number(document.getElementById('inst-duration-months').value || 0),
     startDate: String(document.getElementById('inst-start-date').value || toIsoDateInput()).trim(),
-    expiryDate: (planTier === 'basic' || document.getElementById('inst-is-lifetime')?.checked === true)
+    expiryDate: (planTier === 'free' || document.getElementById('inst-is-lifetime')?.checked === true)
       ? ''
       : String(document.getElementById('inst-expiry-date').value || '').trim(),
     status,
@@ -1387,6 +1473,12 @@ const handleInstitutionSubmit = async (e) => {
 const handleAddInstPageSubmit = async (e) => {
   e.preventDefault();
   const isLifetime = document.getElementById('add-inst-is-lifetime')?.checked === true;
+  const rawPlanName = String(document.getElementById('add-inst-plan-name').value || 'ELITE').trim();
+  const inferredTier = rawPlanName.toLowerCase() === 'free' || rawPlanName.toLowerCase() === 'trial'
+    ? 'free'
+    : rawPlanName.toLowerCase() === 'standard'
+      ? 'standard'
+      : 'elite';
   const ok = await saveInstitutionData({
     mode: 'create',
     name: String(document.getElementById('add-inst-name').value || '').trim(),
@@ -1397,11 +1489,12 @@ const handleAddInstPageSubmit = async (e) => {
     rawAdminLogin: String(document.getElementById('add-inst-admin-email').value || '').trim(),
     adminPhone: String(document.getElementById('add-inst-admin-phone')?.value || '').trim(),
     adminPassword: String(document.getElementById('add-inst-admin-password').value || '').trim(),
-    planName: String(document.getElementById('add-inst-plan-name').value || 'Standard').trim(),
-    isLifetime,
+    planTier: inferredTier,
+    planName: rawPlanName,
+    isLifetime: inferredTier === 'free' ? true : isLifetime,
     durationMonths: Number(document.getElementById('add-inst-duration-months').value || 0),
     startDate: String(document.getElementById('add-inst-start-date').value || toIsoDateInput()).trim(),
-    expiryDate: isLifetime ? '' : String(document.getElementById('add-inst-expiry-date').value || '').trim(),
+    expiryDate: (inferredTier === 'free' || isLifetime) ? '' : String(document.getElementById('add-inst-expiry-date').value || '').trim(),
     status: 'active',
     pauseReason: '',
     allowedPages: readAllowedPagesFromCheckboxes('add-inst-page-checkbox'),
@@ -1564,23 +1657,40 @@ const renderActiveLegalTabInputs = (tabKey = activeLegalTabKey) => {
 };
 
 const readSelfSignupConfigFromInputs = () => {
-  const num = (id, fb) => {
+  const num = (id, fb, allowZero = false) => {
     const v = Number(document.getElementById(id)?.value);
-    return Number.isFinite(v) && v > 0 ? Math.floor(v) : fb;
+    if (!Number.isFinite(v)) return fb;
+    if (allowZero && v === 0) return 0;
+    return v > 0 ? Math.floor(v) : fb;
+  };
+  const freeLimits = {
+    maxStudents: num('basic-limit-students', DEFAULT_FREE_PLAN_LIMITS.maxStudents),
+    maxStaff: num('basic-limit-staff', DEFAULT_FREE_PLAN_LIMITS.maxStaff),
+    maxClasses: num('basic-limit-classes', DEFAULT_FREE_PLAN_LIMITS.maxClasses),
+    maxAcademicYears: num('basic-limit-years', DEFAULT_FREE_PLAN_LIMITS.maxAcademicYears),
+    maxFeeItems: num('basic-limit-fee-items', DEFAULT_FREE_PLAN_LIMITS.maxFeeItems),
+    maxNotices: num('basic-limit-notices', DEFAULT_FREE_PLAN_LIMITS.maxNotices),
+    maxGalleryPhotos: num('basic-limit-gallery', DEFAULT_FREE_PLAN_LIMITS.maxGalleryPhotos),
+    maxExamsPerYear: num('basic-limit-exams', DEFAULT_FREE_PLAN_LIMITS.maxExamsPerYear),
+    maxDirectoryEntries: num('basic-limit-directory', DEFAULT_FREE_PLAN_LIMITS.maxDirectoryEntries)
+  };
+  const standardLimits = {
+    maxStudents: num('std-limit-students', DEFAULT_STANDARD_PLAN_LIMITS.maxStudents),
+    maxStaff: num('std-limit-staff', DEFAULT_STANDARD_PLAN_LIMITS.maxStaff),
+    maxClasses: num('std-limit-classes', DEFAULT_STANDARD_PLAN_LIMITS.maxClasses),
+    maxAcademicYears: num('std-limit-years', DEFAULT_STANDARD_PLAN_LIMITS.maxAcademicYears),
+    maxFeeItems: num('std-limit-fee-items', DEFAULT_STANDARD_PLAN_LIMITS.maxFeeItems),
+    maxNotices: num('std-limit-notices', DEFAULT_STANDARD_PLAN_LIMITS.maxNotices),
+    maxGalleryPhotos: num('std-limit-gallery', DEFAULT_STANDARD_PLAN_LIMITS.maxGalleryPhotos),
+    maxExamsPerYear: num('std-limit-exams', DEFAULT_STANDARD_PLAN_LIMITS.maxExamsPerYear),
+    maxDirectoryEntries: num('std-limit-directory', DEFAULT_STANDARD_PLAN_LIMITS.maxDirectoryEntries)
   };
   return {
     enabled: document.getElementById('catalog-self-signup-enabled')?.checked !== false,
-    defaultBasicLimits: {
-      maxStudents: num('basic-limit-students', DEFAULT_BASIC_PLAN_LIMITS.maxStudents),
-      maxStaff: num('basic-limit-staff', DEFAULT_BASIC_PLAN_LIMITS.maxStaff),
-      maxClasses: num('basic-limit-classes', DEFAULT_BASIC_PLAN_LIMITS.maxClasses),
-      maxAcademicYears: num('basic-limit-years', DEFAULT_BASIC_PLAN_LIMITS.maxAcademicYears),
-      maxFeeItems: num('basic-limit-fee-items', DEFAULT_BASIC_PLAN_LIMITS.maxFeeItems),
-      maxNotices: num('basic-limit-notices', DEFAULT_BASIC_PLAN_LIMITS.maxNotices),
-      maxGalleryPhotos: num('basic-limit-gallery', DEFAULT_BASIC_PLAN_LIMITS.maxGalleryPhotos),
-      maxExamsPerYear: num('basic-limit-exams', DEFAULT_BASIC_PLAN_LIMITS.maxExamsPerYear),
-      maxDirectoryEntries: num('basic-limit-directory', DEFAULT_BASIC_PLAN_LIMITS.maxDirectoryEntries)
-    }
+    trialDays: Math.min(30, num('catalog-trial-days', DEFAULT_TRIAL_DAYS, true)),
+    defaultFreeLimits: freeLimits,
+    defaultBasicLimits: freeLimits,
+    defaultStandardLimits: standardLimits
   };
 };
 
@@ -1603,20 +1713,33 @@ const populateCatalogInputs = (catalog) => {
 
   const ssEnabled = document.getElementById('catalog-self-signup-enabled');
   if (ssEnabled) ssEnabled.checked = selfSignupConfig?.enabled !== false;
-  const ssLimits = selfSignupConfig?.defaultBasicLimits || DEFAULT_BASIC_PLAN_LIMITS;
   const setLimitInput = (id, val) => {
     const el = document.getElementById(id);
     if (el) el.value = String(val ?? '');
   };
-  setLimitInput('basic-limit-students', ssLimits.maxStudents);
-  setLimitInput('basic-limit-staff', ssLimits.maxStaff);
-  setLimitInput('basic-limit-classes', ssLimits.maxClasses);
-  setLimitInput('basic-limit-fee-items', ssLimits.maxFeeItems);
-  setLimitInput('basic-limit-exams', ssLimits.maxExamsPerYear);
-  setLimitInput('basic-limit-notices', ssLimits.maxNotices);
-  setLimitInput('basic-limit-gallery', ssLimits.maxGalleryPhotos);
-  setLimitInput('basic-limit-directory', ssLimits.maxDirectoryEntries);
-  setLimitInput('basic-limit-years', ssLimits.maxAcademicYears);
+  setLimitInput('catalog-trial-days', selfSignupConfig?.trialDays ?? DEFAULT_TRIAL_DAYS);
+
+  const freeLimits = selfSignupConfig?.defaultFreeLimits || selfSignupConfig?.defaultBasicLimits || DEFAULT_FREE_PLAN_LIMITS;
+  setLimitInput('basic-limit-students', freeLimits.maxStudents);
+  setLimitInput('basic-limit-staff', freeLimits.maxStaff);
+  setLimitInput('basic-limit-classes', freeLimits.maxClasses);
+  setLimitInput('basic-limit-fee-items', freeLimits.maxFeeItems);
+  setLimitInput('basic-limit-exams', freeLimits.maxExamsPerYear);
+  setLimitInput('basic-limit-notices', freeLimits.maxNotices);
+  setLimitInput('basic-limit-gallery', freeLimits.maxGalleryPhotos);
+  setLimitInput('basic-limit-directory', freeLimits.maxDirectoryEntries);
+  setLimitInput('basic-limit-years', freeLimits.maxAcademicYears);
+
+  const stdLimits = selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS;
+  setLimitInput('std-limit-students', stdLimits.maxStudents);
+  setLimitInput('std-limit-staff', stdLimits.maxStaff);
+  setLimitInput('std-limit-classes', stdLimits.maxClasses);
+  setLimitInput('std-limit-fee-items', stdLimits.maxFeeItems);
+  setLimitInput('std-limit-exams', stdLimits.maxExamsPerYear);
+  setLimitInput('std-limit-notices', stdLimits.maxNotices);
+  setLimitInput('std-limit-gallery', stdLimits.maxGalleryPhotos);
+  setLimitInput('std-limit-directory', stdLimits.maxDirectoryEntries);
+  setLimitInput('std-limit-years', stdLimits.maxAcademicYears);
 
   const offerEnabled = document.getElementById('catalog-offer-enabled');
   const offerBadge = document.getElementById('catalog-offer-badge');
@@ -1706,25 +1829,33 @@ const renderPlansGrid = () => {
   const labelByKey = Object.fromEntries(PAGE_DEFINITIONS.map((p) => [p.key, p.label]));
 
   grid.innerHTML = plans.map((plan, idx) => {
+    const tierKey = inferPlanTierKey(plan);
     const hasDiscount = plan.mrpPrice > 0 && plan.mrpPrice > plan.offerPrice;
     const computedPct = hasDiscount
       ? Math.round(((plan.mrpPrice - plan.offerPrice) / plan.mrpPrice) * 100)
       : 0;
     const badgeLabel = plan.discountBadge || (computedPct > 0 ? `Save ${computedPct}%` : '');
     const isHidden = plan.isActive === false;
-    const modulesText = (plan.includedModules || []).map((k) => labelByKey[k] || k).join(' · ');
+    const tierPill = tierKey === 'free'
+      ? '<span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold uppercase">Free</span>'
+      : tierKey === 'standard'
+        ? '<span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold uppercase">Standard</span>'
+        : tierKey === 'elite'
+          ? '<span class="px-2 py-0.5 rounded-md bg-slate-900 text-amber-300 border border-slate-800 text-[10px] font-extrabold uppercase">ELITE</span>'
+          : '<span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-extrabold uppercase">Custom</span>';
 
     return `
-      <article class="rounded-2xl border ${plan.isPopular ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200 bg-white'} ${isHidden ? 'opacity-70' : ''} p-5 flex flex-col justify-between gap-4">
+      <article class="rounded-2xl border ${plan.isPopular ? 'border-indigo-300 bg-indigo-50/20' : 'border-slate-200 bg-white'} ${isHidden ? 'opacity-70' : ''} p-5 flex flex-col justify-between gap-4">
         <div class="space-y-3">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-1.5">
                 <h4 class="text-base font-extrabold text-slate-900 truncate">${escapeHtml(plan.name)}</h4>
-                ${plan.isPopular ? `<span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold"><i class="fas fa-crown mr-1 text-[9px] text-amber-600"></i>Popular</span>` : ''}
+                ${tierPill}
+                ${plan.isPopular ? `<span class="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold"><i class="fas fa-star mr-1 text-[9px] text-amber-600"></i>Recommended</span>` : ''}
                 ${isHidden ? `<span class="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-bold">Hidden</span>` : ''}
               </div>
-              ${plan.tagline ? `<p class="text-xs text-slate-500 mt-0.5">${escapeHtml(plan.tagline)}</p>` : ''}
+              ${plan.tagline ? `<p class="text-xs text-slate-500 mt-1">${escapeHtml(plan.tagline)}</p>` : ''}
             </div>
             <span class="text-[11px] font-extrabold text-slate-400 tabular-nums">#${idx + 1}</span>
           </div>
@@ -1741,15 +1872,16 @@ const renderPlansGrid = () => {
           ${plan.features.length ? `
             <ul class="space-y-1.5 text-xs text-slate-700">
               ${plan.features.slice(0, 6).map((f) => `<li class="flex items-start gap-2"><i class="fas fa-check text-emerald-600 mt-0.5 text-[10px]"></i><span>${escapeHtml(f)}</span></li>`).join('')}
-              ${plan.features.length > 6 ? `<li class="text-[11px] font-bold text-slate-400">+ ${plan.features.length - 6} more features</li>` : ''}
             </ul>
           ` : '<p class="text-xs text-slate-400 italic">No bullet features listed.</p>'}
 
-          ${modulesText ? `
-            <div class="text-[11px] text-slate-500 pt-1">
-              <span class="font-bold text-slate-700">Modules:</span> ${escapeHtml(modulesText)}
-            </div>
-          ` : ''}
+          <div class="pt-1 flex items-center justify-between gap-2 text-[11px]">
+            <span class="font-semibold text-slate-500 tabular-nums">${(plan.includedModules || []).length}/10 modules included</span>
+            <button type="button" class="btn-plan-more inline-flex items-center gap-1 font-extrabold text-indigo-600 hover:text-indigo-800 cursor-pointer" data-plan-id="${escapeHtml(plan.id)}">
+              <span>More</span>
+              <i class="fas fa-chevron-right text-[9px]"></i>
+            </button>
+          </div>
         </div>
 
         <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5">
@@ -1780,6 +1912,19 @@ const renderPlansGrid = () => {
     `;
   }).join('');
 
+  grid.querySelectorAll('.btn-plan-more').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = (catalogState.plans || []).find((p) => p.id === btn.dataset.planId);
+      if (target) {
+        openPlanFullDetailsModal({
+          plan: target,
+          catalog: collectCatalogDraft(),
+          previewMode: true
+        });
+      }
+    });
+  });
+
   grid.querySelectorAll('.btn-plan-edit').forEach((btn) => {
     btn.addEventListener('click', () => {
       const target = (catalogState.plans || []).find((p) => p.id === btn.dataset.planId);
@@ -1795,6 +1940,8 @@ const renderPlansGrid = () => {
         ...target,
         id: `plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         name: `${target.name} (Copy)`,
+        tierKey: 'custom',
+        isDefaultTier: false,
         isPopular: false,
         displayOrder: (catalogState.plans || []).length + 1
       };
@@ -1861,6 +2008,53 @@ const renderPlansGrid = () => {
   });
 };
 
+const renderPlanFeaturePresetsGrid = (selectedLines = []) => {
+  const grid = document.getElementById('plan-feature-presets-grid');
+  if (!grid) return;
+  const normalizedSelected = new Set(
+    (Array.isArray(selectedLines) ? selectedLines : [])
+      .map((line) => String(line || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  grid.innerHTML = PLAN_CATALOG_FEATURE_PRESETS.map((preset) => {
+    const checked = normalizedSelected.has(preset.label.trim().toLowerCase());
+    const tierTag = preset.tier === 'elite'
+      ? '<span class="text-[9px] font-extrabold uppercase text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">ELITE</span>'
+      : preset.tier === 'standard'
+        ? '<span class="text-[9px] font-extrabold uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">STD</span>'
+        : '<span class="text-[9px] font-extrabold uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">FREE</span>';
+    return `
+      <label class="flex items-start justify-between gap-2 p-2 rounded-xl border border-slate-200 bg-white hover:bg-indigo-50/40 cursor-pointer text-[11px] font-semibold text-slate-700">
+        <span class="flex items-start gap-2 min-w-0">
+          <input type="checkbox" class="plan-feature-preset-cb mt-0.5 rounded border-slate-300 text-indigo-600" value="${escapeHtml(preset.label)}" ${checked ? 'checked' : ''}>
+          <span class="leading-snug">${escapeHtml(preset.label)}</span>
+        </span>
+        ${tierTag}
+      </label>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.plan-feature-preset-cb').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const textarea = document.getElementById('plan-features');
+      if (!textarea) return;
+      const val = String(cb.value || '').trim();
+      const lines = textarea.value
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const lowerVal = val.toLowerCase();
+      const existsIdx = lines.findIndex((l) => l.toLowerCase() === lowerVal);
+      if (cb.checked && existsIdx === -1) {
+        lines.push(val);
+      } else if (!cb.checked && existsIdx >= 0) {
+        lines.splice(existsIdx, 1);
+      }
+      textarea.value = lines.join('\n');
+    });
+  });
+};
+
 const renderPlanModulesGrid = (selectedKeys = []) => {
   const grid = document.getElementById('plan-modules-grid');
   if (!grid) return;
@@ -1886,9 +2080,12 @@ const openPlanEditorModal = (plan = null) => {
   }
 
   const isEdit = Boolean(plan && plan.id);
+  const resolvedTierKey = plan ? (plan.tierKey || inferPlanTierKey(plan)) : 'standard';
   document.getElementById('plan-modal-title').textContent = isEdit ? `Edit Plan: ${plan.name}` : 'Add Custom Plan';
   document.getElementById('plan-edit-id').value = isEdit ? plan.id : '';
   document.getElementById('plan-name').value = plan?.name || '';
+  const tierSelect = document.getElementById('plan-tier-key');
+  if (tierSelect) tierSelect.value = resolvedTierKey;
   document.getElementById('plan-tagline').value = plan?.tagline || '';
   document.getElementById('plan-currency').value = plan?.currency || '₹';
   document.getElementById('plan-mrp').value = plan?.mrpPrice > 0 ? String(plan.mrpPrice) : '';
@@ -1897,9 +2094,11 @@ const openPlanEditorModal = (plan = null) => {
   document.getElementById('plan-discount-badge').value = plan?.discountBadge || '';
   document.getElementById('plan-is-popular').checked = Boolean(plan?.isPopular);
   document.getElementById('plan-is-active').checked = plan ? plan.isActive !== false : true;
-  document.getElementById('plan-features').value = Array.isArray(plan?.features) ? plan.features.join('\n') : '';
+  const featureLines = Array.isArray(plan?.features) ? plan.features : [];
+  document.getElementById('plan-features').value = featureLines.join('\n');
 
-  renderPlanModulesGrid(plan?.includedModules || []);
+  renderPlanFeaturePresetsGrid(featureLines);
+  renderPlanModulesGrid(plan?.includedModules || Object.keys(STANDARD_PLAN_ALLOWED_PAGES).filter((k) => STANDARD_PLAN_ALLOWED_PAGES[k]));
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 };
@@ -1914,6 +2113,7 @@ const handlePlanEditorSubmit = async (e) => {
   e.preventDefault();
   const editId = String(document.getElementById('plan-edit-id')?.value || '').trim();
   const name = String(document.getElementById('plan-name')?.value || '').trim();
+  const tierKey = String(document.getElementById('plan-tier-key')?.value || 'custom').trim().toLowerCase();
   const tagline = String(document.getElementById('plan-tagline')?.value || '').trim();
   const currency = String(document.getElementById('plan-currency')?.value || '₹').trim() || '₹';
   const mrpRaw = document.getElementById('plan-mrp')?.value;
@@ -1946,6 +2146,8 @@ const handlePlanEditorSubmit = async (e) => {
   const existingIdx = editId ? nextCatalog.plans.findIndex((p) => p.id === editId) : -1;
   const planObj = {
     id: editId || `plan_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    tierKey: ['free', 'standard', 'elite', 'custom'].includes(tierKey) ? tierKey : 'custom',
+    isDefaultTier: ['free', 'standard', 'elite'].includes(tierKey),
     name,
     tagline,
     currency,
@@ -2045,9 +2247,13 @@ const renderUpgradeRequests = () => {
         : st === 'contacted'
           ? 'bg-blue-100 text-blue-800 border-blue-200'
           : 'bg-amber-100 text-amber-800 border-amber-200';
+    const reqTier = String(req.requestedTier || '').toLowerCase() === 'standard'
+      || String(req.requestedPlanName || '').toLowerCase().includes('standard')
+      ? 'standard'
+      : 'elite';
     const waDigits = String(req.contactPhone || '').replace(/\D/g, '');
     const waHref = waDigits
-      ? `https://wa.me/${waDigits}?text=${encodeURIComponent(`Hello ${req.institutionName || ''}, we received your upgrade request for ${req.requestedPlanName || 'Premium Plan'}. Let's get your Premium access activated!`)}`
+      ? `https://wa.me/${waDigits}?text=${encodeURIComponent(`Hello ${req.institutionName || ''}, we received your upgrade request for ${req.requestedPlanName || (reqTier === 'standard' ? 'Standard Plan' : 'ELITE Plan')}. Let's get your plan activated!`)}`
       : '';
     const dateText = req.updatedAtIso ? new Date(req.updatedAtIso).toLocaleString('en-IN') : '--';
     const usage = req.usageSnapshot || {};
@@ -2059,9 +2265,10 @@ const renderUpgradeRequests = () => {
             <h4 class="text-sm font-extrabold text-slate-900">${escapeHtml(req.institutionName || req.institutionId)}</h4>
             <span class="font-mono text-[11px] font-bold text-indigo-600">/${escapeHtml(req.institutionId || '')}</span>
             <span class="px-2 py-0.5 rounded-full border text-[10px] font-extrabold uppercase ${stBadge}">${escapeHtml(st)}</span>
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${reqTier === 'standard' ? 'bg-indigo-50 text-indigo-800 border border-indigo-200' : 'bg-slate-900 text-amber-300 border border-slate-800'}">Target: ${reqTier === 'standard' ? 'Standard' : 'ELITE'}</span>
           </div>
           <div class="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span><strong class="text-slate-800">Requested Plan:</strong> ${escapeHtml(req.requestedPlanName || 'Premium Plan')}</span>
+            <span><strong class="text-slate-800">Requested Plan:</strong> ${escapeHtml(req.requestedPlanName || (reqTier === 'standard' ? 'Standard' : 'ELITE'))}</span>
             ${req.requestedFeature ? `<span><strong class="text-slate-800">Trigger:</strong> ${escapeHtml(req.requestedFeature)}</span>` : ''}
             <span><strong class="text-slate-800">Usage:</strong> ${Number(usage.students || 0)} Students · ${Number(usage.staff || 0)} Staff</span>
           </div>
@@ -2076,14 +2283,18 @@ const renderUpgradeRequests = () => {
         <div class="flex flex-wrap items-center gap-2 shrink-0">
           ${waHref ? `<a href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold inline-flex items-center gap-1.5"><i class="fab fa-whatsapp"></i><span>WhatsApp</span></a>` : ''}
           ${st !== 'approved' ? `
-            <button type="button" class="btn-approve-upgrade px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5 shadow-2xs" data-req-id="${escapeHtml(req.id)}" data-slug="${escapeHtml(req.institutionId || '')}" data-plan-name="${escapeHtml(req.requestedPlanName || 'Premium')}">
-              <i class="fas fa-crown"></i>
-              <span>Approve &amp; Upgrade</span>
+            <button type="button" class="btn-approve-upgrade px-3 py-2 rounded-xl ${reqTier === 'standard' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200'} text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5" data-req-id="${escapeHtml(req.id)}" data-slug="${escapeHtml(req.institutionId || '')}" data-target-tier="standard" data-plan-name="Standard">
+              <i class="fas fa-layer-group"></i>
+              <span>Approve Standard</span>
+            </button>
+            <button type="button" class="btn-approve-upgrade px-3 py-2 rounded-xl ${reqTier === 'elite' ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-2xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200'} text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5" data-req-id="${escapeHtml(req.id)}" data-slug="${escapeHtml(req.institutionId || '')}" data-target-tier="elite" data-plan-name="ELITE">
+              <i class="fas fa-crown text-amber-400"></i>
+              <span>Approve ELITE</span>
             </button>
           ` : ''}
           ${st === 'pending' ? `
             <button type="button" class="btn-mark-contacted px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold cursor-pointer" data-req-id="${escapeHtml(req.id)}">
-              Mark Contacted
+              Contacted
             </button>
           ` : ''}
           ${st !== 'declined' && st !== 'approved' ? `
@@ -2100,39 +2311,56 @@ const renderUpgradeRequests = () => {
     btn.addEventListener('click', async () => {
       const reqId = btn.dataset.reqId;
       const slug = btn.dataset.slug;
-      const planName = btn.dataset.planName || 'Premium';
+      const targetTier = btn.dataset.targetTier === 'standard' ? 'standard' : 'elite';
+      const planName = targetTier === 'standard' ? 'Standard' : 'ELITE';
       const ok = await openConfirmDialog({
-        title: 'Approve & Upgrade to Premium',
-        message: `Upgrade /${slug} to "${planName}" (unlocking all 10 modules, removing Basic quotas, and marking the institution Verified)?`,
-        okLabel: 'Upgrade Now'
+        title: `Approve & Activate ${planName}`,
+        message: targetTier === 'standard'
+          ? `Activate Standard plan for /${slug} (8 modules, Multi-Year progression, Standard quotas, 12-month validity, and Verified status)?`
+          : `Activate ELITE plan for /${slug} (all 10 modules, unlimited quotas, Excel Bulk/Reports/TC/Audit, 12-month validity, and Verified status)?`,
+        okLabel: `Activate ${planName}`
       });
       if (!ok) return;
       try {
         const startStr = toIsoDateInput();
         const expiryStr = addMonthsToDateStr(startStr, 12);
+        const stdLimits = { ...(catalogState?.selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS) };
+        const nextAllowedPages = targetTier === 'standard'
+          ? { ...STANDARD_PLAN_ALLOWED_PAGES }
+          : { ...ELITE_PLAN_ALLOWED_PAGES };
+
         const batch = writeBatch(db);
         batch.update(doc(db, INSTITUTIONS_COLLECTION, slug), {
-          planTier: 'premium',
+          planTier: targetTier,
           planName,
-          planLimits: null,
+          planLimits: targetTier === 'standard' ? stdLimits : null,
+          trialTier: '',
+          trialEndsAtMs: 0,
+          trialAllowedPages: null,
+          trialPlanLimits: null,
           verificationStatus: 'verified',
           isLifetime: false,
           durationMonths: 12,
           startDate: startStr,
           expiryDate: expiryStr,
           expiryTimestamp: toExpiryTimestamp(expiryStr),
-          allowedPages: { ...DEFAULT_COMPANY_ALLOWED_PAGES },
+          allowedPages: nextAllowedPages,
           updatedAt: serverTimestamp()
         });
+        batch.set(doc(db, `${INSTITUTIONS_COLLECTION}/${slug}/settings`, 'config'), {
+          enabledModules: nextAllowedPages,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
         batch.update(doc(db, UPGRADE_REQUESTS_COLLECTION, reqId), {
           status: 'approved',
+          approvedTier: targetTier,
           approvedBy: verifiedCompanyOwnerEmail || 'company',
           approvedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           updatedAtIso: new Date().toISOString()
         });
         await batch.commit();
-        showToast(`Upgraded /${slug} to Premium successfully!`);
+        showToast(`Activated ${planName} for /${slug} successfully!`);
         await Promise.all([loadInstitutions(), loadUpgradeRequests()]);
       } catch (err) {
         showToast(`Failed to approve upgrade: ${err.message}`, 'error');
@@ -3071,13 +3299,35 @@ const bindEvents = () => {
     }
   });
   document.getElementById('add-inst-is-lifetime')?.addEventListener('change', () => syncLifetimeInputsFor('add-inst'));
+  document.getElementById('add-inst-plan-name')?.addEventListener('change', (e) => {
+    const val = String(e.target?.value || '').toLowerCase();
+    const map = val === 'free' || val === 'trial'
+      ? FREE_PLAN_ALLOWED_PAGES
+      : val === 'standard'
+        ? STANDARD_PLAN_ALLOWED_PAGES
+        : ELITE_PLAN_ALLOWED_PAGES;
+    document.querySelectorAll('.add-inst-page-checkbox').forEach((cb) => {
+      cb.checked = map[cb.dataset.pageKey] === true;
+    });
+  });
   document.getElementById('btn-add-pages-select-all')?.addEventListener('click', () => {
     document.querySelectorAll('.add-inst-page-checkbox').forEach((cb) => { cb.checked = true; });
+    const planSel = document.getElementById('add-inst-plan-name');
+    if (planSel) planSel.value = 'ELITE';
+  });
+  document.getElementById('btn-add-pages-standard-preset')?.addEventListener('click', () => {
+    document.querySelectorAll('.add-inst-page-checkbox').forEach((cb) => {
+      cb.checked = STANDARD_PLAN_ALLOWED_PAGES[cb.dataset.pageKey] === true;
+    });
+    const planSel = document.getElementById('add-inst-plan-name');
+    if (planSel) planSel.value = 'Standard';
   });
   document.getElementById('btn-add-pages-core-only')?.addEventListener('click', () => {
     document.querySelectorAll('.add-inst-page-checkbox').forEach((cb) => {
-      cb.checked = CORE_PAGE_KEYS.has(cb.dataset.pageKey);
+      cb.checked = FREE_PLAN_ALLOWED_PAGES[cb.dataset.pageKey] === true;
     });
+    const planSel = document.getElementById('add-inst-plan-name');
+    if (planSel) planSel.value = 'Free';
   });
 
   // Institution Edit / Create Modal
@@ -3127,31 +3377,99 @@ const bindEvents = () => {
   });
   document.getElementById('inst-is-lifetime')?.addEventListener('change', syncLifetimeInputs);
 
+  const applyInstTierPreset = (tierKey) => {
+    const tier = normalizePlanTier(tierKey);
+    const tierSelect = document.getElementById('inst-plan-tier-select');
+    if (tierSelect) tierSelect.value = tier;
+    const planLabelSel = document.getElementById('inst-plan-name');
+    if (planLabelSel) {
+      planLabelSel.value = tier === 'free' ? 'Free' : (tier === 'standard' ? 'Standard' : 'ELITE');
+    }
+    const pageMap = tier === 'free'
+      ? FREE_PLAN_ALLOWED_PAGES
+      : tier === 'standard'
+        ? STANDARD_PLAN_ALLOWED_PAGES
+        : ELITE_PLAN_ALLOWED_PAGES;
+    document.querySelectorAll('.inst-page-checkbox').forEach((cb) => {
+      cb.checked = pageMap[cb.dataset.pageKey] === true;
+    });
+    const limitsWrap = document.getElementById('inst-basic-limits-wrap');
+    limitsWrap?.classList.toggle('hidden', tier === 'elite');
+    if (tier !== 'elite') {
+      const defaults = tier === 'standard'
+        ? (catalogState?.selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS)
+        : (catalogState?.selfSignupConfig?.defaultFreeLimits || DEFAULT_FREE_PLAN_LIMITS);
+      const setNum = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v ?? ''); };
+      setNum('inst-limit-students', defaults.maxStudents);
+      setNum('inst-limit-staff', defaults.maxStaff);
+      setNum('inst-limit-classes', defaults.maxClasses);
+      setNum('inst-limit-years', defaults.maxAcademicYears);
+      setNum('inst-limit-fee-items', defaults.maxFeeItems);
+      setNum('inst-limit-exams', defaults.maxExamsPerYear);
+      setNum('inst-limit-notices', defaults.maxNotices);
+      setNum('inst-limit-gallery', defaults.maxGalleryPhotos);
+      const heading = document.getElementById('inst-limits-heading');
+      if (heading) {
+        heading.textContent = tier === 'standard'
+          ? 'Per-Institution Standard Plan Quota Overrides'
+          : 'Per-Institution Free Plan Quota Overrides';
+      }
+    }
+  };
+
   document.getElementById('inst-plan-tier-select')?.addEventListener('change', (e) => {
-    const isBasic = String(e.target?.value || '') === 'basic';
-    document.getElementById('inst-basic-limits-wrap')?.classList.toggle('hidden', !isBasic);
-    if (isBasic) {
-      document.querySelectorAll('.inst-page-checkbox').forEach((cb) => {
-        cb.checked = BASIC_PLAN_ALLOWED_PAGES[cb.dataset.pageKey] === true;
+    applyInstTierPreset(e.target?.value || 'elite');
+  });
+
+  document.getElementById('btn-pages-select-all')?.addEventListener('click', () => applyInstTierPreset('elite'));
+  document.getElementById('btn-pages-standard-preset')?.addEventListener('click', () => applyInstTierPreset('standard'));
+  document.getElementById('btn-pages-basic-preset')?.addEventListener('click', () => applyInstTierPreset('free'));
+
+  document.getElementById('btn-inst-extend-trial')?.addEventListener('click', async (e) => {
+    const slug = e.currentTarget?.dataset?.slug;
+    if (!slug) return;
+    const trialDays = Math.max(1, Number(catalogState?.selfSignupConfig?.trialDays ?? DEFAULT_TRIAL_DAYS) || DEFAULT_TRIAL_DAYS);
+    const inst = allInstitutions.find((i) => (i.slug || i.id) === slug);
+    const baseMs = Math.max(Date.now(), Number(inst?.trialEndsAtMs || 0));
+    const nextEndsAtMs = baseMs + (trialDays * 24 * 60 * 60 * 1000);
+    try {
+      const stdLimits = { ...(catalogState?.selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS) };
+      await updateDoc(doc(db, INSTITUTIONS_COLLECTION, slug), {
+        trialTier: 'standard',
+        trialDays,
+        trialStartedAtMs: Number(inst?.trialStartedAtMs || 0) || Date.now(),
+        trialEndsAtMs: nextEndsAtMs,
+        trialAllowedPages: { ...STANDARD_PLAN_ALLOWED_PAGES },
+        trialPlanLimits: stdLimits,
+        updatedAt: serverTimestamp()
       });
+      showToast(`Granted +${trialDays} days Standard trial for /${slug}`);
+      await loadInstitutions();
+      const updated = allInstitutions.find((i) => (i.slug || i.id) === slug);
+      if (updated) openInstitutionModal('edit', updated);
+    } catch (err) {
+      showToast(`Failed to update trial: ${err.message}`, 'error');
     }
   });
 
-  document.getElementById('btn-pages-select-all')?.addEventListener('click', () => {
-    document.querySelectorAll('.inst-page-checkbox').forEach((cb) => { cb.checked = true; });
-  });
-  document.getElementById('btn-pages-basic-preset')?.addEventListener('click', () => {
-    document.querySelectorAll('.inst-page-checkbox').forEach((cb) => {
-      cb.checked = BASIC_PLAN_ALLOWED_PAGES[cb.dataset.pageKey] === true;
-    });
-    const tierSelect = document.getElementById('inst-plan-tier-select');
-    if (tierSelect) tierSelect.value = 'basic';
-    document.getElementById('inst-basic-limits-wrap')?.classList.remove('hidden');
-  });
-  document.getElementById('btn-pages-core-only')?.addEventListener('click', () => {
-    document.querySelectorAll('.inst-page-checkbox').forEach((cb) => {
-      cb.checked = CORE_PAGE_KEYS.has(cb.dataset.pageKey);
-    });
+  document.getElementById('btn-inst-end-trial')?.addEventListener('click', async (e) => {
+    const slug = e.currentTarget?.dataset?.slug;
+    if (!slug) return;
+    try {
+      await updateDoc(doc(db, INSTITUTIONS_COLLECTION, slug), {
+        trialTier: '',
+        trialEndsAtMs: 0,
+        trialAllowedPages: null,
+        trialPlanLimits: null,
+        updatedAt: serverTimestamp()
+      });
+      showToast(`Ended Standard trial for /${slug} (now on Free tier).`);
+      await loadInstitutions();
+      const updated = allInstitutions.find((i) => (i.slug || i.id) === slug);
+      if (updated) openInstitutionModal('edit', updated);
+    } catch (err) {
+      showToast(`Failed to end trial: ${err.message}`, 'error');
+    }
   });
 
   // Upgrade Requests events
@@ -3164,6 +3482,34 @@ const bindEvents = () => {
 
   // Plans & Offers + Self-Signup Config + Contact Details
   document.getElementById('btn-open-add-plan')?.addEventListener('click', () => openPlanEditorModal());
+  document.getElementById('btn-sync-default-tiers')?.addEventListener('click', async () => {
+    const ok = await openConfirmDialog({
+      title: 'Sync Default 3 Tiers (Free · Standard · ELITE)',
+      message: 'Restore the default Free, Standard, and ELITE subscription plans with curated highlights and module mappings? Custom pricing can be edited anytime.',
+      okLabel: 'Sync 3 Tiers'
+    });
+    if (!ok) return;
+    const nextCatalog = collectCatalogDraft();
+    nextCatalog.plans = buildDefaultSubscriptionPlans();
+    try {
+      await persistPublicCatalog(nextCatalog, 'Synced default Free, Standard, and ELITE plans!');
+    } catch (err) {
+      showToast(`Failed to sync default plans: ${err.message}`, 'error');
+    }
+  });
+  document.getElementById('plan-tier-key')?.addEventListener('change', (e) => {
+    const tier = String(e.target?.value || '').toLowerCase();
+    if (tier === 'free' || tier === 'standard' || tier === 'elite') {
+      const pageMap = tier === 'free'
+        ? FREE_PLAN_ALLOWED_PAGES
+        : tier === 'standard'
+          ? STANDARD_PLAN_ALLOWED_PAGES
+          : ELITE_PLAN_ALLOWED_PAGES;
+      document.querySelectorAll('.plan-module-checkbox').forEach((cb) => {
+        cb.checked = pageMap[cb.value] === true;
+      });
+    }
+  });
   document.getElementById('btn-close-plan-modal')?.addEventListener('click', closePlanEditorModal);
   document.getElementById('btn-cancel-plan-modal')?.addEventListener('click', closePlanEditorModal);
   document.getElementById('plan-editor-form')?.addEventListener('submit', handlePlanEditorSubmit);
@@ -3176,9 +3522,9 @@ const bindEvents = () => {
       btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
     }
     try {
-      await persistPublicCatalog(collectCatalogDraft(), 'Saved Self-Signup & Default Basic Plan Limits!');
+      await persistPublicCatalog(collectCatalogDraft(), 'Saved Self-Signup, Trial & Tier Quota Rules!');
     } catch (err) {
-      showToast(`Failed to save Basic Plan settings: ${err.message}`, 'error');
+      showToast(`Failed to save Tier rules: ${err.message}`, 'error');
     } finally {
       if (btn) {
         btn.disabled = false;

@@ -13,11 +13,21 @@ import {
 import { openPremiumPlansModal } from './premium-plans-modal.js';
 import { mountUnifiedFooter, openLegalInfoModal } from './site-footer.js';
 import {
+    PLAN_TIER_LABELS,
+    normalizePlanTier,
+    formatRemainingDuration,
+    getRequiredTierForFeature,
+    getRequiredTierForModule,
     resolveInstitutionPlan,
     setActiveInstitutionPlan,
     getActiveInstitutionPlan,
+    getEffectivePlanTier,
+    isFreePlan,
     isBasicPlan,
+    isStandardPlan,
+    isElitePlan,
     isPremiumPlan,
+    isTrialActivePlan,
     hasFeature,
     getPlanLimit,
     checkQuotaLimit,
@@ -41,11 +51,21 @@ export {
     openPremiumPlansModal,
     mountUnifiedFooter,
     openLegalInfoModal,
+    PLAN_TIER_LABELS,
+    normalizePlanTier,
+    formatRemainingDuration,
+    getRequiredTierForFeature,
+    getRequiredTierForModule,
     resolveInstitutionPlan,
     setActiveInstitutionPlan,
     getActiveInstitutionPlan,
+    getEffectivePlanTier,
+    isFreePlan,
     isBasicPlan,
+    isStandardPlan,
+    isElitePlan,
     isPremiumPlan,
+    isTrialActivePlan,
     hasFeature,
     getPlanLimit,
     checkQuotaLimit,
@@ -1941,7 +1961,8 @@ export const evaluateInstitutionAccess = (institutionData = null, requiredPage =
         };
     }
 
-    const allowedPages = normalizeAllowedPages(institutionData.allowedPages || {});
+    const planInfo = resolveInstitutionPlan(institutionData);
+    const allowedPages = planInfo.allowedPages;
     const status = String(institutionData.status || 'active').trim().toLowerCase();
     const instSlug = String(institutionData.slug || institutionData.id || '').trim();
     const instName = String(institutionData.name || instSlug || '').trim();
@@ -1972,7 +1993,7 @@ export const evaluateInstitutionAccess = (institutionData = null, requiredPage =
         };
     }
 
-    const isLifetime = institutionData.isLifetime === true || String(institutionData.planName || '').toLowerCase() === 'lifetime';
+    const isLifetime = institutionData.isLifetime === true || planInfo.basePlanTier === 'free' || String(institutionData.planName || '').toLowerCase() === 'lifetime';
     if (!isLifetime) {
         let expiryMs = 0;
         const ts = institutionData.expiryTimestamp;
@@ -2003,12 +2024,17 @@ export const evaluateInstitutionAccess = (institutionData = null, requiredPage =
         if (requiredPage === 'activity') normalizedKey = 'studentActivity';
         if (requiredPage === 'evaluation') normalizedKey = 'classroomEvaluation';
         if (allowedPages[normalizedKey] === false) {
+            const reqTier = getRequiredTierForModule(normalizedKey);
+            const tierLabel = reqTier === 'standard' ? 'Standard' : 'ELITE';
+            const trialEndedNote = planInfo.isTrialExpired && reqTier === 'standard'
+                ? 'Your 3-day free Standard trial has ended. Your saved data is safe — upgrade to Standard or ELITE to continue using this module.'
+                : `This module is included in the ${tierLabel} plan${reqTier === 'standard' ? ' and above' : ''}. Upgrade your plan to unlock access.`;
             return {
                 allowed: false,
                 reasonCode: 'module_disabled',
                 requiredPage: normalizedKey,
-                title: 'Premium - Upgrade',
-                message: 'This module is not included in your current plan. Upgrade to unlock full access.',
+                title: `${tierLabel} Plan Module`,
+                message: trialEndedNote,
                 institutionName: instName,
                 institutionSlug: instSlug,
                 allowedPages

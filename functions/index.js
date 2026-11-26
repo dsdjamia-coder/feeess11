@@ -33,7 +33,9 @@ const RESERVED_INSTITUTION_SLUGS = new Set([
   'assets', 'scripts', 'styles', 'config', 'public', 'school', 'api', 'app', 'login', 'signup'
 ]);
 
-const BASIC_PLAN_ALLOWED_PAGES = {
+const DEFAULT_TRIAL_DAYS = 3;
+
+const FREE_PLAN_ALLOWED_PAGES = {
   admin: true,
   official: true,
   student: true,
@@ -46,7 +48,20 @@ const BASIC_PLAN_ALLOWED_PAGES = {
   classroomEvaluation: false
 };
 
-const DEFAULT_BASIC_PLAN_LIMITS = {
+const STANDARD_PLAN_ALLOWED_PAGES = {
+  admin: true,
+  official: true,
+  student: true,
+  collection: true,
+  result: true,
+  attendance: true,
+  worksheet: true,
+  academicPlan: true,
+  studentActivity: false,
+  classroomEvaluation: false
+};
+
+const DEFAULT_FREE_PLAN_LIMITS = {
   maxStudents: 150,
   maxStaff: 6,
   maxClasses: 12,
@@ -54,8 +69,47 @@ const DEFAULT_BASIC_PLAN_LIMITS = {
   maxFeeItems: 4,
   maxNotices: 5,
   maxGalleryPhotos: 6,
-  maxExamsPerYear: 2,
+  maxExamsPerYear: 1,
   maxDirectoryEntries: 10
+};
+
+const DEFAULT_STANDARD_PLAN_LIMITS = {
+  maxStudents: 500,
+  maxStaff: 25,
+  maxClasses: 30,
+  maxAcademicYears: 5,
+  maxFeeItems: 12,
+  maxNotices: 20,
+  maxGalleryPhotos: 15,
+  maxExamsPerYear: 4,
+  maxDirectoryEntries: 40
+};
+
+const BASIC_PLAN_ALLOWED_PAGES = FREE_PLAN_ALLOWED_PAGES;
+const DEFAULT_BASIC_PLAN_LIMITS = DEFAULT_FREE_PLAN_LIMITS;
+
+const normalizeServerPlanTier = (raw = '', fallback = 'elite') => {
+  const clean = String(raw || '').trim().toLowerCase();
+  if (!clean) return fallback;
+  if (clean === 'free' || clean === 'basic' || clean === 'starter') return 'free';
+  if (clean === 'standard' || clean === 'pro' || clean === 'growth') return 'standard';
+  if (clean === 'elite' || clean === 'premium' || clean === 'enterprise') return 'elite';
+  return fallback;
+};
+
+const resolveServerEffectivePlan = (instData = {}) => {
+  const baseTier = normalizeServerPlanTier(instData.planTier, 'elite');
+  const trialEndsAtMs = Number(instData.trialEndsAtMs || 0);
+  const trialTier = instData.trialTier ? normalizeServerPlanTier(instData.trialTier, 'standard') : '';
+  const isTrialActive = baseTier === 'free' && Boolean(trialTier) && Number.isFinite(trialEndsAtMs) && trialEndsAtMs > Date.now();
+  const effectiveTier = isTrialActive ? trialTier : baseTier;
+  const defaultLimits = effectiveTier === 'free'
+    ? DEFAULT_FREE_PLAN_LIMITS
+    : (effectiveTier === 'standard' ? DEFAULT_STANDARD_PLAN_LIMITS : null);
+  const rawLimits = isTrialActive
+    ? (instData.trialPlanLimits && typeof instData.trialPlanLimits === 'object' ? instData.trialPlanLimits : {})
+    : (instData.planLimits && typeof instData.planLimits === 'object' ? instData.planLimits : {});
+  return { baseTier, effectiveTier, isTrialActive, trialEndsAtMs, defaultLimits, rawLimits };
 };
 
 const MAX_SELF_SIGNUPS_PER_PHONE = 2;
@@ -1487,21 +1541,26 @@ exports.manageStaffCredential = onCall({ cors: true }, async (request) => {
   const instData = instSnap.exists ? (instSnap.data() || {}) : {};
   const institutionName = String(instData.name || slug).trim();
 
-  // Enforce Basic plan maxStaff quota on new staff creation (unless caller is Company Owner)
-  const isBasicTenant = String(instData.planTier || '').trim().toLowerCase() === 'basic';
-  if (isBasicTenant && isActive && !isCompanyOwnerAuth(request.auth)) {
+  // Enforce Free / Standard plan maxStaff quota on new staff creation (unless caller is Company Owner)
+  const effectivePlan = resolveServerEffectivePlan(instData);
+  if (effectivePlan.effectiveTier !== 'elite' && isActive && !isCompanyOwnerAuth(request.auth)) {
     const existingAccessPreview = await staffAccessRef.get();
     if (!existingAccessPreview.exists) {
-      const configuredMaxStaff = Number(instData.planLimits?.maxStaff ?? DEFAULT_BASIC_PLAN_LIMITS.maxStaff);
+      const fallbackMax = effectivePlan.defaultLimits?.maxStaff || DEFAULT_FREE_PLAN_LIMITS.maxStaff;
+      const configuredMaxStaff = Number(effectivePlan.rawLimits?.maxStaff ?? fallbackMax);
       const maxStaff = Number.isFinite(configuredMaxStaff) && configuredMaxStaff > 0
         ? Math.floor(configuredMaxStaff)
-        : DEFAULT_BASIC_PLAN_LIMITS.maxStaff;
+        : fallbackMax;
       const activeAccessSnap = await db.collection(`${INSTITUTIONS_COLLECTION}/${slug}/staffAccess`).get();
       const activeCount = activeAccessSnap.docs.filter((d) => d.data()?.isActive !== false && d.id !== uid).length;
       if (activeCount >= maxStaff) {
+        const tierLabel = effectivePlan.isTrialActive
+          ? 'Standard 3-Day Trial'
+          : (effectivePlan.effectiveTier === 'standard' ? 'Standard Plan' : 'Free Plan');
+        const nextTier = effectivePlan.effectiveTier === 'free' ? 'Standard or ELITE' : 'ELITE';
         throw new HttpsError(
           'resource-exhausted',
-          `Basic Free Plan limit reached: maximum ${maxStaff} active staff accounts allowed. Upgrade to Premium for unlimited staff.`
+          `${tierLabel} limit reached: maximum ${maxStaff} active staff accounts allowed. Upgrade to ${nextTier} for higher staff capacity.`
         );
       }
     }
@@ -2086,14 +2145,29 @@ exports.selfRegisterInstitution = onCall({ cors: true }, async (request) => {
     );
   }
 
-  const rawLimits = (selfSignupCfg.defaultBasicLimits && typeof selfSignupCfg.defaultBasicLimits === 'object')
-    ? selfSignupCfg.defaultBasicLimits
+  const rawFreeLimits = (selfSignupCfg.defaultFreeLimits && typeof selfSignupCfg.defaultFreeLimits === 'object')
+    ? selfSignupCfg.defaultFreeLimits
+    : ((selfSignupCfg.defaultBasicLimits && typeof selfSignupCfg.defaultBasicLimits === 'object') ? selfSignupCfg.defaultBasicLimits : {});
+  const rawStandardLimits = (selfSignupCfg.defaultStandardLimits && typeof selfSignupCfg.defaultStandardLimits === 'object')
+    ? selfSignupCfg.defaultStandardLimits
     : {};
+
   const planLimits = {};
-  Object.keys(DEFAULT_BASIC_PLAN_LIMITS).forEach((k) => {
-    const val = Number(rawLimits[k]);
-    planLimits[k] = Number.isFinite(val) && val > 0 ? Math.floor(val) : DEFAULT_BASIC_PLAN_LIMITS[k];
+  Object.keys(DEFAULT_FREE_PLAN_LIMITS).forEach((k) => {
+    const val = Number(rawFreeLimits[k]);
+    planLimits[k] = Number.isFinite(val) && val > 0 ? Math.floor(val) : DEFAULT_FREE_PLAN_LIMITS[k];
   });
+
+  const trialPlanLimits = {};
+  Object.keys(DEFAULT_STANDARD_PLAN_LIMITS).forEach((k) => {
+    const val = Number(rawStandardLimits[k]);
+    trialPlanLimits[k] = Number.isFinite(val) && val > 0 ? Math.floor(val) : DEFAULT_STANDARD_PLAN_LIMITS[k];
+  });
+
+  const rawTrialDays = Number(selfSignupCfg.trialDays);
+  const trialDays = Number.isFinite(rawTrialDays) && rawTrialDays >= 0 && rawTrialDays <= 30
+    ? Math.floor(rawTrialDays)
+    : DEFAULT_TRIAL_DAYS;
 
   const uid = buildSuperAdminUid(slug);
   const instRef = db.collection(INSTITUTIONS_COLLECTION).doc(slug);
@@ -2103,7 +2177,10 @@ exports.selfRegisterInstitution = onCall({ cors: true }, async (request) => {
   const academicYearsRef = db.doc(`${INSTITUTIONS_COLLECTION}/${slug}/settings/academicYears`);
 
   const nowDate = new Date();
+  const nowMs = nowDate.getTime();
   const nowIso = nowDate.toISOString();
+  const trialEndsAtMs = trialDays > 0 ? nowMs + (trialDays * 24 * 60 * 60 * 1000) : 0;
+  const trialTier = trialDays > 0 ? 'standard' : '';
   const currentYear = nowDate.getFullYear();
   const defaultAcademicYear = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
 
@@ -2120,7 +2197,7 @@ exports.selfRegisterInstitution = onCall({ cors: true }, async (request) => {
       throw new HttpsError('already-exists', `Username "${displayUsername}" is already taken. Please choose another username.`);
     }
 
-    // 1. Create institution metadata document (strictly forced Basic Free Forever)
+    // 1. Create institution metadata document (Free Forever base + optional 3-Day Automatic Standard Trial)
     tx.set(instRef, {
       slug,
       name: institutionName,
@@ -2132,15 +2209,21 @@ exports.selfRegisterInstitution = onCall({ cors: true }, async (request) => {
       adminDisplayUsername: displayUsername,
       status: 'active',
       isActive: true,
-      planTier: 'basic',
-      planName: 'Basic (Free)',
+      planTier: 'free',
+      planName: trialDays > 0 ? `Free (${trialDays}-Day Standard Trial)` : 'Free',
+      trialTier,
+      trialDays,
+      trialStartedAtMs: trialDays > 0 ? nowMs : 0,
+      trialEndsAtMs,
       isLifetime: true,
       expiryDate: '',
       expiryTimestamp: null,
       signupSource: 'self_signup',
       verificationStatus: 'unverified',
-      allowedPages: { ...BASIC_PLAN_ALLOWED_PAGES },
+      allowedPages: { ...FREE_PLAN_ALLOWED_PAGES },
+      trialAllowedPages: { ...STANDARD_PLAN_ALLOWED_PAGES },
       planLimits,
+      trialPlanLimits,
       createdAt: FieldValue.serverTimestamp(),
       createdAtIso: nowIso,
       updatedAt: FieldValue.serverTimestamp()
@@ -2236,9 +2319,13 @@ exports.selfRegisterInstitution = onCall({ cors: true }, async (request) => {
     ok: true,
     slug,
     institutionName,
-    planTier: 'basic',
-    planName: 'Basic (Free)',
-    planLimits,
+    planTier: 'free',
+    effectiveTier: trialDays > 0 ? 'standard' : 'free',
+    planName: trialDays > 0 ? `Free (${trialDays}-Day Standard Trial)` : 'Free',
+    trialActive: trialDays > 0,
+    trialDays,
+    trialEndsAtMs,
+    planLimits: trialDays > 0 ? trialPlanLimits : planLimits,
     customToken,
     profile: {
       uid,
@@ -2280,9 +2367,14 @@ exports.submitUpgradeRequest = onCall({ cors: true }, async (request) => {
     throw new HttpsError('not-found', 'Institution record not found.');
   }
   const instData = instSnap.data() || {};
+  const effectivePlan = resolveServerEffectivePlan(instData);
 
-  const requestedPlanId = String(request.data?.requestedPlanId || 'premium_full').trim().slice(0, 80);
-  const requestedPlanName = String(request.data?.requestedPlanName || 'Premium Plan').trim().slice(0, 120);
+  const requestedPlanId = String(request.data?.requestedPlanId || 'tier_standard').trim().slice(0, 80);
+  const requestedPlanName = String(request.data?.requestedPlanName || 'Standard Plan').trim().slice(0, 120);
+  const rawReqTier = String(request.data?.requestedTier || '').trim().toLowerCase();
+  const inferredTier = rawReqTier === 'standard' || rawReqTier === 'elite'
+    ? rawReqTier
+    : (/elite|premium|enterprise/i.test(`${requestedPlanId} ${requestedPlanName}`) ? 'elite' : 'standard');
   const requestedFeature = String(request.data?.requestedFeature || '').trim().slice(0, 120);
   const contactPhone = String(request.data?.contactPhone || instData.phone || '').trim().slice(0, 30);
   const note = String(request.data?.note || '').trim().slice(0, 300);
@@ -2316,8 +2408,11 @@ exports.submitUpgradeRequest = onCall({ cors: true }, async (request) => {
     institutionId: slug,
     institutionName: String(instData.name || slug).trim(),
     institutionPlace: String(instData.place || '').trim(),
-    currentPlanTier: String(instData.planTier || 'premium').trim().toLowerCase(),
-    currentPlanName: String(instData.planName || 'Basic (Free)').trim(),
+    currentPlanTier: effectivePlan.baseTier,
+    effectivePlanTier: effectivePlan.effectiveTier,
+    isTrialActive: effectivePlan.isTrialActive,
+    currentPlanName: String(instData.planName || 'Free').trim(),
+    requestedTier: inferredTier,
     requestedPlanId,
     requestedPlanName,
     requestedFeature,
@@ -2355,7 +2450,7 @@ exports.submitUpgradeRequest = onCall({ cors: true }, async (request) => {
     ok: true,
     requestId: newRef.id,
     updatedExisting: false,
-    message: 'Upgrade request submitted successfully! Our platform team will review and activate Premium shortly.'
+    message: `Upgrade request for ${requestedPlanName} submitted! Our platform team will review and activate it shortly.`
   };
 });
 
