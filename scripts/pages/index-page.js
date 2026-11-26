@@ -1210,6 +1210,28 @@ let isRootGatewayMode = false;
                 } catch (_) {}
             })();
 
+            // Smooth Scroll-Reveal Animations on Scroll/Swipe Down
+            const revealTargets = Array.from(document.querySelectorAll('#root-gateway-container [data-gateway-reveal]'));
+            if (revealTargets.length > 0) {
+                const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                if (prefersReduced || typeof IntersectionObserver === 'undefined') {
+                    revealTargets.forEach((el) => el.classList.add('is-visible'));
+                } else {
+                    const revealObserver = new IntersectionObserver((entries, obs) => {
+                        entries.forEach((entry) => {
+                            if (entry.isIntersecting) {
+                                entry.target.classList.add('is-visible');
+                                obs.unobserve(entry.target);
+                            }
+                        });
+                    }, {
+                        rootMargin: '0px 0px -8% 0px',
+                        threshold: 0.08
+                    });
+                    revealTargets.forEach((el) => revealObserver.observe(el));
+                }
+            }
+
             const showcaseImagesByPage = new Map();
             const showcaseSlideIndexByPage = new Map();
             const showcaseLabelByKey = new Map(PLATFORM_SHOWCASE_PAGES.map((p) => [p.key, p.label]));

@@ -149,13 +149,7 @@
                     <a href="#product-contact" class="hover:text-slate-950 transition-colors whitespace-nowrap">Contact</a>
                 </div>
 
-                <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    <button type="button" onclick="window.openLogin()" class="px-2.5 sm:px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <span>Login</span>
-                    </button>
-                    <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <span>Start Free</span>
-                    </button>
+                <div class="flex items-center shrink-0">
                     <button type="button" id="btn-gateway-menu-open" aria-label="Open navigation menu" aria-expanded="false" aria-controls="gateway-nav-drawer" class="w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 flex items-center justify-center cursor-pointer transition-colors shrink-0">
                         <i class="fas fa-bars text-sm" aria-hidden="true"></i>
                     </button>
@@ -216,7 +210,7 @@
                             Login
                         </button>
                         <button type="button" data-drawer-portal class="min-h-[40px] rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold cursor-pointer transition-colors">
-                            Portal Code
+                            Open Portal
                         </button>
                     </div>
                 </div>
@@ -253,17 +247,14 @@
                     </button>
                 </div>
 
-                <!-- Single-Line Portal Code Launcher -->
-                <div id="portal-launcher-section" class="max-w-lg mx-auto pt-5 border-t border-slate-100 scroll-mt-24">
+                <!-- Single-Line Portal Launcher (Clean Full-Width Code Input) -->
+                <div id="portal-launcher-section" class="max-w-md mx-auto pt-5 border-t border-slate-100 scroll-mt-24">
                     <label for="gateway-slug-input" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
                         Open Institution Portal
                     </label>
                     <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                        <div class="flex items-center flex-1 min-w-0 pl-2">
-                            <span class="text-[11px] sm:text-xs font-mono font-medium text-slate-400 mr-1 select-none truncate max-w-[115px] sm:max-w-[165px]" id="gateway-origin-prefix">/</span>
-                            <input type="text" id="gateway-slug-input" maxlength="64" placeholder="institution-code" class="w-full min-w-0 bg-transparent border-0 outline-none text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-medium" autocomplete="off">
-                        </div>
-                        <button type="button" id="btn-gateway-open-slug" class="px-3.5 sm:px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                        <input type="text" id="gateway-slug-input" maxlength="64" placeholder="Enter institution code" class="flex-1 min-w-0 bg-transparent border-0 outline-none px-3 py-1.5 text-sm font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-medium" autocomplete="off">
+                        <button type="button" id="btn-gateway-open-slug" class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
                             <span>Open</span>
                             <i class="fas fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
                         </button>
@@ -286,7 +277,7 @@
         <section id="product-modules" class="bg-slate-50 py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
             <span id="product-demo" class="block scroll-mt-16" aria-hidden="true"></span>
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6 sm:mb-8">
+                <div data-gateway-reveal class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6 sm:mb-8">
                     <div>
                         <p class="text-[11px] font-extrabold text-blue-600 uppercase tracking-[0.1em] mb-1.5">Unified Platform</p>
                         <h2 class="text-xl sm:text-3xl font-extrabold text-slate-950 tracking-tight" style="text-wrap: balance;">
@@ -297,7 +288,7 @@
                         </p>
                     </div>
 
-                    <div class="flex items-center gap-2.5 self-end sm:self-auto shrink-0">
+                    <div class="hidden md:flex items-center gap-2.5 shrink-0">
                         <span id="modules-carousel-counter" class="text-xs font-bold text-slate-500 tabular-nums mr-1">1–3 / 11</span>
                         <button type="button" id="modules-carousel-prev" class="w-10 h-10 rounded-full border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 flex items-center justify-center cursor-pointer transition-colors disabled:opacity-35 disabled:cursor-not-allowed" aria-label="Previous workspaces">
                             <i class="fas fa-arrow-left text-xs" aria-hidden="true"></i>
@@ -309,7 +300,7 @@
                 </div>
 
                 <!-- Horizontal Scroll-Snap Carousel Track (Mobile 1-up + Peek, Tablet 2-up, Desktop 3-up) -->
-                <div class="flex gap-4 sm:gap-5 overflow-x-auto snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2" id="gateway-modules-grid">
+                <div data-gateway-reveal="delay-1" class="flex gap-4 sm:gap-5 overflow-x-auto snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2" id="gateway-modules-grid">
 
                     <!-- 01. Public Website -->
                     <article data-module-index="0" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
@@ -726,7 +717,7 @@
 
         <!-- Screen 3: Highlighted 3-Tier Subscription Plans (Free, Standard, ELITE) -->
         <section id="product-pricing" class="bg-white py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
-            <div id="gateway-pricing-root" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"></div>
+            <div data-gateway-reveal id="gateway-pricing-root" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"></div>
         </section>
 
         <!-- Screen 4: Clean Asymmetric About & Contact Section -->
@@ -735,7 +726,7 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
                     <!-- Left: Crisp About Narrative & Direct Contact -->
-                    <div class="lg:col-span-5 space-y-5">
+                    <div data-gateway-reveal class="lg:col-span-5 space-y-5">
                         <div>
                             <p class="text-[11px] font-extrabold text-blue-600 uppercase tracking-[0.1em] mb-1.5">About Platform</p>
                             <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight leading-tight" style="text-wrap: balance;">
@@ -776,7 +767,7 @@
                     </div>
 
                     <!-- Right: Clean Hairline-Divided Numbered Editorial Pillars -->
-                    <div class="lg:col-span-7 bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
+                    <div data-gateway-reveal="delay-1" class="lg:col-span-7 bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
                         <div class="p-5 sm:p-6 flex items-start gap-4">
                             <span class="text-xs font-extrabold text-blue-600 tabular-nums mt-0.5">01</span>
                             <div class="min-w-0">
@@ -812,7 +803,7 @@
         <!-- Screen 5: Deep Slate App Download & Action Strip -->
         <section id="product-download" class="bg-white py-12 sm:py-16 scroll-mt-14">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-                <div class="bg-slate-950 text-white rounded-3xl p-6 sm:p-8 lg:p-10">
+                <div data-gateway-reveal class="bg-slate-950 text-white rounded-3xl p-6 sm:p-8 lg:p-10">
                     <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                         <div class="flex items-start sm:items-center gap-4 min-w-0">
                             <div class="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 p-2 flex items-center justify-center shrink-0">
@@ -862,13 +853,13 @@
                 </div>
 
                 <!-- Quiet Quick Access Strip -->
-                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+                <div data-gateway-reveal="delay-1" class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
                     <p class="text-xs sm:text-sm font-semibold text-slate-600">
-                        Already registered? Open your portal code or sign in directly.
+                        Already registered? Open your portal or sign in directly.
                     </p>
                     <div class="flex items-center gap-2 shrink-0">
                         <button type="button" id="btn-bottom-focus-slug" class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap">
-                            Open Portal Code
+                            Open Portal
                         </button>
                         <button type="button" onclick="window.openLogin()" class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap">
                             Login

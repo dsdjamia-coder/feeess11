@@ -4192,5 +4192,35 @@ body.collection-shell #collection-app .collection-subtab-btn:focus-visible {
     display: none;
 }
 
+/* Public Gateway Smooth Scroll-Reveal Motion */
+[data-gateway-reveal] {
+    opacity: 0;
+    transform: translate3d(0, 26px, 0) scale(0.985);
+    transition:
+        opacity 0.62s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.62s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: opacity, transform;
+}
+[data-gateway-reveal="delay-1"] {
+    transition-delay: 80ms;
+}
+[data-gateway-reveal="delay-2"] {
+    transition-delay: 150ms;
+}
+[data-gateway-reveal].is-visible {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    will-change: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-gateway-reveal] {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+        will-change: auto !important;
+    }
+}
+
+
 
 

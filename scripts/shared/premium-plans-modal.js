@@ -20,6 +20,7 @@ import { submitUpgradeRequest } from './custom-auth-service.js';
 
 const MODAL_ID = 'shared-premium-plans-modal';
 const DETAIL_MODAL_ID = 'shared-plan-details-modal';
+const COMPARE_MODAL_ID = 'shared-plan-compare-modal';
 
 const MODULE_LABELS = {
   admin: 'Admin Dashboard',
@@ -271,8 +272,17 @@ export const closePlanFullDetailsModal = () => {
   if (el) el.remove();
 };
 
+export const closePlanComparisonModal = () => {
+  const el = document.getElementById(COMPARE_MODAL_ID);
+  if (el) el.remove();
+  if (document.body && !document.getElementById(MODAL_ID)) {
+    document.body.classList.remove('overflow-hidden');
+  }
+};
+
 export const closePremiumPlansModal = () => {
   closePlanFullDetailsModal();
+  closePlanComparisonModal();
   const modal = document.getElementById(MODAL_ID);
   if (modal) modal.remove();
   if (document.body) {
@@ -647,6 +657,64 @@ export const renderPlanComparisonMatrixHtml = (catalog) => {
   `;
 };
 
+export const openPlanComparisonModal = (catalog) => {
+  if (typeof document === 'undefined') return;
+  closePlanComparisonModal();
+
+  const modal = document.createElement('div');
+  modal.id = COMPARE_MODAL_ID;
+  modal.style.zIndex = '1000010';
+  modal.className = 'fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', 'Compare subscription plans');
+
+  modal.innerHTML = `
+    <div class="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden" style="font-family:'Plus Jakarta Sans',sans-serif;">
+      <div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+        <div class="min-w-0">
+          <div class="text-[10px] font-extrabold uppercase tracking-wider text-blue-600">Side-by-Side Comparison</div>
+          <h3 class="text-base sm:text-lg font-extrabold text-slate-950 leading-snug">Free vs Standard vs ELITE</h3>
+        </div>
+        <button type="button" id="plan-compare-close-x" class="w-9 h-9 rounded-full hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center shrink-0 cursor-pointer transition" aria-label="Close comparison">
+          <i class="fas fa-times text-sm"></i>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1">
+        ${renderPlanComparisonMatrixHtml(catalog)}
+      </div>
+
+      <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+        <span class="text-[11px] font-semibold text-slate-500 truncate">Upgrade or switch plans anytime without losing data.</span>
+        <button type="button" id="plan-compare-close-btn" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold cursor-pointer whitespace-nowrap shrink-0">
+          Close
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  document.body.classList.add('overflow-hidden');
+
+  const onEsc = (e) => {
+    if (e.key === 'Escape') {
+      document.removeEventListener('keydown', onEsc);
+      closePlanComparisonModal();
+    }
+  };
+  document.addEventListener('keydown', onEsc);
+  const closeMe = () => {
+    document.removeEventListener('keydown', onEsc);
+    closePlanComparisonModal();
+  };
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeMe();
+  });
+  modal.querySelector('#plan-compare-close-x')?.addEventListener('click', closeMe);
+  modal.querySelector('#plan-compare-close-btn')?.addEventListener('click', closeMe);
+};
+
 // --- Shared 3-Tier Pricing Cards Grid (ChatGPT-inspired Clean Scannability) ---
 const renderTierCardsGridHtml = (activePlans, catalog, {
   mode = 'modal', // 'modal' | 'public'
@@ -714,7 +782,7 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
 
         if (mode === 'public') {
           if (tierKey === 'free') {
-            ctaLabel = trialDays > 0 ? `Start ${trialDays}-Day Free Trial` : 'Create Free Website';
+            ctaLabel = 'Start Free Now';
           } else if (tierKey === 'standard') {
             ctaLabel = 'Get Standard';
           } else if (tierKey === 'elite') {
@@ -756,6 +824,7 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
               <div>
                 <div class="flex items-center justify-between gap-2">
                   <h4 class="text-lg font-extrabold tracking-tight ${titleColor}">${esc(plan.name)}</h4>
+                  ${tierKey === 'free' && trialDays > 0 && !isRecommended ? `<span class="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded whitespace-nowrap">${trialDays}-Day Standard Trial</span>` : ''}
                   ${isRecommended ? `<span class="text-[10px] font-extrabold uppercase tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded whitespace-nowrap">Recommended</span>` : ''}
                   ${isElite && !isRecommended ? `<span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-300 whitespace-nowrap"><i class="fas fa-crown mr-1 text-[9px]"></i>Full Suite</span>` : ''}
                 </div>
@@ -796,9 +865,18 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
               </ul>
             </div>
 
-            <!-- Footer with "More" Full Details Trigger -->
-            <div class="pt-3 border-t ${dividerColor} flex items-center justify-between gap-2 text-[11px]">
-              <span class="${mutedColor} font-semibold tabular-nums">${(plan.includedModules || []).length}/10 modules</span>
+            <!-- Footer with "Compare" & "More" Popup Triggers -->
+            <div class="pt-3 border-t ${dividerColor} flex items-center justify-between gap-3 text-[11px]">
+              ${isPublicMode ? `
+                <button
+                  type="button"
+                  data-plan-compare-trigger
+                  class="font-bold ${isElite ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-950'} inline-flex items-center gap-1.5 cursor-pointer transition underline-offset-2 hover:underline"
+                >
+                  <i class="fas fa-table-columns text-[10px]" aria-hidden="true"></i>
+                  <span>Compare</span>
+                </button>
+              ` : `<span class="${mutedColor} font-semibold tabular-nums">${(plan.includedModules || []).length}/10 modules</span>`}
               <button
                 type="button"
                 data-plan-more-id="${esc(plan.id)}"
@@ -1179,48 +1257,21 @@ export const renderPublicPricingSection = async (container, {
 
   container.innerHTML = `
     <div class="space-y-6">
-      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-        <div>
-          <div class="text-[11px] font-extrabold text-blue-600 uppercase tracking-wide mb-1">
-            Transparent Plans${trialDays > 0 ? ` · ${trialDays}-Day Free Standard Trial` : ''}
-          </div>
-          <h2 class="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight" style="text-wrap: balance;">
-            Start Free, Scale to Standard or ELITE
-          </h2>
-          <p class="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
-            Every self-registered institution starts with an automatic ${trialDays > 0 ? `${trialDays}-day Standard trial` : 'Free Forever workspace'}. After trial, continue on Free Forever with zero data loss or upgrade anytime.
-          </p>
+      <div>
+        <div class="text-[11px] font-extrabold text-blue-600 uppercase tracking-[0.1em] mb-1.5">
+          Transparent Plans
         </div>
-        <button type="button" id="public-toggle-compare-btn" class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-extrabold cursor-pointer inline-flex items-center gap-2 whitespace-nowrap self-start sm:self-auto">
-          <i class="fas fa-table-columns text-blue-600 text-[11px]"></i>
-          <span>Compare Plans</span>
-        </button>
+        <h2 class="text-xl sm:text-3xl font-extrabold text-slate-950 tracking-tight" style="text-wrap: balance;">
+          Start Free Forever, Scale Anytime
+        </h2>
+        <p class="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
+          Use the Free plan forever with zero lock-in${trialDays > 0 ? ` — plus get ${trialDays} days of Standard access automatically on signup` : ''}. Upgrade to Standard or ELITE whenever your campus grows.
+        </p>
       </div>
 
       ${renderTierCardsGridHtml(activePlans, catalog, { mode: 'public' })}
-
-      <div id="public-compare-matrix-wrap" class="hidden pt-2 space-y-2.5">
-        <div class="flex items-center justify-between gap-2">
-          <h3 class="text-sm font-extrabold text-slate-900">Full Feature &amp; Quota Comparison</h3>
-          <button type="button" id="public-hide-compare-btn" class="text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer">Hide Table</button>
-        </div>
-        ${renderPlanComparisonMatrixHtml(catalog)}
-      </div>
     </div>
   `;
-
-  const compareWrap = container.querySelector('#public-compare-matrix-wrap');
-  const toggleBtn = container.querySelector('#public-toggle-compare-btn');
-  toggleBtn?.addEventListener('click', () => {
-    const isHidden = compareWrap?.classList.contains('hidden');
-    compareWrap?.classList.toggle('hidden');
-    if (isHidden) {
-      compareWrap?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  });
-  container.querySelector('#public-hide-compare-btn')?.addEventListener('click', () => {
-    compareWrap?.classList.add('hidden');
-  });
 
   // Mobile horizontal swipe dot synchronization for public plans
   const pricingTrack = container.querySelector('#public-pricing-track');
@@ -1274,15 +1325,19 @@ export const renderPublicPricingSection = async (container, {
     });
   });
 
+  container.querySelectorAll('[data-plan-compare-trigger]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      openPlanComparisonModal(catalog);
+    });
+  });
+
   container.querySelectorAll('[data-plan-more-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const plan = activePlans.find((p) => p.id === btn.dataset.planMoreId);
       if (!plan) return;
       const tKey = inferPlanTierKey(plan);
       openPlanFullDetailsModal(plan, catalog, {
-        actionLabel: tKey === 'free'
-          ? (trialDays > 0 ? `Start ${trialDays}-Day Free Trial` : 'Create Free Website')
-          : `Get ${plan.name}`,
+        actionLabel: tKey === 'free' ? 'Start Free Now' : `Get ${plan.name}`,
         onSelectPlan: (selectedPlan) => triggerPlanAction(selectedPlan)
       });
     });
