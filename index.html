@@ -131,832 +131,747 @@
         </section>
     </section>
 
-    <div class="hidden bg-white text-slate-900 min-h-screen" id="root-gateway-container">
+    <div class="hidden bg-white text-slate-900 min-h-screen antialiased" id="root-gateway-container">
         <!-- Sticky Top Navigation Bar -->
-        <nav class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200" aria-label="Platform navigation">
-            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-2 sm:gap-6">
-                <a href="/" class="flex items-center gap-2 text-sm sm:text-base font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0">
+        <nav class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80" aria-label="Platform navigation">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
+                <a href="/" class="flex items-center gap-2 text-sm sm:text-base font-extrabold tracking-tight text-slate-950 whitespace-nowrap shrink-0">
                     <img src="/assets/images/logo.png" alt="Institution Manage" class="w-7 h-7 object-contain rounded-lg" referrerpolicy="no-referrer">
                     <span>Institution Manage</span>
                 </a>
 
-                <div class="hidden md:flex items-center gap-6 text-xs font-bold text-slate-600">
-                    <a href="#product-overview" class="hover:text-blue-600 transition-colors whitespace-nowrap">Overview</a>
-                    <a href="#product-modules" class="hover:text-blue-600 transition-colors whitespace-nowrap">Modules</a>
-                    <a href="#product-pricing" class="hover:text-blue-600 transition-colors whitespace-nowrap">Plans</a>
-                    <a href="#product-architecture" class="hover:text-blue-600 transition-colors whitespace-nowrap">Architecture</a>
-                    <a href="#product-download" class="hover:text-blue-600 transition-colors whitespace-nowrap">Download App</a>
+                <div class="hidden lg:flex items-center gap-7 text-[13px] font-semibold text-slate-600">
+                    <a href="#product-overview" class="hover:text-slate-950 transition-colors whitespace-nowrap">Overview</a>
+                    <a href="#product-modules" class="hover:text-slate-950 transition-colors whitespace-nowrap">Workspaces</a>
+                    <a href="#product-pricing" class="hover:text-slate-950 transition-colors whitespace-nowrap">Plans</a>
+                    <a href="#product-about" class="hover:text-slate-950 transition-colors whitespace-nowrap">About</a>
+                    <a href="#product-download" class="hover:text-slate-950 transition-colors whitespace-nowrap">App</a>
+                    <a href="#product-contact" class="hover:text-slate-950 transition-colors whitespace-nowrap">Contact</a>
                 </div>
 
                 <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <i class="fas fa-plus-circle text-[11px]" aria-hidden="true"></i>
-                        <span>Create Free Website</span>
-                    </button>
-                    <a href="#product-download" class="hidden sm:inline-flex px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors items-center gap-1.5 whitespace-nowrap">
-                        <i class="fas fa-download text-[11px] text-blue-600" aria-hidden="true"></i>
-                        <span>App</span>
-                    </a>
-                    <button type="button" onclick="window.openLogin()" class="px-3 py-1.5 sm:px-3.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-extrabold shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                        <i class="fas fa-arrow-right-to-bracket text-[11px]" aria-hidden="true"></i>
+                    <button type="button" onclick="window.openLogin()" class="px-2.5 sm:px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
                         <span>Login</span>
+                    </button>
+                    <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <span>Start Free</span>
+                    </button>
+                    <button type="button" id="btn-gateway-menu-open" aria-label="Open navigation menu" aria-expanded="false" aria-controls="gateway-nav-drawer" class="w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 flex items-center justify-center cursor-pointer transition-colors shrink-0">
+                        <i class="fas fa-bars text-sm" aria-hidden="true"></i>
                     </button>
                 </div>
             </div>
         </nav>
 
-        <!-- Hero & Direct Institution Portal Launcher -->
-        <section id="product-overview" class="bg-white pt-5 pb-7 sm:pt-10 sm:pb-12 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-stretch">
-                    <!-- Left Column: Concise Value Proposition & Compact Inline Actions -->
-                    <div class="lg:col-span-7 flex flex-col justify-between gap-4">
-                        <div>
-                            <div class="text-[11px] sm:text-xs font-extrabold text-blue-600 tracking-wide mb-2">
-                                Cloud ERP for Schools, Colleges &amp; Academies
-                            </div>
-                            <h1 class="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-[1.16] mb-3" style="text-wrap: balance;">
-                                Smart Academic, Financial &amp; Institutional Management in One Platform.
-                            </h1>
-                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl">
-                                Manage admissions, instant fee receipts, live ledgers, exam rank cards, daily attendance, academic plans, and parent self-service with dedicated institutional web portals.
-                            </p>
+        <!-- Slide-Over Navigation Drawer (Sections Quick Jump) -->
+        <div id="gateway-nav-drawer" class="fixed inset-0 z-[10060] hidden" role="dialog" aria-modal="true" aria-label="Site sections" aria-hidden="true">
+            <div id="gateway-nav-backdrop" class="absolute inset-0 bg-slate-950/40 backdrop-blur-xs"></div>
+            <aside class="relative ml-auto w-[84vw] max-w-xs h-full bg-white border-l border-slate-200 shadow-2xl flex flex-col justify-between p-5">
+                <div class="space-y-5 overflow-y-auto">
+                    <div class="flex items-center justify-between gap-2 pb-4 border-b border-slate-100">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <img src="/assets/images/logo.png" alt="Institution Manage" class="w-7 h-7 object-contain rounded-lg shrink-0" referrerpolicy="no-referrer">
+                            <span class="text-sm font-extrabold text-slate-950 truncate">Institution Manage</span>
                         </div>
-
-                        <div class="space-y-2.5">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                                    <i class="fas fa-rocket text-[11px]" aria-hidden="true"></i>
-                                    <span>Create Free Website</span>
-                                </button>
-                                <button type="button" onclick="window.openLogin()" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                                    <i class="fas fa-lock text-[11px] opacity-90" aria-hidden="true"></i>
-                                    <span>Login</span>
-                                </button>
-                                <button type="button" id="btn-gateway-hero-install" class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold shadow-xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                                    <i class="fas fa-download text-[11px] text-blue-300" aria-hidden="true"></i>
-                                    <span data-install-btn-label>Download App</span>
-                                </button>
-                                <a href="#product-modules" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap">
-                                    <i class="fas fa-th-large text-[11px] text-blue-600" aria-hidden="true"></i>
-                                    <span>Modules (11)</span>
-                                </a>
-                            </div>
-
-                            <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] font-semibold text-slate-500">
-                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fa-brands fa-android text-emerald-600" aria-hidden="true"></i><span>Android</span></span>
-                                <span aria-hidden="true" class="text-slate-300">·</span>
-                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fa-brands fa-apple text-slate-800" aria-hidden="true"></i><span>iOS</span></span>
-                                <span aria-hidden="true" class="text-slate-300">·</span>
-                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fa-brands fa-windows text-blue-600" aria-hidden="true"></i><span>Windows</span></span>
-                                <span aria-hidden="true" class="text-slate-300">·</span>
-                                <span class="inline-flex items-center gap-1 text-slate-700"><i class="fas fa-laptop text-slate-600" aria-hidden="true"></i><span>Mac &amp; Linux</span></span>
-                            </div>
-                        </div>
+                        <button type="button" id="btn-gateway-menu-close" aria-label="Close navigation menu" class="w-9 h-9 rounded-lg hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer shrink-0">
+                            <i class="fas fa-times text-sm" aria-hidden="true"></i>
+                        </button>
                     </div>
 
-                    <!-- Right Column: Compact Open Your Institution Portal Card -->
-                    <div id="portal-launcher-section" class="lg:col-span-5 flex">
-                        <div class="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3.5">
-                            <div>
-                                <div class="flex items-center gap-2.5 mb-2.5">
-                                    <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
-                                        <i class="fas fa-building-columns text-xs" aria-hidden="true"></i>
-                                    </div>
-                                    <div class="min-w-0">
-                                        <div class="text-[10px] font-extrabold text-blue-600 uppercase tracking-wide">Direct Institution Portal</div>
-                                        <h2 class="text-sm sm:text-base font-extrabold text-slate-900 leading-tight">
-                                            Open Your Institution Portal
-                                        </h2>
-                                    </div>
-                                </div>
-
-                                <p class="text-[11px] sm:text-xs text-slate-600 leading-relaxed mb-3">
-                                    Enter your institution code to open its public homepage, student portal, or staff workspace.
-                                </p>
-
-                                <label for="gateway-slug-input" class="block text-[11px] font-extrabold text-slate-700 mb-1.5">
-                                    Institution Code
-                                </label>
-                                <div class="flex items-center gap-2">
-                                    <div class="flex items-center flex-1 min-w-0 bg-white border border-slate-300 rounded-xl px-2.5 py-2 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
-                                        <span class="text-[11px] font-mono font-semibold text-slate-400 mr-1 select-none truncate max-w-[100px] sm:max-w-[140px]" id="gateway-origin-prefix">/</span>
-                                        <input type="text" id="gateway-slug-input" maxlength="64" placeholder="institution-code" class="w-full min-w-0 bg-transparent border-0 outline-none text-xs sm:text-sm font-bold text-slate-900" autocomplete="off">
-                                    </div>
-                                    <button type="button" id="btn-gateway-open-slug" class="px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
-                                        <span>Open</span>
-                                        <i class="fas fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                <div id="gateway-slug-msg" class="text-[11px] font-bold text-rose-600 hidden mt-1.5"></div>
-                            </div>
-
-                            <div class="pt-3 border-t border-slate-200/80 grid grid-cols-3 gap-1.5 text-center">
-                                <div class="bg-white border border-slate-200/80 rounded-lg py-1.5 px-1.5">
-                                    <div class="text-[11px] font-extrabold text-slate-800">Admin &amp; Staff</div>
-                                    <div class="text-[10px] text-slate-500">Role Hub</div>
-                                </div>
-                                <div class="bg-white border border-slate-200/80 rounded-lg py-1.5 px-1.5">
-                                    <div class="text-[11px] font-extrabold text-slate-800">Fee &amp; Ledger</div>
-                                    <div class="text-[10px] text-slate-500">Live Receipts</div>
-                                </div>
-                                <div class="bg-white border border-slate-200/80 rounded-lg py-1.5 px-1.5">
-                                    <div class="text-[11px] font-extrabold text-slate-800">Students</div>
-                                    <div class="text-[10px] text-slate-500">Self-Service</div>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="space-y-1">
+                        <div class="px-3 pb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Page Sections</div>
+                        <a href="#product-overview" data-drawer-nav class="min-h-[44px] px-3 rounded-xl flex items-center justify-between text-sm font-semibold text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+                            <span class="inline-flex items-center gap-3"><i class="fas fa-house text-slate-400 w-4 text-center text-xs" aria-hidden="true"></i><span>Overview</span></span>
+                            <i class="fas fa-chevron-right text-[10px] text-slate-300" aria-hidden="true"></i>
+                        </a>
+                        <a href="#product-modules" data-drawer-nav class="min-h-[44px] px-3 rounded-xl flex items-center justify-between text-sm font-semibold text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+                            <span class="inline-flex items-center gap-3"><i class="fas fa-layer-group text-slate-400 w-4 text-center text-xs" aria-hidden="true"></i><span>Workspaces (11)</span></span>
+                            <i class="fas fa-chevron-right text-[10px] text-slate-300" aria-hidden="true"></i>
+                        </a>
+                        <a href="#product-pricing" data-drawer-nav class="min-h-[44px] px-3 rounded-xl flex items-center justify-between text-sm font-semibold text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+                            <span class="inline-flex items-center gap-3"><i class="fas fa-tags text-slate-400 w-4 text-center text-xs" aria-hidden="true"></i><span>Plans &amp; Pricing</span></span>
+                            <i class="fas fa-chevron-right text-[10px] text-slate-300" aria-hidden="true"></i>
+                        </a>
+                        <a href="#product-about" data-drawer-nav class="min-h-[44px] px-3 rounded-xl flex items-center justify-between text-sm font-semibold text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+                            <span class="inline-flex items-center gap-3"><i class="fas fa-building-shield text-slate-400 w-4 text-center text-xs" aria-hidden="true"></i><span>About Platform</span></span>
+                            <i class="fas fa-chevron-right text-[10px] text-slate-300" aria-hidden="true"></i>
+                        </a>
+                        <a href="#product-download" data-drawer-nav class="min-h-[44px] px-3 rounded-xl flex items-center justify-between text-sm font-semibold text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+                            <span class="inline-flex items-center gap-3"><i class="fas fa-mobile-screen-button text-slate-400 w-4 text-center text-xs" aria-hidden="true"></i><span>Install App</span></span>
+                            <i class="fas fa-chevron-right text-[10px] text-slate-300" aria-hidden="true"></i>
+                        </a>
+                        <a href="#product-contact" data-drawer-nav class="min-h-[44px] px-3 rounded-xl flex items-center justify-between text-sm font-semibold text-slate-800 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+                            <span class="inline-flex items-center gap-3"><i class="fas fa-headset text-slate-400 w-4 text-center text-xs" aria-hidden="true"></i><span>Contact &amp; Support</span></span>
+                            <i class="fas fa-chevron-right text-[10px] text-slate-300" aria-hidden="true"></i>
+                        </a>
                     </div>
                 </div>
 
-                <!-- Compact 4-Column Platform Metrics Strip -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 mt-6 sm:mt-8 pt-5 sm:pt-7 border-t border-slate-200">
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
-                        <div class="text-base sm:text-xl font-extrabold text-blue-600 tabular-nums">11 Workspaces</div>
-                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Admin, finance, academics &amp; student self-service</div>
+                <div class="pt-4 border-t border-slate-100 space-y-2">
+                    <button type="button" data-drawer-signup class="w-full min-h-[44px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold cursor-pointer transition-colors">
+                        Start Free Account
+                    </button>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" data-drawer-login class="min-h-[40px] rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold cursor-pointer transition-colors">
+                            Login
+                        </button>
+                        <button type="button" data-drawer-portal class="min-h-[40px] rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold cursor-pointer transition-colors">
+                            Portal Code
+                        </button>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
-                        <div class="text-base sm:text-xl font-extrabold text-emerald-600 tabular-nums">100% Isolated</div>
-                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Dedicated web address &amp; strict tenant security</div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Screen 1: Clean Centered Editorial Hero + Single-Line Portal Code Bar -->
+        <section id="product-overview" class="bg-white py-12 sm:py-16 lg:py-20 border-b border-slate-200 scroll-mt-16">
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                <p class="text-[11px] sm:text-xs font-extrabold uppercase tracking-[0.12em] text-blue-600 mb-3">
+                    Institutional Management Platform
+                </p>
+
+                <h1 class="text-3xl sm:text-5xl lg:text-[54px] font-extrabold text-slate-950 tracking-tight leading-[1.12] mb-4" style="text-wrap: balance;">
+                    Run Your Institution From One Clean Workspace.
+                </h1>
+
+                <p class="text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl mx-auto mb-7">
+                    Admissions, fee ledgers, exams, attendance, and family portals—unified under your own dedicated web address.
+                </p>
+
+                <!-- Crisp Primary Actions -->
+                <div class="flex items-center justify-center gap-2.5 sm:gap-3 mb-7">
+                    <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                        <span>Start Free</span>
+                        <i class="fas fa-arrow-right text-[11px]" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" onclick="window.openLogin()" class="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 text-xs sm:text-sm font-bold transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                        <span>Login</span>
+                    </button>
+                    <button type="button" id="btn-gateway-hero-install" class="hidden sm:inline-flex px-4 py-2.5 sm:py-3 rounded-xl text-slate-600 hover:text-slate-950 hover:bg-slate-100 text-xs sm:text-sm font-bold transition-colors cursor-pointer items-center gap-1.5 whitespace-nowrap">
+                        <i class="fas fa-download text-[11px] text-blue-600" aria-hidden="true"></i>
+                        <span data-install-btn-label>Get App</span>
+                    </button>
+                </div>
+
+                <!-- Single-Line Portal Code Launcher -->
+                <div id="portal-launcher-section" class="max-w-lg mx-auto pt-5 border-t border-slate-100 scroll-mt-24">
+                    <label for="gateway-slug-input" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                        Open Institution Portal
+                    </label>
+                    <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1.5 focus-within:bg-white focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                        <div class="flex items-center flex-1 min-w-0 pl-2">
+                            <span class="text-[11px] sm:text-xs font-mono font-medium text-slate-400 mr-1 select-none truncate max-w-[115px] sm:max-w-[165px]" id="gateway-origin-prefix">/</span>
+                            <input type="text" id="gateway-slug-input" maxlength="64" placeholder="institution-code" class="w-full min-w-0 bg-transparent border-0 outline-none text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-medium" autocomplete="off">
+                        </div>
+                        <button type="button" id="btn-gateway-open-slug" class="px-3.5 sm:px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                            <span>Open</span>
+                            <i class="fas fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
+                        </button>
                     </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
-                        <div class="text-base sm:text-xl font-extrabold text-indigo-600 tabular-nums">Instant Sync</div>
-                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Real-time fee receipts, ledgers &amp; attendance</div>
-                    </div>
-                    <div class="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 sm:p-4">
-                        <div class="text-base sm:text-xl font-extrabold text-amber-600 tabular-nums">Mobile Ready</div>
-                        <div class="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug">Built for phones, tablets, desktops &amp; printers</div>
-                    </div>
+                    <div id="gateway-slug-msg" class="text-xs font-semibold text-rose-600 hidden mt-2"></div>
+                </div>
+
+                <!-- Clean Unboxed Trust Metadata -->
+                <div class="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] sm:text-xs font-semibold text-slate-500">
+                    <span>11 Workspaces</span>
+                    <span aria-hidden="true" class="text-slate-300">·</span>
+                    <span>3-Day Standard Trial</span>
+                    <span aria-hidden="true" class="text-slate-300">·</span>
+                    <span>Android, iOS, Windows &amp; Mac</span>
                 </div>
             </div>
         </section>
 
-        <!-- Unified Compact 11-Module Preview & Specification Grid -->
-        <section id="product-modules" class="bg-slate-50 py-8 sm:py-14 border-b border-slate-200">
+        <!-- Screen 2: Horizontal Swipeable 11-Workspace Carousel (Zero Filter Subtabs) -->
+        <section id="product-modules" class="bg-slate-50 py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
             <span id="product-demo" class="block scroll-mt-16" aria-hidden="true"></span>
-            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
-                <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-5 sm:mb-7">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6 sm:mb-8">
                     <div>
-                        <div class="text-[11px] font-extrabold text-blue-600 uppercase tracking-wide mb-1">Unified Platform Modules · Live Previews</div>
-                        <h2 class="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight" style="text-wrap: balance;">
+                        <p class="text-[11px] font-extrabold text-blue-600 uppercase tracking-[0.1em] mb-1.5">Unified Platform</p>
+                        <h2 class="text-xl sm:text-3xl font-extrabold text-slate-950 tracking-tight" style="text-wrap: balance;">
                             Every Institutional Workspace in One Clean View
                         </h2>
-                        <p class="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl">
-                            Tap any screenshot or video preview to expand full screen. Filter by department below.
+                        <p class="text-xs sm:text-sm text-slate-600 mt-1">
+                            Swipe across all 11 portals. Tap any preview to inspect full screen.
                         </p>
                     </div>
 
-                    <!-- Compact Category Filter Controls -->
-                    <div class="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl overflow-x-auto max-w-full shrink-0" role="tablist" aria-label="Filter platform modules">
-                        <button type="button" data-module-filter="all" class="px-2.5 py-1.5 text-[11px] font-extrabold rounded-lg bg-white text-slate-900 shadow-2xs transition-colors cursor-pointer whitespace-nowrap">
-                            All (11)
+                    <div class="flex items-center gap-2.5 self-end sm:self-auto shrink-0">
+                        <span id="modules-carousel-counter" class="text-xs font-bold text-slate-500 tabular-nums mr-1">1–3 / 11</span>
+                        <button type="button" id="modules-carousel-prev" class="w-10 h-10 rounded-full border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 flex items-center justify-center cursor-pointer transition-colors disabled:opacity-35 disabled:cursor-not-allowed" aria-label="Previous workspaces">
+                            <i class="fas fa-arrow-left text-xs" aria-hidden="true"></i>
                         </button>
-                        <button type="button" data-module-filter="admin-finance" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap">
-                            Admin &amp; Finance (3)
-                        </button>
-                        <button type="button" data-module-filter="academics" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap">
-                            Academics (5)
-                        </button>
-                        <button type="button" data-module-filter="student-public" class="px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap">
-                            Student &amp; Public (3)
+                        <button type="button" id="modules-carousel-next" class="w-10 h-10 rounded-full border border-slate-200 bg-white hover:bg-slate-100 text-slate-800 flex items-center justify-center cursor-pointer transition-colors disabled:opacity-35 disabled:cursor-not-allowed" aria-label="Next workspaces">
+                            <i class="fas fa-arrow-right text-xs" aria-hidden="true"></i>
                         </button>
                     </div>
                 </div>
 
-                <!-- Unified Vertical Card Grid (Mobile & Desktop) -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-5" id="gateway-modules-grid">
+                <!-- Horizontal Scroll-Snap Carousel Track (Mobile 1-up + Peek, Tablet 2-up, Desktop 3-up) -->
+                <div class="flex gap-4 sm:gap-5 overflow-x-auto snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2" id="gateway-modules-grid">
 
                     <!-- 01. Public Website -->
-                    <article data-module-category="student-public" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-globe text-sm" aria-hidden="true"></i>
+                    <article data-module-index="0" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-globe text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-blue-600 uppercase tracking-wide tabular-nums">01 · Web Portal</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Public Website</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="public">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center text-[10px] shrink-0"><i class="fas fa-graduation-cap" aria-hidden="true"></i></span>
+                                        <div class="min-w-0">
+                                            <div class="text-[11px] font-extrabold text-slate-900 truncate">Al-Huda Public Academy</div>
+                                            <div class="text-[9px] text-slate-500 font-mono truncate">Live Institution Portal</div>
+                                        </div>
+                                    </div>
+                                    <span class="text-[9px] font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">Public</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-blue-600 tabular-nums">01 · Dedicated Web Portal</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Public Institution Website</h3>
+                                <div class="grid grid-cols-3 gap-1.5 my-1.5 text-center">
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-xs font-extrabold text-blue-600 tabular-nums">642</div>
+                                        <div class="text-[9px] text-slate-500">Students</div>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-xs font-extrabold text-emerald-600 tabular-nums">34</div>
+                                        <div class="text-[9px] text-slate-500">Faculty</div>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-xs font-extrabold text-indigo-600 tabular-nums">18</div>
+                                        <div class="text-[9px] text-slate-500">Classes</div>
+                                    </div>
+                                </div>
+                                <div class="bg-white border border-slate-200 rounded-lg px-2 py-1 flex items-center justify-between text-[10px]">
+                                    <span class="font-bold text-slate-800 truncate">Admissions Open 2026-27</span>
+                                    <span class="font-extrabold text-emerald-700 shrink-0 ml-2">Notice</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="public">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between gap-2 pb-2 border-b border-slate-200">
-                                        <div class="flex items-center gap-2 min-w-0">
-                                            <span class="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center text-[10px] shrink-0"><i class="fas fa-graduation-cap" aria-hidden="true"></i></span>
-                                            <div class="min-w-0">
-                                                <div class="text-[11px] font-extrabold text-slate-900 truncate">Al-Huda Public Academy</div>
-                                                <div class="text-[9px] text-slate-500 font-mono truncate">Reg. #EDU-2048 · Live Portal</div>
-                                            </div>
-                                        </div>
-                                        <span class="text-[9px] font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">Public</span>
-                                    </div>
-                                    <div class="grid grid-cols-3 gap-1.5 my-1.5">
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center">
-                                            <div class="text-xs font-extrabold text-blue-600 tabular-nums">642</div>
-                                            <div class="text-[9px] text-slate-500">Students</div>
-                                        </div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center">
-                                            <div class="text-xs font-extrabold text-emerald-600 tabular-nums">34</div>
-                                            <div class="text-[9px] text-slate-500">Faculty</div>
-                                        </div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center">
-                                            <div class="text-xs font-extrabold text-indigo-600 tabular-nums">18</div>
-                                            <div class="text-[9px] text-slate-500">Classes</div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5 flex items-center justify-between text-[10px]">
-                                        <span class="font-bold text-slate-800 truncate">Admissions Open 2026-27</span>
-                                        <span class="font-extrabold text-emerald-700 shrink-0 ml-2">Notice</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Custom-branded institution homepage with live student counters, public notices, gallery, faculty showcase, and unified portal login.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Custom Branding · Notices · Gallery · Faculty
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Custom-branded homepage with notices, gallery, faculty showcase, and portal sign-in.
+                        </p>
                     </article>
 
                     <!-- 02. Master Admin Panel -->
-                    <article data-module-category="admin-finance" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-sliders text-sm" aria-hidden="true"></i>
+                    <article data-module-index="1" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-sliders text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-indigo-600 uppercase tracking-wide tabular-nums">02 · Governance</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Master Admin Panel</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="admin">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900">ADMIN CONSOLE · 2026-27</span>
+                                    <span class="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">Admin</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-indigo-600 tabular-nums">02 · Institutional Governance</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Master Admin Panel</h3>
+                                <div class="grid grid-cols-2 gap-1.5 my-1.5">
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-[9px] text-slate-500">Staff Accounts</div>
+                                        <div class="text-xs font-extrabold text-indigo-600 tabular-nums">28 Active</div>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-[9px] text-slate-500">Fee Heads</div>
+                                        <div class="text-xs font-extrabold text-emerald-600 tabular-nums">6 Active</div>
+                                    </div>
+                                </div>
+                                <div class="bg-white border border-slate-200 rounded-lg px-2 py-1 flex items-center justify-between text-[10px]">
+                                    <span class="font-bold text-slate-800 truncate">Class Promotion &amp; Role Matrix</span>
+                                    <span class="font-extrabold text-emerald-700 shrink-0 ml-2">Synced</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="admin">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900">ADMIN CONSOLE · 2026-27</span>
-                                        <span class="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">Super Admin</span>
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-1.5 my-1.5">
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
-                                            <div class="text-[9px] text-slate-500">Staff Accounts</div>
-                                            <div class="text-xs font-extrabold text-indigo-600 tabular-nums">28 Active</div>
-                                        </div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
-                                            <div class="text-[9px] text-slate-500">Fee Heads</div>
-                                            <div class="text-xs font-extrabold text-emerald-600 tabular-nums">6 Configured</div>
-                                        </div>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-lg px-2 py-1.5 flex items-center justify-between text-[10px]">
-                                        <span class="font-bold text-slate-800 truncate">Class Promotion &amp; Role Matrix</span>
-                                        <span class="font-extrabold text-emerald-700 shrink-0 ml-2">Synced</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Control admissions, annual class promotions, staff permissions, academic years, fee structures, and public website CMS content.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Admissions · Staff Roles · Promotions · CMS
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Control admissions, staff permissions, promotions, academic years, and public CMS.
+                        </p>
                     </article>
 
                     <!-- 03. Official Staff Hub -->
-                    <article data-module-category="admin-finance" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-compass text-sm" aria-hidden="true"></i>
+                    <article data-module-index="2" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-compass text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-sky-700 uppercase tracking-wide tabular-nums">03 · Staff Hub</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Official Staff Hub</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="official">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900 truncate">OFFICIAL HUB · CLASS 9-A</span>
+                                    <span class="text-[9px] font-extrabold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0">Modules</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-sky-700 tabular-nums">03 · Central Command Hub</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Official Staff &amp; Admin Hub</h3>
+                                <div class="grid grid-cols-3 gap-1.5 my-1.5 text-[9px] font-extrabold text-slate-800">
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Fee Desk</div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Attendance</div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Results</div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Syllabus</div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Worksheets</div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Audits</div>
+                                </div>
+                                <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                    <span>Role-Aware Launcher</span>
+                                    <span class="font-extrabold text-slate-800">Protected</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="official">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900 truncate">OFFICIAL HUB · CLASS 9-A</span>
-                                        <span class="text-[9px] font-extrabold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded shrink-0">6 Modules</span>
-                                    </div>
-                                    <div class="grid grid-cols-3 gap-1.5 my-1.5 text-[9px] font-extrabold text-slate-800">
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Fee Desk</div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Attendance</div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Results</div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Syllabus</div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Worksheets</div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5 text-center truncate">Audits</div>
-                                    </div>
-                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
-                                        <span>Role-Aware Launcher</span>
-                                        <span class="font-extrabold text-slate-800">SSO Protected</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Unified workspace for teachers, cashiers, and admins showing only their authorized modules, duty classes, and live student insights.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Role Launcher · Live KPIs · Staff Profiles
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Role-based launcher giving teachers and cashiers instant access to assigned duties.
+                        </p>
                     </article>
 
                     <!-- 04. Fee Collection & Financial Ledger -->
-                    <article data-module-category="admin-finance" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-file-invoice-dollar text-sm" aria-hidden="true"></i>
+                    <article data-module-index="3" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-file-invoice-dollar text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-emerald-700 uppercase tracking-wide tabular-nums">04 · Finance</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Fee Collection &amp; Ledger</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="collection">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900 font-mono">RCP-2026-0842</span>
+                                    <span class="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Paid</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-emerald-700 tabular-nums">04 · Cashier &amp; Accounting</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Fee Collection &amp; Ledger</h3>
+                                <div class="space-y-1 text-[10px] my-1">
+                                    <div class="flex justify-between"><span class="text-slate-600">Term 1 Tuition Fee</span><span class="font-extrabold text-slate-900 tabular-nums">₹4,500</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-600">Exam &amp; Resource Fee</span><span class="font-extrabold text-slate-900 tabular-nums">₹1,000</span></div>
+                                </div>
+                                <div class="pt-1.5 border-t border-slate-200 flex items-center justify-between text-[10px]">
+                                    <span class="font-bold text-emerald-700">Balance: ₹0</span>
+                                    <span class="font-extrabold text-slate-900 tabular-nums">Total ₹5,500</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="collection">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900 font-mono">RCP-2026-0842</span>
-                                        <span class="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Paid</span>
-                                    </div>
-                                    <div class="space-y-1 text-[10px] my-1">
-                                        <div class="flex justify-between"><span class="text-slate-600">Term 1 Tuition Fee</span><span class="font-extrabold text-slate-900 tabular-nums">₹4,500</span></div>
-                                        <div class="flex justify-between"><span class="text-slate-600">Exam &amp; Resource Fee</span><span class="font-extrabold text-slate-900 tabular-nums">₹1,000</span></div>
-                                    </div>
-                                    <div class="pt-1.5 border-t border-slate-200 flex items-center justify-between text-[10px]">
-                                        <span class="font-bold text-emerald-700">Balance: ₹0</span>
-                                        <span class="font-extrabold text-slate-900 tabular-nums">Total ₹5,500</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                High-speed multi-head fee billing with instant thermal/A4 receipts, WhatsApp confirmations, day-book ledgers, and Excel export.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Instant Receipts · Day-Book · Arrears · Excel
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Fast fee billing with instant printable receipts, dues tracking, and live day-books.
+                        </p>
                     </article>
 
                     <!-- 05. Student & Parent Portal -->
-                    <article data-module-category="student-public" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-user-graduate text-sm" aria-hidden="true"></i>
+                    <article data-module-index="4" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-user-graduate text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-amber-700 uppercase tracking-wide tabular-nums">05 · Family Portal</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Student &amp; Parent Portal</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="student">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <div class="text-[10px] font-extrabold text-slate-900 truncate">Fathima Amina · Class 8-B</div>
+                                    <span class="text-[9px] font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">2 Siblings</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-amber-700 tabular-nums">05 · Family Self-Service</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Student &amp; Parent Portal</h3>
+                                <div class="grid grid-cols-3 gap-1.5 my-1.5 text-center">
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-xs font-extrabold text-emerald-600 tabular-nums">96.4%</div>
+                                        <div class="text-[9px] text-slate-500">Attendance</div>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-xs font-extrabold text-slate-900 tabular-nums">₹0</div>
+                                        <div class="text-[9px] text-slate-500">Fee Due</div>
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg p-1.5">
+                                        <div class="text-xs font-extrabold text-indigo-600 tabular-nums">A+</div>
+                                        <div class="text-[9px] text-slate-500">Grade</div>
+                                    </div>
+                                </div>
+                                <div class="text-[10px] font-bold text-blue-600 flex items-center justify-between">
+                                    <span class="text-slate-600 truncate">Term 2 Receipt #0790</span>
+                                    <span class="shrink-0">Download PDF</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="student">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <div class="text-[10px] font-extrabold text-slate-900 truncate">Fathima Amina · Class 8-B</div>
-                                        <span class="text-[9px] font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">2 Siblings</span>
-                                    </div>
-                                    <div class="grid grid-cols-3 gap-1.5 my-1.5 text-center">
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
-                                            <div class="text-xs font-extrabold text-emerald-600 tabular-nums">96.4%</div>
-                                            <div class="text-[9px] text-slate-500">Attendance</div>
-                                        </div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
-                                            <div class="text-xs font-extrabold text-slate-900 tabular-nums">₹0</div>
-                                            <div class="text-[9px] text-slate-500">Fee Due</div>
-                                        </div>
-                                        <div class="bg-white border border-slate-200 rounded-lg p-1.5">
-                                            <div class="text-xs font-extrabold text-indigo-600 tabular-nums">A+</div>
-                                            <div class="text-[9px] text-slate-500">Exam Grade</div>
-                                        </div>
-                                    </div>
-                                    <div class="text-[10px] font-bold text-blue-600 flex items-center justify-between">
-                                        <span class="text-slate-600 truncate">Term 2 Receipt #0790</span>
-                                        <span class="shrink-0">Download PDF</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                24/7 parent mobile access to live fee balances, downloadable receipts, attendance summaries, exam report cards, and sibling switching.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Fee Statements · Receipts · Sibling Switcher
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Mobile access for parents to check fee receipts, attendance, and exam results 24/7.
+                        </p>
                     </article>
 
                     <!-- 06. Examination & Result Portal -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-award text-sm" aria-hidden="true"></i>
+                    <article data-module-index="5" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-violet-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-award text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-violet-700 uppercase tracking-wide tabular-nums">06 · Assessment</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Exam &amp; Progress Cards</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="result">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900">ANNUAL REPORT · 10-A</span>
+                                    <span class="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded tabular-nums">Rank #2 · 92.8%</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-violet-700 tabular-nums">06 · Assessment Engine</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Exam &amp; Progress Cards</h3>
+                                <div class="space-y-1 text-[10px] my-1">
+                                    <div class="flex justify-between"><span class="text-slate-700">Mathematics</span><span class="font-extrabold text-slate-900 tabular-nums">96/100 · <span class="text-emerald-600">A+</span></span></div>
+                                    <div class="flex justify-between"><span class="text-slate-700">Science</span><span class="font-extrabold text-slate-900 tabular-nums">94/100 · <span class="text-emerald-600">A+</span></span></div>
+                                    <div class="flex justify-between"><span class="text-slate-700">English</span><span class="font-extrabold text-slate-900 tabular-nums">91/100 · <span class="text-emerald-600">A+</span></span></div>
+                                </div>
+                                <div class="pt-1.5 border-t border-slate-200 flex items-center justify-between text-[10px]">
+                                    <span class="font-extrabold text-emerald-700">Distinction</span>
+                                    <span class="font-extrabold text-slate-900 tabular-nums">464 / 500</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="result">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900">ANNUAL REPORT · 10-A</span>
-                                        <span class="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded tabular-nums">Rank #2 · 92.8%</span>
-                                    </div>
-                                    <div class="space-y-1 text-[10px] my-1">
-                                        <div class="flex justify-between"><span class="text-slate-700">Mathematics</span><span class="font-extrabold text-slate-900 tabular-nums">96/100 · <span class="text-emerald-600">A+</span></span></div>
-                                        <div class="flex justify-between"><span class="text-slate-700">Science</span><span class="font-extrabold text-slate-900 tabular-nums">94/100 · <span class="text-emerald-600">A+</span></span></div>
-                                        <div class="flex justify-between"><span class="text-slate-700">English</span><span class="font-extrabold text-slate-900 tabular-nums">91/100 · <span class="text-emerald-600">A+</span></span></div>
-                                    </div>
-                                    <div class="pt-1.5 border-t border-slate-200 flex items-center justify-between text-[10px]">
-                                        <span class="font-extrabold text-emerald-700">Distinction</span>
-                                        <span class="font-extrabold text-slate-900 tabular-nums">464 / 500</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Configure term exams, enter subject-wise marks, auto-compute ranks and grades, and publish printable progress cards instantly.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Mark Entry · Auto Ranks · Printable Cards
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Enter marks, auto-calculate grades and ranks, and publish printable progress cards.
+                        </p>
                     </article>
 
                     <!-- 07. Daily Attendance -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-calendar-check text-sm" aria-hidden="true"></i>
+                    <article data-module-index="6" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-calendar-check text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-teal-700 uppercase tracking-wide tabular-nums">07 · Daily Register</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Smart Attendance</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="attendance">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900">CLASS 10-A ROLL CALL</span>
+                                    <span class="text-[9px] font-extrabold text-emerald-700 tabular-nums">38/40 (95%)</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-teal-700 tabular-nums">07 · Daily Register</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Smart Attendance</h3>
+                                <div class="space-y-1 text-[10px] my-1">
+                                    <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">#01 Abinav Krishna</span><span class="font-extrabold text-emerald-700">Present</span></div>
+                                    <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">#03 Salmanul Faris</span><span class="font-extrabold text-rose-700">Absent</span></div>
+                                </div>
+                                <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                    <span>Duty Teacher Verified</span>
+                                    <span class="font-bold text-slate-800">Live Sync</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="attendance">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900">CLASS 10-A ROLL CALL</span>
-                                        <span class="text-[9px] font-extrabold text-emerald-700 tabular-nums">38/40 (95%)</span>
-                                    </div>
-                                    <div class="space-y-1 text-[10px] my-1">
-                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">#01 Abinav Krishna</span><span class="font-extrabold text-emerald-700">Present</span></div>
-                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">#03 Salmanul Faris</span><span class="font-extrabold text-rose-700">Absent</span></div>
-                                    </div>
-                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
-                                        <span>Duty Teacher Verified</span>
-                                        <span class="font-bold text-slate-800">Live Sync</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                One-tap mobile roll call for class teachers with holiday calendars, absentee follow-up lists, and monthly attendance analytics.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            One-Tap Roll Call · Monthly Reports · Duty Lock
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            One-tap daily roll call with holiday rules, absentee alerts, and monthly summaries.
+                        </p>
                     </article>
 
                     <!-- 08. Academic Plan & Syllabus -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-book-open-reader text-sm" aria-hidden="true"></i>
+                    <article data-module-index="7" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-cyan-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-book-open-reader text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-cyan-700 uppercase tracking-wide tabular-nums">08 · Curriculum</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Academic Plan &amp; Syllabus</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="academicPlan">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900">SYLLABUS · CLASS 9-A</span>
+                                    <span class="text-[9px] font-extrabold text-teal-700 tabular-nums">82% On Track</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-cyan-700 tabular-nums">08 · Curriculum &amp; Timetable</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Academic Plan &amp; Syllabus</h3>
+                                <div class="space-y-2 my-1">
+                                    <div>
+                                        <div class="flex justify-between text-[10px] font-bold text-slate-700 mb-0.5"><span>Mathematics Units 1–8</span><span class="tabular-nums text-teal-700">88%</span></div>
+                                        <div class="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-teal-600 rounded-full" style="width: 88%;"></div></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between text-[10px] font-bold text-slate-700 mb-0.5"><span>General Science</span><span class="tabular-nums text-blue-700">80%</span></div>
+                                        <div class="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-blue-600 rounded-full" style="width: 80%;"></div></div>
+                                    </div>
+                                </div>
+                                <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                    <span>Weekly Master Timetable</span>
+                                    <span class="font-bold text-slate-800">6 Periods</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="academicPlan">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900">SYLLABUS · CLASS 9-A</span>
-                                        <span class="text-[9px] font-extrabold text-teal-700 tabular-nums">82% On Track</span>
-                                    </div>
-                                    <div class="space-y-2 my-1">
-                                        <div>
-                                            <div class="flex justify-between text-[10px] font-bold text-slate-700 mb-0.5"><span>Mathematics Units 1–8</span><span class="tabular-nums text-teal-700">88%</span></div>
-                                            <div class="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-teal-600 rounded-full" style="width: 88%;"></div></div>
-                                        </div>
-                                        <div>
-                                            <div class="flex justify-between text-[10px] font-bold text-slate-700 mb-0.5"><span>General Science</span><span class="tabular-nums text-blue-700">80%</span></div>
-                                            <div class="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full bg-blue-600 rounded-full" style="width: 80%;"></div></div>
-                                        </div>
-                                    </div>
-                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
-                                        <span>Weekly Master Timetable</span>
-                                        <span class="font-bold text-slate-800">6 Periods</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Structure term teaching plans, track chapter completion percentages, log daily classes, and publish conflict-free timetables.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Syllabus Milestones · Teaching Logs · Timetables
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Organize term timetables, track syllabus milestones, and log daily teaching progress.
+                        </p>
                     </article>
 
                     <!-- 09. Worksheets & Registers -->
-                    <article data-module-category="student-public" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-orange-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-file-lines text-sm" aria-hidden="true"></i>
+                    <article data-module-index="8" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-orange-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-file-lines text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-orange-700 uppercase tracking-wide tabular-nums">09 · Print Hub</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Worksheets &amp; Registers</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="worksheet">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900">CUSTOM REGISTER · 8-A</span>
+                                    <span class="text-[9px] font-extrabold text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded">PDF / Excel</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-orange-700 tabular-nums">09 · Print &amp; Study Hub</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Worksheets &amp; Registers</h3>
+                                <div class="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 text-[10px] my-1">
+                                    <div class="px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1082 · Anas Muhammed</span><span class="font-extrabold text-emerald-700">Issued</span></div>
+                                    <div class="px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1084 · Zayan Ahmed</span><span class="font-extrabold text-amber-700">Pending</span></div>
+                                </div>
+                                <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                    <span>Auto-Synced Roster</span>
+                                    <span class="font-bold text-slate-800">A4 Ready</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="worksheet">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900">CUSTOM REGISTER · 8-A</span>
-                                        <span class="text-[9px] font-extrabold text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded">PDF / Excel</span>
-                                    </div>
-                                    <div class="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 text-[10px] my-1">
-                                        <div class="px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1082 · Anas Muhammed</span><span class="font-extrabold text-emerald-700">Issued</span></div>
-                                        <div class="px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1084 · Zayan Ahmed</span><span class="font-extrabold text-amber-700">Pending</span></div>
-                                    </div>
-                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
-                                        <span>Auto-Synced Roster</span>
-                                        <span class="font-bold text-slate-800">A4 Print Ready</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Generate custom multi-column student registers, printable checklists, ID card batches, and class-wise study sheets in PDF or Excel.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Custom Columns · A4 PDF · Excel · ID Cards
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Build custom student checklists, A4 printable registers, and Excel sheets in seconds.
+                        </p>
                     </article>
 
                     <!-- 10. Student Activity & Merit Log -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-medal text-sm" aria-hidden="true"></i>
+                    <article data-module-index="9" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-medal text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-rose-700 uppercase tracking-wide tabular-nums">10 · Co-Curricular</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Activity &amp; Merit</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="studentActivity">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900">MERIT LEADERBOARD · 7-A</span>
+                                    <span class="text-[9px] font-extrabold text-rose-700">12 Badges</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-rose-700 tabular-nums">10 · Co-Curricular Records</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Student Activity &amp; Merit</h3>
+                                <div class="space-y-1 text-[10px] my-1">
+                                    <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1. Nida Fathima</span><span class="font-extrabold text-amber-700 tabular-nums">485 pts</span></div>
+                                    <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">2. Rayan Sidheeq</span><span class="font-extrabold text-indigo-700 tabular-nums">440 pts</span></div>
+                                </div>
+                                <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                    <span>Habits &amp; Competitions</span>
+                                    <span class="font-bold text-slate-800">Parent Visible</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="studentActivity">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900">MERIT LEADERBOARD · 7-A</span>
-                                        <span class="text-[9px] font-extrabold text-rose-700">12 Badges</span>
-                                    </div>
-                                    <div class="space-y-1 text-[10px] my-1">
-                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">1. Nida Fathima</span><span class="font-extrabold text-amber-700 tabular-nums">485 pts</span></div>
-                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="font-bold text-slate-800">2. Rayan Sidheeq</span><span class="font-extrabold text-indigo-700 tabular-nums">440 pts</span></div>
-                                    </div>
-                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
-                                        <span>Habits &amp; Competitions</span>
-                                        <span class="font-bold text-slate-800">Parent Visible</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Record daily habits, Ibadah &amp; task completions, arts or sports achievements, bonus merit points, and digital student badges.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Merit Points · Badges · Competition Logs
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Track daily habits, competitions, merit points, and achievement badges for students.
+                        </p>
                     </article>
 
                     <!-- 11. Classroom Evaluation -->
-                    <article data-module-category="academics" class="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-3 shadow-2xs">
-                        <div class="space-y-2.5">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-slate-800 text-white flex items-center justify-center shrink-0">
-                                    <i class="fas fa-clipboard-check text-sm" aria-hidden="true"></i>
+                    <article data-module-index="10" class="w-[84vw] max-w-[330px] sm:max-w-none sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] shrink-0 snap-start bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
+                                <i class="fas fa-clipboard-check text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-[10px] font-bold text-slate-600 uppercase tracking-wide tabular-nums">11 · Quality Audit</div>
+                                <h3 class="text-sm font-extrabold text-slate-900 truncate">Classroom Evaluation</h3>
+                            </div>
+                        </div>
+                        <div data-demo-showcase="classroomEvaluation">
+                            <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                                    <span class="text-[10px] font-extrabold text-slate-900">QUALITY AUDIT · 9-B</span>
+                                    <span class="text-[9px] font-extrabold text-emerald-700 tabular-nums">92 / 100</span>
                                 </div>
-                                <div class="min-w-0">
-                                    <div class="text-[10px] font-bold text-slate-600 tabular-nums">11 · Quality Assurance</div>
-                                    <h3 class="text-sm font-extrabold text-slate-900 truncate">Classroom Evaluation</h3>
+                                <div class="grid grid-cols-2 gap-1.5 text-[10px] my-1">
+                                    <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="text-slate-600">Discipline</span><span class="font-extrabold text-emerald-700 tabular-nums">24/25</span></div>
+                                    <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="text-slate-600">Homework</span><span class="font-extrabold text-blue-700 tabular-nums">22/25</span></div>
+                                </div>
+                                <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
+                                    <span>Impositions: 1 Pending</span>
+                                    <span class="font-bold text-slate-800">Grade A</span>
                                 </div>
                             </div>
-
-                            <div data-demo-showcase="classroomEvaluation">
-                                <div data-showcase-fallback class="rounded-xl border border-slate-200 bg-slate-50 p-3 aspect-[16/10] flex flex-col justify-between overflow-hidden">
-                                    <div class="flex items-center justify-between pb-2 border-b border-slate-200">
-                                        <span class="text-[10px] font-extrabold text-slate-900">QUALITY AUDIT · 9-B</span>
-                                        <span class="text-[9px] font-extrabold text-emerald-700 tabular-nums">92 / 100</span>
-                                    </div>
-                                    <div class="grid grid-cols-2 gap-1.5 text-[10px] my-1">
-                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="text-slate-600">Discipline</span><span class="font-extrabold text-emerald-700 tabular-nums">24/25</span></div>
-                                        <div class="bg-white border border-slate-200 rounded px-2 py-1 flex justify-between"><span class="text-slate-600">Homework</span><span class="font-extrabold text-blue-700 tabular-nums">22/25</span></div>
-                                    </div>
-                                    <div class="text-[10px] font-semibold text-slate-500 flex items-center justify-between">
-                                        <span>Impositions: 1 Pending</span>
-                                        <span class="font-bold text-slate-800">Grade A</span>
-                                    </div>
-                                </div>
-                                <div data-showcase-media class="hidden"></div>
-                            </div>
-
-                            <p class="text-xs text-slate-600 leading-relaxed">
-                                Run structured classroom audits with weighted rubrics, discipline &amp; homework logs, follow-up impositions, and term quality reports.
-                            </p>
+                            <div data-showcase-media class="hidden"></div>
                         </div>
-                        <div class="pt-2 border-t border-slate-100 text-[11px] font-semibold text-slate-500 truncate">
-                            Scoring Rubrics · Audits · Behaviour Logs
-                        </div>
+                        <p class="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                            Run weighted classroom quality audits, homework checks, and follow-up tracking.
+                        </p>
                     </article>
 
                 </div>
+
+                <!-- Pagination Dots Row -->
+                <div id="modules-carousel-dots" class="flex items-center justify-center gap-1.5 mt-5" aria-label="Workspace slide indicators"></div>
             </div>
         </section>
 
-        <!-- 3-Tier Subscription Plans Section (Free, Standard, ELITE) -->
-        <section id="product-pricing" class="bg-white py-9 sm:py-14 border-b border-slate-200 scroll-mt-14">
-            <div id="gateway-pricing-root" class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8"></div>
+        <!-- Screen 3: Highlighted 3-Tier Subscription Plans (Free, Standard, ELITE) -->
+        <section id="product-pricing" class="bg-white py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
+            <div id="gateway-pricing-root" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"></div>
         </section>
 
-        <!-- Compact Architecture & Security Section -->
-        <section id="product-architecture" class="bg-slate-50 py-8 sm:py-12 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
-                <div class="mb-5">
-                    <div class="text-[11px] font-extrabold text-blue-600 uppercase tracking-wide mb-1">Enterprise Architecture</div>
-                    <h2 class="text-lg sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-                        Fast, Isolated &amp; Role-Protected by Design
-                    </h2>
-                </div>
+        <!-- Screen 4: Clean Asymmetric About & Contact Section -->
+        <section id="product-about" class="bg-slate-50 py-12 sm:py-16 border-b border-slate-200 scroll-mt-14">
+            <span id="product-architecture" class="block scroll-mt-16" aria-hidden="true"></span>
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+                    <!-- Left: Crisp About Narrative & Direct Contact -->
+                    <div class="lg:col-span-5 space-y-5">
+                        <div>
+                            <p class="text-[11px] font-extrabold text-blue-600 uppercase tracking-[0.1em] mb-1.5">About Platform</p>
+                            <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight leading-tight" style="text-wrap: balance;">
+                                Built for Real Campus Operations.
+                            </h2>
+                            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed mt-3">
+                                Institution Manage gives schools, colleges, and academies one clean cloud workspace to manage fees, academics, staff roles, and parent communication without spreadsheet chaos.
+                            </p>
+                        </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5">
-                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                        <div class="flex items-center gap-2.5 mb-2">
-                            <div class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                                <i class="fas fa-globe text-xs" aria-hidden="true"></i>
+                        <div class="grid grid-cols-3 gap-3 pt-4 border-t border-slate-200">
+                            <div>
+                                <div class="text-lg sm:text-xl font-extrabold text-slate-950 tabular-nums">11</div>
+                                <div class="text-[11px] font-medium text-slate-500">Workspaces</div>
                             </div>
-                            <h3 class="text-sm font-extrabold text-slate-900">Dedicated Web Portals</h3>
+                            <div>
+                                <div class="text-lg sm:text-xl font-extrabold text-slate-950 tabular-nums">100%</div>
+                                <div class="text-[11px] font-medium text-slate-500">Tenant Isolated</div>
+                            </div>
+                            <div>
+                                <div class="text-lg sm:text-xl font-extrabold text-slate-950 tabular-nums">Zero</div>
+                                <div class="text-[11px] font-medium text-slate-500">Data Lock-in</div>
+                            </div>
                         </div>
-                        <p class="text-xs text-slate-600 leading-relaxed">
-                            Isolated web address, logo, faculty showcase, notice board, and live counters for each registered institution.
-                        </p>
+
+                        <!-- Live Company Contact Strip -->
+                        <div id="product-contact" class="scroll-mt-20 pt-4 border-t border-slate-200 space-y-2">
+                            <div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Support &amp; Onboarding</div>
+                            <div id="gateway-contact-links" class="flex flex-wrap items-center gap-2 text-xs">
+                                <button type="button" onclick="window.openSelfSignupWizard && window.openSelfSignupWizard()" class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer transition-colors">
+                                    Start Free Setup
+                                </button>
+                                <a href="#product-pricing" class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 font-bold transition-colors">
+                                    View Plans
+                                </a>
+                            </div>
+                        </div>
                     </div>
-                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                        <div class="flex items-center gap-2.5 mb-2">
-                            <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
-                                <i class="fas fa-user-shield text-xs" aria-hidden="true"></i>
+
+                    <!-- Right: Clean Hairline-Divided Numbered Editorial Pillars -->
+                    <div class="lg:col-span-7 bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
+                        <div class="p-5 sm:p-6 flex items-start gap-4">
+                            <span class="text-xs font-extrabold text-blue-600 tabular-nums mt-0.5">01</span>
+                            <div class="min-w-0">
+                                <h3 class="text-sm sm:text-base font-extrabold text-slate-950">Dedicated Institution Address</h3>
+                                <p class="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
+                                    Every registered institution receives its own clean public homepage, logo, notices, and isolated database tenant.
+                                </p>
                             </div>
-                            <h3 class="text-sm font-extrabold text-slate-900">Granular Role Security</h3>
                         </div>
-                        <p class="text-xs text-slate-600 leading-relaxed">
-                            Server-enforced security rules, OTP verification, and exact module permissions per staff member and class teacher.
-                        </p>
-                    </div>
-                    <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                        <div class="flex items-center gap-2.5 mb-2">
-                            <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                                <i class="fas fa-print text-xs" aria-hidden="true"></i>
+                        <div class="p-5 sm:p-6 flex items-start gap-4">
+                            <span class="text-xs font-extrabold text-blue-600 tabular-nums mt-0.5">02</span>
+                            <div class="min-w-0">
+                                <h3 class="text-sm sm:text-base font-extrabold text-slate-950">Granular Role Permissions</h3>
+                                <p class="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
+                                    Server-enforced security rules ensure admins, cashiers, teachers, and parents only access their authorized records.
+                                </p>
                             </div>
-                            <h3 class="text-sm font-extrabold text-slate-900">Instant PDF &amp; Excel</h3>
                         </div>
-                        <p class="text-xs text-slate-600 leading-relaxed">
-                            Thermal and A4 receipts, class collection statements, attendance registers, and exam marklists ready to print or export.
-                        </p>
+                        <div class="p-5 sm:p-6 flex items-start gap-4">
+                            <span class="text-xs font-extrabold text-blue-600 tabular-nums mt-0.5">03</span>
+                            <div class="min-w-0">
+                                <h3 class="text-sm sm:text-base font-extrabold text-slate-950">Instant Print &amp; Backup Ready</h3>
+                                <p class="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
+                                    Generate thermal or A4 fee receipts, progress cards, and Excel/JSON exports anytime with complete data ownership.
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Compact Single-Row Multi-Device App Download Section -->
-        <section id="product-download" class="bg-slate-50 py-8 sm:py-12 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
-                <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 space-y-4 shadow-2xs">
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <div class="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 p-1.5 flex items-center justify-center shrink-0">
+        <!-- Screen 5: Deep Slate App Download & Action Strip -->
+        <section id="product-download" class="bg-white py-12 sm:py-16 scroll-mt-14">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+                <div class="bg-slate-950 text-white rounded-3xl p-6 sm:p-8 lg:p-10">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                        <div class="flex items-start sm:items-center gap-4 min-w-0">
+                            <div class="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 p-2 flex items-center justify-center shrink-0">
                                 <img src="/assets/images/pwa-192x192.png" alt="Institution Manage App Icon" class="w-full h-full object-contain rounded-lg" referrerpolicy="no-referrer">
                             </div>
                             <div class="min-w-0">
-                                <div class="text-[10px] font-extrabold text-blue-600 uppercase tracking-wide">Official Web App (PWA)</div>
-                                <h2 class="text-base sm:text-xl font-extrabold text-slate-900 leading-tight">
-                                    Download App for Any Device
+                                <div class="text-[11px] font-bold text-blue-400 uppercase tracking-wider">Official Web App</div>
+                                <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight mt-0.5">
+                                    Install on Any Device
                                 </h2>
-                                <p class="text-[11px] sm:text-xs text-slate-600 mt-0.5">
-                                    Instant home screen &amp; desktop launch — no App Store download required.
+                                <p id="gateway-install-status-text" class="text-xs sm:text-sm text-slate-300 mt-1">
+                                    Works on Android, iPhone, iPad, Windows, macOS &amp; Linux.
                                 </p>
                             </div>
                         </div>
 
-                        <div class="flex flex-wrap items-center gap-2 shrink-0">
-                            <button type="button" id="btn-gateway-section-install" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+                            <button type="button" id="btn-gateway-section-install" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
                                 <i class="fas fa-download text-[11px]" aria-hidden="true"></i>
                                 <span data-install-btn-label>Install App</span>
                             </button>
-                            <button type="button" id="btn-gateway-install-guide" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                                <i class="fas fa-list-check text-[11px] text-blue-600" aria-hidden="true"></i>
-                                <span>Steps</span>
+                            <button type="button" id="btn-gateway-install-guide" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/15 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-2 whitespace-nowrap">
+                                <i class="fas fa-list-check text-[11px]" aria-hidden="true"></i>
+                                <span>Install Steps</span>
                             </button>
                         </div>
                     </div>
 
-                    <div class="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2">
-                        <i class="fas fa-mobile-screen-button text-blue-600 shrink-0" aria-hidden="true"></i>
-                        <span id="gateway-install-status-text">Supported on Android, iPhone, iPad, Windows, macOS &amp; Linux.</span>
-                    </div>
-
-                    <!-- All 4 Devices in One Single Horizontal Row -->
-                    <div class="grid grid-cols-4 gap-1.5 sm:gap-3">
-                        <button type="button" data-install-guide-tab="android" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
-                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200/70 flex items-center justify-center">
-                                <i class="fa-brands fa-android text-base sm:text-lg" aria-hidden="true"></i>
-                            </div>
-                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">Android</span>
-                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">Chrome · Edge</span>
+                    <div class="grid grid-cols-4 gap-2 sm:gap-3 mt-6 pt-6 border-t border-white/10">
+                        <button type="button" data-install-guide-tab="android" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
+                            <i class="fa-brands fa-android text-lg text-emerald-400" aria-hidden="true"></i>
+                            <span class="text-[11px] sm:text-xs font-bold text-white">Android</span>
                         </button>
-
-                        <button type="button" data-install-guide-tab="ios" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
-                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-100 text-slate-900 border border-slate-200 flex items-center justify-center">
-                                <i class="fa-brands fa-apple text-base sm:text-lg" aria-hidden="true"></i>
-                            </div>
-                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">iPhone</span>
-                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">Safari · iPadOS</span>
+                        <button type="button" data-install-guide-tab="ios" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
+                            <i class="fa-brands fa-apple text-lg text-white" aria-hidden="true"></i>
+                            <span class="text-[11px] sm:text-xs font-bold text-white">iPhone</span>
                         </button>
-
-                        <button type="button" data-install-guide-tab="desktop" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
-                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-200/70 flex items-center justify-center">
-                                <i class="fa-brands fa-windows text-base sm:text-lg" aria-hidden="true"></i>
-                            </div>
-                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">Windows</span>
-                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">Chrome · Edge</span>
+                        <button type="button" data-install-guide-tab="desktop" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
+                            <i class="fa-brands fa-windows text-lg text-blue-400" aria-hidden="true"></i>
+                            <span class="text-[11px] sm:text-xs font-bold text-white">Windows</span>
                         </button>
-
-                        <button type="button" data-install-guide-tab="desktop" class="bg-slate-50 hover:bg-white border border-slate-200 hover:border-blue-300 rounded-xl px-1.5 py-2.5 sm:px-3 sm:py-3 flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer group">
-                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200/70 flex items-center justify-center">
-                                <i class="fas fa-laptop text-sm sm:text-base" aria-hidden="true"></i>
-                            </div>
-                            <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 leading-tight">Mac / PC</span>
-                            <span class="hidden sm:inline text-[10px] font-semibold text-slate-500">macOS · Linux</span>
+                        <button type="button" data-install-guide-tab="desktop" class="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl py-3 px-2 flex flex-col items-center justify-center text-center gap-1.5 transition-colors cursor-pointer">
+                            <i class="fas fa-laptop text-base text-slate-300" aria-hidden="true"></i>
+                            <span class="text-[11px] sm:text-xs font-bold text-white">Mac / PC</span>
                         </button>
                     </div>
                 </div>
-            </div>
-        </section>
 
-        <!-- Compact Bottom Action Strip -->
-        <section class="bg-white py-7 sm:py-10 border-b border-slate-200">
-            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
-                <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5">
-                    <div>
-                        <h2 class="text-base sm:text-lg font-extrabold text-slate-900">Ready to Open Your Workspace?</h2>
-                        <p class="text-xs text-slate-600 mt-0.5">Open your institution portal directly or sign in with your account.</p>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2 shrink-0">
-                        <button type="button" id="btn-bottom-focus-slug" class="px-3.5 py-2 rounded-lg bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 text-xs font-extrabold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                            <i class="fas fa-building-columns text-[11px] text-slate-600" aria-hidden="true"></i>
-                            <span>Open Portal</span>
+                <!-- Quiet Quick Access Strip -->
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+                    <p class="text-xs sm:text-sm font-semibold text-slate-600">
+                        Already registered? Open your portal code or sign in directly.
+                    </p>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button type="button" id="btn-bottom-focus-slug" class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-900 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap">
+                            Open Portal Code
                         </button>
-                        <button type="button" onclick="window.openLogin()" class="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-2xs transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                            <i class="fas fa-arrow-right-to-bracket text-[11px]" aria-hidden="true"></i>
-                            <span>Login</span>
+                        <button type="button" onclick="window.openLogin()" class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap">
+                            Login
                         </button>
                     </div>
                 </div>
@@ -964,16 +879,18 @@
         </section>
 
         <!-- Compact Product Footer -->
-        <footer class="bg-white py-5">
-            <div class="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-[11px] text-slate-500 text-center sm:text-left">
-                <div class="flex items-center gap-2 font-bold text-slate-800">
+        <footer class="bg-slate-950 text-slate-300 py-5 border-t border-slate-800">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-[11px] text-center sm:text-left">
+                <div class="flex items-center gap-2 font-bold text-white">
                     <img src="/assets/images/logo.png" alt="Logo" class="w-4 h-4 object-contain rounded" referrerpolicy="no-referrer">
                     <span>Institution Manage</span>
                 </div>
-                <div class="flex flex-wrap items-center justify-center gap-3">
-                    <a href="#product-overview" class="hover:text-slate-900 font-semibold">Overview</a>
-                    <a href="#product-modules" class="hover:text-slate-900 font-semibold">Modules</a>
-                    <a href="#product-download" class="hover:text-slate-900 font-semibold">App</a>
+                <div class="flex flex-wrap items-center justify-center gap-4">
+                    <a href="#product-overview" class="hover:text-white font-semibold">Overview</a>
+                    <a href="#product-modules" class="hover:text-white font-semibold">Workspaces</a>
+                    <a href="#product-pricing" class="hover:text-white font-semibold">Plans</a>
+                    <a href="#product-about" class="hover:text-white font-semibold">About</a>
+                    <a href="#product-download" class="hover:text-white font-semibold">App</a>
                     <span>© Institution Manage</span>
                 </div>
             </div>

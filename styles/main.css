@@ -4183,4 +4183,14 @@ body.collection-shell #collection-app .collection-subtab-btn:focus-visible {
     }
 }
 
+/* Public Gateway Horizontal Swipe Carousels */
+.gateway-no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.gateway-no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+
 

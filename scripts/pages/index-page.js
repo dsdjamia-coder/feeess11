@@ -33,7 +33,7 @@ import {
     showTenantLockOverlay,
     syncDynamicPwaBranding
 } from '../shared/app-common.js';
-import { renderPublicPricingSection } from '../shared/premium-plans-modal.js';
+import { fetchCompanyPublicCatalog, renderPublicPricingSection } from '../shared/premium-plans-modal.js';
 import {
     initPwaPromptListener,
     registerInstallTrigger,
@@ -952,7 +952,7 @@ let isRootGatewayMode = false;
                         showGatewayErr(`Institution "${rawSlug}" was not found. Please check the code with your administrator.`);
                         if (slugBtn) {
                             slugBtn.disabled = false;
-                            slugBtn.innerHTML = '<span>Open Portal</span><i class="fas fa-arrow-up-right-from-square text-xs"></i>';
+                            slugBtn.innerHTML = '<span>Open</span><i class="fas fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>';
                         }
                         return;
                     }
@@ -1008,26 +1008,207 @@ let isRootGatewayMode = false;
                 });
             });
 
-            const filterButtons = Array.from(document.querySelectorAll('[data-module-filter]'));
-            const moduleCards = Array.from(document.querySelectorAll('#gateway-modules-grid [data-module-category]'));
-            filterButtons.forEach((btn) => {
-                if (btn.dataset.boundFilter) return;
-                btn.dataset.boundFilter = 'true';
-                btn.addEventListener('click', () => {
-                    const selected = btn.getAttribute('data-module-filter') || 'all';
-                    filterButtons.forEach((b) => {
-                        const isActive = (b.getAttribute('data-module-filter') || 'all') === selected;
-                        b.className = isActive
-                            ? 'px-2.5 py-1.5 text-[11px] font-extrabold rounded-lg bg-white text-slate-900 shadow-2xs transition-colors cursor-pointer whitespace-nowrap'
-                            : 'px-2.5 py-1.5 text-[11px] font-bold rounded-lg text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap';
-                    });
-                    moduleCards.forEach((card) => {
-                        const cat = card.getAttribute('data-module-category') || '';
-                        const visible = selected === 'all' || cat === selected;
-                        card.classList.toggle('hidden', !visible);
+            // Slide-Over Hamburger Navigation Drawer
+            const navDrawer = document.getElementById('gateway-nav-drawer');
+            const navOpenBtn = document.getElementById('btn-gateway-menu-open');
+            const navCloseBtn = document.getElementById('btn-gateway-menu-close');
+            const navBackdrop = document.getElementById('gateway-nav-backdrop');
+            const setGatewayDrawerOpen = (open) => {
+                if (!navDrawer) return;
+                navDrawer.classList.toggle('hidden', !open);
+                navDrawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+                navOpenBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+                document.body?.classList.toggle('overflow-hidden', open);
+            };
+            if (navOpenBtn && !navOpenBtn.dataset.boundDrawer) {
+                navOpenBtn.dataset.boundDrawer = 'true';
+                navOpenBtn.addEventListener('click', () => setGatewayDrawerOpen(true));
+                navCloseBtn?.addEventListener('click', () => setGatewayDrawerOpen(false));
+                navBackdrop?.addEventListener('click', () => setGatewayDrawerOpen(false));
+                navDrawer?.querySelectorAll('[data-drawer-nav]').forEach((link) => {
+                    link.addEventListener('click', (e) => {
+                        const href = link.getAttribute('href') || '';
+                        setGatewayDrawerOpen(false);
+                        if (href.startsWith('#') && href.length > 1) {
+                            const target = document.getElementById(href.slice(1));
+                            if (target) {
+                                e.preventDefault();
+                                setTimeout(() => {
+                                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 80);
+                            }
+                        }
                     });
                 });
-            });
+                navDrawer?.querySelector('[data-drawer-signup]')?.addEventListener('click', () => {
+                    setGatewayDrawerOpen(false);
+                    openSelfSignupWizard();
+                });
+                navDrawer?.querySelector('[data-drawer-login]')?.addEventListener('click', () => {
+                    setGatewayDrawerOpen(false);
+                    window.openLogin?.();
+                });
+                navDrawer?.querySelector('[data-drawer-portal]')?.addEventListener('click', () => {
+                    setGatewayDrawerOpen(false);
+                    setTimeout(() => {
+                        document.getElementById('portal-launcher-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => slugInput?.focus(), 250);
+                    }, 80);
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && navDrawer && !navDrawer.classList.contains('hidden')) {
+                        setGatewayDrawerOpen(false);
+                    }
+                });
+            }
+
+            // 11-Workspace Horizontal Swipe Carousel (Arrows, Dots & Counter)
+            const modulesTrack = document.getElementById('gateway-modules-grid');
+            const modulesPrevBtn = document.getElementById('modules-carousel-prev');
+            const modulesNextBtn = document.getElementById('modules-carousel-next');
+            const modulesCounterEl = document.getElementById('modules-carousel-counter');
+            const modulesDotsEl = document.getElementById('modules-carousel-dots');
+            const moduleCards = Array.from(modulesTrack?.querySelectorAll('[data-module-index]') || []);
+
+            if (modulesTrack && moduleCards.length > 0 && !modulesTrack.dataset.boundModulesCarousel) {
+                modulesTrack.dataset.boundModulesCarousel = 'true';
+
+                const getViewportMetric = () => {
+                    const firstCard = moduleCards[0];
+                    const trackWidth = modulesTrack.clientWidth || 320;
+                    const cardWidth = firstCard?.offsetWidth || trackWidth;
+                    const perView = Math.max(1, Math.min(3, Math.round(trackWidth / Math.max(1, cardWidth))));
+                    const pageCount = Math.max(1, Math.ceil(moduleCards.length / perView));
+                    return { perView, pageCount, trackWidth };
+                };
+
+                const getStartIndexForPage = (pageIdx, perView) => {
+                    if (pageIdx <= 0) return 0;
+                    return Math.min(moduleCards.length - perView, pageIdx * perView);
+                };
+
+                const scrollToCardIndex = (cardIdx) => {
+                    const safeIdx = Math.max(0, Math.min(moduleCards.length - 1, cardIdx));
+                    const targetCard = moduleCards[safeIdx];
+                    if (!targetCard) return;
+                    const left = Math.max(0, targetCard.offsetLeft - modulesTrack.offsetLeft);
+                    modulesTrack.scrollTo({ left, behavior: 'smooth' });
+                };
+
+                const getCurrentStartCardIndex = () => {
+                    const scrollLeft = modulesTrack.scrollLeft;
+                    let closestIdx = 0;
+                    let closestDist = Infinity;
+                    moduleCards.forEach((card, idx) => {
+                        const cardLeft = Math.max(0, card.offsetLeft - modulesTrack.offsetLeft);
+                        const dist = Math.abs(cardLeft - scrollLeft);
+                        if (dist < closestDist) {
+                            closestDist = dist;
+                            closestIdx = idx;
+                        }
+                    });
+                    return closestIdx;
+                };
+
+                let renderedDotCount = 0;
+                const syncCarouselUi = () => {
+                    const { perView, pageCount } = getViewportMetric();
+                    const currentIdx = getCurrentStartCardIndex();
+                    const endIdx = Math.min(moduleCards.length, currentIdx + perView);
+                    const startDisplay = Math.min(moduleCards.length, currentIdx + 1);
+                    const maxScrollLeft = Math.max(0, modulesTrack.scrollWidth - modulesTrack.clientWidth);
+                    const activePage = maxScrollLeft > 8 && modulesTrack.scrollLeft >= maxScrollLeft - 12
+                        ? pageCount - 1
+                        : Math.min(pageCount - 1, Math.floor((currentIdx + (perView > 1 ? 1 : 0)) / perView));
+
+                    if (modulesCounterEl) {
+                        modulesCounterEl.textContent = perView === 1
+                            ? `${startDisplay} / ${moduleCards.length}`
+                            : `${startDisplay}–${endIdx} / ${moduleCards.length}`;
+                    }
+                    if (modulesPrevBtn) {
+                        modulesPrevBtn.disabled = modulesTrack.scrollLeft <= 6;
+                    }
+                    if (modulesNextBtn) {
+                        modulesNextBtn.disabled = modulesTrack.scrollLeft >= maxScrollLeft - 6;
+                    }
+
+                    if (modulesDotsEl) {
+                        if (renderedDotCount !== pageCount) {
+                            renderedDotCount = pageCount;
+                            modulesDotsEl.innerHTML = Array.from({ length: pageCount }, (_, idx) => `
+                                <button type="button" data-modules-dot="${idx}" aria-label="Show workspaces page ${idx + 1}" class="h-1.5 rounded-full transition-all cursor-pointer"></button>
+                            `).join('');
+                            modulesDotsEl.querySelectorAll('[data-modules-dot]').forEach((dotBtn) => {
+                                dotBtn.addEventListener('click', () => {
+                                    const page = Number(dotBtn.getAttribute('data-modules-dot') || 0);
+                                    const { perView: pv } = getViewportMetric();
+                                    scrollToCardIndex(getStartIndexForPage(page, pv));
+                                });
+                            });
+                        }
+                        modulesDotsEl.querySelectorAll('[data-modules-dot]').forEach((dotBtn, idx) => {
+                            const isActive = idx === activePage;
+                            dotBtn.setAttribute('aria-current', isActive ? 'true' : 'false');
+                            dotBtn.className = isActive
+                                ? 'h-1.5 w-6 rounded-full bg-blue-600 transition-all cursor-pointer'
+                                : 'h-1.5 w-1.5 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer';
+                        });
+                    }
+                };
+
+                modulesPrevBtn?.addEventListener('click', () => {
+                    const { perView } = getViewportMetric();
+                    const cur = getCurrentStartCardIndex();
+                    scrollToCardIndex(Math.max(0, cur - perView));
+                });
+
+                modulesNextBtn?.addEventListener('click', () => {
+                    const { perView } = getViewportMetric();
+                    const cur = getCurrentStartCardIndex();
+                    scrollToCardIndex(Math.min(moduleCards.length - 1, cur + perView));
+                });
+
+                let modulesScrollRaf = 0;
+                modulesTrack.addEventListener('scroll', () => {
+                    if (modulesScrollRaf) return;
+                    modulesScrollRaf = window.requestAnimationFrame(() => {
+                        modulesScrollRaf = 0;
+                        syncCarouselUi();
+                    });
+                }, { passive: true });
+                window.addEventListener('resize', () => {
+                    if (isRootGatewayMode) syncCarouselUi();
+                });
+                syncCarouselUi();
+            }
+
+            // Populate About / Support Contact Strip from shared cached Company Catalog (zero extra Firestore reads)
+            (async () => {
+                const contactWrap = document.getElementById('gateway-contact-links');
+                if (!contactWrap) return;
+                try {
+                    const catalog = await fetchCompanyPublicCatalog({ db });
+                    const contact = catalog?.contact || {};
+                    const waDigits = String(contact.whatsapp || '').replace(/[^\d]/g, '');
+                    const phoneDigits = String(contact.phone || '').replace(/[^\d+]/g, '');
+                    const email = String(contact.email || '').trim();
+                    const buttons = [];
+                    if (waDigits) {
+                        const waHref = `https://wa.me/${waDigits}?text=${encodeURIComponent('Hello, I would like to know more about Institution Manage.')}`;
+                        buttons.push(`<a href="${escapeHtml(waHref)}" target="_blank" rel="noopener noreferrer" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold inline-flex items-center gap-1.5 transition-colors"><i class="fa-brands fa-whatsapp text-sm" aria-hidden="true"></i><span>WhatsApp</span></a>`);
+                    }
+                    if (phoneDigits) {
+                        buttons.push(`<a href="tel:${escapeHtml(phoneDigits)}" class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 font-bold inline-flex items-center gap-1.5 transition-colors"><i class="fas fa-phone text-[11px] text-blue-600" aria-hidden="true"></i><span>Call Support</span></a>`);
+                    }
+                    if (email) {
+                        buttons.push(`<a href="mailto:${escapeHtml(email)}" class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 font-bold inline-flex items-center gap-1.5 transition-colors"><i class="fas fa-envelope text-[11px] text-slate-600" aria-hidden="true"></i><span>Email</span></a>`);
+                    }
+                    if (buttons.length > 0) {
+                        contactWrap.innerHTML = buttons.join('');
+                    }
+                } catch (_) {}
+            })();
 
             const showcaseImagesByPage = new Map();
             const showcaseSlideIndexByPage = new Map();

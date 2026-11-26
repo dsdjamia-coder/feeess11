@@ -655,15 +655,20 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
   trialRemainingLabel = ''
 } = {}) => {
   const trialDays = catalog?.selfSignupConfig?.trialDays ?? DEFAULT_TRIAL_DAYS;
+  const isPublicMode = mode === 'public';
   const gridColsClass = activePlans.length === 1
     ? 'grid-cols-1 max-w-md mx-auto'
     : activePlans.length === 2
       ? 'grid-cols-1 md:grid-cols-2'
       : 'grid-cols-1 md:grid-cols-3';
 
+  const trackLayoutClass = (isPublicMode && activePlans.length > 1)
+    ? `flex md:grid ${activePlans.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-4 overflow-x-auto md:overflow-visible snap-x snap-mandatory scroll-smooth gateway-no-scrollbar pb-2 md:pb-0 items-stretch`
+    : `grid ${gridColsClass} gap-4 items-stretch`;
+
   return `
-    <div class="grid ${gridColsClass} gap-4 items-stretch">
-      ${activePlans.map((plan) => {
+    <div ${isPublicMode ? 'id="public-pricing-track"' : ''} class="${trackLayoutClass}">
+      ${activePlans.map((plan, planIdx) => {
         const tierKey = inferPlanTierKey(plan);
         const hasDiscount = plan.mrpPrice > 0 && plan.mrpPrice > plan.offerPrice;
         const computedPct = hasDiscount
@@ -740,9 +745,12 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
         }
 
         const compactFeatures = (plan.features || []).slice(0, 6);
+        const cardSwipeClass = (isPublicMode && activePlans.length > 1)
+          ? 'w-[84vw] max-w-[340px] md:w-auto md:max-w-none shrink-0 snap-center'
+          : '';
 
         return `
-          <article class="rounded-2xl border ${cardStyle} p-5 flex flex-col justify-between gap-4 transition">
+          <article data-public-plan-idx="${planIdx}" class="${cardSwipeClass} rounded-2xl border ${cardStyle} p-5 sm:p-6 flex flex-col justify-between gap-4 transition">
             <div class="space-y-4">
               <!-- Tier Header -->
               <div>
@@ -804,6 +812,13 @@ const renderTierCardsGridHtml = (activePlans, catalog, {
         `;
       }).join('')}
     </div>
+    ${(isPublicMode && activePlans.length > 1) ? `
+      <div id="public-pricing-dots" class="flex md:hidden items-center justify-center gap-1.5 pt-2" aria-label="Plan slide indicators">
+        ${activePlans.map((_, idx) => `
+          <button type="button" data-pricing-dot="${idx}" aria-label="View plan ${idx + 1}" class="${idx === 0 ? 'h-1.5 w-5 rounded-full bg-blue-600 transition-all cursor-pointer' : 'h-1.5 w-1.5 rounded-full bg-slate-300 transition-all cursor-pointer'}"></button>
+        `).join('')}
+      </div>
+    ` : ''}
   `;
 };
 
@@ -1206,6 +1221,51 @@ export const renderPublicPricingSection = async (container, {
   container.querySelector('#public-hide-compare-btn')?.addEventListener('click', () => {
     compareWrap?.classList.add('hidden');
   });
+
+  // Mobile horizontal swipe dot synchronization for public plans
+  const pricingTrack = container.querySelector('#public-pricing-track');
+  const pricingDots = Array.from(container.querySelectorAll('[data-pricing-dot]'));
+  const pricingCards = Array.from(container.querySelectorAll('[data-public-plan-idx]'));
+  if (pricingTrack && pricingDots.length > 1 && pricingCards.length > 1) {
+    const syncPricingDots = (activeIdx) => {
+      pricingDots.forEach((dot, idx) => {
+        const active = idx === activeIdx;
+        dot.className = active
+          ? 'h-1.5 w-5 rounded-full bg-blue-600 transition-all cursor-pointer'
+          : 'h-1.5 w-1.5 rounded-full bg-slate-300 hover:bg-slate-400 transition-all cursor-pointer';
+      });
+    };
+
+    pricingDots.forEach((dot, idx) => {
+      dot.addEventListener('click', () => {
+        const card = pricingCards[idx];
+        if (!card) return;
+        const targetLeft = card.offsetLeft - pricingTrack.offsetLeft;
+        pricingTrack.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+        syncPricingDots(idx);
+      });
+    });
+
+    let pricingScrollRaf = 0;
+    pricingTrack.addEventListener('scroll', () => {
+      if (pricingScrollRaf) return;
+      pricingScrollRaf = window.requestAnimationFrame(() => {
+        pricingScrollRaf = 0;
+        const center = pricingTrack.scrollLeft + (pricingTrack.clientWidth / 2);
+        let closestIdx = 0;
+        let closestDist = Infinity;
+        pricingCards.forEach((card, idx) => {
+          const cardCenter = (card.offsetLeft - pricingTrack.offsetLeft) + (card.offsetWidth / 2);
+          const dist = Math.abs(cardCenter - center);
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestIdx = idx;
+          }
+        });
+        syncPricingDots(closestIdx);
+      });
+    }, { passive: true });
+  }
 
   container.querySelectorAll('[data-plan-cta-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
