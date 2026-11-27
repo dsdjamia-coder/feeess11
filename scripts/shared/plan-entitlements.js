@@ -220,7 +220,7 @@ export const resolveInstitutionPlan = (institutionData = null) => {
   const limits = {};
   Object.keys(defaults.limits).forEach((key) => {
     if (effectiveTier === 'elite') {
-      limits[key] = key === 'maxGalleryPhotos' ? 24 : 0;
+      limits[key] = 0;
     } else if (key in rawLimits && rawLimits[key] !== '' && rawLimits[key] !== null && rawLimits[key] !== undefined) {
       limits[key] = normalizeLimitValue(rawLimits[key], defaults.limits[key]);
     } else {

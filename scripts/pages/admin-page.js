@@ -16435,13 +16435,13 @@ const getNextGalleryOrder = () => {
     return Math.max(...existingOrders) + 1;
 };
 
-const MAX_GALLERY_IMAGES = 24;
 const MAX_GALLERY_BATCH_UPLOAD = 5;
 let selectedGalleryFiles = [];
 
 const getEffectiveGalleryMax = () => {
+    if (isElitePlan()) return Infinity;
     const planMax = getPlanLimit('maxGalleryPhotos');
-    return !isElitePlan() && Number.isFinite(planMax) ? Math.max(1, Math.min(MAX_GALLERY_IMAGES, planMax)) : MAX_GALLERY_IMAGES;
+    return Number.isFinite(planMax) && planMax > 0 ? Math.floor(planMax) : Infinity;
 };
 
 const getGalleryCapacityInfo = () => {
@@ -16454,7 +16454,7 @@ const getGalleryCapacityInfo = () => {
         batchMax: MAX_GALLERY_BATCH_UPLOAD,
         current,
         queued,
-        isAtLimit: current >= maxAllowed
+        isAtLimit: Number.isFinite(maxAllowed) && current >= maxAllowed
     };
 };
 

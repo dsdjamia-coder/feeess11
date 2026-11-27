@@ -67,8 +67,8 @@ const DEFAULT_FREE_PLAN_LIMITS = {
   maxClasses: 12,
   maxAcademicYears: 1,
   maxFeeItems: 4,
-  maxNotices: 5,
-  maxGalleryPhotos: 6,
+  maxNotices: 10,
+  maxGalleryPhotos: 10,
   maxExamsPerYear: 1,
   maxDirectoryEntries: 10
 };
@@ -79,9 +79,9 @@ const DEFAULT_STANDARD_PLAN_LIMITS = {
   maxClasses: 30,
   maxAcademicYears: 5,
   maxFeeItems: 12,
-  maxNotices: 20,
-  maxGalleryPhotos: 15,
-  maxExamsPerYear: 4,
+  maxNotices: 30,
+  maxGalleryPhotos: 30,
+  maxExamsPerYear: 5,
   maxDirectoryEntries: 40
 };
 

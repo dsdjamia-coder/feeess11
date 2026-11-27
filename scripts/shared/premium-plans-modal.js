@@ -425,7 +425,7 @@ export const openPlanFullDetailsModal = (plan, catalog, options = {}) => {
     { label: 'Exams per Year', value: formatQuotaCell(limits.maxExamsPerYear, limits.maxExamsPerYear === 1 ? 'Exam (Manual)' : 'Exams') },
     { label: 'Custom Fee Heads', value: formatQuotaCell(limits.maxFeeItems) },
     { label: 'Public Notices', value: formatQuotaCell(limits.maxNotices) },
-    { label: 'Gallery Photos', value: `${limits.maxGalleryPhotos || (tierKey === 'free' ? 6 : tierKey === 'standard' ? 15 : 24)} Photos` },
+    { label: 'Gallery Photos', value: formatQuotaCell(limits.maxGalleryPhotos, 'Photos') },
     { label: 'Directory Entries', value: formatQuotaCell(limits.maxDirectoryEntries) }
   ];
 
@@ -593,7 +593,8 @@ export const renderPlanComparisonMatrixHtml = (catalog) => {
         { label: 'Classes', free: formatQuotaCell(freeLimits.maxClasses), std: formatQuotaCell(stdLimits.maxClasses), elite: 'Unlimited' },
         { label: 'Exams per Year', free: formatQuotaCell(freeLimits.maxExamsPerYear), std: formatQuotaCell(stdLimits.maxExamsPerYear), elite: 'Unlimited' },
         { label: 'Custom Fee Heads', free: formatQuotaCell(freeLimits.maxFeeItems), std: formatQuotaCell(stdLimits.maxFeeItems), elite: 'Unlimited' },
-        { label: 'Gallery Photos', free: `${freeLimits.maxGalleryPhotos || 6}`, std: `${stdLimits.maxGalleryPhotos || 15}`, elite: '24' }
+        { label: 'Public Notices', free: formatQuotaCell(freeLimits.maxNotices), std: formatQuotaCell(stdLimits.maxNotices), elite: 'Unlimited' },
+        { label: 'Gallery Photos', free: formatQuotaCell(freeLimits.maxGalleryPhotos), std: formatQuotaCell(stdLimits.maxGalleryPhotos), elite: 'Unlimited' }
       ]
     },
     {

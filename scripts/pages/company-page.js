@@ -1916,11 +1916,7 @@ const renderPlansGrid = () => {
     btn.addEventListener('click', () => {
       const target = (catalogState.plans || []).find((p) => p.id === btn.dataset.planId);
       if (target) {
-        openPlanFullDetailsModal({
-          plan: target,
-          catalog: collectCatalogDraft(),
-          previewMode: true
-        });
+        openPlanFullDetailsModal(target, collectCatalogDraft(), { previewMode: true });
       }
     });
   });
@@ -2008,6 +2004,35 @@ const renderPlansGrid = () => {
   });
 };
 
+const inferPresetTier = (label = '') => {
+  const txt = String(label || '').toLowerCase();
+  if (
+    txt.includes('unlimited') ||
+    txt.includes('excel') ||
+    txt.includes('activity') ||
+    txt.includes('evaluation') ||
+    txt.includes('ledger') ||
+    txt.includes('report cards') ||
+    txt.includes('promotion') ||
+    txt.includes('backup') ||
+    txt.includes('alumni') ||
+    txt.includes('concessions')
+  ) {
+    return 'elite';
+  }
+  if (
+    txt.includes('multi-academic') ||
+    txt.includes('500 students') ||
+    txt.includes('attendance') ||
+    txt.includes('academic planning') ||
+    txt.includes('worksheet') ||
+    txt.includes('multi-exam')
+  ) {
+    return 'standard';
+  }
+  return 'free';
+};
+
 const renderPlanFeaturePresetsGrid = (selectedLines = []) => {
   const grid = document.getElementById('plan-feature-presets-grid');
   if (!grid) return;
@@ -2016,18 +2041,25 @@ const renderPlanFeaturePresetsGrid = (selectedLines = []) => {
       .map((line) => String(line || '').trim().toLowerCase())
       .filter(Boolean)
   );
-  grid.innerHTML = PLAN_CATALOG_FEATURE_PRESETS.map((preset) => {
-    const checked = normalizedSelected.has(preset.label.trim().toLowerCase());
-    const tierTag = preset.tier === 'elite'
-      ? '<span class="text-[9px] font-extrabold uppercase text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">ELITE</span>'
-      : preset.tier === 'standard'
-        ? '<span class="text-[9px] font-extrabold uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">STD</span>'
-        : '<span class="text-[9px] font-extrabold uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">FREE</span>';
+  grid.innerHTML = PLAN_CATALOG_FEATURE_PRESETS.map((rawPreset) => {
+    const label = typeof rawPreset === 'string'
+      ? rawPreset.trim()
+      : String(rawPreset?.label || '').trim();
+    if (!label) return '';
+    const tier = (typeof rawPreset === 'object' && rawPreset?.tier)
+      ? String(rawPreset.tier).toLowerCase()
+      : inferPresetTier(label);
+    const checked = normalizedSelected.has(label.toLowerCase());
+    const tierTag = tier === 'elite'
+      ? '<span class="text-[9px] font-extrabold uppercase text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">ELITE</span>'
+      : tier === 'standard'
+        ? '<span class="text-[9px] font-extrabold uppercase text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded shrink-0">STD</span>'
+        : '<span class="text-[9px] font-extrabold uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">FREE</span>';
     return `
       <label class="flex items-start justify-between gap-2 p-2 rounded-xl border border-slate-200 bg-white hover:bg-indigo-50/40 cursor-pointer text-[11px] font-semibold text-slate-700">
         <span class="flex items-start gap-2 min-w-0">
-          <input type="checkbox" class="plan-feature-preset-cb mt-0.5 rounded border-slate-300 text-indigo-600" value="${escapeHtml(preset.label)}" ${checked ? 'checked' : ''}>
-          <span class="leading-snug">${escapeHtml(preset.label)}</span>
+          <input type="checkbox" class="plan-feature-preset-cb mt-0.5 rounded border-slate-300 text-indigo-600" value="${escapeHtml(label)}" ${checked ? 'checked' : ''}>
+          <span class="leading-snug">${escapeHtml(label)}</span>
         </span>
         ${tierTag}
       </label>
@@ -2067,6 +2099,83 @@ const renderPlanModulesGrid = (selectedKeys = []) => {
   `).join('');
 };
 
+const populatePlanModalTierQuotas = (tierKey = 'standard') => {
+  const section = document.getElementById('plan-quotas-section');
+  const inputsGrid = document.getElementById('plan-quotas-inputs-grid');
+  const unlimitedBanner = document.getElementById('plan-quotas-unlimited-banner');
+  const heading = document.getElementById('plan-quotas-heading');
+  const badge = document.getElementById('plan-quotas-tier-badge');
+  if (!section) return;
+
+  const cleanTier = String(tierKey || 'custom').trim().toLowerCase();
+  if (cleanTier !== 'free' && cleanTier !== 'standard' && cleanTier !== 'elite') {
+    section.classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+
+  if (cleanTier === 'elite') {
+    if (heading) heading.textContent = 'ELITE Tier Capacity & Quotas';
+    if (badge) {
+      badge.textContent = 'ELITE';
+      badge.className = 'px-2 py-0.5 rounded-md bg-slate-900 text-amber-300 text-[10px] font-extrabold uppercase';
+    }
+    inputsGrid?.classList.add('hidden');
+    unlimitedBanner?.classList.remove('hidden');
+    return;
+  }
+
+  const draftSelfSignup = readSelfSignupConfigFromInputs();
+  const isFree = cleanTier === 'free';
+  const limits = isFree
+    ? (draftSelfSignup?.defaultFreeLimits || catalogState?.selfSignupConfig?.defaultFreeLimits || DEFAULT_FREE_PLAN_LIMITS)
+    : (draftSelfSignup?.defaultStandardLimits || catalogState?.selfSignupConfig?.defaultStandardLimits || DEFAULT_STANDARD_PLAN_LIMITS);
+
+  if (heading) heading.textContent = isFree ? 'Free Tier Capacity & Quotas' : 'Standard Tier Capacity & Quotas';
+  if (badge) {
+    badge.textContent = isFree ? 'Free' : 'Standard';
+    badge.className = isFree
+      ? 'px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase'
+      : 'px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-extrabold uppercase';
+  }
+  unlimitedBanner?.classList.add('hidden');
+  inputsGrid?.classList.remove('hidden');
+
+  const setQuotaVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = String(val ?? '');
+  };
+  setQuotaVal('plan-quota-students', limits.maxStudents);
+  setQuotaVal('plan-quota-staff', limits.maxStaff);
+  setQuotaVal('plan-quota-classes', limits.maxClasses);
+  setQuotaVal('plan-quota-fee-items', limits.maxFeeItems);
+  setQuotaVal('plan-quota-exams', limits.maxExamsPerYear);
+  setQuotaVal('plan-quota-notices', limits.maxNotices);
+  setQuotaVal('plan-quota-gallery', limits.maxGalleryPhotos);
+  setQuotaVal('plan-quota-directory', limits.maxDirectoryEntries);
+  setQuotaVal('plan-quota-years', limits.maxAcademicYears);
+};
+
+const readPlanModalTierQuotas = (tierKey = 'standard') => {
+  const fallback = tierKey === 'free' ? DEFAULT_FREE_PLAN_LIMITS : DEFAULT_STANDARD_PLAN_LIMITS;
+  const num = (id, fb) => {
+    const v = Number(document.getElementById(id)?.value);
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : fb;
+  };
+  return {
+    maxStudents: num('plan-quota-students', fallback.maxStudents),
+    maxStaff: num('plan-quota-staff', fallback.maxStaff),
+    maxClasses: num('plan-quota-classes', fallback.maxClasses),
+    maxAcademicYears: num('plan-quota-years', fallback.maxAcademicYears),
+    maxFeeItems: num('plan-quota-fee-items', fallback.maxFeeItems),
+    maxNotices: num('plan-quota-notices', fallback.maxNotices),
+    maxGalleryPhotos: num('plan-quota-gallery', fallback.maxGalleryPhotos),
+    maxExamsPerYear: num('plan-quota-exams', fallback.maxExamsPerYear),
+    maxDirectoryEntries: num('plan-quota-directory', fallback.maxDirectoryEntries)
+  };
+};
+
 const openPlanEditorModal = (plan = null) => {
   const modal = document.getElementById('plan-editor-modal');
   const form = document.getElementById('plan-editor-form');
@@ -2081,7 +2190,8 @@ const openPlanEditorModal = (plan = null) => {
 
   const isEdit = Boolean(plan && plan.id);
   const resolvedTierKey = plan ? (plan.tierKey || inferPlanTierKey(plan)) : 'standard';
-  document.getElementById('plan-modal-title').textContent = isEdit ? `Edit Plan: ${plan.name}` : 'Add Custom Plan';
+  const modalTitleEl = document.getElementById('plan-modal-title');
+  if (modalTitleEl) modalTitleEl.textContent = isEdit ? `Edit Plan: ${plan.name}` : 'Add Custom Plan';
   document.getElementById('plan-edit-id').value = isEdit ? plan.id : '';
   document.getElementById('plan-name').value = plan?.name || '';
   const tierSelect = document.getElementById('plan-tier-key');
@@ -2097,6 +2207,7 @@ const openPlanEditorModal = (plan = null) => {
   const featureLines = Array.isArray(plan?.features) ? plan.features : [];
   document.getElementById('plan-features').value = featureLines.join('\n');
 
+  populatePlanModalTierQuotas(resolvedTierKey);
   renderPlanFeaturePresetsGrid(featureLines);
   renderPlanModulesGrid(plan?.includedModules || Object.keys(STANDARD_PLAN_ALLOWED_PAGES).filter((k) => STANDARD_PLAN_ALLOWED_PAGES[k]));
   modal.classList.remove('hidden');
@@ -2168,6 +2279,22 @@ const handlePlanEditorSubmit = async (e) => {
     nextCatalog.plans.push(planObj);
   }
 
+  // Sync edited tier quotas back into selfSignupConfig so all surfaces stay consistent
+  if (tierKey === 'free') {
+    const editedFreeQuotas = readPlanModalTierQuotas('free');
+    nextCatalog.selfSignupConfig = {
+      ...(nextCatalog.selfSignupConfig || readSelfSignupConfigFromInputs()),
+      defaultFreeLimits: editedFreeQuotas,
+      defaultBasicLimits: editedFreeQuotas
+    };
+  } else if (tierKey === 'standard') {
+    const editedStdQuotas = readPlanModalTierQuotas('standard');
+    nextCatalog.selfSignupConfig = {
+      ...(nextCatalog.selfSignupConfig || readSelfSignupConfigFromInputs()),
+      defaultStandardLimits: editedStdQuotas
+    };
+  }
+
   const saveBtn = document.getElementById('btn-save-plan-modal');
   const origHtml = saveBtn ? saveBtn.innerHTML : '';
   if (saveBtn) {
@@ -2177,6 +2304,7 @@ const handlePlanEditorSubmit = async (e) => {
 
   try {
     await persistPublicCatalog(nextCatalog, existingIdx >= 0 ? `Updated plan "${name}"!` : `Added plan "${name}"!`);
+    populateCatalogInputs(catalogState);
     closePlanEditorModal();
   } catch (err) {
     console.error('Save plan error:', err);
@@ -3499,6 +3627,7 @@ const bindEvents = () => {
   });
   document.getElementById('plan-tier-key')?.addEventListener('change', (e) => {
     const tier = String(e.target?.value || '').toLowerCase();
+    populatePlanModalTierQuotas(tier);
     if (tier === 'free' || tier === 'standard' || tier === 'elite') {
       const pageMap = tier === 'free'
         ? FREE_PLAN_ALLOWED_PAGES
@@ -3509,6 +3638,20 @@ const bindEvents = () => {
         cb.checked = pageMap[cb.value] === true;
       });
     }
+  });
+  document.getElementById('plan-features')?.addEventListener('input', (e) => {
+    const selectedSet = new Set(
+      String(e.target?.value || '')
+        .split('\n')
+        .map((l) => l.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    document.querySelectorAll('.plan-feature-preset-cb').forEach((cb) => {
+      cb.checked = selectedSet.has(String(cb.value || '').trim().toLowerCase());
+    });
+  });
+  document.getElementById('plan-editor-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closePlanEditorModal();
   });
   document.getElementById('btn-close-plan-modal')?.addEventListener('click', closePlanEditorModal);
   document.getElementById('btn-cancel-plan-modal')?.addEventListener('click', closePlanEditorModal);
@@ -3646,6 +3789,11 @@ const bindEvents = () => {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      const planModal = document.getElementById('plan-editor-modal');
+      if (planModal && !planModal.classList.contains('hidden')) {
+        closePlanEditorModal();
+        return;
+      }
       const modal = document.getElementById('screenshot-preview-modal');
       if (modal && !modal.classList.contains('hidden')) {
         closeScreenshotPreviewModal();
